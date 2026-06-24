@@ -1,0 +1,11 @@
+已完成 P002，仅修改 `src/loopService.js`，未修改 plan 文件或其它任务 scope。
+
+**变更**
+- `src/loopService.js:972` 将 `syncPlanTasks` 从全量删除重建改为按 `plan_id + task_key` 匹配更新，保留同任务已有行的上下文字段。
+- `src/loopService.js:983` 更新标题、raw line、scope、排序等解析结果，同时保留/合并关键状态。
+- `src/loopService.js:1015` 计划完成数改为按同步后的最终状态统计。
+- `src/loopService.js:1330` 新增状态合并逻辑，避免已完成、运行中、blocked 状态被普通同步误重置。
+
+**验证**
+- `node --check src\loopService.js` 通过。
+- `git diff --check -- src/loopService.js` 通过；仅有 Git 的 LF/CRLF 换行转换提示。

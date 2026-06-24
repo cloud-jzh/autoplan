@@ -1,0 +1,11 @@
+P001 已完成，只修改了指定 scope 文件，未修改 plan/checkbox/进度区。
+
+**改动**
+- `src/database.js:140` 为 `plan_tasks` 新增 `started_at`、`finished_at`、`duration_ms` 字段。
+- `src/database.js:181` 通过现有 `ensureColumn` 迁移机制兼容旧数据库，历史任务耗时默认 `0`，时间字段可为空。
+- `src/renderer/types.ts:109` 同步扩展 `PlanTask` 类型字段。
+
+**验证**
+- 已通过 `node --check src/database.js`。
+- 已通过单文件类型检查：`tsc --noEmit --ignoreConfig src/renderer/types.ts`。
+- 未运行全量 `check/smoke`，按任务约束留给 P006。

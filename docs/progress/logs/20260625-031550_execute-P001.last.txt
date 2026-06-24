@@ -1,0 +1,13 @@
+**完成情况**
+- 已完成 P001，仅修改 scope 内的 `src/loopService.js` 和 `src/renderer/types.ts`，未修改 plan 文件/checkbox/进度区。
+- 在 `src/loopService.js:19` 统一定义任务事件类型、状态、展示语义和旧事件兼容映射。
+- 在 `src/loopService.js:1262` 增加任务事件 meta 归一化 helper，并让现有 task 事件复用 `events.meta` 携带 `taskId/taskKey/taskTitle/planId/status/startedAt/finishedAt` 等字段。
+- 在 `src/renderer/types.ts:117` 镜像前端任务事件类型、语义、兼容映射与 `TaskEventMeta`，`AppEvent` 默认仍兼容旧 raw string meta。
+
+**验证**
+- 已通过 `node --check src/loopService.js`
+- 已通过单文件 `tsc --ignoreConfig --noEmit ... src/renderer/types.ts`
+- 已通过 `git diff --check -- src/loopService.js src/renderer/types.ts`
+- 已通过 `node -e` 检查 `loopService` 事件常量导出
+
+检测到工作区存在其它并发改动，但本次没有处理或修改其它任务 scope。

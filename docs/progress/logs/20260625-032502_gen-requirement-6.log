@@ -1,0 +1,2053 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019efb17-d2c2-79e2-a372-1174ca76f664
+--------
+user
+你是需求整理与开发计划生成者。
+请根据以下需求，生成一个开发计划和验收标准。
+
+输出文件：D:\project\GitHub\autoplan\docs\plan\plan_requirement_6_20260625-032502.md
+
+格式要求：
+- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->
+- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行
+- 每个任务要有验收要点
+- 必须包含总体验收标准和进度区
+- 只写 plan 文件，不要改业务代码
+
+需求 #6 内容：
+系统界面的图标，使用icon，而不是使用emoji
+**Formulating a plan for file generation**
+
+It seems I need to respond in Chinese and create a plan file. First, I should check the repository structure to ensure I’m on the right track. There’s also a possible date conflict since the developer mentions June 24, 2026, while the environment shows June 25, 2026. I need to ensure compliance with AGENTS and include a preamble before any commands. It might be a multi-step process, so I should inspect files as necessary.
+codex
+我先快速查看项目结构和约束，再只写指定计划文件。
+exec
+powershell.exe -Command 'Get-ChildItem -Force; if (Test-Path AGENTS.md) { Get-Content AGENTS.md }' in D:\project\GitHub\autoplan
+ succeeded in 204ms:
+
+
+    目录: D:\project\GitHub\autoplan
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+d--h--         2026/6/25      3:15                .git                                                                 
+d-----         2026/6/24     23:46                assets                                                               
+d-----         2026/6/25      2:24                dist                                                                 
+d-----         2026/6/25      0:34                docs                                                                 
+d-----         2026/6/24     23:43                node_modules                                                         
+d-----         2026/6/25      2:24                release                                                              
+d-----         2026/6/24     23:36                release-test                                                         
+d-----         2026/6/24     20:10                scripts                                                              
+d-----         2026/6/24     22:38                src                                                                  
+d-----         2026/6/24     19:44                ui                                                                   
+-a----         2026/6/24     23:18         109404 .codex-autoplan-overview-final.png                                   
+-a----         2026/6/24     23:17         108438 .codex-autoplan-overview-left-log.png                                
+-a----         2026/6/24     23:21          79462 .codex-autoplan-overview-merged-log.png                              
+-a----         2026/6/24     23:14         102400 .codex-autoplan-overview.png                                         
+-a----         2026/6/24     22:52            288 .codex-dev-20260624-225246.log                                       
+-a----         2026/6/24     22:57            546 .codex-dev-20260624-225652.log                                       
+-a----         2026/6/24     23:01            686 .codex-dev-20260624-225837.log                                       
+-a----         2026/6/25      1:48           9065 .codex-dev-20260624-230150.log                                       
+-a----         2026/6/24     22:48            419 .codex-dev.log                                                       
+-a----         2026/6/25      0:11             66 .gitattributes                                                       
+-a----         2026/6/25      1:48              9 .gitignore                                                           
+-a----         2026/6/24     19:10            307 index.html                                                           
+-a----         2026/6/25      0:18         175109 package-lock.json                                                    
+-a----         2026/6/25      0:16           1776 package.json                                                         
+-a----         2026/6/24     23:45           7191 System.Drawing.Drawing2D.GraphicsPath                                
+-a----         2026/6/24     19:10            555 tsconfig.json                                                        
+-a----         2026/6/24     23:41            287 vite.config.ts                                                       
+
+
+
+codex
+我会参考已有计划格式，定位图标相关模块范围。
+exec
+powershell.exe -Command 'Get-ChildItem -Recurse -Filter AGENTS.md | ForEach-Object { $_.FullName }; if (Test-Path docs'"\\plan) { Get-ChildItem docs\\plan | Select-Object Name,Length,LastWriteTime }; rg -n \"emoji|icon|图标|🚀|✅|❌|⚠️|📁|📄|📝|🔍|▶|⏸|⏹|📋|💾|⚙|🔧\" src ui docs package.json index.html vite.config.ts" in D:\project\GitHub\autoplan
+ succeeded in 275ms:
+
+package.json:31:      "icon": "assets/icon.ico",
+ui\workspace.html:324:      .icon-btn { width:34px; height:34px; flex:0 0 auto; border-radius:50%; border:0; background:transparent; color:var(--text-3); display:grid; place-items:center; }
+ui\workspace.html:325:      .icon-btn:hover { background:var(--bg-hover); color:var(--text-1); }
+ui\workspace.html:527:                    <div class="pipe-step active"><div class="pipe-node">▶</div><div class="pipe-label">执行任务</div><div class="pipe-sub">3 / 7</div></div>
+ui\workspace.html:561:                <div class="stream-body">工具栏样式与飞书文档对齐：图标 20px、悬浮态浅灰底、分组之间加竖线分隔。</div>
+ui\workspace.html:572:                  <button type="button" class="icon-btn" title="添加附件">＋</button>
+ui\workspace.html:599:                <div class="composer-tools"><button type="button" class="icon-btn" title="添加附件">＋</button></div>
+ui\README.md:21:  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、间隔、描述）
+ui\projects.html:217:      .modal-danger-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--danger-bg); color: var(--danger); font-size: 24px; margin: 0 auto 14px; }
+ui\projects.html:288:              <label>项目图标颜色</label>
+ui\projects.html:332:            <div class="modal-danger-icon">⚠</div>
+ui\projects.html:402:                  <button class="ctx-item" data-act="open" data-id="${p.id}">▶ 打开工作区</button>
+src\styles.css:360:.plus-icon { display: block; color: var(--text-3); font-size: 28px; font-weight: 300; line-height: 1; }
+src\styles.css:367:.pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+src\styles.css:369:.pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
+src\styles.css:398:.modal-danger-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--danger-bg); color: var(--danger); font-size: 24px; margin: 0 auto 14px; }
+docs\progress\logs\20260625-030248_gen-requirement-4.log:45:assets\icon.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:46:assets\icon.ico
+docs\progress\logs\20260625-030248_gen-requirement-4.log:47:assets\icon-64.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:48:assets\icon-48.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:49:assets\icon-32.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:50:assets\icon-256.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:51:assets\icon-24.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:52:assets\icon-16.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:53:assets\icon-128.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:311:node_modules\emoji-regex\text.js
+docs\progress\logs\20260625-030248_gen-requirement-4.log:312:node_modules\emoji-regex\README.md
+docs\progress\logs\20260625-030248_gen-requirement-4.log:313:node_modules\emoji-regex\package.json
+docs\progress\logs\20260625-030248_gen-requirement-4.log:314:node_modules\emoji-regex\LICENSE-MIT.txt
+docs\progress\logs\20260625-030248_gen-requirement-4.log:315:node_modules\emoji-regex\index.js
+docs\progress\logs\20260625-030248_gen-requirement-4.log:316:node_modules\emoji-regex\index.d.ts
+docs\progress\logs\20260625-030248_gen-requirement-4.log:390:node_modules\emoji-regex\es2015\text.js
+docs\progress\logs\20260625-030248_gen-requirement-4.log:391:node_modules\emoji-regex\es2015\index.js
+docs\progress\logs\20260625-030248_gen-requirement-4.log:1910:node_modules\app-builder-lib\templates\icons\proton-native\proton-native.svg
+docs\progress\logs\20260625-030248_gen-requirement-4.log:1911:node_modules\app-builder-lib\templates\icons\proton-native\proton-native.ico
+docs\progress\logs\20260625-030248_gen-requirement-4.log:1912:node_modules\app-builder-lib\templates\icons\proton-native\proton-native.icns
+docs\progress\logs\20260625-030248_gen-requirement-4.log:1963:node_modules\app-builder-lib\templates\icons\proton-native\linux\64x64.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:1964:node_modules\app-builder-lib\templates\icons\proton-native\linux\512x512.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:1965:node_modules\app-builder-lib\templates\icons\proton-native\linux\48x48.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:1966:node_modules\app-builder-lib\templates\icons\proton-native\linux\32x32.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:1967:node_modules\app-builder-lib\templates\icons\proton-native\linux\256x256.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:1968:node_modules\app-builder-lib\templates\icons\proton-native\linux\16x16.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:1969:node_modules\app-builder-lib\templates\icons\proton-native\linux\128x128.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:1970:node_modules\app-builder-lib\templates\icons\proton-native\linux\1024x1024.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:2040:node_modules\app-builder-lib\templates\icons\electron-linux\64x64.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:2041:node_modules\app-builder-lib\templates\icons\electron-linux\48x48.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:2042:node_modules\app-builder-lib\templates\icons\electron-linux\32x32.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:2043:node_modules\app-builder-lib\templates\icons\electron-linux\256x256.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:2044:node_modules\app-builder-lib\templates\icons\electron-linux\16x16.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:2045:node_modules\app-builder-lib\templates\icons\electron-linux\128x128.png
+docs\progress\logs\20260625-030248_gen-requirement-4.log:2128:node_modules\app-builder-lib\templates\appx\priconfig.xml
+docs\progress\logs\20260625-030248_gen-requirement-4.log:3262:node_modules\app-builder-lib\out\util\iconConverter.js.map
+docs\progress\logs\20260625-030248_gen-requirement-4.log:3263:node_modules\app-builder-lib\out\util\iconConverter.js
+docs\progress\logs\20260625-030248_gen-requirement-4.log:3264:node_modules\app-builder-lib\out\util\iconConverter.d.ts
+docs\progress\logs\20260625-030248_gen-requirement-4.log:3892:node_modules\app-builder-lib\out\toolsets\icons.js.map
+docs\progress\logs\20260625-030248_gen-requirement-4.log:3893:node_modules\app-builder-lib\out\toolsets\icons.js
+docs\progress\logs\20260625-030248_gen-requirement-4.log:3895:node_modules\app-builder-lib\out\toolsets\icons.d.ts
+docs\progress\logs\20260625-030248_gen-requirement-4.log:8375:.\ui\workspace.html:527:                    <div class="pipe-step active"><div class="pipe-node">▶</div><div class="pipe-label">执行任务</div><div class="pipe-sub">3 / 7</div></div>
+docs\progress\logs\20260625-030248_gen-requirement-4.log:8969:.\src\renderer\pages\WorkspacePage.tsx:27:  { id: 'tasks', label: '任务与计划', icon: '☑' },
+docs\progress\logs\20260625-030248_gen-requirement-4.log:9010:.\src\renderer\pages\WorkspacePage.tsx:581:        <StatCard icon="☑" value={`${doneTasks}/${totalTasks}`} label="任务进度" accent="success" />
+docs\progress\logs\20260625-030248_gen-requirement-4.log:9269:src\renderer\pages\WorkspacePage.tsx:27:  { id: 'tasks', label: '任务与计划', icon: '☑' },
+docs\progress\logs\20260625-030248_gen-requirement-4.log:10612:  D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:581:        <StatCard icon="☑" value={`${doneTasks}/${totalTasks}`} label="任务进度" accent="success" />
+docs\progress\logs\20260625-030248_gen-requirement-4.log:10613:  D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:582:        <StatCard icon="↻" value={`${state?.interval_seconds || 5}s`} label="循环间隔" accent="warning" />
+docs\progress\logs\20260625-030248_gen-requirement-4.log:12099:      "icon": "assets/icon.ico",
+docs\progress\logs\20260625-030248_gen-requirement-4.log:12291:  D:\project\GitHub\autoplan\src\styles.css:344:.plus-icon { display: block; color: var(--text-3); font-size: 28px; font-weight: 300; line-height: 1; }
+docs\progress\logs\20260625-030248_gen-requirement-4.log:12298:  D:\project\GitHub\autoplan\src\styles.css:351:.pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+docs\progress\logs\20260625-030248_gen-requirement-4.log:12300:> D:\project\GitHub\autoplan\src\styles.css:353:.pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
+docs\progress\logs\20260625-030248_gen-requirement-4.log:12324:> D:\project\GitHub\autoplan\src\styles.css:382:.modal-danger-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--danger-bg); color: var(--danger); font-size: 24px; margin: 0 auto 14px; }
+src\main.js:29:    icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
+docs\progress\logs\20260625-030632_execute-P004.log:295:const tabs: Array<{ id: WorkspaceTab; label: string; icon: string }> = [
+docs\progress\logs\20260625-030632_execute-P004.log:296:  { id: 'overview', label: '概览', icon: '◑' },
+docs\progress\logs\20260625-030632_execute-P004.log:297:  { id: 'requirement', label: '需求', icon: '◎' },
+docs\progress\logs\20260625-030632_execute-P004.log:298:  { id: 'feedback', label: '反馈', icon: '✎' },
+docs\progress\logs\20260625-030632_execute-P004.log:299:  { id: 'tasks', label: '任务与计划', icon: '☑' },
+docs\progress\logs\20260625-030632_execute-P004.log:300:  { id: 'events', label: '事件流', icon: '≡' },
+docs\progress\logs\20260625-030632_execute-P004.log:794:          <span className="nav-ico">{tab.icon}</span> {tab.label}
+docs\progress\logs\20260625-030632_execute-P004.log:845:        <StatCard icon="◎" value={String(reqCount)} label="需求" accent="brand" />
+docs\progress\logs\20260625-030632_execute-P004.log:847:          icon="▤"
+docs\progress\logs\20260625-030632_execute-P004.log:853:        <StatCard icon="☑" value={`${doneTasks}/${totalTasks}`} label="任务进度" accent="success" />
+docs\progress\logs\20260625-030632_execute-P004.log:854:        <StatCard icon="↻" value={`${state?.interval_seconds || 5}s`} label="循环间隔" accent="warning" />
+docs\progress\logs\20260625-030632_execute-P004.log:898:                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
+docs\progress\logs\20260625-030632_execute-P004.log:927:  icon,
+docs\progress\logs\20260625-030632_execute-P004.log:933:  icon: string;
+docs\progress\logs\20260625-030632_execute-P004.log:941:      <div className="stat-ico">{icon}</div>
+docs\progress\logs\20260625-030632_execute-P004.log:1322:.plus-icon { display: block; color: var(--text-3); font-size: 28px; font-weight: 300; line-height: 1; }
+docs\progress\logs\20260625-030632_execute-P004.log:1329:.pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+docs\progress\logs\20260625-030632_execute-P004.log:1331:.pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
+docs\progress\logs\20260625-030632_execute-P004.log:1360:.modal-danger-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--danger-bg); color: var(--danger); font-size: 24px; margin: 0 auto 14px; }
+docs\progress\logs\20260625-030632_execute-P004.log:1414:src\renderer\pages\WorkspacePage.tsx:27:  { id: 'tasks', label: '任务与计划', icon: '☑' },
+docs\progress\logs\20260625-030632_execute-P004.log:1801: 573:         <StatCard icon="◎" value={String(reqCount)} label="需求" accent="brand" />
+docs\progress\logs\20260625-030632_execute-P004.log:1803: 575:           icon="▤"
+docs\progress\logs\20260625-030632_execute-P004.log:1809: 581:         <StatCard icon="☑" value={`${doneTasks}/${totalTasks}`} label="任务进度" accent="success" />
+docs\progress\logs\20260625-030632_execute-P004.log:1810: 582:         <StatCard icon="↻" value={`${state?.interval_seconds || 5}s`} label="循环间隔" accent="warning" />
+docs\progress\logs\20260625-030632_execute-P004.log:1872:  23: const tabs: Array<{ id: WorkspaceTab; label: string; icon: string }> = [
+docs\progress\logs\20260625-030632_execute-P004.log:1873:  24:   { id: 'overview', label: '概览', icon: '◑' },
+docs\progress\logs\20260625-030632_execute-P004.log:1874:  25:   { id: 'requirement', label: '需求', icon: '◎' },
+docs\progress\logs\20260625-030632_execute-P004.log:1875:  26:   { id: 'feedback', label: '反馈', icon: '✎' },
+docs\progress\logs\20260625-030632_execute-P004.log:1876:  27:   { id: 'tasks', label: '任务与计划', icon: '☑' },
+docs\progress\logs\20260625-030632_execute-P004.log:1877:  28:   { id: 'events', label: '事件流', icon: '≡' },
+docs\progress\logs\20260625-030632_execute-P004.log:1949: 573:         <StatCard icon="◎" value={String(reqCount)} label="需求" accent="brand" />
+docs\progress\logs\20260625-030632_execute-P004.log:1951: 575:           icon="▤"
+docs\progress\logs\20260625-030632_execute-P004.log:1957: 581:         <StatCard icon="☑" value={`${doneTasks}/${totalTasks}`} label="任务进度" accent="success" />
+docs\progress\logs\20260625-030632_execute-P004.log:1958: 582:         <StatCard icon="↻" value={`${state?.interval_seconds || 5}s`} label="循环间隔" accent="warning" />
+docs\progress\logs\20260625-030632_execute-P004.log:2272: 351: .pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+docs\progress\logs\20260625-030632_execute-P004.log:2274: 353: .pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
+docs\progress\logs\20260625-030632_execute-P004.log:2303: 382: .modal-danger-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--danger-bg); color: var(--danger); font-size: 24px; margin: 0 auto 14px; }
+docs\progress\logs\20260625-030632_execute-P004.log:2579: 626:                       <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
+docs\progress\logs\20260625-030632_execute-P004.log:2608: 655:   icon,
+docs\progress\logs\20260625-030632_execute-P004.log:2614: 661:   icon: string;
+docs\progress\logs\20260625-030632_execute-P004.log:2622: 669:       <div className="stat-ico">{icon}</div>
+docs\progress\logs\20260625-031550_execute-P004.log:125:src/renderer/pages/WorkspacePage.tsx:28:  { id: 'events', label: '事件流', icon: '≡' },
+docs\progress\logs\20260625-031550_execute-P004.log:498: 626:                       <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
+docs\progress\logs\20260625-031550_execute-P004.log:527: 655:   icon,
+docs\progress\logs\20260625-031550_execute-P004.log:688:352-.pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+docs\progress\logs\20260625-031550_execute-P004.log:1595: 345: .plus-icon { display: block; color: var(--text-3); font-size: 28px; font-weight: 300; line-height: 1; }
+docs\progress\logs\20260625-031550_execute-P004.log:1602: 352: .pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+docs\progress\logs\20260625-031550_execute-P004.log:1604: 354: .pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
+docs\progress\logs\20260625-031550_execute-P004.log:2806: 398: .modal-danger-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--danger-bg); color: var(--danger); font-size: 24px; margin: 0 auto 14px; }
+docs\progress\logs\20260625-031229_gen-requirement-5.log:180:ui\workspace.html:527:                    <div class="pipe-step active"><div class="pipe-node">▶</div><div class="pipe-label">执行任务</div><div class="pipe-sub">3 / 7</div></div>
+docs\progress\logs\20260625-031229_gen-requirement-5.log:757:src\renderer\pages\WorkspacePage.tsx:27:  { id: 'tasks', label: '任务与计划', icon: '☑' },
+docs\progress\logs\20260625-031229_gen-requirement-5.log:758:src\renderer\pages\WorkspacePage.tsx:28:  { id: 'events', label: '事件流', icon: '≡' },
+docs\progress\logs\20260625-031229_gen-requirement-5.log:797:src\renderer\pages\WorkspacePage.tsx:581:        <StatCard icon="☑" value={`${doneTasks}/${totalTasks}`} label="任务进度" accent="success" />
+docs\progress\logs\20260625-031229_gen-requirement-5.log:806:src\renderer\pages\WorkspacePage.tsx:626:                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
+docs\progress\logs\20260625-031229_gen-requirement-5.log:995:src\renderer\pages\WorkspacePage.tsx:28:  { id: 'events', label: '事件流', icon: '≡' },
+docs\progress\logs\20260625-031229_gen-requirement-5.log:3261:      "icon": "assets/icon.ico",
+src\renderer\components\Composer.tsx:102:            <span className="plus-icon">+</span>
+src\renderer\components\Composer.tsx:145:    return <span className="pending-file-icon">文件</span>;
+src\renderer\pages\WorkspacePage.tsx:23:const tabs: Array<{ id: WorkspaceTab; label: string; icon: string }> = [
+src\renderer\pages\WorkspacePage.tsx:24:  { id: 'overview', label: '概览', icon: '◑' },
+src\renderer\pages\WorkspacePage.tsx:25:  { id: 'requirement', label: '需求', icon: '◎' },
+src\renderer\pages\WorkspacePage.tsx:26:  { id: 'feedback', label: '反馈', icon: '✎' },
+src\renderer\pages\WorkspacePage.tsx:27:  { id: 'tasks', label: '任务与计划', icon: '☑' },
+src\renderer\pages\WorkspacePage.tsx:28:  { id: 'events', label: '事件流', icon: '≡' },
+src\renderer\pages\WorkspacePage.tsx:522:          <span className="nav-ico">{tab.icon}</span> {tab.label}
+src\renderer\pages\WorkspacePage.tsx:573:        <StatCard icon="◎" value={String(reqCount)} label="需求" accent="brand" />
+src\renderer\pages\WorkspacePage.tsx:575:          icon="▤"
+src\renderer\pages\WorkspacePage.tsx:581:        <StatCard icon="☑" value={`${doneTasks}/${totalTasks}`} label="任务进度" accent="success" />
+src\renderer\pages\WorkspacePage.tsx:582:        <StatCard icon="↻" value={`${state?.interval_seconds || 5}s`} label="循环间隔" accent="warning" />
+src\renderer\pages\WorkspacePage.tsx:626:                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
+src\renderer\pages\WorkspacePage.tsx:655:  icon,
+src\renderer\pages\WorkspacePage.tsx:661:  icon: string;
+src\renderer\pages\WorkspacePage.tsx:669:      <div className="stat-ico">{icon}</div>
+src\renderer\pages\ProjectsPage.tsx:149:                          ▶ 进入工作区
+src\renderer\pages\ProjectsPage.tsx:228:            <div className="modal-danger-icon">⚠</div>
+docs\progress\logs\20260625-032502_gen-requirement-6.log:26:系统界面的图标，使用icon，而不是使用emoji
+docs\progress\logs\20260625-032502_gen-requirement-6.log:73:我会参考已有计划格式，定位图标相关模块范围。
+docs\progress\logs\20260625-032502_gen-requirement-6.log:75:powershell.exe -Command 'Get-ChildItem -Recurse -Filter AGENTS.md | ForEach-Object { $_.FullName }; if (Test-Path docs'"\\plan) { Get-ChildItem docs\\plan | Select-Object Name,Length,LastWriteTime }; rg -n \"emoji|icon|图标|🚀|✅|❌|⚠️|📁|📄|📝|🔍|▶|⏸|⏹|📋|💾|⚙|🔧\" src ui docs package.json index.html vite.config.ts" in D:\project\GitHub\autoplan
+Name                                  Length LastWriteTime    
+----                                  ------ -------------    
+plan_requirement_4_20260625-030248.md   5052 2026/6/25 3:12:29
+plan_requirement_5_20260625-031229.md   5361 2026/6/25 3:24:59
+
+
+
+**Inspecting plans and tools**
+
+I need to check the existing plans and make sure I've read everything carefully. It seems there might be an issue with the output listing, as it says "none." I should gather the relevant files and focus on excluding items like docs and node_modules. Maybe I should consider using codegraph since it’s labeled as the "primary tool." I've already used the shell, so let’s inspect the plans thoroughly now.
+codex
+已确认主要前端文件；现在读取既有计划的写法。
+exec
+powershell.exe -Command "Get-Content docs\\plan\\plan_requirement_5_20260625-031229.md; Write-Output '---PLAN4---'; Get-Content docs\\plan\\plan_requirement_4_20260625-030248.md" in D:\project\GitHub\autoplan
+ succeeded in 203ms:
+# 闇€姹?#5 寮€鍙戣鍒掞細杩戞湡浜嬩欢鏄剧ず浠诲姟鎵ц鍔ㄦ€?
+## 鑳屾櫙
+
+褰撳墠绯荤粺宸叉湁 `events` 琛ㄣ€乣snapshot().events` 蹇収鍜屽墠绔€滆繎鏈熶簨浠?浜嬩欢娴佲€濆睍绀猴紝浣嗕换鍔℃墽琛岀浉鍏充簨浠惰繕涓嶅鐩磋锛屼笖缂哄皯鏄庣‘鐨勨€滀换鍔″紑濮嬧€濆姩鎬併€傞渶姹?#5 瑕佹眰杩戞湡浜嬩欢鑳藉鏄剧ず浠诲姟鎵ц浜嬩欢锛屼緥濡傗€滃紑濮嬩簡 xx 浠诲姟鈥濃€滅粨鏉熶簡 xx 浠诲姟鈥濈瓑锛岃鐢ㄦ埛鍦ㄦ瑙堥〉鍗冲彲鐪嬪埌浠诲姟鐢熷懡鍛ㄦ湡鍙樺寲銆?
+## 浠诲姟鎷嗚В
+
+- [x] P001: 缁熶竴浠诲姟浜嬩欢鏁版嵁绾﹀畾 <!-- scope: src/loopService.js,src/renderer/types.ts -->
+  - 楠屾敹瑕佺偣锛氭槑纭换鍔′簨浠剁被鍨嬩笌灞曠ず璇箟锛岃嚦灏戣鐩栦换鍔″紑濮嬨€佹垚鍔熺粨鏉熴€佸け璐ョ粨鏉熴€佸仠姝㈣姹傚拰涓柇鍋滄鍦烘櫙銆?  - 楠屾敹瑕佺偣锛氫换鍔′簨浠?`meta` 鍖呭惈 `taskId`銆乣taskKey`銆乣taskTitle`銆乣planId`銆乣status`銆乣startedAt`銆乣finishedAt` 绛夊彲閫夊瓧娈碉紝浼樺厛澶嶇敤鐜版湁 `events.meta`锛屼笉鏂板鏁版嵁搴撹〃銆?  - 楠屾敹瑕佺偣锛氬墠绔?`AppEvent` 绫诲瀷鑳借〃杈剧粨鏋勫寲浠诲姟浜嬩欢鍏冧俊鎭紝鏃т簨浠?`meta` 涓虹┖銆侀潪 JSON 鎴栫己灏戜换鍔″瓧娈垫椂浠嶅彲瀹夊叏灞曠ず銆?
+- [ ] P002: 鍦ㄤ换鍔＄敓鍛藉懆鏈熷啓鍏ヤ簨浠?<!-- scope: src/loopService.js -->
+  - 楠屾敹瑕佺偣锛氫换鍔¤繘鍏ユ墽琛屽墠鍐欏叆鈥滃紑濮嬩簡 xx 浠诲姟鈥濅簨浠讹紝鑷姩寰幆銆佹墜鍔ㄦ墽琛屽拰骞跺彂鎵ц璺緞鍧囪鐩栦笖涓嶉噸澶嶈褰曘€?  - 楠屾敹瑕佺偣锛氫换鍔℃墽琛屾垚鍔熷悗鍐欏叆鈥滅粨鏉熶簡 xx 浠诲姟鈥濅簨浠讹紝骞朵繚鐣欐棩蹇楄矾寰勩€侀€€鍑虹爜銆佷换鍔℃爣璇嗙瓑鎺掓煡鎵€闇€鍏冧俊鎭€?  - 楠屾敹瑕佺偣锛氫换鍔″け璐ャ€佹墜鍔ㄥ仠姝€佸惊鐜仠姝㈠拰 Plan 涓柇鏃跺啓鍏ュ搴斿け璐?鍋滄浜嬩欢锛岃兘浠庤繎鏈熶簨浠跺尯鐪嬪嚭浠诲姟鏈甯哥粨鏉熴€?  - 楠屾敹瑕佺偣锛氭柊澧炰簨浠朵笉鏀瑰彉鏃㈡湁浠诲姟鐘舵€佹祦杞€佽€楁椂缁熻銆丳lan checkbox 鍥炲啓鍜岃繘搴﹀尯鍐欏叆閫昏緫銆?
+- [ ] P003: 淇濊瘉杩戞湡浜嬩欢蹇収瀹炴椂鍙敤 <!-- scope: src/loopService.js,src/renderer/types.ts -->
+  - 楠屾敹瑕佺偣锛歚snapshot().events` 鎸夋渶鏂颁紭鍏堣繑鍥炰换鍔″紑濮嬪拰缁撴潫浜嬩欢锛岀幇鏈?`ORDER BY id DESC LIMIT 80` 璇箟涓嶈鐮村潖銆?  - 楠屾敹瑕佺偣锛氫换鍔′簨浠跺啓鍏ュ悗绔嬪嵆瑙﹀彂 `emitUpdate`锛屾瑙堥〉鈥滆繎鏈熶簨浠垛€濆拰鈥滀簨浠舵祦鈥濋〉鏃犻渶鎵嬪姩鍒锋柊鍗冲彲鐪嬪埌鍙樺寲銆?  - 楠屾敹瑕佺偣锛氬苟鍙戜换鍔″悓鏃跺紑濮?缁撴潫鏃讹紝姣忎釜浠诲姟鍧囨湁鐙珛浜嬩欢锛屼簨浠跺厓淇℃伅鍙尯鍒嗗搴?`taskId` 鍜?`taskKey`銆?
+- [x] P004: 浼樺寲杩戞湡浜嬩欢灞曠ず鏂囨 <!-- scope: src/renderer/components/PlanLists.tsx,src/renderer/pages/WorkspacePage.tsx,src/renderer/utils/time.ts,src/styles.css -->
+  - 楠屾敹瑕佺偣锛氣€滆繎鏈熶簨浠垛€濆拰鈥滀簨浠舵祦鈥濈粺涓€浣跨敤涓枃浠诲姟鍔ㄦ€佹枃妗堬紝渚嬪鈥滃紑濮嬩簡 P001 浠诲姟锛歺xx鈥濃€滅粨鏉熶簡 P001 浠诲姟锛歺xx鈥濄€?  - 楠屾敹瑕佺偣锛氫换鍔″紑濮嬨€佹垚鍔熴€佸け璐ャ€佸仠姝娇鐢ㄦ槗鍖哄垎鐨勭姸鎬佹爣绛炬垨瑙嗚鏍峰紡锛岄潪浠诲姟浜嬩欢浠嶄繚鎸佸師鏈夊彲璇诲睍绀恒€?  - 楠屾敹瑕佺偣锛氫簨浠舵椂闂寸户缁娇鐢ㄤ腑鍥芥椂鍖烘牸寮忓睍绀猴紝闀夸换鍔℃爣棰樸€佺己澶辨爣棰樺拰绐勫睆甯冨眬涓嬩笉婧㈠嚭銆佷笉閬尅鎿嶄綔鍏ュ彛銆?  - 楠屾敹瑕佺偣锛氭棫鏁版嵁涓殑 `task.executed`銆乣task.failed` 绛変簨浠跺湪娌℃湁鏂?`meta` 鏃朵粛鑳戒互鍘熷 `message` 鍏滃簳鏄剧ず銆?
+- [ ] P005: 琛ュ厖浠诲姟浜嬩欢鍥炲綊娴嬭瘯 <!-- scope: scripts/smoke-test.js -->
+  - 楠屾敹瑕佺偣锛歴moke 娴嬭瘯瑕嗙洊妯℃嫙浠诲姟鎵ц鎴愬姛鍚庯紝浜嬩欢鍒楄〃鍖呭惈寮€濮嬩簨浠跺拰鎴愬姛缁撴潫浜嬩欢锛屼笖椤哄簭涓烘渶鏂颁簨浠跺湪鍓嶃€?  - 楠屾敹瑕佺偣锛歴moke 娴嬭瘯瑕嗙洊浠诲姟鎵ц澶辫触鏃跺啓鍏ュけ璐ヤ簨浠讹紝浜嬩欢 `meta` 涓寘鍚换鍔℃爣璇嗗拰鏃ュ織/閿欒淇℃伅銆?  - 楠屾敹瑕佺偣锛歴moke 娴嬭瘯瑕嗙洊鎵嬪姩鍋滄鎴栦腑鏂矾寰勪細浜х敓鍋滄绫讳换鍔′簨浠讹紝涓嶅奖鍝嶅悗缁换鍔￠噸璇曘€?  - 楠屾敹瑕佺偣锛氭棦鏈夐」鐩€侀渶姹傘€丳lan 鑽夌銆佷换鍔″悓姝ャ€乻cope 骞跺彂銆侀獙鏀跺畬鎴愮瓑 smoke 鏂█淇濇寔閫氳繃銆?
+- [ ] P006: 鎵ц鏋勫缓涓庡洖褰掗獙璇?<!-- scope: package.json,scripts/smoke-test.js,src/loopService.js,src/renderer/types.ts,src/renderer/components/PlanLists.tsx,src/renderer/pages/WorkspacePage.tsx,src/renderer/utils/time.ts,src/styles.css -->
+  - 楠屾敹瑕佺偣锛歚npm run check` 閫氳繃锛岀‘璁?TypeScript銆佷富杩涚▼鑴氭湰鍜?smoke 鑴氭湰璇硶鍧囨棤閿欒銆?  - 楠屾敹瑕佺偣锛歚npm run smoke` 閫氳繃锛岀‘璁や换鍔′簨浠跺啓鍏ャ€佸揩鐓ц繑鍥炲拰鏃㈡湁鏍稿績娴佺▼鏃犲洖褰掋€?  - 楠屾敹瑕佺偣锛氬楠岃瘉澶辫触锛屼粎淇涓庝换鍔′簨浠跺睍绀虹洿鎺ョ浉鍏崇殑闂锛屼笉鎵╁ぇ涓氬姟淇敼鑼冨洿銆?
+## 鎬讳綋楠屾敹鏍囧噯
+
+- 浜嬩欢瀹屾暣锛氫换鍔″紑濮嬨€佹垚鍔熺粨鏉熴€佸け璐ャ€佸仠姝㈠拰涓柇鍦烘櫙鍧囪兘鍦ㄤ簨浠剁郴缁熶腑鐣欎笅鍙璁板綍銆?- 灞曠ず鐩磋锛氭瑙堥〉鈥滆繎鏈熶簨浠垛€濊兘鐩存帴鏄剧ず鈥滃紑濮嬩簡 xx 浠诲姟鈥濃€滅粨鏉熶簡 xx 浠诲姟鈥濈瓑涓枃浠诲姟鍔ㄦ€侊紝鑰屼笉鏄彧鏄剧ず鍘熷浜嬩欢绫诲瀷銆?- 瀹炴椂鏇存柊锛氫换鍔′簨浠跺啓鍏ュ悗閫氳繃鐜版湁蹇収璁㈤槄鑷姩鍒锋柊锛岀敤鎴锋棤闇€鍒囨崲椤甸潰鎴栨墜鍔ㄥ埛鏂般€?- 鍏煎瀹夊叏锛氫笉鐮村潖鏃т簨浠舵暟鎹€佺幇鏈?`events` 琛ㄧ粨鏋勩€佷换鍔＄姸鎬佹祦杞€佽€楁椂缁熻鍜?Plan 杩涘害鍐欏洖銆?- 楠岃瘉閫氳繃锛氬畬鎴愬疄鐜板悗 `npm run check` 涓?`npm run smoke` 鍧囬€氳繃銆?
+## 杩涘害鍖?
+- 2026-06-25 AutoPlan 鐢熸垚锛氶渶姹?#5 寮€鍙戣鍒掑凡鍒涘缓锛屽緟鎵ц銆?- P001 AutoPlan 瀹屾垚锛?026-06-24T19:24:59.416Z锛涙棩蹇楋細docs/progress/logs/20260625-031550_execute-P001.log
+- P004 AutoPlan 瀹屾垚锛?026-06-24T19:24:59.426Z锛涙棩蹇楋細docs/progress/logs/20260625-031550_execute-P004.log
+---PLAN4---
+# 闇€姹?#4 寮€鍙戣鍒掞細浠诲姟绯荤粺澧炲姞鑰楁椂缁熻
+
+## 鑳屾櫙
+
+褰撳墠浠诲姟绯荤粺宸叉敮鎸?Plan 瑙ｆ瀽銆佷换鍔＄姸鎬佹祦杞€佸苟鍙戞墽琛屻€佹墜鍔ㄦ墽琛?鍋滄銆佷换鍔″垪琛ㄥ睍绀哄拰 smoke 鍥炲綊銆傞渶姹?#4 瑕佹眰鍦ㄤ换鍔＄郴缁熶腑澧炲姞鑰楁椂缁熻锛屾牳蹇冪洰鏍囨槸璁╂瘡涓换鍔′粠寮€濮嬫墽琛屽埌缁撴潫/鍋滄/澶辫触鐨勮€楁椂鍙璁板綍銆佹煡璇㈠拰灞曠ず锛屽苟鍦ㄤ笉褰卞搷鏃㈡湁浠诲姟鎵ц娴佺▼鐨勫墠鎻愪笅鍏煎鍘嗗彶鏁版嵁銆?
+## 浠诲姟鎷嗚В
+
+- [x] P001: 鎵╁睍浠诲姟鑰楁椂鏁版嵁妯″瀷 <!-- scope: src/database.js,src/renderer/types.ts -->
+  - 楠屾敹瑕佺偣锛歚plan_tasks` 琛ㄦ柊澧炰换鍔″紑濮嬫椂闂淬€佺粨鏉熸椂闂淬€佺疮璁¤€楁椂姣绛夊瓧娈碉紝骞堕€氳繃鐜版湁杩佺Щ鏈哄埗鍏煎鏃ф暟鎹簱銆?  - 楠屾敹瑕佺偣锛氬巻鍙蹭换鍔″湪杩佺Щ鍚庡瓧娈垫湁瀹夊叏榛樿鍊硷紝绌哄€兼垨 0 鍊间笉浼氬奖鍝嶄换鍔″垪琛ㄣ€丳lan 杩涘害鍜岄獙鏀舵祦绋嬨€?  - 楠屾敹瑕佺偣锛氬墠绔?`PlanTask` 绫诲瀷鍚屾鏂板鑰楁椂瀛楁锛孴ypeScript 缂栬瘧涓嶅嚭鐜扮被鍨嬬己鍙ｃ€?
+- [ ] P002: 鍦ㄤ换鍔＄敓鍛藉懆鏈熻褰曡€楁椂 <!-- scope: src/loopService.js -->
+  - 楠屾敹瑕佺偣锛氫换鍔¤繘鍏?`running` 鏃惰褰曟湰娆?`started_at`锛屾墜鍔ㄦ墽琛屻€佸惊鐜墽琛屽拰骞跺彂鎵ц璺緞鍧囪鐩栥€?  - 楠屾敹瑕佺偣锛氫换鍔″畬鎴愩€佸け璐ュ洖閫€銆佹墜鍔ㄥ仠姝㈡椂璁＄畻鏈鑰楁椂骞剁疮鍔犲埌浠诲姟鑰楁椂瀛楁锛屽悓鏃跺啓鍏?`finished_at` 鍜?`updated_at`銆?  - 楠屾敹瑕佺偣锛氫换鍔￠噸璇曟椂涓嶄涪澶卞巻鍙茬疮璁¤€楁椂锛岃繍琛屼腑瀹炴椂鑰楁椂鍙€氳繃 `started_at` 鎺ㄥ锛岀姸鎬佹祦杞繚鎸佸師鏈夎涔夈€?  - 楠屾敹瑕佺偣锛歚task.executed`銆乣task.failed` 鎴栧仠姝㈢浉鍏充簨浠剁殑鍏冧俊鎭寘鍚€楁椂锛屼究浜庡悗缁璁″拰鏃ュ織鎺掓煡銆?
+- [ ] P003: 鍦ㄥ揩鐓ф暟鎹腑鏆撮湶鑰楁椂淇℃伅 <!-- scope: src/loopService.js,src/renderer/types.ts -->
+  - 楠屾敹瑕佺偣锛歚snapshot().tasks` 杩斿洖姣忎釜浠诲姟鐨勫紑濮嬫椂闂淬€佺粨鏉熸椂闂淬€佺疮璁¤€楁椂姣鍜岃繍琛屼腑鐘舵€佹墍闇€瀛楁銆?  - 楠屾敹瑕佺偣锛氳繍琛屼腑浠诲姟鐨勮€楁椂灞曠ず涓嶄緷璧栭澶?IPC 鎺ュ彛锛岀幇鏈夊畾鏃?`emitUpdate` 鍙┍鍔ㄥ埛鏂般€?  - 楠屾敹瑕佺偣锛氬揩鐓ф煡璇粛鎸?Plan 鍒涘缓鏃堕棿鍜屼换鍔￠『搴忔帓搴忥紝鏂板瀛楁涓嶇牬鍧忕幇鏈夊墠绔秷璐归€昏緫銆?
+- [x] P004: 灞曠ず浠诲姟鑰楁椂涓庤鍒掓眹鎬?<!-- scope: src/renderer/utils/time.ts,src/renderer/components/PlanLists.tsx,src/renderer/pages/WorkspacePage.tsx,src/styles.css -->
+  - 楠屾敹瑕佺偣锛氫换鍔″垪琛ㄥ睍绀烘瘡涓换鍔＄殑鑰楁椂锛屾湭寮€濮嬫樉绀衡€滄湭寮€濮嬧€濓紝杩愯涓樉绀衡€滃凡杩愯 xx鈥濓紝宸插畬鎴?澶辫触/鍋滄鏄剧ず绱鑰楁椂銆?  - 楠屾敹瑕佺偣锛氭柊澧炶€楁椂鏍煎紡鍖栧嚱鏁帮紝鏀寔姣杈撳叆骞惰緭鍑虹銆佸垎銆佸皬鏃剁骇涓枃鐭牸寮忥紝绌哄€煎拰寮傚父鍊兼湁鍏滃簳鏄剧ず銆?  - 楠屾敹瑕佺偣锛氫换鍔′笌璁″垝鍖哄煙灞曠ず褰撳墠 Plan 鐨勬€昏€楁椂/宸插畬鎴愪换鍔¤€楁椂姹囨€伙紝椤甸潰鍦ㄧ獎灞忓拰闀夸换鍔℃爣棰樹笅涓嶆孩鍑恒€?  - 楠屾敹瑕佺偣锛氳繍琛屼腑浠诲姟鑰楁椂鑳介殢鐜版湁蹇収鍒锋柊鏇存柊锛屼笉闇€瑕佺敤鎴锋墜鍔ㄥ埛鏂伴〉闈€?
+- [ ] P005: 琛ュ厖鑰楁椂缁熻鍥炲綊娴嬭瘯 <!-- scope: scripts/smoke-test.js -->
+  - 楠屾敹瑕佺偣锛歴moke 娴嬭瘯瑕嗙洊浠诲姟寮€濮嬪悗鍐欏叆 `started_at`锛屽畬鎴愬悗鍐欏叆 `finished_at` 鍜屾鏁?`duration_ms`銆?  - 楠屾敹瑕佺偣锛歴moke 娴嬭瘯瑕嗙洊澶辫触鎴栧仠姝㈠洖閫€鍒?`pending` 鏃惰€楁椂浠嶈绱锛屽悗缁噸璇曠户缁疮鍔犮€?  - 楠屾敹瑕佺偣锛歴moke 娴嬭瘯瑕嗙洊 `snapshot().tasks` 涓€楁椂瀛楁瀛樺湪涓旂被鍨嬬鍚堝墠绔鏈熴€?  - 楠屾敹瑕佺偣锛氭棦鏈?Plan 瑙ｆ瀽銆乻cope 骞跺彂閫夋嫨銆丳lan guard銆侀獙鏀跺畬鎴愮瓑鏂█淇濇寔閫氳繃銆?
+- [ ] P006: 鎵ц鏋勫缓涓庡洖褰掗獙璇?<!-- scope: package.json,scripts/smoke-test.js,src/database.js,src/loopService.js,src/renderer/types.ts,src/renderer/components/PlanLists.tsx,src/renderer/pages/WorkspacePage.tsx,src/renderer/utils/time.ts,src/styles.css -->
+  - 楠屾敹瑕佺偣锛歚npm run check` 閫氳繃锛屽寘鍚?TypeScript銆丯ode 璇硶妫€鏌ュ拰鑴氭湰妫€鏌ャ€?  - 楠屾敹瑕佺偣锛歚npm run smoke` 閫氳繃锛岀‘璁ゆ暟鎹簱杩佺Щ銆佷换鍔℃墽琛屻€佽€楁椂缁熻鍜屽師鏈変换鍔＄郴缁熻涓烘棤鍥炲綊銆?  - 楠屾敹瑕佺偣锛氬楠岃瘉澶辫触锛屼粎淇涓庤€楁椂缁熻鐩存帴鐩稿叧鐨勯棶棰橈紝涓嶆墿澶т慨鏀硅寖鍥淬€?
+## 鎬讳綋楠屾敹鏍囧噯
+
+- 鏁版嵁鍙潬锛氫换鍔¤€楁椂浠ユ绉掍负鍩虹瀛樺偍锛屽紑濮嬨€佸畬鎴愩€佸け璐ャ€佸仠姝㈠拰閲嶈瘯鍦烘櫙鍧囪兘寰楀埌鍙В閲婄殑绱鑰楁椂銆?- 鍏煎瀹夊叏锛氭棫鏁版嵁搴撹嚜鍔ㄨˉ榻愭柊澧炲瓧娈碉紝鍘嗗彶浠诲姟涓嶅洜绌鸿€楁椂瀛楁瀵艰嚧椤甸潰鎴栦换鍔℃祦绋嬪紓甯搞€?- 灞曠ず娓呮櫚锛氫换鍔″垪琛ㄨ兘鐩磋鐪嬪埌姣忎釜浠诲姟鐨勮€楁椂鐘舵€侊紝Plan 鍖哄煙鑳界湅鍒版眹鎬昏€楁椂锛岃繍琛屼腑鑰楁椂浼氳嚜鍔ㄥ埛鏂般€?- 娴佺▼鏃犲洖褰掞細Plan 鑽夌纭銆佷换鍔″悓姝ャ€乻cope 骞跺彂鎵ц銆佹墜鍔ㄦ墽琛?鍋滄銆丳lan guard銆侀獙鏀舵祦绋嬩繚鎸佸師鏈夎涓恒€?- 楠岃瘉閫氳繃锛氬畬鎴愬疄鐜板悗 `npm run check` 涓?`npm run smoke` 鍧囬€氳繃銆?
+## 杩涘害鍖?
+- 2026-06-25 AutoPlan 鐢熸垚锛氶渶姹?#4 寮€鍙戣鍒掑凡鍒涘缓锛屽緟鎵ц銆?- P001 AutoPlan 瀹屾垚锛?026-06-24T19:12:29.305Z锛涙棩蹇楋細docs/progress/logs/20260625-030632_execute-P001.log
+- P004 AutoPlan 瀹屾垚锛?026-06-24T19:12:29.316Z锛涙棩蹇楋細docs/progress/logs/20260625-030632_execute-P004.log
+
+**Analyzing encoding issue**
+
+I'm thinking about the encoding problem I'm facing. It seems like the default for Get-Content might be causing the file to be interpreted as ANSI, which is puzzling. Maybe the file is actually UTF-8 without a BOM (Byte Order Mark)? To fix this, I should use the -Encoding UTF8 parameter. That could help ensure the file is read correctly! I'll confirm that next time I use PowerShell.
+codex
+已有文件编码显示异常，我用 UTF-8 重新读取参考。
+exec
+powershell.exe -Command "Get-Content -Encoding UTF8 docs\\plan\\plan_requirement_5_20260625-031229.md; Write-Output '---PLAN4---'; Get-Content -Encoding UTF8 docs\\plan\\plan_requirement_4_20260625-030248.md" in D:\project\GitHub\autoplan
+ succeeded in 192ms:
+# 需求 #5 开发计划：近期事件显示任务执行动态
+
+## 背景
+
+当前系统已有 `events` 表、`snapshot().events` 快照和前端“近期事件/事件流”展示，但任务执行相关事件还不够直观，且缺少明确的“任务开始”动态。需求 #5 要求近期事件能够显示任务执行事件，例如“开始了 xx 任务”“结束了 xx 任务”等，让用户在概览页即可看到任务生命周期变化。
+
+## 任务拆解
+
+- [x] P001: 统一任务事件数据约定 <!-- scope: src/loopService.js,src/renderer/types.ts -->
+  - 验收要点：明确任务事件类型与展示语义，至少覆盖任务开始、成功结束、失败结束、停止请求和中断停止场景。
+  - 验收要点：任务事件 `meta` 包含 `taskId`、`taskKey`、`taskTitle`、`planId`、`status`、`startedAt`、`finishedAt` 等可选字段，优先复用现有 `events.meta`，不新增数据库表。
+  - 验收要点：前端 `AppEvent` 类型能表达结构化任务事件元信息，旧事件 `meta` 为空、非 JSON 或缺少任务字段时仍可安全展示。
+
+- [ ] P002: 在任务生命周期写入事件 <!-- scope: src/loopService.js -->
+  - 验收要点：任务进入执行前写入“开始了 xx 任务”事件，自动循环、手动执行和并发执行路径均覆盖且不重复记录。
+  - 验收要点：任务执行成功后写入“结束了 xx 任务”事件，并保留日志路径、退出码、任务标识等排查所需元信息。
+  - 验收要点：任务失败、手动停止、循环停止和 Plan 中断时写入对应失败/停止事件，能从近期事件区看出任务未正常结束。
+  - 验收要点：新增事件不改变既有任务状态流转、耗时统计、Plan checkbox 回写和进度区写入逻辑。
+
+- [ ] P003: 保证近期事件快照实时可用 <!-- scope: src/loopService.js,src/renderer/types.ts -->
+  - 验收要点：`snapshot().events` 按最新优先返回任务开始和结束事件，现有 `ORDER BY id DESC LIMIT 80` 语义不被破坏。
+  - 验收要点：任务事件写入后立即触发 `emitUpdate`，概览页“近期事件”和“事件流”页无需手动刷新即可看到变化。
+  - 验收要点：并发任务同时开始/结束时，每个任务均有独立事件，事件元信息可区分对应 `taskId` 和 `taskKey`。
+
+- [x] P004: 优化近期事件展示文案 <!-- scope: src/renderer/components/PlanLists.tsx,src/renderer/pages/WorkspacePage.tsx,src/renderer/utils/time.ts,src/styles.css -->
+  - 验收要点：“近期事件”和“事件流”统一使用中文任务动态文案，例如“开始了 P001 任务：xxx”“结束了 P001 任务：xxx”。
+  - 验收要点：任务开始、成功、失败、停止使用易区分的状态标签或视觉样式，非任务事件仍保持原有可读展示。
+  - 验收要点：事件时间继续使用中国时区格式展示，长任务标题、缺失标题和窄屏布局下不溢出、不遮挡操作入口。
+  - 验收要点：旧数据中的 `task.executed`、`task.failed` 等事件在没有新 `meta` 时仍能以原始 `message` 兜底显示。
+
+- [ ] P005: 补充任务事件回归测试 <!-- scope: scripts/smoke-test.js -->
+  - 验收要点：smoke 测试覆盖模拟任务执行成功后，事件列表包含开始事件和成功结束事件，且顺序为最新事件在前。
+  - 验收要点：smoke 测试覆盖任务执行失败时写入失败事件，事件 `meta` 中包含任务标识和日志/错误信息。
+  - 验收要点：smoke 测试覆盖手动停止或中断路径会产生停止类任务事件，不影响后续任务重试。
+  - 验收要点：既有项目、需求、Plan 草稿、任务同步、scope 并发、验收完成等 smoke 断言保持通过。
+
+- [ ] P006: 执行构建与回归验证 <!-- scope: package.json,scripts/smoke-test.js,src/loopService.js,src/renderer/types.ts,src/renderer/components/PlanLists.tsx,src/renderer/pages/WorkspacePage.tsx,src/renderer/utils/time.ts,src/styles.css -->
+  - 验收要点：`npm run check` 通过，确认 TypeScript、主进程脚本和 smoke 脚本语法均无错误。
+  - 验收要点：`npm run smoke` 通过，确认任务事件写入、快照返回和既有核心流程无回归。
+  - 验收要点：如验证失败，仅修复与任务事件展示直接相关的问题，不扩大业务修改范围。
+
+## 总体验收标准
+
+- 事件完整：任务开始、成功结束、失败、停止和中断场景均能在事件系统中留下可读记录。
+- 展示直观：概览页“近期事件”能直接显示“开始了 xx 任务”“结束了 xx 任务”等中文任务动态，而不是只显示原始事件类型。
+- 实时更新：任务事件写入后通过现有快照订阅自动刷新，用户无需切换页面或手动刷新。
+- 兼容安全：不破坏旧事件数据、现有 `events` 表结构、任务状态流转、耗时统计和 Plan 进度写回。
+- 验证通过：完成实现后 `npm run check` 与 `npm run smoke` 均通过。
+
+## 进度区
+
+- 2026-06-25 AutoPlan 生成：需求 #5 开发计划已创建，待执行。
+- P001 AutoPlan 完成：2026-06-24T19:24:59.416Z；日志：docs/progress/logs/20260625-031550_execute-P001.log
+- P004 AutoPlan 完成：2026-06-24T19:24:59.426Z；日志：docs/progress/logs/20260625-031550_execute-P004.log
+---PLAN4---
+# 需求 #4 开发计划：任务系统增加耗时统计
+
+## 背景
+
+当前任务系统已支持 Plan 解析、任务状态流转、并发执行、手动执行/停止、任务列表展示和 smoke 回归。需求 #4 要求在任务系统中增加耗时统计，核心目标是让每个任务从开始执行到结束/停止/失败的耗时可被记录、查询和展示，并在不影响既有任务执行流程的前提下兼容历史数据。
+
+## 任务拆解
+
+- [x] P001: 扩展任务耗时数据模型 <!-- scope: src/database.js,src/renderer/types.ts -->
+  - 验收要点：`plan_tasks` 表新增任务开始时间、结束时间、累计耗时毫秒等字段，并通过现有迁移机制兼容旧数据库。
+  - 验收要点：历史任务在迁移后字段有安全默认值，空值或 0 值不会影响任务列表、Plan 进度和验收流程。
+  - 验收要点：前端 `PlanTask` 类型同步新增耗时字段，TypeScript 编译不出现类型缺口。
+
+- [ ] P002: 在任务生命周期记录耗时 <!-- scope: src/loopService.js -->
+  - 验收要点：任务进入 `running` 时记录本次 `started_at`，手动执行、循环执行和并发执行路径均覆盖。
+  - 验收要点：任务完成、失败回退、手动停止时计算本次耗时并累加到任务耗时字段，同时写入 `finished_at` 和 `updated_at`。
+  - 验收要点：任务重试时不丢失历史累计耗时，运行中实时耗时可通过 `started_at` 推导，状态流转保持原有语义。
+  - 验收要点：`task.executed`、`task.failed` 或停止相关事件的元信息包含耗时，便于后续审计和日志排查。
+
+- [ ] P003: 在快照数据中暴露耗时信息 <!-- scope: src/loopService.js,src/renderer/types.ts -->
+  - 验收要点：`snapshot().tasks` 返回每个任务的开始时间、结束时间、累计耗时毫秒和运行中状态所需字段。
+  - 验收要点：运行中任务的耗时展示不依赖额外 IPC 接口，现有定时 `emitUpdate` 可驱动刷新。
+  - 验收要点：快照查询仍按 Plan 创建时间和任务顺序排序，新增字段不破坏现有前端消费逻辑。
+
+- [x] P004: 展示任务耗时与计划汇总 <!-- scope: src/renderer/utils/time.ts,src/renderer/components/PlanLists.tsx,src/renderer/pages/WorkspacePage.tsx,src/styles.css -->
+  - 验收要点：任务列表展示每个任务的耗时，未开始显示“未开始”，运行中显示“已运行 xx”，已完成/失败/停止显示累计耗时。
+  - 验收要点：新增耗时格式化函数，支持毫秒输入并输出秒、分、小时级中文短格式，空值和异常值有兜底显示。
+  - 验收要点：任务与计划区域展示当前 Plan 的总耗时/已完成任务耗时汇总，页面在窄屏和长任务标题下不溢出。
+  - 验收要点：运行中任务耗时能随现有快照刷新更新，不需要用户手动刷新页面。
+
+- [ ] P005: 补充耗时统计回归测试 <!-- scope: scripts/smoke-test.js -->
+  - 验收要点：smoke 测试覆盖任务开始后写入 `started_at`，完成后写入 `finished_at` 和正数 `duration_ms`。
+  - 验收要点：smoke 测试覆盖失败或停止回退到 `pending` 时耗时仍被累计，后续重试继续累加。
+  - 验收要点：smoke 测试覆盖 `snapshot().tasks` 中耗时字段存在且类型符合前端预期。
+  - 验收要点：既有 Plan 解析、scope 并发选择、Plan guard、验收完成等断言保持通过。
+
+- [ ] P006: 执行构建与回归验证 <!-- scope: package.json,scripts/smoke-test.js,src/database.js,src/loopService.js,src/renderer/types.ts,src/renderer/components/PlanLists.tsx,src/renderer/pages/WorkspacePage.tsx,src/renderer/utils/time.ts,src/styles.css -->
+  - 验收要点：`npm run check` 通过，包含 TypeScript、Node 语法检查和脚本检查。
+  - 验收要点：`npm run smoke` 通过，确认数据库迁移、任务执行、耗时统计和原有任务系统行为无回归。
+  - 验收要点：如验证失败，仅修复与耗时统计直接相关的问题，不扩大修改范围。
+
+## 总体验收标准
+
+- 数据可靠：任务耗时以毫秒为基础存储，开始、完成、失败、停止和重试场景均能得到可解释的累计耗时。
+- 兼容安全：旧数据库自动补齐新增字段，历史任务不因空耗时字段导致页面或任务流程异常。
+- 展示清晰：任务列表能直观看到每个任务的耗时状态，Plan 区域能看到汇总耗时，运行中耗时会自动刷新。
+- 流程无回归：Plan 草稿确认、任务同步、scope 并发执行、手动执行/停止、Plan guard、验收流程保持原有行为。
+- 验证通过：完成实现后 `npm run check` 与 `npm run smoke` 均通过。
+
+## 进度区
+
+- 2026-06-25 AutoPlan 生成：需求 #4 开发计划已创建，待执行。
+- P001 AutoPlan 完成：2026-06-24T19:12:29.305Z；日志：docs/progress/logs/20260625-030632_execute-P001.log
+- P004 AutoPlan 完成：2026-06-24T19:12:29.316Z；日志：docs/progress/logs/20260625-030632_execute-P004.log
+
+**Planning task execution**
+
+I need to make sure I have everything mapped out correctly, so I’m considering creating a plan. This involves inspecting files relevant to the scope and possibly listing the source tree. I feel like we have enough information, but I want to be exact about the modules and the tasks at hand. I’m also thinking about using “rg” in the source directory with line contexts to be more precise in my search.
+codex
+接下来我会细化 scope，避免计划落到无关文件。
+exec
+powershell.exe -Command "rg -n \"[\\x{1F000}-\\x{1FAFF}]|[☀-⛿]|[✀-➿]|[◐-◿]|[↻]|▶|✓|⚠|◎|▤|≡|✎|☑|◑\" src ui --glob '"'!**/node_modules/**'"'; Write-Output '---FILES---'; rg --files src ui scripts | Sort-Object" in D:\project\GitHub\autoplan
+ succeeded in 203ms:
+ui\workspace.html:403:                <span class="check">✓</span>
+ui\workspace.html:411:                <span class="check">✓</span>
+ui\workspace.html:419:                <span class="check">✓</span>
+ui\workspace.html:444:          <span class="nav-ico">◑</span> 概览
+ui\workspace.html:447:          <span class="nav-ico">◎</span> 需求
+ui\workspace.html:451:          <span class="nav-ico">✎</span> 反馈
+ui\workspace.html:457:          <span class="nav-ico">☑</span> 任务与计划
+ui\workspace.html:461:          <span class="nav-ico">≡</span> 事件流
+ui\workspace.html:493:              <div class="stat-ico">◎</div><div class="stat-value">4</div>
+ui\workspace.html:497:              <div class="stat-ico">▤</div><div class="stat-value">1</div>
+ui\workspace.html:501:              <div class="stat-ico">☑</div><div class="stat-value">12</div>
+ui\workspace.html:505:              <div class="stat-ico">↻</div><div class="stat-value">5s</div>
+ui\workspace.html:525:                    <div class="pipe-step done"><div class="pipe-node">✓</div><div class="pipe-label">扫描</div><div class="pipe-sub">3 issues · 2 plans</div></div>
+ui\workspace.html:526:                    <div class="pipe-step done"><div class="pipe-node">✓</div><div class="pipe-label">生成计划</div><div class="pipe-sub">plan_20260624</div></div>
+ui\workspace.html:527:                    <div class="pipe-step active"><div class="pipe-node">▶</div><div class="pipe-label">执行任务</div><div class="pipe-sub">3 / 7</div></div>
+ui\workspace.html:557:                <div class="stream-attach"><div class="attach-thumb">IMG</div><a class="attach-file">📎 paste-demo.png · 128 KB</a></div>
+ui\workspace.html:593:                <div class="stream-attach"><a class="attach-file">🐛 dark-mode-bug.log · 4 KB</a></div>
+ui\workspace.html:621:                    <button class="btn btn-sm">↻ 单轮</button>
+ui\workspace.html:804:          <span class="check">✓</span>`;
+ui\projects.html:332:            <div class="modal-danger-icon">⚠</div>
+ui\projects.html:402:                  <button class="ctx-item" data-act="open" data-id="${p.id}">▶ 打开工作区</button>
+ui\projects.html:403:                  <button class="ctx-item" data-act="edit" data-id="${p.id}">✎ 编辑</button>
+ui\projects.html:406:                  <button class="ctx-item danger" data-act="delete" data-id="${p.id}">🗑 删除</button>
+src\renderer\pages\WorkspacePage.tsx:24:  { id: 'overview', label: '概览', icon: '◑' },
+src\renderer\pages\WorkspacePage.tsx:25:  { id: 'requirement', label: '需求', icon: '◎' },
+src\renderer\pages\WorkspacePage.tsx:26:  { id: 'feedback', label: '反馈', icon: '✎' },
+src\renderer\pages\WorkspacePage.tsx:27:  { id: 'tasks', label: '任务与计划', icon: '☑' },
+src\renderer\pages\WorkspacePage.tsx:28:  { id: 'events', label: '事件流', icon: '≡' },
+src\renderer\pages\WorkspacePage.tsx:573:        <StatCard icon="◎" value={String(reqCount)} label="需求" accent="brand" />
+src\renderer\pages\WorkspacePage.tsx:575:          icon="▤"
+src\renderer\pages\WorkspacePage.tsx:581:        <StatCard icon="☑" value={`${doneTasks}/${totalTasks}`} label="任务进度" accent="success" />
+src\renderer\pages\WorkspacePage.tsx:582:        <StatCard icon="↻" value={`${state?.interval_seconds || 5}s`} label="循环间隔" accent="warning" />
+src\renderer\pages\WorkspacePage.tsx:626:                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
+src\renderer\pages\ProjectsPage.tsx:149:                          ▶ 进入工作区
+src\renderer\pages\ProjectsPage.tsx:152:                          ✎ 编辑
+src\renderer\pages\ProjectsPage.tsx:155:                          🗑 删除
+src\renderer\pages\ProjectsPage.tsx:228:            <div className="modal-danger-icon">⚠</div>
+---FILES---
+scripts\dev.js
+scripts\smoke-test.js
+src\attachments.js
+src\codexActivity.js
+src\database.js
+src\loopService.js
+src\main.js
+src\planDrafts.js
+src\preload.js
+src\renderer\App.tsx
+src\renderer\components\CodexLog.tsx
+src\renderer\components\Composer.tsx
+src\renderer\components\IntakePanel.tsx
+src\renderer\components\PlanLists.tsx
+src\renderer\components\shared.tsx
+src\renderer\hooks\useSnapshot.ts
+src\renderer\main.tsx
+src\renderer\pages\ProjectsPage.tsx
+src\renderer\pages\WorkspacePage.tsx
+src\renderer\types.ts
+src\renderer\utils\time.ts
+src\styles.css
+src\vite-env.d.ts
+ui\projects.html
+ui\README.md
+ui\workspace.html
+
+**Inspecting dependencies**
+
+I'm thinking about needing to check the plan file content, but it looks like I should first inspect the package dependencies for the icon library. I guess it's important to review the package.json file to ensure everything is properly aligned. This way, I can make sure all necessary components are in place. It seems like a good first step to take before moving forward.
+codex
+我还会看依赖，决定计划里是否要纳入图标库。
+exec
+powershell.exe -Command 'Get-Content -Encoding UTF8 package.json' in D:\project\GitHub\autoplan
+ succeeded in 164ms:
+{
+  "name": "autoplan",
+  "version": "0.1.4",
+  "description": "Electron app for issue-driven autonomous planning and development loops.",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "node scripts/dev.js",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/planDrafts.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "build": {
+    "appId": "com.autoplan.desktop",
+    "productName": "AutoPlan",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "assets/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.18.0",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^33.3.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}
+
+codex
+依赖里没有图标库；计划会优先复用本地 SVG 组件。
+exec
+powershell.exe -Command "Get-Content -Encoding UTF8 src\\renderer\\components\\shared.tsx; Write-Output '---ProjectsPage---'; Get-Content -Encoding UTF8 src\\renderer\\pages\\ProjectsPage.tsx | Select-Object -First 280; Write-Output '---WorkspacePage head/tabs/stats/pipe---'; Get-Content -Encoding UTF8 src\\renderer\\pages\\WorkspacePage.tsx | Select-Object -First 720" in D:\project\GitHub\autoplan
+ succeeded in 248ms:
+import type { Attachment } from '../types';
+
+export function getFilePath(file: File) {
+  try {
+    return window.autoplan.getDroppedFilePath(file) || (file as File & { path?: string }).path || '';
+  } catch {
+    return (file as File & { path?: string }).path || '';
+  }
+}
+
+export function autoGrowTextarea(textarea: HTMLTextAreaElement) {
+  textarea.style.height = 'auto';
+  textarea.style.height = `${Math.min(textarea.scrollHeight, 220)}px`;
+}
+
+export function formatBytes(value: number) {
+  const bytes = Number(value || 0);
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+export function sourceTypeName(type: 'requirement' | 'feedback') {
+  return type === 'feedback' ? '反馈' : '需求';
+}
+
+/** 状态 → 语义化 chip class */
+export function statusChipClass(status: string): string {
+  const s = status.toLowerCase();
+  if (['completed', 'done', 'passed', 'accepted', 'executed'].includes(s)) return 'chip-completed';
+  if (['failed', 'error'].includes(s)) return 'chip-failed';
+  if (['running', 'processing', 'validate', 'generate-plan', 'execute-task', 'scan'].includes(s)) return 'chip-running';
+  if (['waiting', 'pending', 'draft', 'ready_for_validation', 'validation_failed', 'open'].includes(s)) return 'chip-waiting';
+  return 'chip-pending';
+}
+
+export function AttachmentGrid({ attachments }: { attachments: Attachment[] }) {
+  if (!attachments.length) return null;
+  return (
+    <div className="attachment-grid">
+      {attachments.map((attachment) => (
+        <AttachmentView attachment={attachment} key={attachment.id} />
+      ))}
+    </div>
+  );
+}
+
+function AttachmentView({ attachment }: { attachment: Attachment }) {
+  const url = window.autoplan.toFileUrl(attachment.stored_path);
+  const name = attachment.original_name || attachment.stored_path;
+  if (String(attachment.mime_type || '').startsWith('image/')) {
+    return (
+      <a className="attachment-thumb" href={url} target="_blank" rel="noreferrer" title={name}>
+        <img src={url} alt={name} />
+        <span>{name}</span>
+      </a>
+    );
+  }
+  return (
+    <a className="attachment-file" href={url} target="_blank" rel="noreferrer">
+      <span>{name}</span>
+      <small>{formatBytes(attachment.size)}</small>
+    </a>
+  );
+}
+---ProjectsPage---
+import { FormEvent, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import type { CreateProjectInput, Project } from '../types';
+import { useSnapshot } from '../hooks/useSnapshot';
+import { formatChinaDateTime } from '../utils/time';
+
+type Draft = CreateProjectInput & { id?: number };
+
+const emptyDraft: Draft = { name: '', workspacePath: '', description: '' };
+
+export function ProjectsPage() {
+  const navigate = useNavigate();
+  const { snapshot, setSnapshot, error, setError } = useSnapshot(null);
+  const projects = snapshot?.projects || [];
+  const [query, setQuery] = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [deleting, setDeleting] = useState<Project | null>(null);
+
+  const filtered = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    if (!keyword) return projects;
+    return projects.filter((project) =>
+      [project.name, project.workspace_path, project.description].some((value) =>
+        String(value || '').toLowerCase().includes(keyword),
+      ),
+    );
+  }, [projects, query]);
+
+  const showError = (e: unknown) => {
+    const msg = e instanceof Error ? e.message : String(e);
+    setError(msg);
+    window.alert(msg);
+  };
+
+  const openCreate = () => {
+    setDraft(emptyDraft);
+    setModalOpen(true);
+  };
+
+  const openEdit = (project: Project) => {
+    setDraft({ id: project.id, name: project.name, workspacePath: project.workspace_path, description: project.description });
+    setModalOpen(true);
+  };
+
+  const submitProject = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!draft.name.trim()) return;
+    try {
+      const description = (draft.description || '').trim();
+      const next = draft.id
+        ? await window.autoplan.updateProject({
+            id: draft.id,
+            name: draft.name.trim(),
+            workspacePath: draft.workspacePath.trim(),
+            description,
+          })
+        : await window.autoplan.createProject({
+            name: draft.name.trim(),
+            workspacePath: draft.workspacePath.trim(),
+            description,
+          });
+      setSnapshot(next);
+      setModalOpen(false);
+      setError(null);
+    } catch (e) {
+      showError(e);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleting) return;
+    try {
+      const next = await window.autoplan.deleteProject({ projectId: deleting.id });
+      setSnapshot(next);
+      setDeleting(null);
+      setError(null);
+    } catch (e) {
+      showError(e);
+    }
+  };
+
+  const stats = {
+    total: projects.length,
+    running: projects.filter((project) => project.running).length,
+  };
+
+  return (
+    <>
+      <header className="app-header">
+        <div className="brand">
+          <div className="brand-mark">A</div>
+          <div>
+            <h1>AutoPlan</h1>
+            <p>项目管理</p>
+          </div>
+        </div>
+        <div className="header-actions">
+          <button type="button" className="btn btn-primary" onClick={openCreate}>
+            ＋ 创建项目
+          </button>
+        </div>
+      </header>
+
+      <main className="projects-main">
+        {error ? <div className="error-banner">{error}</div> : null}
+
+        <div className="projects-hero">
+          <div>
+            <h2>项目</h2>
+            <p>管理工作区项目 · 点击卡片进入对应项目的工作区</p>
+          </div>
+          <div className="hero-stats">
+            <div className="hero-stat">
+              <b>{stats.total}</b>
+              <span>项目总数</span>
+            </div>
+            <div className="hero-stat">
+              <b>{stats.running}</b>
+              <span>运行中</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="projects-toolbar">
+          <input
+            className="search-input"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索项目名称、路径或备注…"
+          />
+        </div>
+
+        <div className="project-grid">
+          {filtered.length ? (
+            filtered.map((project) => (
+              <article className="project-card" key={project.id} onClick={() => navigate(`/projects/${project.id}`)}>
+                <div className="project-card-top">
+                  <span className="project-avatar">{project.name.slice(0, 1).toUpperCase()}</span>
+                  <div className="project-info">
+                    <div className="project-name">{project.name}</div>
+                    <div className="project-path">{project.workspace_path || '未设置工作区'}</div>
+                  </div>
+                  <div className="project-card-menu" onClick={(e) => e.stopPropagation()}>
+                    <details className="ctx-details">
+                      <summary className="ctx-summary">⋯</summary>
+                      <div className="ctx-menu">
+                        <button type="button" onClick={() => navigate(`/projects/${project.id}`)}>
+                          ▶ 进入工作区
+                        </button>
+                        <button type="button" onClick={() => openEdit(project)}>
+                          ✎ 编辑
+                        </button>
+                        <button type="button" className="ctx-danger" onClick={() => setDeleting(project)}>
+                          🗑 删除
+                        </button>
+                      </div>
+                    </details>
+                  </div>
+                </div>
+                <div className="project-desc">{project.description || '暂无描述'}</div>
+                <div className="project-loop-status">
+                  <span className={`led ${project.running ? 'running' : 'stopped'}`} />
+                  <span>{projectStatusText(project)}</span>
+                  <span className="project-loop-interval">{project.interval_seconds || 5}s</span>
+                </div>
+                <div className="project-meta">#{project.id} · 更新于 {formatChinaDateTime(project.updated_at)}</div>
+              </article>
+            ))
+          ) : (
+            <div className="empty">没有匹配的项目。</div>
+          )}
+        </div>
+      </main>
+
+      {modalOpen ? (
+        <div className="modal-mask" onClick={() => setModalOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3>{draft.id ? '编辑项目' : '创建项目'}</h3>
+              <button type="button" className="modal-close" onClick={() => setModalOpen(false)}>
+                ×
+              </button>
+            </div>
+            <form className="modal-form" onSubmit={submitProject}>
+              <label className="field">
+                项目名称 <span className="req">*</span>
+                <input
+                  value={draft.name}
+                  onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+                  placeholder="例如 wenz_richtext"
+                  autoFocus
+                />
+              </label>
+              <label className="field">
+                工作区路径 <span className="req">*</span>
+                <input
+                  className="mono"
+                  value={draft.workspacePath}
+                  onChange={(event) => setDraft((current) => ({ ...current, workspacePath: event.target.value }))}
+                  placeholder="D:\project\GitHub\my-app"
+                />
+              </label>
+              <label className="field">
+                备注
+                <textarea
+                  value={draft.description}
+                  onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
+                  placeholder="一句话描述这个项目"
+                />
+              </label>
+              <div className="modal-foot">
+                <button type="button" className="btn" onClick={() => setModalOpen(false)}>
+                  取消
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  保存
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {deleting ? (
+        <div className="modal-mask" onClick={() => setDeleting(null)}>
+          <div className="modal modal-confirm" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-danger-icon">⚠</div>
+            <h3>删除项目</h3>
+            <p>
+              确定要删除项目 <b>{deleting.name}</b> 吗？
+              <br />
+              该操作会移除项目记录，<b className="danger-text">不会删除磁盘上的工作区文件</b>。
+            </p>
+            <div className="modal-foot">
+              <button type="button" className="btn" onClick={() => setDeleting(null)}>
+                取消
+              </button>
+              <button type="button" className="btn btn-danger" onClick={confirmDelete}>
+                确认删除
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function projectStatusText(project: Project) {
+  const phase = project.phase || (project.running ? 'running' : 'idle');
+  return project.running ? `运行中 · ${projectPhaseLabel(phase)}` : `已停止 · ${projectPhaseLabel(phase)}`;
+}
+
+function projectPhaseLabel(phase: string) {
+  return (
+    {
+      idle: '空闲',
+      stopped: '已停止',
+      running: '运行中',
+      scan: '扫描',
+      'generate-plan': '生成计划',
+      'execute-task': '执行任务',
+      validate: '验收',
+      waiting: '等待',
+      error: '异常',
+    }[phase] || phase
+  );
+}
+---WorkspacePage head/tabs/stats/pipe---
+import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import type {
+  AppSnapshot,
+  IntakeType,
+  PendingAttachment,
+  Project,
+  ProjectState,
+  WorkspaceTab,
+} from '../types';
+import { useSnapshot } from '../hooks/useSnapshot';
+import { IntakePanel } from '../components/IntakePanel';
+import { EventList, PlanList, TaskList } from '../components/PlanLists';
+import { CodexLog } from '../components/CodexLog';
+import { getFilePath } from '../components/shared';
+import { formatChinaTime } from '../utils/time';
+
+const emptyPendingAttachments: Record<IntakeType, PendingAttachment[]> = {
+  requirement: [],
+  feedback: [],
+};
+
+const tabs: Array<{ id: WorkspaceTab; label: string; icon: string }> = [
+  { id: 'overview', label: '概览', icon: '◑' },
+  { id: 'requirement', label: '需求', icon: '◎' },
+  { id: 'feedback', label: '反馈', icon: '✎' },
+  { id: 'tasks', label: '任务与计划', icon: '☑' },
+  { id: 'events', label: '事件流', icon: '≡' },
+];
+
+export function WorkspacePage() {
+  const params = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
+  const projectId = Number(params.projectId);
+  const { snapshot, setSnapshot, error, setError } = useSnapshot(Number.isFinite(projectId) ? projectId : null);
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('overview');
+  const [pendingAttachments, setPendingAttachments] =
+    useState<Record<IntakeType, PendingAttachment[]>>(emptyPendingAttachments);
+  const [loopForm, setLoopForm] = useState({ workspacePath: '', intervalSeconds: '5', validationCommand: '' });
+
+  const project = snapshot?.activeProject || null;
+  const state = snapshot?.state || null;
+  const projects = snapshot?.projects || [];
+
+  const showError = useCallback((e: unknown) => {
+    const msg = e instanceof Error ? e.message : String(e);
+    setError(msg);
+    window.alert(msg);
+  }, [setError]);
+
+  useEffect(() => {
+    if (!state) return;
+    setLoopForm({
+      workspacePath: state.workspace_path || '',
+      intervalSeconds: String(state.interval_seconds || 5),
+      validationCommand: state.validation_command || '',
+    });
+  }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state]);
+
+  const addPendingFiles = useCallback((type: IntakeType, files: FileList | File[] | null) => {
+    const selected = Array.from(files || [])
+      .map((file) => ({ path: getFilePath(file), name: file.name, size: file.size, type: file.type }))
+      .filter((file) => file.path);
+    if (!selected.length) return;
+    setPendingAttachments((current) => {
+      const nextItems = [...current[type]];
+      for (const file of selected) {
+        if (!nextItems.some((item) => item.path === file.path && item.size === file.size)) nextItems.push(file);
+      }
+      return { ...current, [type]: nextItems };
+    });
+  }, []);
+
+  const removePendingAttachment = useCallback((type: IntakeType, index: number) => {
+    setPendingAttachments((current) => ({
+      ...current,
+      [type]: current[type].filter((_, itemIndex) => itemIndex !== index),
+    }));
+  }, []);
+
+  const createRequirement = useCallback(
+    async (body: string) => {
+      if (!projectId) return false;
+      try {
+        const next = await window.autoplan.createRequirement({
+          projectId,
+          body,
+          attachments: pendingAttachments.requirement,
+        });
+        setSnapshot(next);
+        setPendingAttachments((current) => ({ ...current, requirement: [] }));
+        setError(null);
+        return true;
+      } catch (e) {
+        showError(e);
+        return false;
+      }
+    },
+    [pendingAttachments.requirement, projectId, setSnapshot, setError, showError],
+  );
+
+  const createFeedback = useCallback(
+    async (body: string) => {
+      if (!projectId) return false;
+      try {
+        const next = await window.autoplan.createFeedback({
+          projectId,
+          body,
+          attachments: pendingAttachments.feedback,
+        });
+        setSnapshot(next);
+        setPendingAttachments((current) => ({ ...current, feedback: [] }));
+        setError(null);
+        return true;
+      } catch (e) {
+        showError(e);
+        return false;
+      }
+    },
+    [pendingAttachments.feedback, projectId, setSnapshot, setError, showError],
+  );
+
+  const updateRequirement = useCallback(
+    async (id: number, input: { title?: string; body?: string; status?: string }) => {
+      if (!projectId) return false;
+      try {
+        const next = await window.autoplan.updateRequirement({ projectId, id, ...input });
+        setSnapshot(next);
+        setError(null);
+        return true;
+      } catch (e) {
+        showError(e);
+        return false;
+      }
+    },
+    [projectId, setSnapshot, setError, showError],
+  );
+
+  const deleteRequirement = useCallback(
+    async (id: number) => {
+      if (!projectId) return false;
+      try {
+        const next = await window.autoplan.deleteRequirement({ projectId, id });
+        setSnapshot(next);
+        setError(null);
+        return true;
+      } catch (e) {
+        showError(e);
+        return false;
+      }
+    },
+    [projectId, setSnapshot, setError, showError],
+  );
+
+  const updateFeedback = useCallback(
+    async (id: number, input: { title?: string; body?: string; status?: string }) => {
+      if (!projectId) return false;
+      try {
+        const next = await window.autoplan.updateFeedback({ projectId, id, ...input });
+        setSnapshot(next);
+        setError(null);
+        return true;
+      } catch (e) {
+        showError(e);
+        return false;
+      }
+    },
+    [projectId, setSnapshot, setError, showError],
+  );
+
+  const deleteFeedback = useCallback(
+    async (id: number) => {
+      if (!projectId) return false;
+      try {
+        const next = await window.autoplan.deleteFeedback({ projectId, id });
+        setSnapshot(next);
+        setError(null);
+        return true;
+      } catch (e) {
+        showError(e);
+        return false;
+      }
+    },
+    [projectId, setSnapshot, setError, showError],
+  );
+
+  const submitLoopConfig = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      const next = await window.autoplan.configureLoop({
+        projectId,
+        workspacePath: loopForm.workspacePath,
+        intervalSeconds: Number(loopForm.intervalSeconds || 5),
+        validationCommand: loopForm.validationCommand,
+      });
+      setSnapshot(next);
+      setError(null);
+    } catch (e) {
+      showError(e);
+    }
+  };
+
+  const runLoopAction = async (action: () => Promise<AppSnapshot>) => {
+    try {
+      const next = await action();
+      setSnapshot(next);
+      setError(null);
+    } catch (e) {
+      showError(e);
+    }
+  };
+
+  const interruptIntake = useCallback(
+    async (type: IntakeType, id: number) => {
+      try {
+        const next = await window.autoplan.interruptIntake({ projectId, type, id });
+        setSnapshot(next);
+        setError(null);
+      } catch (e) {
+        showError(e);
+      }
+    },
+    [projectId, setSnapshot, setError, showError],
+  );
+
+  const resumeIntake = useCallback(
+    async (type: IntakeType, id: number) => {
+      try {
+        const next = await window.autoplan.resumeIntake({ projectId, type, id });
+        setSnapshot(next);
+        setError(null);
+      } catch (e) {
+        showError(e);
+      }
+    },
+    [projectId, setSnapshot, setError, showError],
+  );
+
+  const appendIntakeTask = useCallback(
+    async (type: IntakeType, id: number, title: string) => {
+      try {
+        const next = await window.autoplan.appendIntakeTask({ projectId, type, id, title });
+        setSnapshot(next);
+        setError(null);
+      } catch (e) {
+        showError(e);
+      }
+    },
+    [projectId, setSnapshot, setError, showError],
+  );
+
+  const switchProject = (nextId: number) => {
+    if (nextId && nextId !== projectId) navigate(`/projects/${nextId}`);
+  };
+
+  if (!snapshot) {
+    return (
+      <div className="workspace-shell">
+        <WorkspaceSidebar
+          activeTab={activeTab}
+          onTab={setActiveTab}
+          onBack={() => navigate('/projects')}
+          projectId={projectId}
+          projects={projects}
+          currentProject={project}
+          state={null}
+          onSwitchProject={switchProject}
+        />
+        <div className="workspace-main">
+          <div className="empty">加载中...</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="workspace-shell">
+      <WorkspaceSidebar
+        activeTab={activeTab}
+        onTab={setActiveTab}
+        onBack={() => navigate('/projects')}
+        projectId={projectId}
+        projects={projects}
+        currentProject={project}
+        state={state}
+        onSwitchProject={switchProject}
+      />
+      <div className="workspace-main">
+        <header className="topbar">
+          <div className="topbar-title">
+            <h1>{tabTitle(activeTab)}</h1>
+            <p>{tabSubtitle(activeTab, project)}</p>
+          </div>
+          <div className="topbar-actions">
+            <span className="pill">
+              <span className={`led ${state?.running ? 'running' : 'stopped'}`} />
+              {state ? `${state.running ? 'running' : 'stopped'} · ${state.phase || 'idle'}` : 'idle'}
+            </span>
+            <button
+              type="button"
+              className={`btn btn-sm ${state?.running ? 'btn-danger' : 'btn-primary'}`}
+              onClick={() =>
+                runLoopAction(() =>
+                  state?.running
+                    ? window.autoplan.stopLoop({ projectId, manual: true })
+                    : window.autoplan.startLoop({ projectId, manual: true }),
+                )
+              }
+            >
+              {state?.running ? '■ 停止' : '● 启动'}
+            </button>
+          </div>
+        </header>
+
+        <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
+          {error ? <div className="error-banner">{error}</div> : null}
+          <OverviewView snapshot={snapshot} state={state} onGoTasks={() => setActiveTab('tasks')} />
+        </section>
+
+        <section className={`view ${activeTab === 'requirement' ? 'active' : ''}`}>
+          {activeTab === 'requirement' ? (
+            <IntakePanel
+              emptyText="暂无需求。也可以把需求文件放到工作区 docs/issues。"
+              heading="需求记录"
+              items={snapshot.requirements}
+              pendingAttachments={pendingAttachments.requirement}
+              placeholder="输入需求，Enter 发送，Shift+Enter 换行"
+              submitLabel="发送需求"
+              subtitle="循环开启后自动扫描并生成计划"
+              type="requirement"
+              attachments={snapshot.attachments}
+              onAddFiles={addPendingFiles}
+              onDelete={deleteRequirement}
+              onRemoveAttachment={removePendingAttachment}
+              onSubmit={createRequirement}
+              onUpdate={updateRequirement}
+              onInterrupt={interruptIntake}
+              onResume={resumeIntake}
+              onAppendTask={appendIntakeTask}
+            />
+          ) : null}
+        </section>
+
+        <section className={`view ${activeTab === 'feedback' ? 'active' : ''}`}>
+          {activeTab === 'feedback' ? (
+            <IntakePanel
+              emptyText="暂无反馈。"
+              heading="反馈记录"
+              items={snapshot.feedback}
+              pendingAttachments={pendingAttachments.feedback}
+              placeholder="输入反馈，Enter 发送，Shift+Enter 换行"
+              submitLabel="发送反馈"
+              subtitle="循环开启后自动扫描并生成计划"
+              type="feedback"
+              attachments={snapshot.attachments}
+              onAddFiles={addPendingFiles}
+              onDelete={deleteFeedback}
+              onRemoveAttachment={removePendingAttachment}
+              onSubmit={createFeedback}
+              onUpdate={updateFeedback}
+              onInterrupt={interruptIntake}
+              onResume={resumeIntake}
+              onAppendTask={appendIntakeTask}
+            />
+          ) : null}
+        </section>
+
+        <section className={`view ${activeTab === 'tasks' ? 'active' : ''}`}>
+          {activeTab === 'tasks' ? (
+            <div className="task-layout">
+              <aside className="task-sidebar">
+                <form className="editor card" onSubmit={submitLoopConfig}>
+                  <div className="card-head">
+                    <h2>循环控制</h2>
+                  </div>
+                  <label className="field">
+                    工作区路径
+                    <input
+                      value={loopForm.workspacePath}
+                      onChange={(event) => setLoopForm((current) => ({ ...current, workspacePath: event.target.value }))}
+                      placeholder="D:\project\GitHub\my-app"
+                    />
+                  </label>
+                  <label className="field">
+                    间隔秒数
+                    <input
+                      min="1"
+                      type="number"
+                      value={loopForm.intervalSeconds}
+                      onChange={(event) => setLoopForm((current) => ({ ...current, intervalSeconds: event.target.value }))}
+                    />
+                  </label>
+                  <label className="field">
+                    验收命令（留空则不校验）
+                    <input
+                      value={loopForm.validationCommand}
+                      onChange={(event) => setLoopForm((current) => ({ ...current, validationCommand: event.target.value }))}
+                      placeholder="flutter analyze"
+                    />
+                  </label>
+                  <div className="button-row">
+                    <button type="submit">保存配置</button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        runLoopAction(() =>
+                          state?.running
+                            ? window.autoplan.stopLoop({ projectId, manual: true })
+                            : window.autoplan.startLoop({ projectId, manual: true }),
+                        )
+                      }
+                    >
+                      {state?.running ? '停止' : '启动'}
+                    </button>
+                  </div>
+                </form>
+                <section className="side-section card">
+                  <div className="card-head">
+                    <h2>事件</h2>
+                  </div>
+                  <EventList events={snapshot.events} />
+                </section>
+              </aside>
+
+              <div className="task-main">
+                <div className="task-status-grid">
+                  <section className="card">
+                    <div className="card-head">
+                      <h2>Plan</h2>
+                    </div>
+                    <PlanList plans={snapshot.plans} tasks={snapshot.tasks} />
+                  </section>
+                  <section className="card">
+                    <div className="card-head">
+                      <h2>任务</h2>
+                    </div>
+                    <TaskList
+                      tasks={snapshot.tasks}
+                      onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+                      onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+                    />
+                  </section>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <section className={`view ${activeTab === 'events' ? 'active' : ''}`}>
+          {activeTab === 'events' ? (
+            <section className="card">
+              <div className="card-head">
+                <h2>事件流</h2>
+                <span className="hint">最近 80 条 · 实时更新</span>
+              </div>
+              <EventList events={snapshot.events} />
+            </section>
+          ) : null}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function WorkspaceSidebar({
+  activeTab,
+  onTab,
+  onBack,
+  projectId,
+  projects,
+  currentProject,
+  state,
+  onSwitchProject,
+}: {
+  activeTab: WorkspaceTab;
+  onTab: (tab: WorkspaceTab) => void;
+  onBack: () => void;
+  projectId: number;
+  projects: Project[];
+  currentProject: Project | null;
+  state: ProjectState | null;
+  onSwitchProject: (id: number) => void;
+}) {
+  return (
+    <aside className="sidebar">
+      <div className="brand">
+        <div className="brand-mark">A</div>
+        <div>
+          <div className="brand-name">AutoPlan</div>
+          <div className="brand-sub">需求 · 计划 · 执行 · 验收</div>
+        </div>
+      </div>
+
+      <button type="button" className="back-link" onClick={onBack}>
+        ← 返回项目列表
+      </button>
+
+      <div className="project-switcher">
+        <div className="project-label">当前项目</div>
+        <select
+          className="project-select"
+          value={projectId}
+          onChange={(event) => onSwitchProject(Number(event.target.value))}
+        >
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
+          ))}
+        </select>
+        {currentProject ? <div className="project-path mono">{currentProject.workspace_path || '未设置工作区'}</div> : null}
+      </div>
+
+      <div className="nav-group-label">工作区</div>
+      {tabs.map((tab) => (
+        <button
+          className={`nav-item ${activeTab === tab.id ? 'active' : ''}`}
+          key={tab.id}
+          type="button"
+          onClick={() => onTab(tab.id)}
+        >
+          <span className="nav-ico">{tab.icon}</span> {tab.label}
+        </button>
+      ))}
+
+      <div className="sidebar-footer">
+        <div className="loop-mini">
+          <span className={`led ${state?.running ? 'running' : 'stopped'}`} />
+          <span>
+            循环 <b>{state?.running ? '运行中' : '已停止'}</b>
+          </span>
+        </div>
+        <div className="loop-config mono">
+          间隔 {state?.interval_seconds || 5}s
+          {state?.validation_command ? ` · ${state.validation_command}` : ' · 无验收命令'}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function OverviewView({
+  snapshot,
+  state,
+  onGoTasks,
+}: {
+  snapshot: AppSnapshot;
+  state: ProjectState | null;
+  onGoTasks: () => void;
+}) {
+  const reqCount = snapshot.requirements.length;
+  const planCount = snapshot.plans.length;
+  const runningPlan = snapshot.plans.find((plan) => !['completed'].includes(plan.status));
+  const doneTasks = snapshot.tasks.filter((task) => task.status === 'completed').length;
+  const totalTasks = snapshot.tasks.length;
+
+  const phases = ['scan', 'generate-plan', 'execute-task', 'validate', 'completed'];
+  const currentPhase = state?.phase || 'idle';
+  const activeIndex = phases.indexOf(currentPhase);
+  const operation = snapshot.activeOperation || snapshot.lastOperation;
+  const operationActive = Boolean(snapshot.activeOperation);
+  const operationTime = operation?.startedAt ? `开始于 ${formatChinaTime(operation.startedAt)}` : '';
+  const operationExit =
+    operation && !operationActive && typeof operation.exitCode === 'number'
+      ? ` · 退出码 ${operation.exitCode}${operation.exitCode === 0 ? '（成功）' : '（失败）'}`
+      : '';
+  const operationHint = operation ? `${operationTime}${operationExit}` : '等待下一次执行';
+  const operationTitle = operation ? `${operationActive ? '执行日志' : '最近执行'} · ${operation.label}` : '执行日志';
+
+  return (
+    <>
+      <div className="stat-grid">
+        <StatCard icon="◎" value={String(reqCount)} label="需求" accent="brand" />
+        <StatCard
+          icon="▤"
+          value={String(planCount)}
+          label="计划"
+          sub={runningPlan ? `${runningPlan.completed_tasks}/${runningPlan.total_tasks} 任务` : '无进行中'}
+          accent="info"
+        />
+        <StatCard icon="☑" value={`${doneTasks}/${totalTasks}`} label="任务进度" accent="success" />
+        <StatCard icon="↻" value={`${state?.interval_seconds || 5}s`} label="循环间隔" accent="warning" />
+      </div>
+
+      <div className="overview-grid">
+        <div className="overview-main-column">
+          <section className="card live-log-card">
+            <div className="card-head log-card-head">
+              <div className="log-title-line">
+                <h2>
+                  <span className={`live-dot${operationActive ? '' : ' idle'}`} /> {operationTitle}
+                </h2>
+                <span className="hint">{operationHint}</span>
+                <span className={`log-phase-chip ${state?.running ? 'running' : 'stopped'}`}>
+                  {state?.running ? '循环运行中' : '循环已停止'} · {currentPhase}
+                </span>
+              </div>
+              <div className="log-summary">
+                <span>
+                  计划草稿 <b>{snapshot.planDrafts.length}</b>
+                </span>
+                <span>
+                  待确认草稿 <b>{snapshot.planDrafts.filter((draft) => draft.status !== 'accepted').length}</b>
+                </span>
+                <span>
+                  反馈 <b>{snapshot.feedback.length}</b>
+                </span>
+              </div>
+            </div>
+            <CodexLog log={operation?.logTail || ''} activity={operation?.activity || []} />
+          </section>
+        </div>
+
+        <div className="overview-side-column">
+          <section className="card">
+            <div className="card-head">
+              <h2>循环阶段流水线</h2>
+            </div>
+            <div className="card-body">
+              <div className="pipeline">
+                {phases.map((phase, index) => {
+                  const done = activeIndex > index;
+                  const active = activeIndex === index;
+                  return (
+                    <div className={`pipe-step ${done ? 'done' : ''} ${active ? 'active' : ''}`} key={phase}>
+                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
+                      <div className="pipe-label">{phaseLabel(phase)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+
+          <section className="card">
+            <div className="card-head">
+              <h2>近期事件</h2>
+              <span className="spacer">
+                <button type="button" className="btn-link" onClick={onGoTasks}>
+                  查看任务 →
+                </button>
+              </span>
+            </div>
+            <div className="card-body">
+              <EventList events={snapshot.events.slice(0, 8)} />
+            </div>
+          </section>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function StatCard({
+  icon,
+  value,
+  label,
+  sub,
+  accent,
+}: {
+  icon: string;
+  value: string;
+  label: string;
+  sub?: string;
+  accent: 'brand' | 'info' | 'success' | 'warning';
+}) {
+  return (
+    <div className={`stat stat-${accent}`}>
+      <div className="stat-ico">{icon}</div>
+      <div className="stat-value">{value}</div>
+      <div className="stat-label">{label}</div>
+      {sub ? <div className="stat-delta">{sub}</div> : null}
+    </div>
+  );
+}
+
+function tabTitle(tab: WorkspaceTab) {
+  return { overview: '概览', requirement: '需求模块', feedback: '反馈模块', tasks: '任务与计划', events: '事件流' }[tab];
+}
+
+function tabSubtitle(tab: WorkspaceTab, project: Project | null) {
+  const base = {
+    overview: '循环状态、阶段流水线与各模块一览',
+    requirement: '收集需求，发送后自动生成计划草稿',
+    feedback: '收集反馈，关联需求并生成计划草稿',
+    tasks: '循环控制、计划草稿、Plan 与任务进度',
+    events: '循环运行日志与任务执行记录',
+  }[tab];
+  return project ? `${base} · ${project.name}` : base;
+}
+
+function phaseLabel(phase: string) {
+  return (
+    {
+      idle: '空闲',
+      scan: '扫描',
+      'generate-plan': '生成计划',
+      'execute-task': '执行任务',
+      validate: '验收',
+      completed: '完成',
+      waiting: '等待',
+      error: '异常',
+    }[phase] || phase
+  );
+}
+
+**Considering icon usage**
+
+I’m thinking about the requirement mentioning the need for icons instead of emojis. Numeric sequences seem fine, but I wonder if I’ll need to include PlanLists if there are statuses that require symbols. I should explore how to address these requirements creatively while making sure it aligns with the user’s needs. It looks like I’ll focus on delivering clear and effective options while maintaining the intended functionality.
+codex
+计划会按可并发的 UI 区域拆分，并加入扫描验收任务。
+exec
+powershell.exe -Command "rg -n \"✓|▶|↻|⚠|✎|🗑|☑|◎|◑|≡|▤|📎|🐛|[\\x{1F000}-\\x{1FAFF}]|[☀-⛿]|[✀-➿]|[◐-◿]\" src\\renderer src\\styles.css scripts\\smoke-test.js" in D:\project\GitHub\autoplan
+ succeeded in 150ms:
+src\renderer\pages\WorkspacePage.tsx:24:  { id: 'overview', label: '概览', icon: '◑' },
+src\renderer\pages\WorkspacePage.tsx:25:  { id: 'requirement', label: '需求', icon: '◎' },
+src\renderer\pages\WorkspacePage.tsx:26:  { id: 'feedback', label: '反馈', icon: '✎' },
+src\renderer\pages\WorkspacePage.tsx:27:  { id: 'tasks', label: '任务与计划', icon: '☑' },
+src\renderer\pages\WorkspacePage.tsx:28:  { id: 'events', label: '事件流', icon: '≡' },
+src\renderer\pages\WorkspacePage.tsx:573:        <StatCard icon="◎" value={String(reqCount)} label="需求" accent="brand" />
+src\renderer\pages\WorkspacePage.tsx:575:          icon="▤"
+src\renderer\pages\WorkspacePage.tsx:581:        <StatCard icon="☑" value={`${doneTasks}/${totalTasks}`} label="任务进度" accent="success" />
+src\renderer\pages\WorkspacePage.tsx:582:        <StatCard icon="↻" value={`${state?.interval_seconds || 5}s`} label="循环间隔" accent="warning" />
+src\renderer\pages\WorkspacePage.tsx:626:                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
+src\renderer\pages\ProjectsPage.tsx:149:                          ▶ 进入工作区
+src\renderer\pages\ProjectsPage.tsx:152:                          ✎ 编辑
+src\renderer\pages\ProjectsPage.tsx:155:                          🗑 删除
+src\renderer\pages\ProjectsPage.tsx:228:            <div className="modal-danger-icon">⚠</div>
+
+**Clarifying project organization**
+
+I need to assign icons and styles for P001, P002, and P003, and maybe look into P004 for a static UI prototype with documentation. It seems that shared styles are causing some collisions. To avoid concurrent modifications, I should include actual files in the task scopes, ensuring they don’t overlap. Starting with P001 for the shared icon system, followed by P002 for the project page, and P003 for the workspace page sounds like a good plan. I might also add an automated scan test.
+exec
+powershell.exe -Command "rg -n \"→|←|↑|↓|•|·|…|[\\x{1F000}-\\x{1FAFF}]|[☀-⛿]|[✀-➿]|[◐-◿]|▶|✓|⚠|✎|🗑|☑|◎|◑|≡|▤|↻\" src\\renderer src\\styles.css ui --glob '"'!**/node_modules/**'"'" in D:\project\GitHub\autoplan
+ succeeded in 157ms:
+src\styles.css:2:   设计系统 · Design Tokens
+ui\projects.html:6:    <title>AutoPlan · 项目管理</title>
+ui\projects.html:9:         设计系统 · Design Tokens（与 workspace 共享色板）
+ui\projects.html:251:        <p>管理工作区项目 · 点击卡片进入对应项目的工作区</p>
+ui\projects.html:263:        <input type="text" id="projectSearch" placeholder="搜索项目名称或路径…" />
+ui\projects.html:332:            <div class="modal-danger-icon">⚠</div>
+ui\projects.html:344:    <div class="watermark">AutoPlan · 项目管理设计稿</div>
+ui\projects.html:357:        { id: 2, color: 'grad2', name: 'autoplan', path: 'GitHub/autoplan', desc: '本工具自身：需求→计划→执行→验收的自动化循环。', cmd: 'npm run check', interval: 5, status: 'stopped', plans: 1, tasks: 5, done: 5, time: '1 小时前' },
+ui\projects.html:402:                  <button class="ctx-item" data-act="open" data-id="${p.id}">▶ 打开工作区</button>
+ui\projects.html:403:                  <button class="ctx-item" data-act="edit" data-id="${p.id}">✎ 编辑</button>
+ui\projects.html:406:                  <button class="ctx-item danger" data-act="delete" data-id="${p.id}">🗑 删除</button>
+ui\workspace.html:6:    <title>AutoPlan · 工作区</title>
+ui\workspace.html:9:         设计系统 · Design Tokens
+ui\workspace.html:376:            <div class="brand-sub">需求 · 计划 · 执行 · 验收</div>
+ui\workspace.html:403:                <span class="check">✓</span>
+ui\workspace.html:411:                <span class="check">✓</span>
+ui\workspace.html:419:                <span class="check">✓</span>
+ui\workspace.html:444:          <span class="nav-ico">◑</span> 概览
+ui\workspace.html:447:          <span class="nav-ico">◎</span> 需求
+ui\workspace.html:451:          <span class="nav-ico">✎</span> 反馈
+ui\workspace.html:457:          <span class="nav-ico">☑</span> 任务与计划
+ui\workspace.html:461:          <span class="nav-ico">≡</span> 事件流
+ui\workspace.html:470:            间隔 5s · flutter analyze
+ui\workspace.html:483:            <span class="pill"><span class="led running"></span> running · execute-task</span>
+ui\workspace.html:493:              <div class="stat-ico">◎</div><div class="stat-value">4</div>
+ui\workspace.html:497:              <div class="stat-ico">▤</div><div class="stat-value">1</div>
+ui\workspace.html:501:              <div class="stat-ico">☑</div><div class="stat-value">12</div>
+ui\workspace.html:505:              <div class="stat-ico">↻</div><div class="stat-value">5s</div>
+ui\workspace.html:514:                <div class="lc-phase">当前阶段 · execute-task</div>
+ui\workspace.html:518:                  <div>下一任务<b>P004 · 富文本选区</b></div>
+ui\workspace.html:522:                <div class="card-head"><h2>循环阶段流水线</h2><span class="hint">scan → generate-plan → execute-task → validate → completed</span></div>
+ui\workspace.html:525:                    <div class="pipe-step done"><div class="pipe-node">✓</div><div class="pipe-label">扫描</div><div class="pipe-sub">3 issues · 2 plans</div></div>
+ui\workspace.html:526:                    <div class="pipe-step done"><div class="pipe-node">✓</div><div class="pipe-label">生成计划</div><div class="pipe-sub">plan_20260624</div></div>
+ui\workspace.html:527:                    <div class="pipe-step active"><div class="pipe-node">▶</div><div class="pipe-label">执行任务</div><div class="pipe-sub">3 / 7</div></div>
+ui\workspace.html:535:              <div class="card-head"><h2>近期事件</h2><span class="spacer"><a href="#">查看全部 →</a></span></div>
+ui\workspace.html:538:                  <div class="feed-item success"><span class="feed-dot"></span><span class="feed-text">任务 <b>P003 · 段落样式</b> 执行完成</span><span class="feed-time">10:42</span></div>
+ui\workspace.html:540:                  <div class="feed-item success"><span class="feed-dot"></span><span class="feed-text">任务 <b>P002 · 工具栏</b> 执行完成</span><span class="feed-time">10:35</span></div>
+ui\workspace.html:555:                <div class="stream-card-top"><span class="stream-id">需求 #6</span><span class="chip chip-pending">pending</span><span class="stream-time">10:51 · 2 分钟前</span></div>
+ui\workspace.html:557:                <div class="stream-attach"><div class="attach-thumb">IMG</div><a class="attach-file">📎 paste-demo.png · 128 KB</a></div>
+ui\workspace.html:560:                <div class="stream-card-top"><span class="stream-id">需求 #5</span><span class="chip chip-running">processing</span><span class="stream-time">10:32 · 21 分钟前</span></div>
+ui\workspace.html:564:                <div class="stream-card-top"><span class="stream-id">需求 #4</span><span class="chip chip-completed">done</span><span class="stream-time">09:18 · 2 小时前</span></div>
+ui\workspace.html:575:                <span class="composer-hint">Enter 发送 · 拖拽添加附件</span>
+ui\workspace.html:576:                <button type="submit" class="send-btn">→</button>
+ui\workspace.html:593:                <div class="stream-attach"><a class="attach-file">🐛 dark-mode-bug.log · 4 KB</a></div>
+ui\workspace.html:601:                <button type="submit" class="send-btn">→</button>
+ui\workspace.html:621:                    <button class="btn btn-sm">↻ 单轮</button>
+ui\workspace.html:692:              <h2>事件流</h2><span class="hint">最近 80 条 · 实时更新</span>
+ui\workspace.html:696:              <div class="event-row"><span class="event-time">2026-06-24 10:42:18</span><span class="chip chip-completed">task.executed</span><span class="event-msg">任务 <b>P003 · 段落样式</b> 执行完成 · <code>log: execute-P003.last.txt</code></span><a href="#">查看日志</a></div>
+ui\workspace.html:698:              <div class="event-row"><span class="event-time">2026-06-24 10:35:02</span><span class="chip chip-completed">task.executed</span><span class="event-msg">任务 <b>P002 · 工具栏</b> 执行完成</span><a href="#">查看日志</a></div>
+ui\workspace.html:701:              <div class="event-row"><span class="event-time">2026-06-24 10:04:00</span><span class="chip chip-running">loop.started</span><span class="event-msg">循环已启动 · 间隔 5s</span><span></span></div>
+ui\workspace.html:702:              <div class="event-row"><span class="event-time">2026-06-24 09:18:33</span><span class="chip chip-failed">task.failed</span><span class="event-msg">任务 <b>P001</b> 执行失败 · <code>exit code 1</code>，已自动重试</span><a href="#">查看日志</a></div>
+ui\workspace.html:709:    <div class="watermark">AutoPlan · 工作区设计稿</div>
+ui\workspace.html:804:          <span class="check">✓</span>`;
+ui\README.md:14:## projects.html · 项目管理
+ui\README.md:24:- 点击卡片 / 「打开工作区」→ 跳转 `workspace.html`
+ui\README.md:26:## workspace.html · 工作区
+src\renderer\components\shared.tsx:27:/** 状态 → 语义化 chip class */
+src\renderer\components\Composer.tsx:112:            →
+src\renderer\components\PlanLists.tsx:71:  return `总耗时 ${formatDuration(totalMs, '0秒')} · 已完成 ${formatDuration(completedMs, '0秒')}`;
+src\renderer\components\PlanLists.tsx:161:    meta: metaParts.join(' · '),
+src\renderer\components\PlanLists.tsx:206:                草稿 #{draft.id} · {draft.source_type === 'feedback' ? '反馈' : '需求'} #{draft.source_id}
+src\renderer\components\PlanLists.tsx:248:            body={`${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+src\renderer\components\PlanLists.tsx:251:            meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+src\renderer\components\PlanLists.tsx:292:            meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+src\renderer\components\CodexLog.tsx:37:        <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+src\renderer\components\IntakePanel.tsx:107:              const title = `${sourceTypeName(type)} #${item.id} · ${item.title || '未命名'}`;
+src\renderer\pages\WorkspacePage.tsx:24:  { id: 'overview', label: '概览', icon: '◑' },
+src\renderer\pages\WorkspacePage.tsx:25:  { id: 'requirement', label: '需求', icon: '◎' },
+src\renderer\pages\WorkspacePage.tsx:26:  { id: 'feedback', label: '反馈', icon: '✎' },
+src\renderer\pages\WorkspacePage.tsx:27:  { id: 'tasks', label: '任务与计划', icon: '☑' },
+src\renderer\pages\WorkspacePage.tsx:28:  { id: 'events', label: '事件流', icon: '≡' },
+src\renderer\pages\WorkspacePage.tsx:297:              {state ? `${state.running ? 'running' : 'stopped'} · ${state.phase || 'idle'}` : 'idle'}
+src\renderer\pages\WorkspacePage.tsx:454:                <span className="hint">最近 80 条 · 实时更新</span>
+src\renderer\pages\WorkspacePage.tsx:490:          <div className="brand-sub">需求 · 计划 · 执行 · 验收</div>
+src\renderer\pages\WorkspacePage.tsx:495:        ← 返回项目列表
+src\renderer\pages\WorkspacePage.tsx:535:          {state?.validation_command ? ` · ${state.validation_command}` : ' · 无验收命令'}
+src\renderer\pages\WorkspacePage.tsx:565:      ? ` · 退出码 ${operation.exitCode}${operation.exitCode === 0 ? '（成功）' : '（失败）'}`
+src\renderer\pages\WorkspacePage.tsx:568:  const operationTitle = operation ? `${operationActive ? '执行日志' : '最近执行'} · ${operation.label}` : '执行日志';
+src\renderer\pages\WorkspacePage.tsx:573:        <StatCard icon="◎" value={String(reqCount)} label="需求" accent="brand" />
+src\renderer\pages\WorkspacePage.tsx:575:          icon="▤"
+src\renderer\pages\WorkspacePage.tsx:581:        <StatCard icon="☑" value={`${doneTasks}/${totalTasks}`} label="任务进度" accent="success" />
+src\renderer\pages\WorkspacePage.tsx:582:        <StatCard icon="↻" value={`${state?.interval_seconds || 5}s`} label="循环间隔" accent="warning" />
+src\renderer\pages\WorkspacePage.tsx:595:                  {state?.running ? '循环运行中' : '循环已停止'} · {currentPhase}
+src\renderer\pages\WorkspacePage.tsx:626:                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
+src\renderer\pages\WorkspacePage.tsx:640:                  查看任务 →
+src\renderer\pages\WorkspacePage.tsx:689:  return project ? `${base} · ${project.name}` : base;
+src\renderer\pages\ProjectsPage.tsx:111:            <p>管理工作区项目 · 点击卡片进入对应项目的工作区</p>
+src\renderer\pages\ProjectsPage.tsx:130:            placeholder="搜索项目名称、路径或备注…"
+src\renderer\pages\ProjectsPage.tsx:149:                          ▶ 进入工作区
+src\renderer\pages\ProjectsPage.tsx:152:                          ✎ 编辑
+src\renderer\pages\ProjectsPage.tsx:155:                          🗑 删除
+src\renderer\pages\ProjectsPage.tsx:167:                <div className="project-meta">#{project.id} · 更新于 {formatChinaDateTime(project.updated_at)}</div>
+src\renderer\pages\ProjectsPage.tsx:228:            <div className="modal-danger-icon">⚠</div>
+src\renderer\pages\ProjectsPage.tsx:252:  return project.running ? `运行中 · ${projectPhaseLabel(phase)}` : `已停止 · ${projectPhaseLabel(phase)}`;
+
+**Considering the Composer arrow**
+
+I’m thinking about whether I need to include the Composer arrow, which seems like it’s a send arrow. If the requirement is strict, I should definitely consider replacing the arrow icon in Composer. I might need to inspect what's going on around the Composer to ensure everything's fitting together correctly. It's important to be thorough here!
+codex
+发现发送按钮也用了箭头字符，计划会一并纳入。
+exec
+powershell.exe -Command "Get-Content -Encoding UTF8 src\\renderer\\components\\Composer.tsx | Select-Object -First 180" in D:\project\GitHub\autoplan
+ succeeded in 192ms:
+import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+import type { IntakeType, PendingAttachment } from '../types';
+import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+
+interface ComposerProps {
+  pendingAttachments: PendingAttachment[];
+  placeholder: string;
+  submitLabel: string;
+  type: IntakeType;
+  onAddFiles: (type: IntakeType, files: FileList | File[] | null) => void;
+  onRemoveAttachment: (type: IntakeType, index: number) => void;
+  onSubmit: (body: string) => Promise<boolean>;
+}
+
+export function Composer({
+  pendingAttachments,
+  placeholder,
+  submitLabel,
+  type,
+  onAddFiles,
+  onRemoveAttachment,
+  onSubmit,
+}: ComposerProps) {
+  const [body, setBody] = useState('');
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (textareaRef.current) autoGrowTextarea(textareaRef.current);
+  }, [body]);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!body.trim() && !pendingAttachments.length) return;
+    const succeeded = await onSubmit(body);
+    if (succeeded) setBody('');
+  };
+
+  const addFiles = (files: FileList | File[] | null) => onAddFiles(type, files);
+
+  const handleTextareaKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
+  };
+
+  const clearDragState = (event: DragEvent<HTMLElement>) => {
+    const relatedTarget = event.relatedTarget as Node | null;
+    if (relatedTarget && event.currentTarget.contains(relatedTarget)) return;
+    setDragOver(false);
+  };
+
+  return (
+    <form
+      className={`composer docked-composer compact-composer${dragOver ? ' drag-over' : ''}`}
+      onDragLeave={clearDragState}
+      onDragOver={(event) => {
+        event.preventDefault();
+        setDragOver(true);
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        setDragOver(false);
+        addFiles(event.dataTransfer.files);
+      }}
+      onSubmit={submit}
+    >
+      <textarea
+        name="body"
+        onChange={(event) => setBody(event.target.value)}
+        onInput={(event) => autoGrowTextarea(event.currentTarget)}
+        onKeyDown={handleTextareaKeyDown}
+        placeholder={placeholder}
+        ref={textareaRef}
+        value={body}
+      />
+      <div className="composer-bottom">
+        <div className="composer-tools">
+          <div
+            className={`attachment-dropzone attachment-trigger${dragOver ? ' drag-over' : ''}`}
+            onClick={() => fileInputRef.current?.click()}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
+            role="button"
+            tabIndex={0}
+            title="添加附件"
+          >
+            <input
+              multiple
+              onChange={(event) => {
+                addFiles(event.target.files);
+                event.target.value = '';
+              }}
+              ref={fileInputRef}
+              type="file"
+            />
+            <span className="plus-icon">+</span>
+          </div>
+          <PendingAttachmentList
+            attachments={pendingAttachments}
+            onRemove={(index) => onRemoveAttachment(type, index)}
+          />
+        </div>
+        <div className="composer-actions">
+          <span>Enter 发送</span>
+          <button className="send-button" type="submit" aria-label={submitLabel}>
+            →
+          </button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
+function PendingAttachmentList({
+  attachments,
+  onRemove,
+}: {
+  attachments: PendingAttachment[];
+  onRemove: (index: number) => void;
+}) {
+  return (
+    <div className="attachment-list pending">
+      {attachments.map((attachment, index) => (
+        <div className="pending-attachment" key={`${attachment.path}-${attachment.size}`}>
+          <PendingAttachmentPreview attachment={attachment} />
+          <span title={attachment.name || attachment.path}>{attachment.name || attachment.path}</span>
+          <small>{formatBytes(attachment.size)}</small>
+          <button type="button" onClick={() => onRemove(index)}>
+            移除
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+  if (!attachment.type.startsWith('image/')) {
+    return <span className="pending-file-icon">文件</span>;
+  }
+  return (
+    <img
+      className="pending-thumb"
+      src={window.autoplan.toFileUrl(attachment.path)}
+      alt={attachment.name || '附件'}
+    />
+  );
+}
+
+**Considering library choices**
+
+I'm thinking that if the plan chooses a library, I need to consider the necessary packages. The requirement states “使用icon,” which suggests that the icon could be part of the Icon component. I’m curious about how I should make sure to include that appropriately. It’s interesting how the details matter so much in these decisions. I want to ensure everything is covered and works seamlessly!
+**Planning without emojis**
+
+I don't need a business code for this; I'll just write a plan. I'll use a shell with a here string and ensure there's no markdown code fencing. The user might want output lines, and it's possible to include references to characters like `U+1F5D1` or glyphs like `▶` instead of actual emojis, which we'll avoid for safety. I should mention in the plan the use of "emoji 字符" while steering clear of embedding any actual emoji characters.
+**Avoiding emoji triggers**
+
+There are concerns that including certain characters in the plan file might trigger "rg emoji" when looking through broad documentation. Since this isn't specifically about the user interface, I should be cautious and avoid unnecessary mentions. It’s important to keep the plan clear, ensuring that I don’t inadvertently bring up emoji references that could confuse readers. I'll focus on providing a clean and straightforward document that meets the requirements without those risks.
+codex
+现在写入指定 Markdown 计划文件，不改业务代码。
+exec
+powershell.exe -Command '$path = '"'docs\\plan\\plan_requirement_6_20260625-032502.md'
+"'$content = @'"'
+# 需求 #6 开发计划：系统界面图标统一使用 Icon
+
+## 背景
+
+当前界面中部分导航、统计卡片、操作按钮、状态节点和输入区按钮直接使用字符符号或 emoji 作为图标。需求 #6 要求系统界面的图标统一使用 icon，而不是使用 emoji，以保证视觉风格一致、跨平台渲染稳定、可访问性明确，并便于后续维护主题色、尺寸和悬浮态。
+
+## 任务拆解
+
+- [ ] P001: 建立统一 SVG 图标体系 <"'!-- scope: src/renderer/components/icons.tsx,src/styles.css -->
+  - 验收要点：新增本地图标组件或图标映射，默认使用 SVG icon，不新增非必要运行时依赖。
+  - 验收要点：图标组件支持统一的 `size`、`className`、`title` 或 `aria-hidden` 语义，装饰图标不被屏幕阅读器重复朗读。
+  - 验收要点：覆盖当前界面需要的概览、需求、反馈、任务、事件、计划、运行、完成、编辑、删除、警告、刷新、附件、发送等基础图标。
+  - 验收要点：图标颜色默认继承文本色或使用现有 CSS 变量，能够适配品牌色、成功、警告、危险和普通按钮状态。
+
+- [ ] P002: 替换项目页操作图标 <!-- scope: src/renderer/pages/ProjectsPage.tsx,src/styles.css -->
+  - 验收要点：项目卡片右键菜单或更多菜单中的进入工作区、编辑、删除操作均使用 SVG icon，按钮文字和点击行为保持不变。
+  - 验收要点：删除确认弹窗的警告视觉改为统一 Icon 组件，保留现有危险色、圆形背景和居中布局。
+  - 验收要点：项目页不再把 emoji 或字符符号作为操作图标来源，搜索、创建、编辑、删除流程无回归。
+  - 验收要点：图标与文字间距、对齐、悬浮态和危险态在窄屏及长项目名称下不挤压、不错位。
+
+- [ ] P003: 替换工作区导航与统计图标 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/styles.css -->
+  - 验收要点：工作区侧边导航的概览、需求、反馈、任务与计划、事件流图标改为统一 SVG icon，当前选中态样式保持一致。
+  - 验收要点：概览统计卡片中的需求数、计划数、任务进度、循环间隔图标改为 Icon 组件，`StatCard` 不再依赖字符串图标。
+  - 验收要点：图标替换后统计卡片的颜色、尺寸、圆形背景、文字层级和响应式布局与现有视觉保持一致或更稳定。
+  - 验收要点：工作区标题、返回项目列表、查看任务等文字入口不因图标替换丢失可点击区域或可访问标签。
+
+- [ ] P004: 替换流水线与输入区图标 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/Composer.tsx,src/styles.css -->
+  - 验收要点：循环阶段流水线中的完成态和运行态使用 SVG icon，未开始步骤仍可显示序号，阶段状态语义保持清晰。
+  - 验收要点：需求/反馈输入区的添加附件、发送按钮和非图片附件占位改为 Icon 组件，不再使用字符图形充当图标。
+  - 验收要点：按钮 `aria-label`、键盘触发、文件选择、拖拽上传和提交表单行为保持不变。
+  - 验收要点：输入区图标在禁用、悬浮、拖拽高亮和紧凑布局下尺寸统一，不影响文本区域高度自适应。
+
+- [ ] P005: 同步静态界面原型图标 <!-- scope: ui/projects.html,ui/workspace.html,ui/README.md -->
+  - 验收要点：静态项目页和工作区原型中用于导航、统计、操作、警告、附件和流水线状态的 emoji 或字符符号改为 inline SVG 或可复用 icon 片段。
+  - 验收要点：原型页面的视觉说明与实际 React 界面保持一致，`ui/README.md` 补充“界面图标使用 icon，不使用 emoji”的设计约束。
+  - 验收要点：原型中的示例业务文案、时间、状态、占位内容不被误删，仅替换承担图标职责的符号。
+  - 验收要点：浏览器直接打开静态 HTML 时图标可见，无需依赖外部 CDN 或网络资源。
+
+- [ ] P006: 执行图标替换回归验证 <!-- scope: package.json,src/renderer/components/icons.tsx,src/renderer/pages/ProjectsPage.tsx,src/renderer/pages/WorkspacePage.tsx,src/renderer/components/Composer.tsx,src/styles.css,ui/projects.html,ui/workspace.html -->
+  - 验收要点：`npm run check` 通过，确认 TypeScript、主进程脚本和现有检查无错误。
+  - 验收要点：`npm run build` 通过，确认新增或替换的 SVG icon 可被 Vite 正常构建。
+  - 验收要点：对 `src/renderer`、`src/styles.css` 和 `ui` 执行字符扫描，确认无承担图标职责的 emoji 或字符符号残留。
+  - 验收要点：手动核对项目页、工作区概览、任务与计划、事件流、需求/反馈输入区，确认图标展示清晰且主要交互无回归。
+
+## 总体验收标准
+
+- 图标统一：系统界面中所有承担图标职责的元素均使用 SVG icon 或统一 Icon 组件，不再使用 emoji 作为图标。
+- 视觉一致：图标尺寸、线宽、颜色、悬浮态、危险态和选中态遵循现有设计变量，页面整体风格统一。
+- 交互无回归：项目管理、工作区导航、输入提交、附件上传、任务查看、删除确认等核心交互保持原有行为。
+- 可访问性明确：装饰性图标正确隐藏，功能性按钮保留可读 `aria-label` 或文字说明，键盘操作不受影响。
+- 构建通过：完成实现后 `npm run check` 与 `npm run build` 均通过，静态原型无需外部资源即可正常显示图标。
+
+## 进度区
+
+- 2026-06-25 AutoPlan 生成：需求 #6 开发计划已创建，待执行。
+'"'@
+Set-Content -Path "'$path -Value $content -Encoding UTF8
+Get-Item $path | Select-Object FullName,Length,LastWriteTime' in D:\project\GitHub\autoplan
+ succeeded in 204ms:
+
+FullName                                                                   Length LastWriteTime    
+--------                                                                   ------ -------------    
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_6_20260625-032502.md   5656 2026/6/25 3:27:24
+
+
+
+codex
+计划文件已写入；我再快速校验格式和内容完整性。
+exec
+powershell.exe -Command "Get-Content -Encoding UTF8 docs\\plan\\plan_requirement_6_20260625-032502.md; Write-Output '---TASK FORMAT CHECK---'; rg -n \""'^- '"\\[ \\] P[0-9]{3}: .+ <"'!-- scope: .+ -->$|''^## 总体验收标准$|''^## 进度区$" docs'"\\plan\\plan_requirement_6_20260625-032502.md" in D:\project\GitHub\autoplan
+ succeeded in 212ms:
+# 需求 #6 开发计划：系统界面图标统一使用 Icon
+
+## 背景
+
+当前界面中部分导航、统计卡片、操作按钮、状态节点和输入区按钮直接使用字符符号或 emoji 作为图标。需求 #6 要求系统界面的图标统一使用 icon，而不是使用 emoji，以保证视觉风格一致、跨平台渲染稳定、可访问性明确，并便于后续维护主题色、尺寸和悬浮态。
+
+## 任务拆解
+
+- [ ] P001: 建立统一 SVG 图标体系 <!-- scope: src/renderer/components/icons.tsx,src/styles.css -->
+  - 验收要点：新增本地图标组件或图标映射，默认使用 SVG icon，不新增非必要运行时依赖。
+  - 验收要点：图标组件支持统一的 `size`、`className`、`title` 或 `aria-hidden` 语义，装饰图标不被屏幕阅读器重复朗读。
+  - 验收要点：覆盖当前界面需要的概览、需求、反馈、任务、事件、计划、运行、完成、编辑、删除、警告、刷新、附件、发送等基础图标。
+  - 验收要点：图标颜色默认继承文本色或使用现有 CSS 变量，能够适配品牌色、成功、警告、危险和普通按钮状态。
+
+- [ ] P002: 替换项目页操作图标 <!-- scope: src/renderer/pages/ProjectsPage.tsx,src/styles.css -->
+  - 验收要点：项目卡片右键菜单或更多菜单中的进入工作区、编辑、删除操作均使用 SVG icon，按钮文字和点击行为保持不变。
+  - 验收要点：删除确认弹窗的警告视觉改为统一 Icon 组件，保留现有危险色、圆形背景和居中布局。
+  - 验收要点：项目页不再把 emoji 或字符符号作为操作图标来源，搜索、创建、编辑、删除流程无回归。
+  - 验收要点：图标与文字间距、对齐、悬浮态和危险态在窄屏及长项目名称下不挤压、不错位。
+
+- [ ] P003: 替换工作区导航与统计图标 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/styles.css -->
+  - 验收要点：工作区侧边导航的概览、需求、反馈、任务与计划、事件流图标改为统一 SVG icon，当前选中态样式保持一致。
+  - 验收要点：概览统计卡片中的需求数、计划数、任务进度、循环间隔图标改为 Icon 组件，`StatCard` 不再依赖字符串图标。
+  - 验收要点：图标替换后统计卡片的颜色、尺寸、圆形背景、文字层级和响应式布局与现有视觉保持一致或更稳定。
+  - 验收要点：工作区标题、返回项目列表、查看任务等文字入口不因图标替换丢失可点击区域或可访问标签。
+
+- [ ] P004: 替换流水线与输入区图标 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/Composer.tsx,src/styles.css -->
+  - 验收要点：循环阶段流水线中的完成态和运行态使用 SVG icon，未开始步骤仍可显示序号，阶段状态语义保持清晰。
+  - 验收要点：需求/反馈输入区的添加附件、发送按钮和非图片附件占位改为 Icon 组件，不再使用字符图形充当图标。
+  - 验收要点：按钮 `aria-label`、键盘触发、文件选择、拖拽上传和提交表单行为保持不变。
+  - 验收要点：输入区图标在禁用、悬浮、拖拽高亮和紧凑布局下尺寸统一，不影响文本区域高度自适应。
+
+- [ ] P005: 同步静态界面原型图标 <!-- scope: ui/projects.html,ui/workspace.html,ui/README.md -->
+  - 验收要点：静态项目页和工作区原型中用于导航、统计、操作、警告、附件和流水线状态的 emoji 或字符符号改为 inline SVG 或可复用 icon 片段。
+  - 验收要点：原型页面的视觉说明与实际 React 界面保持一致，`ui/README.md` 补充“界面图标使用 icon，不使用 emoji”的设计约束。
+  - 验收要点：原型中的示例业务文案、时间、状态、占位内容不被误删，仅替换承担图标职责的符号。
+  - 验收要点：浏览器直接打开静态 HTML 时图标可见，无需依赖外部 CDN 或网络资源。
+
+- [ ] P006: 执行图标替换回归验证 <!-- scope: package.json,src/renderer/components/icons.tsx,src/renderer/pages/ProjectsPage.tsx,src/renderer/pages/WorkspacePage.tsx,src/renderer/components/Composer.tsx,src/styles.css,ui/projects.html,ui/workspace.html -->
+  - 验收要点：`npm run check` 通过，确认 TypeScript、主进程脚本和现有检查无错误。
+  - 验收要点：`npm run build` 通过，确认新增或替换的 SVG icon 可被 Vite 正常构建。
+  - 验收要点：对 `src/renderer`、`src/styles.css` 和 `ui` 执行字符扫描，确认无承担图标职责的 emoji 或字符符号残留。
+  - 验收要点：手动核对项目页、工作区概览、任务与计划、事件流、需求/反馈输入区，确认图标展示清晰且主要交互无回归。
+
+## 总体验收标准
+
+- 图标统一：系统界面中所有承担图标职责的元素均使用 SVG icon 或统一 Icon 组件，不再使用 emoji 作为图标。
+- 视觉一致：图标尺寸、线宽、颜色、悬浮态、危险态和选中态遵循现有设计变量，页面整体风格统一。
+- 交互无回归：项目管理、工作区导航、输入提交、附件上传、任务查看、删除确认等核心交互保持原有行为。
+- 可访问性明确：装饰性图标正确隐藏，功能性按钮保留可读 `aria-label` 或文字说明，键盘操作不受影响。
+- 构建通过：完成实现后 `npm run check` 与 `npm run build` 均通过，静态原型无需外部资源即可正常显示图标。
+
+## 进度区
+
+- 2026-06-25 AutoPlan 生成：需求 #6 开发计划已创建，待执行。
+---TASK FORMAT CHECK---
+9:- [ ] P001: 建立统一 SVG 图标体系 <!-- scope: src/renderer/components/icons.tsx,src/styles.css -->
+15:- [ ] P002: 替换项目页操作图标 <!-- scope: src/renderer/pages/ProjectsPage.tsx,src/styles.css -->
+21:- [ ] P003: 替换工作区导航与统计图标 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/styles.css -->
+27:- [ ] P004: 替换流水线与输入区图标 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/Composer.tsx,src/styles.css -->
+33:- [ ] P005: 同步静态界面原型图标 <!-- scope: ui/projects.html,ui/workspace.html,ui/README.md -->
+39:- [ ] P006: 执行图标替换回归验证 <!-- scope: package.json,src/renderer/components/icons.tsx,src/renderer/pages/ProjectsPage.tsx,src/renderer/pages/WorkspacePage.tsx,src/renderer/components/Composer.tsx,src/styles.css,ui/projects.html,ui/workspace.html -->
+45:## 总体验收标准
+53:## 进度区
+
+**Refining the plan file**
+
+I think there might be an issue with the instruction to "only write plan file." I need to keep the final version concise and include the file path line along with line references. It makes sense to mention validation since the final file reference requires a start line. I should note that there’s no need to include the full content and avoid any verbose phrases. Keeping it under 10 lines is essential, especially for clarity!
+codex
+已生成需求 #6 的开发计划文件，未修改业务代码。
+
+- 文件：`docs/plan/plan_requirement_6_20260625-032502.md:1`
+- 内容包含：背景、任务拆解、每个任务的固定 `scope` 注释、验收要点、总体验收标准、进度区
+- 已校验：6 个任务均符合 `- [ ] P001: ... <!-- scope: ... -->` 格式，并包含总体验收标准与进度区
+tokens used
+68,154
+已生成需求 #6 的开发计划文件，未修改业务代码。
+
+- 文件：`docs/plan/plan_requirement_6_20260625-032502.md:1`
+- 内容包含：背景、任务拆解、每个任务的固定 `scope` 注释、验收要点、总体验收标准、进度区
+- 已校验：6 个任务均符合 `- [ ] P001: ... <!-- scope: ... -->` 格式，并包含总体验收标准与进度区

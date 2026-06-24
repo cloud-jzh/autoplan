@@ -1,0 +1,10 @@
+**完成**
+- `src/loopService.js:870` 为任务开始、失败、完成事件补充 Codex 会话上下文。
+- `src/loopService.js:1471` 让 `snapshot()` 的 `tasks`、`activeOperation(s)`、`lastOperation` 暴露短会话标识与新建/恢复/回退状态。
+- `src/renderer/types.ts:192` 新增 `CodexSessionInfo`，同步任务、事件、operation 类型。
+- `src/renderer/components/CodexLog.tsx:38` 与 `src/renderer/pages/WorkspacePage.tsx:727` 在 Codex 日志区域展示“新建/恢复/回退新建会话”的短文案。
+
+**验证**
+- 已通过 `node --check src\loopService.js`
+- 已通过 `npx tsc --noEmit`
+- 只读取 plan 文件，未修改 plan、未勾选 checkbox、未更新进度区。

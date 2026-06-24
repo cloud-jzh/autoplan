@@ -1,0 +1,1676 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019efb06-e224-73b0-a06b-3cdb77fe1f55
+--------
+user
+你是开发执行者。
+请只执行指定任务 P001，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_4_20260625-030248.md
+指定任务：
+- [ ] P001: 扩展任务耗时数据模型 <!-- scope: src/database.js,src/renderer/types.ts -->
+任务 scope：src/database.js, src/renderer/types.ts
+
+完成后必须：
+- 当前为并发执行模式，不要读写其它任务的 scope
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 如需测试，只运行与当前任务直接相关的最小测试集，不要运行全量测试或与本任务无关的测试
+- 只有当前任务本身明确要求全量验证时，才允许运行全量测试
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会先只查看只读计划与两个 scoped 文件，确定 P001 的字段要求。
+mcp: codegraph/codegraph_explore started
+mcp: codegraph/codegraph_explore (failed)
+codex
+CodeGraph 需要显式项目路径；我会用路径重试并保持只看 scoped 文件。
+mcp: codegraph/codegraph_explore started
+mcp: codegraph/codegraph_explore (failed)
+**Planning file inspection**
+
+I need to use shell commands instead of a code graph. It’s important to focus on the current scope of direct business files, and I’m allowed to use the plan file. I’ll want to read these files with the command `Get-Content -Raw -Encoding UTF8`. If the files aren’t too large, I might need the full ones to inspect closely. I have to be careful with how I approach this task.
+codex
+CodeGraph 未初始化；我改用 PowerShell 仅读取计划和两个 scoped 文件。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new();
+$files = @('"'docs/plan/plan_requirement_4_20260625-030248.md','src/database.js','src/renderer/types.ts');
+foreach ("'$f in $files) { Write-Output "`n===== $f ====="; Get-Content -LiteralPath $f -Raw -Encoding UTF8 }' in D:\project\GitHub\autoplan
+ succeeded in 201ms:
+
+===== docs/plan/plan_requirement_4_20260625-030248.md =====
+# 需求 #4 开发计划：任务系统增加耗时统计
+
+## 背景
+
+当前任务系统已支持 Plan 解析、任务状态流转、并发执行、手动执行/停止、任务列表展示和 smoke 回归。需求 #4 要求在任务系统中增加耗时统计，核心目标是让每个任务从开始执行到结束/停止/失败的耗时可被记录、查询和展示，并在不影响既有任务执行流程的前提下兼容历史数据。
+
+## 任务拆解
+
+- [ ] P001: 扩展任务耗时数据模型 <!-- scope: src/database.js,src/renderer/types.ts -->
+  - 验收要点：`plan_tasks` 表新增任务开始时间、结束时间、累计耗时毫秒等字段，并通过现有迁移机制兼容旧数据库。
+  - 验收要点：历史任务在迁移后字段有安全默认值，空值或 0 值不会影响任务列表、Plan 进度和验收流程。
+  - 验收要点：前端 `PlanTask` 类型同步新增耗时字段，TypeScript 编译不出现类型缺口。
+
+- [ ] P002: 在任务生命周期记录耗时 <!-- scope: src/loopService.js -->
+  - 验收要点：任务进入 `running` 时记录本次 `started_at`，手动执行、循环执行和并发执行路径均覆盖。
+  - 验收要点：任务完成、失败回退、手动停止时计算本次耗时并累加到任务耗时字段，同时写入 `finished_at` 和 `updated_at`。
+  - 验收要点：任务重试时不丢失历史累计耗时，运行中实时耗时可通过 `started_at` 推导，状态流转保持原有语义。
+  - 验收要点：`task.executed`、`task.failed` 或停止相关事件的元信息包含耗时，便于后续审计和日志排查。
+
+- [ ] P003: 在快照数据中暴露耗时信息 <!-- scope: src/loopService.js,src/renderer/types.ts -->
+  - 验收要点：`snapshot().tasks` 返回每个任务的开始时间、结束时间、累计耗时毫秒和运行中状态所需字段。
+  - 验收要点：运行中任务的耗时展示不依赖额外 IPC 接口，现有定时 `emitUpdate` 可驱动刷新。
+  - 验收要点：快照查询仍按 Plan 创建时间和任务顺序排序，新增字段不破坏现有前端消费逻辑。
+
+- [ ] P004: 展示任务耗时与计划汇总 <!-- scope: src/renderer/utils/time.ts,src/renderer/components/PlanLists.tsx,src/renderer/pages/WorkspacePage.tsx,src/styles.css -->
+  - 验收要点：任务列表展示每个任务的耗时，未开始显示“未开始”，运行中显示“已运行 xx”，已完成/失败/停止显示累计耗时。
+  - 验收要点：新增耗时格式化函数，支持毫秒输入并输出秒、分、小时级中文短格式，空值和异常值有兜底显示。
+  - 验收要点：任务与计划区域展示当前 Plan 的总耗时/已完成任务耗时汇总，页面在窄屏和长任务标题下不溢出。
+  - 验收要点：运行中任务耗时能随现有快照刷新更新，不需要用户手动刷新页面。
+
+- [ ] P005: 补充耗时统计回归测试 <!-- scope: scripts/smoke-test.js -->
+  - 验收要点：smoke 测试覆盖任务开始后写入 `started_at`，完成后写入 `finished_at` 和正数 `duration_ms`。
+  - 验收要点：smoke 测试覆盖失败或停止回退到 `pending` 时耗时仍被累计，后续重试继续累加。
+  - 验收要点：smoke 测试覆盖 `snapshot().tasks` 中耗时字段存在且类型符合前端预期。
+  - 验收要点：既有 Plan 解析、scope 并发选择、Plan guard、验收完成等断言保持通过。
+
+- [ ] P006: 执行构建与回归验证 <!-- scope: package.json,scripts/smoke-test.js,src/database.js,src/loopService.js,src/renderer/types.ts,src/renderer/components/PlanLists.tsx,src/renderer/pages/WorkspacePage.tsx,src/renderer/utils/time.ts,src/styles.css -->
+  - 验收要点：`npm run check` 通过，包含 TypeScript、Node 语法检查和脚本检查。
+  - 验收要点：`npm run smoke` 通过，确认数据库迁移、任务执行、耗时统计和原有任务系统行为无回归。
+  - 验收要点：如验证失败，仅修复与耗时统计直接相关的问题，不扩大修改范围。
+
+## 总体验收标准
+
+- 数据可靠：任务耗时以毫秒为基础存储，开始、完成、失败、停止和重试场景均能得到可解释的累计耗时。
+- 兼容安全：旧数据库自动补齐新增字段，历史任务不因空耗时字段导致页面或任务流程异常。
+- 展示清晰：任务列表能直观看到每个任务的耗时状态，Plan 区域能看到汇总耗时，运行中耗时会自动刷新。
+- 流程无回归：Plan 草稿确认、任务同步、scope 并发执行、手动执行/停止、Plan guard、验收流程保持原有行为。
+- 验证通过：完成实现后 `npm run check` 与 `npm run smoke` 均通过。
+
+## 进度区
+
+- 2026-06-25 AutoPlan 生成：需求 #4 开发计划已创建，待执行。
+
+
+===== src/database.js =====
+const fs = require('node:fs');
+const path = require('node:path');
+const initSqlJs = require('sql.js');
+
+class AppDatabase {
+  constructor(dbPath) {
+    this.dbPath = dbPath;
+    this.db = null;
+  }
+
+  async init() {
+    fs.mkdirSync(path.dirname(this.dbPath), { recursive: true });
+    const SQL = await initSqlJs({
+      locateFile: (file) => path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', file),
+    });
+    const bytes = fs.existsSync(this.dbPath) ? fs.readFileSync(this.dbPath) : undefined;
+    this.db = new SQL.Database(bytes);
+    this.migrate();
+    this.persist();
+  }
+
+  migrate() {
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS projects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        workspace_path TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_projects_updated
+      ON projects (updated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS project_states (
+        project_id INTEGER PRIMARY KEY,
+        running INTEGER NOT NULL DEFAULT 0,
+        phase TEXT NOT NULL DEFAULT 'idle',
+        interval_seconds INTEGER NOT NULL DEFAULT 5,
+        validation_command TEXT NOT NULL DEFAULT 'flutter analyze',
+        last_issue_hash TEXT,
+        last_error TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS requirements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'open',
+        source_path TEXT,
+        source_hash TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        requirement_id INTEGER,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'open',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS attachments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        owner_type TEXT NOT NULL,
+        owner_id INTEGER NOT NULL,
+        original_name TEXT NOT NULL,
+        stored_path TEXT NOT NULL,
+        mime_type TEXT,
+        size INTEGER NOT NULL,
+        hash TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_attachments_owner
+      ON attachments (owner_type, owner_id);
+
+      CREATE TABLE IF NOT EXISTS plan_drafts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        source_type TEXT NOT NULL,
+        source_id INTEGER NOT NULL,
+        markdown TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft',
+        linked_plan_id INTEGER,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_plan_drafts_source
+      ON plan_drafts (source_type, source_id);
+
+      CREATE TABLE IF NOT EXISTS scan_files (
+        project_id INTEGER NOT NULL DEFAULT 1,
+        scan_type TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        modified_at TEXT NOT NULL,
+        scanned_at TEXT NOT NULL,
+        PRIMARY KEY (project_id, scan_type, file_path)
+      );
+
+      CREATE TABLE IF NOT EXISTS plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        issue_hash TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        total_tasks INTEGER NOT NULL DEFAULT 0,
+        completed_tasks INTEGER NOT NULL DEFAULT 0,
+        validation_passed INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS plan_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_id INTEGER NOT NULL,
+        task_key TEXT NOT NULL,
+        title TEXT NOT NULL,
+        raw_line TEXT NOT NULL,
+        scope TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'pending',
+        sort_order INTEGER NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(plan_id, task_key)
+      );
+
+      CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        type TEXT NOT NULL,
+        message TEXT NOT NULL,
+        meta TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS loop_state (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        running INTEGER NOT NULL DEFAULT 0,
+        phase TEXT NOT NULL DEFAULT 'idle',
+        workspace_path TEXT NOT NULL DEFAULT '',
+        interval_seconds INTEGER NOT NULL DEFAULT 5,
+        validation_command TEXT NOT NULL DEFAULT 'flutter analyze',
+        last_issue_hash TEXT,
+        last_error TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      INSERT OR IGNORE INTO loop_state (
+        id, running, phase, workspace_path, interval_seconds, validation_command, updated_at
+      ) VALUES (1, 0, 'idle', '', 5, 'flutter analyze', datetime('now'));
+    `);
+
+    this.ensureColumn('requirements', 'project_id', 'INTEGER');
+    this.ensureColumn('requirements', 'linked_plan_id', 'INTEGER');
+    this.ensureColumn('feedback', 'project_id', 'INTEGER');
+    this.ensureColumn('feedback', 'linked_plan_id', 'INTEGER');
+    this.ensureColumn('attachments', 'project_id', 'INTEGER');
+    this.ensureColumn('plan_drafts', 'project_id', 'INTEGER');
+    this.ensureColumn('plans', 'project_id', 'INTEGER');
+    this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('events', 'project_id', 'INTEGER');
+
+    const defaultProjectId = this.ensureDefaultProject();
+    this.migrateScanFilesTable(defaultProjectId);
+    this.assignLegacyRows(defaultProjectId);
+    this.ensureProjectState(defaultProjectId);
+  }
+
+  ensureDefaultProject() {
+    const existing = this.get('SELECT id FROM projects ORDER BY id ASC LIMIT 1');
+    if (existing) return Number(existing.id);
+
+    const legacyState = this.get('SELECT * FROM loop_state WHERE id = 1') || {};
+    const now = nowIso();
+    this.db.run(
+      `INSERT INTO projects (name, workspace_path, description, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      ['默认项目', legacyState.workspace_path || '', '从旧版单项目数据自动迁移', now, now],
+    );
+    return Number(this.get('SELECT last_insert_rowid() AS id').id);
+  }
+
+  ensureProjectState(projectId) {
+    const legacyState = this.get('SELECT * FROM loop_state WHERE id = 1') || {};
+    this.db.run(
+      `INSERT OR IGNORE INTO project_states
+       (project_id, running, phase, interval_seconds, validation_command, last_issue_hash, last_error, updated_at)
+       VALUES (?, 0, ?, ?, ?, ?, ?, ?)`,
+      [
+        projectId,
+        legacyState.phase || 'idle',
+        Number(legacyState.interval_seconds || 5),
+        legacyState.validation_command || 'flutter analyze',
+        legacyState.last_issue_hash || null,
+        legacyState.last_error || null,
+        legacyState.updated_at || nowIso(),
+      ],
+    );
+  }
+
+  assignLegacyRows(projectId) {
+    for (const table of ['requirements', 'feedback', 'attachments', 'plan_drafts', 'plans', 'events', 'scan_files']) {
+      this.db.run(`UPDATE ${table} SET project_id = ? WHERE project_id IS NULL`, [projectId]);
+    }
+  }
+
+  ensureColumn(table, column, definition) {
+    const columns = this.all(`PRAGMA table_info(${table})`);
+    if (!columns.some((item) => item.name === column)) {
+      this.db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+  }
+
+  migrateScanFilesTable(defaultProjectId) {
+    const table = this.get("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'scan_files'");
+    if (String(table?.sql || '').includes('PRIMARY KEY (project_id, scan_type, file_path)')) return;
+
+    const hasProjectId = this.all('PRAGMA table_info(scan_files)').some((item) => item.name === 'project_id');
+    const fallbackProjectId = Number(defaultProjectId || 1);
+    this.db.run('ALTER TABLE scan_files RENAME TO scan_files_legacy');
+    this.db.run(`
+      CREATE TABLE scan_files (
+        project_id INTEGER NOT NULL DEFAULT ${fallbackProjectId},
+        scan_type TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        modified_at TEXT NOT NULL,
+        scanned_at TEXT NOT NULL,
+        PRIMARY KEY (project_id, scan_type, file_path)
+      );
+    `);
+
+    if (hasProjectId) {
+      this.db.run(`
+        INSERT OR REPLACE INTO scan_files
+        (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+        SELECT COALESCE(project_id, ${fallbackProjectId}), scan_type, file_path, hash, size, modified_at, scanned_at
+        FROM scan_files_legacy;
+      `);
+    } else {
+      this.db.run(`
+        INSERT OR REPLACE INTO scan_files
+        (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+        SELECT ${fallbackProjectId}, scan_type, file_path, hash, size, modified_at, scanned_at
+        FROM scan_files_legacy;
+      `);
+    }
+
+    this.db.run('DROP TABLE scan_files_legacy');
+  }
+
+  persist() {
+    const data = Buffer.from(this.db.export());
+    const tmp = `${this.dbPath}.tmp`;
+    const mirror = `${this.dbPath}.mirror`;
+    fs.writeFileSync(tmp, data);
+    fs.writeFileSync(mirror, data);
+    if (fs.existsSync(this.dbPath)) {
+      fs.copyFileSync(this.dbPath, `${this.dbPath}.bak`);
+      fs.unlinkSync(this.dbPath);
+    }
+    fs.renameSync(tmp, this.dbPath);
+  }
+
+  run(sql, params = []) {
+    this.db.run(sql, params);
+    this.persist();
+  }
+
+  get(sql, params = []) {
+    const rows = this.all(sql, params);
+    return rows[0] || null;
+  }
+
+  all(sql, params = []) {
+    const stmt = this.db.prepare(sql);
+    try {
+      stmt.bind(params);
+      const rows = [];
+      while (stmt.step()) rows.push(stmt.getAsObject());
+      return rows;
+    } finally {
+      stmt.free();
+    }
+  }
+
+  insert(sql, params = []) {
+    this.db.run(sql, params);
+    const id = this.get('SELECT last_insert_rowid() AS id').id;
+    this.persist();
+    return id;
+  }
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+module.exports = { AppDatabase, nowIso };
+
+
+===== src/renderer/types.ts =====
+export type IntakeType = 'requirement' | 'feedback';
+export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'tasks' | 'events';
+
+export interface Project {
+  id: number;
+  name: string;
+  workspace_path: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+  running?: number;
+  phase?: string;
+  interval_seconds?: number;
+  validation_command?: string;
+}
+
+export interface ProjectState {
+  project_id: number;
+  running: number;
+  phase: string;
+  interval_seconds: number;
+  validation_command: string;
+  last_issue_hash?: string | null;
+  last_error?: string | null;
+  updated_at: string;
+  /** 由 snapshot 合并自 project.workspace_path */
+  workspace_path?: string;
+}
+
+export interface Requirement {
+  id: number;
+  project_id: number;
+  title: string;
+  body: string;
+  status: string;
+  source_path?: string | null;
+  source_hash?: string | null;
+  linked_plan_id?: number | null;
+  plan_status?: string | null;
+  plan_completed?: number | null;
+  plan_total?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Feedback {
+  id: number;
+  project_id: number;
+  requirement_id?: number | null;
+  title: string;
+  body: string;
+  status: string;
+  linked_plan_id?: number | null;
+  plan_status?: string | null;
+  plan_completed?: number | null;
+  plan_total?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Attachment {
+  id: number;
+  project_id: number;
+  owner_type: IntakeType;
+  owner_id: number;
+  original_name: string;
+  stored_path: string;
+  mime_type?: string | null;
+  size: number;
+  hash: string;
+  created_at: string;
+}
+
+export interface PlanDraft {
+  id: number;
+  project_id: number;
+  source_type: IntakeType;
+  source_id: number;
+  markdown: string;
+  status: string;
+  linked_plan_id?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Plan {
+  id: number;
+  project_id: number;
+  issue_hash: string;
+  file_path: string;
+  hash: string;
+  status: string;
+  total_tasks: number;
+  completed_tasks: number;
+  validation_passed: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlanTask {
+  id: number;
+  plan_id: number;
+  task_key: string;
+  title: string;
+  raw_line: string;
+  scope: string;
+  status: string;
+  sort_order: number;
+  updated_at: string;
+  /** JOIN plans 得到 */
+  file_path: string;
+}
+
+export interface AppEvent {
+  id: number;
+  project_id: number;
+  type: string;
+  message: string;
+  meta?: string | null;
+  created_at: string;
+}
+
+export interface ScanFile {
+  project_id: number;
+  scan_type: string;
+  file_path: string;
+  hash: string;
+  size: number;
+  modified_at: string;
+  scanned_at: string;
+}
+
+export interface AppSnapshot {
+  activeProjectId: number | null;
+  activeProject: Project | null;
+  projects: Project[];
+  state: ProjectState | null;
+  requirements: Requirement[];
+  feedback: Feedback[];
+  attachments: Attachment[];
+  planDrafts: PlanDraft[];
+  plans: Plan[];
+  tasks: PlanTask[];
+  events: AppEvent[];
+  scans: ScanFile[];
+  activeOperation: ActiveOperation | null;
+  activeOperations: ActiveOperation[];
+  lastOperation: ActiveOperation | null;
+}
+
+export interface ActivityLine {
+  role: string;
+  text: string;
+  at: string;
+}
+
+export interface ActiveOperation {
+  label: string;
+  projectId: number | null;
+  planId: number | null;
+  taskId: number | null;
+  startedAt: string | null;
+  finishedAt?: string | null;
+  exitCode?: number | null;
+  logTail: string;
+  activity: ActivityLine[];
+}
+
+export interface PendingAttachment {
+  path: string;
+  name: string;
+  size: number;
+  type: string;
+}
+
+export interface CreateIntakeInput {
+  projectId: number;
+  body: string;
+  attachments: PendingAttachment[];
+  title?: string;
+  status?: string;
+  autoRun?: boolean;
+  requirementId?: number | null;
+}
+
+export interface CreateProjectInput {
+  name: string;
+  workspacePath: string;
+  description?: string;
+}
+
+export interface UpdateProjectInput extends CreateProjectInput {
+  id: number;
+}
+
+export interface LoopConfigInput {
+  projectId: number;
+  workspacePath?: string;
+  intervalSeconds?: number;
+  validationCommand?: string;
+}
+
+export interface ProjectIdInput {
+  projectId: number;
+  manual?: boolean;
+}
+
+export interface RecordIdInput extends ProjectIdInput {
+  id: number;
+}
+
+export interface TaskIdInput extends ProjectIdInput {
+  taskId: number;
+}
+
+export interface IntakeActionInput extends ProjectIdInput {
+  type: IntakeType;
+  id: number;
+  title?: string;
+}
+
+export interface UpdateRequirementInput extends RecordIdInput {
+  title?: string;
+  body?: string;
+  status?: string;
+  attachments?: PendingAttachment[];
+}
+
+export interface UpdateFeedbackInput extends UpdateRequirementInput {
+  requirementId?: number | null;
+}
+
+export interface AutoplanApi {
+  snapshot: (projectId?: number | null) => Promise<AppSnapshot>;
+  createProject: (input: CreateProjectInput) => Promise<AppSnapshot>;
+  updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+  deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+  stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+  createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+  updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+  deleteRequirement: (input: RecordIdInput) => Promise<AppSnapshot>;
+  createFeedback: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+  updateFeedback: (input: UpdateFeedbackInput) => Promise<AppSnapshot>;
+  deleteFeedback: (input: RecordIdInput) => Promise<AppSnapshot>;
+  updatePlanDraft: (input: { id: number; markdown: string }) => Promise<AppSnapshot>;
+  interruptIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  resumeIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  appendIntakeTask: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  getDroppedFilePath: (file: File) => string;
+  toFileUrl: (filePath: string) => string;
+  onLoopUpdate: (handler: (snapshot: AppSnapshot) => void) => () => void;
+}
+
+declare global {
+  interface Window {
+    autoplan: AutoplanApi;
+  }
+}
+
+
+**Inspecting outputs for clarity**
+
+I need to take a closer look at the outputs because they seem to be truncated. The shell output showed a total of 641 lines, so I’ll have to examine specific parts separately. I think using `rg` should help me manage the scoped files. I’ll focus on parts related to plan_tasks, migration, schema, and PlanTask, limiting my search to database and types. It's essential to get everything right!
+codex
+计划确认 P001 只涉及数据列和类型；接着定位表结构与迁移逻辑。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new();
+rg -n "plan_tasks|CREATE TABLE|ALTER TABLE|schema|migrat|PRAGMA|PlanTask|tasks" src/database.js src/renderer/types.ts' in D:\project\GitHub\autoplan
+ succeeded in 148ms:
+src/renderer/types.ts:2:export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'tasks' | 'events';
+src/renderer/types.ts:93:  total_tasks: number;
+src/renderer/types.ts:94:  completed_tasks: number;
+src/renderer/types.ts:100:export interface PlanTask {
+src/renderer/types.ts:143:  tasks: PlanTask[];
+src/database.js:18:    this.migrate();
+src/database.js:22:  migrate() {
+src/database.js:24:      CREATE TABLE IF NOT EXISTS settings (
+src/database.js:29:      CREATE TABLE IF NOT EXISTS projects (
+src/database.js:41:      CREATE TABLE IF NOT EXISTS project_states (
+src/database.js:52:      CREATE TABLE IF NOT EXISTS requirements (
+src/database.js:64:      CREATE TABLE IF NOT EXISTS feedback (
+src/database.js:75:      CREATE TABLE IF NOT EXISTS attachments (
+src/database.js:91:      CREATE TABLE IF NOT EXISTS plan_drafts (
+src/database.js:106:      CREATE TABLE IF NOT EXISTS scan_files (
+src/database.js:117:      CREATE TABLE IF NOT EXISTS plans (
+src/database.js:124:        total_tasks INTEGER NOT NULL DEFAULT 0,
+src/database.js:125:        completed_tasks INTEGER NOT NULL DEFAULT 0,
+src/database.js:131:      CREATE TABLE IF NOT EXISTS plan_tasks (
+src/database.js:144:      CREATE TABLE IF NOT EXISTS events (
+src/database.js:153:      CREATE TABLE IF NOT EXISTS loop_state (
+src/database.js:177:    this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
+src/database.js:181:    this.migrateScanFilesTable(defaultProjectId);
+src/database.js:225:    const columns = this.all(`PRAGMA table_info(${table})`);
+src/database.js:227:      this.db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+src/database.js:231:  migrateScanFilesTable(defaultProjectId) {
+src/database.js:235:    const hasProjectId = this.all('PRAGMA table_info(scan_files)').some((item) => item.name === 'project_id');
+src/database.js:237:    this.db.run('ALTER TABLE scan_files RENAME TO scan_files_legacy');
+src/database.js:239:      CREATE TABLE scan_files (
+
+**Exploring migration data**
+
+I need to read about migration. I think I'll use PowerShell’s Get-Content feature but with limited line numbers. It's important to use the Select-Object cmdlet carefully and avoid using Python for this task. So, I’ll opt for the command Get-Content | Select-Object to keep things straightforward. It’s all about finding the right balance in commands and tools for the results I’m looking for!
+codex
+已定位迁移入口；现在读取相关代码片段，准备最小补丁。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new();
+function Show-Range($Path, $Start, $End) {
+  $lines = Get-Content -LiteralPath $Path -Encoding UTF8
+  for ($i = $Start; $i -le $End; $i++) {
+    if ($i -le $lines.Length) { '"'{0}:{1}' -f "'$i, $lines[$i-1] }
+  }
+}
+Write-Output '"'===== src/database.js:1-260 ====='; Show-Range 'src/database.js' 1 260;
+Write-Output '===== src/renderer/types.ts:80-120 ====='; Show-Range 'src/renderer/types.ts' 80 120;" in D:\project\GitHub\autoplan
+ succeeded in 210ms:
+===== src/database.js:1-260 =====
+1:const fs = require('node:fs');
+2:const path = require('node:path');
+3:const initSqlJs = require('sql.js');
+4:
+5:class AppDatabase {
+6:  constructor(dbPath) {
+7:    this.dbPath = dbPath;
+8:    this.db = null;
+9:  }
+10:
+11:  async init() {
+12:    fs.mkdirSync(path.dirname(this.dbPath), { recursive: true });
+13:    const SQL = await initSqlJs({
+14:      locateFile: (file) => path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', file),
+15:    });
+16:    const bytes = fs.existsSync(this.dbPath) ? fs.readFileSync(this.dbPath) : undefined;
+17:    this.db = new SQL.Database(bytes);
+18:    this.migrate();
+19:    this.persist();
+20:  }
+21:
+22:  migrate() {
+23:    this.db.run(`
+24:      CREATE TABLE IF NOT EXISTS settings (
+25:        key TEXT PRIMARY KEY,
+26:        value TEXT NOT NULL
+27:      );
+28:
+29:      CREATE TABLE IF NOT EXISTS projects (
+30:        id INTEGER PRIMARY KEY AUTOINCREMENT,
+31:        name TEXT NOT NULL,
+32:        workspace_path TEXT NOT NULL DEFAULT '',
+33:        description TEXT NOT NULL DEFAULT '',
+34:        created_at TEXT NOT NULL,
+35:        updated_at TEXT NOT NULL
+36:      );
+37:
+38:      CREATE INDEX IF NOT EXISTS idx_projects_updated
+39:      ON projects (updated_at DESC);
+40:
+41:      CREATE TABLE IF NOT EXISTS project_states (
+42:        project_id INTEGER PRIMARY KEY,
+43:        running INTEGER NOT NULL DEFAULT 0,
+44:        phase TEXT NOT NULL DEFAULT 'idle',
+45:        interval_seconds INTEGER NOT NULL DEFAULT 5,
+46:        validation_command TEXT NOT NULL DEFAULT 'flutter analyze',
+47:        last_issue_hash TEXT,
+48:        last_error TEXT,
+49:        updated_at TEXT NOT NULL
+50:      );
+51:
+52:      CREATE TABLE IF NOT EXISTS requirements (
+53:        id INTEGER PRIMARY KEY AUTOINCREMENT,
+54:        project_id INTEGER,
+55:        title TEXT NOT NULL,
+56:        body TEXT NOT NULL DEFAULT '',
+57:        status TEXT NOT NULL DEFAULT 'open',
+58:        source_path TEXT,
+59:        source_hash TEXT,
+60:        created_at TEXT NOT NULL,
+61:        updated_at TEXT NOT NULL
+62:      );
+63:
+64:      CREATE TABLE IF NOT EXISTS feedback (
+65:        id INTEGER PRIMARY KEY AUTOINCREMENT,
+66:        project_id INTEGER,
+67:        requirement_id INTEGER,
+68:        title TEXT NOT NULL,
+69:        body TEXT NOT NULL DEFAULT '',
+70:        status TEXT NOT NULL DEFAULT 'open',
+71:        created_at TEXT NOT NULL,
+72:        updated_at TEXT NOT NULL
+73:      );
+74:
+75:      CREATE TABLE IF NOT EXISTS attachments (
+76:        id INTEGER PRIMARY KEY AUTOINCREMENT,
+77:        project_id INTEGER,
+78:        owner_type TEXT NOT NULL,
+79:        owner_id INTEGER NOT NULL,
+80:        original_name TEXT NOT NULL,
+81:        stored_path TEXT NOT NULL,
+82:        mime_type TEXT,
+83:        size INTEGER NOT NULL,
+84:        hash TEXT NOT NULL,
+85:        created_at TEXT NOT NULL
+86:      );
+87:
+88:      CREATE INDEX IF NOT EXISTS idx_attachments_owner
+89:      ON attachments (owner_type, owner_id);
+90:
+91:      CREATE TABLE IF NOT EXISTS plan_drafts (
+92:        id INTEGER PRIMARY KEY AUTOINCREMENT,
+93:        project_id INTEGER,
+94:        source_type TEXT NOT NULL,
+95:        source_id INTEGER NOT NULL,
+96:        markdown TEXT NOT NULL,
+97:        status TEXT NOT NULL DEFAULT 'draft',
+98:        linked_plan_id INTEGER,
+99:        created_at TEXT NOT NULL,
+100:        updated_at TEXT NOT NULL
+101:      );
+102:
+103:      CREATE INDEX IF NOT EXISTS idx_plan_drafts_source
+104:      ON plan_drafts (source_type, source_id);
+105:
+106:      CREATE TABLE IF NOT EXISTS scan_files (
+107:        project_id INTEGER NOT NULL DEFAULT 1,
+108:        scan_type TEXT NOT NULL,
+109:        file_path TEXT NOT NULL,
+110:        hash TEXT NOT NULL,
+111:        size INTEGER NOT NULL,
+112:        modified_at TEXT NOT NULL,
+113:        scanned_at TEXT NOT NULL,
+114:        PRIMARY KEY (project_id, scan_type, file_path)
+115:      );
+116:
+117:      CREATE TABLE IF NOT EXISTS plans (
+118:        id INTEGER PRIMARY KEY AUTOINCREMENT,
+119:        project_id INTEGER,
+120:        issue_hash TEXT NOT NULL,
+121:        file_path TEXT NOT NULL,
+122:        hash TEXT NOT NULL,
+123:        status TEXT NOT NULL DEFAULT 'pending',
+124:        total_tasks INTEGER NOT NULL DEFAULT 0,
+125:        completed_tasks INTEGER NOT NULL DEFAULT 0,
+126:        validation_passed INTEGER NOT NULL DEFAULT 0,
+127:        created_at TEXT NOT NULL,
+128:        updated_at TEXT NOT NULL
+129:      );
+130:
+131:      CREATE TABLE IF NOT EXISTS plan_tasks (
+132:        id INTEGER PRIMARY KEY AUTOINCREMENT,
+133:        plan_id INTEGER NOT NULL,
+134:        task_key TEXT NOT NULL,
+135:        title TEXT NOT NULL,
+136:        raw_line TEXT NOT NULL,
+137:        scope TEXT NOT NULL DEFAULT '',
+138:        status TEXT NOT NULL DEFAULT 'pending',
+139:        sort_order INTEGER NOT NULL,
+140:        updated_at TEXT NOT NULL,
+141:        UNIQUE(plan_id, task_key)
+142:      );
+143:
+144:      CREATE TABLE IF NOT EXISTS events (
+145:        id INTEGER PRIMARY KEY AUTOINCREMENT,
+146:        project_id INTEGER,
+147:        type TEXT NOT NULL,
+148:        message TEXT NOT NULL,
+149:        meta TEXT,
+150:        created_at TEXT NOT NULL
+151:      );
+152:
+153:      CREATE TABLE IF NOT EXISTS loop_state (
+154:        id INTEGER PRIMARY KEY CHECK (id = 1),
+155:        running INTEGER NOT NULL DEFAULT 0,
+156:        phase TEXT NOT NULL DEFAULT 'idle',
+157:        workspace_path TEXT NOT NULL DEFAULT '',
+158:        interval_seconds INTEGER NOT NULL DEFAULT 5,
+159:        validation_command TEXT NOT NULL DEFAULT 'flutter analyze',
+160:        last_issue_hash TEXT,
+161:        last_error TEXT,
+162:        updated_at TEXT NOT NULL
+163:      );
+164:
+165:      INSERT OR IGNORE INTO loop_state (
+166:        id, running, phase, workspace_path, interval_seconds, validation_command, updated_at
+167:      ) VALUES (1, 0, 'idle', '', 5, 'flutter analyze', datetime('now'));
+168:    `);
+169:
+170:    this.ensureColumn('requirements', 'project_id', 'INTEGER');
+171:    this.ensureColumn('requirements', 'linked_plan_id', 'INTEGER');
+172:    this.ensureColumn('feedback', 'project_id', 'INTEGER');
+173:    this.ensureColumn('feedback', 'linked_plan_id', 'INTEGER');
+174:    this.ensureColumn('attachments', 'project_id', 'INTEGER');
+175:    this.ensureColumn('plan_drafts', 'project_id', 'INTEGER');
+176:    this.ensureColumn('plans', 'project_id', 'INTEGER');
+177:    this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
+178:    this.ensureColumn('events', 'project_id', 'INTEGER');
+179:
+180:    const defaultProjectId = this.ensureDefaultProject();
+181:    this.migrateScanFilesTable(defaultProjectId);
+182:    this.assignLegacyRows(defaultProjectId);
+183:    this.ensureProjectState(defaultProjectId);
+184:  }
+185:
+186:  ensureDefaultProject() {
+187:    const existing = this.get('SELECT id FROM projects ORDER BY id ASC LIMIT 1');
+188:    if (existing) return Number(existing.id);
+189:
+190:    const legacyState = this.get('SELECT * FROM loop_state WHERE id = 1') || {};
+191:    const now = nowIso();
+192:    this.db.run(
+193:      `INSERT INTO projects (name, workspace_path, description, created_at, updated_at)
+194:       VALUES (?, ?, ?, ?, ?)`,
+195:      ['默认项目', legacyState.workspace_path || '', '从旧版单项目数据自动迁移', now, now],
+196:    );
+197:    return Number(this.get('SELECT last_insert_rowid() AS id').id);
+198:  }
+199:
+200:  ensureProjectState(projectId) {
+201:    const legacyState = this.get('SELECT * FROM loop_state WHERE id = 1') || {};
+202:    this.db.run(
+203:      `INSERT OR IGNORE INTO project_states
+204:       (project_id, running, phase, interval_seconds, validation_command, last_issue_hash, last_error, updated_at)
+205:       VALUES (?, 0, ?, ?, ?, ?, ?, ?)`,
+206:      [
+207:        projectId,
+208:        legacyState.phase || 'idle',
+209:        Number(legacyState.interval_seconds || 5),
+210:        legacyState.validation_command || 'flutter analyze',
+211:        legacyState.last_issue_hash || null,
+212:        legacyState.last_error || null,
+213:        legacyState.updated_at || nowIso(),
+214:      ],
+215:    );
+216:  }
+217:
+218:  assignLegacyRows(projectId) {
+219:    for (const table of ['requirements', 'feedback', 'attachments', 'plan_drafts', 'plans', 'events', 'scan_files']) {
+220:      this.db.run(`UPDATE ${table} SET project_id = ? WHERE project_id IS NULL`, [projectId]);
+221:    }
+222:  }
+223:
+224:  ensureColumn(table, column, definition) {
+225:    const columns = this.all(`PRAGMA table_info(${table})`);
+226:    if (!columns.some((item) => item.name === column)) {
+227:      this.db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+228:    }
+229:  }
+230:
+231:  migrateScanFilesTable(defaultProjectId) {
+232:    const table = this.get("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'scan_files'");
+233:    if (String(table?.sql || '').includes('PRIMARY KEY (project_id, scan_type, file_path)')) return;
+234:
+235:    const hasProjectId = this.all('PRAGMA table_info(scan_files)').some((item) => item.name === 'project_id');
+236:    const fallbackProjectId = Number(defaultProjectId || 1);
+237:    this.db.run('ALTER TABLE scan_files RENAME TO scan_files_legacy');
+238:    this.db.run(`
+239:      CREATE TABLE scan_files (
+240:        project_id INTEGER NOT NULL DEFAULT ${fallbackProjectId},
+241:        scan_type TEXT NOT NULL,
+242:        file_path TEXT NOT NULL,
+243:        hash TEXT NOT NULL,
+244:        size INTEGER NOT NULL,
+245:        modified_at TEXT NOT NULL,
+246:        scanned_at TEXT NOT NULL,
+247:        PRIMARY KEY (project_id, scan_type, file_path)
+248:      );
+249:    `);
+250:
+251:    if (hasProjectId) {
+252:      this.db.run(`
+253:        INSERT OR REPLACE INTO scan_files
+254:        (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+255:        SELECT COALESCE(project_id, ${fallbackProjectId}), scan_type, file_path, hash, size, modified_at, scanned_at
+256:        FROM scan_files_legacy;
+257:      `);
+258:    } else {
+259:      this.db.run(`
+260:        INSERT OR REPLACE INTO scan_files
+===== src/renderer/types.ts:80-120 =====
+80:  status: string;
+81:  linked_plan_id?: number | null;
+82:  created_at: string;
+83:  updated_at: string;
+84:}
+85:
+86:export interface Plan {
+87:  id: number;
+88:  project_id: number;
+89:  issue_hash: string;
+90:  file_path: string;
+91:  hash: string;
+92:  status: string;
+93:  total_tasks: number;
+94:  completed_tasks: number;
+95:  validation_passed: number;
+96:  created_at: string;
+97:  updated_at: string;
+98:}
+99:
+100:export interface PlanTask {
+101:  id: number;
+102:  plan_id: number;
+103:  task_key: string;
+104:  title: string;
+105:  raw_line: string;
+106:  scope: string;
+107:  status: string;
+108:  sort_order: number;
+109:  updated_at: string;
+110:  /** JOIN plans 得到 */
+111:  file_path: string;
+112:}
+113:
+114:export interface AppEvent {
+115:  id: number;
+116:  project_id: number;
+117:  type: string;
+118:  message: string;
+119:  meta?: string | null;
+120:  created_at: string;
+
+codex
+上下文足够接近了；我会补看表定义完整行，避免列位置漏改。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new();
+$lines = Get-Content -LiteralPath '"'src/database.js' -Encoding UTF8
+foreach ("'$range in @(@(131,183), @(300,520), @(520,760))) {
+  Write-Output "===== src/database.js:$($range[0])-$($range[1]) ====="
+  for ($i=$range[0]; $i -le $range[1] -and $i -le $lines.Length; $i++) { '"'{0}:{1}' -f "'$i, $lines[$i-1] }
+}' in D:\project\GitHub\autoplan
+ succeeded in 206ms:
+===== src/database.js:131-183 =====
+131:      CREATE TABLE IF NOT EXISTS plan_tasks (
+132:        id INTEGER PRIMARY KEY AUTOINCREMENT,
+133:        plan_id INTEGER NOT NULL,
+134:        task_key TEXT NOT NULL,
+135:        title TEXT NOT NULL,
+136:        raw_line TEXT NOT NULL,
+137:        scope TEXT NOT NULL DEFAULT '',
+138:        status TEXT NOT NULL DEFAULT 'pending',
+139:        sort_order INTEGER NOT NULL,
+140:        updated_at TEXT NOT NULL,
+141:        UNIQUE(plan_id, task_key)
+142:      );
+143:
+144:      CREATE TABLE IF NOT EXISTS events (
+145:        id INTEGER PRIMARY KEY AUTOINCREMENT,
+146:        project_id INTEGER,
+147:        type TEXT NOT NULL,
+148:        message TEXT NOT NULL,
+149:        meta TEXT,
+150:        created_at TEXT NOT NULL
+151:      );
+152:
+153:      CREATE TABLE IF NOT EXISTS loop_state (
+154:        id INTEGER PRIMARY KEY CHECK (id = 1),
+155:        running INTEGER NOT NULL DEFAULT 0,
+156:        phase TEXT NOT NULL DEFAULT 'idle',
+157:        workspace_path TEXT NOT NULL DEFAULT '',
+158:        interval_seconds INTEGER NOT NULL DEFAULT 5,
+159:        validation_command TEXT NOT NULL DEFAULT 'flutter analyze',
+160:        last_issue_hash TEXT,
+161:        last_error TEXT,
+162:        updated_at TEXT NOT NULL
+163:      );
+164:
+165:      INSERT OR IGNORE INTO loop_state (
+166:        id, running, phase, workspace_path, interval_seconds, validation_command, updated_at
+167:      ) VALUES (1, 0, 'idle', '', 5, 'flutter analyze', datetime('now'));
+168:    `);
+169:
+170:    this.ensureColumn('requirements', 'project_id', 'INTEGER');
+171:    this.ensureColumn('requirements', 'linked_plan_id', 'INTEGER');
+172:    this.ensureColumn('feedback', 'project_id', 'INTEGER');
+173:    this.ensureColumn('feedback', 'linked_plan_id', 'INTEGER');
+174:    this.ensureColumn('attachments', 'project_id', 'INTEGER');
+175:    this.ensureColumn('plan_drafts', 'project_id', 'INTEGER');
+176:    this.ensureColumn('plans', 'project_id', 'INTEGER');
+177:    this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
+178:    this.ensureColumn('events', 'project_id', 'INTEGER');
+179:
+180:    const defaultProjectId = this.ensureDefaultProject();
+181:    this.migrateScanFilesTable(defaultProjectId);
+182:    this.assignLegacyRows(defaultProjectId);
+183:    this.ensureProjectState(defaultProjectId);
+===== src/database.js:300-520 =====
+300:    } finally {
+301:      stmt.free();
+302:    }
+303:  }
+304:
+305:  insert(sql, params = []) {
+306:    this.db.run(sql, params);
+307:    const id = this.get('SELECT last_insert_rowid() AS id').id;
+308:    this.persist();
+309:    return id;
+310:  }
+311:}
+312:
+313:function nowIso() {
+314:  return new Date().toISOString();
+315:}
+316:
+317:module.exports = { AppDatabase, nowIso };
+===== src/database.js:520-760 =====
+
+**Considering TypeScript commands**
+
+I’m thinking about whether to run TypeScript with `npx tsc --noEmit`. The user mentioned needing tests only for the current relevant parts, so I wonder if running the full compile could include unrelated files. There's a mention in acceptance criteria about needing full validation, which complicates things. I could consider running a minimal check with `npx tsc --noEmit --pretty false`, but it might be best to reassess our plan and adjust accordingly.
+codex
+我会按 P001 建一个短计划，然后只改这两个文件。
+  ✓ 确认耗时字段命名
+  → 补充数据库迁移列
+  • 同步前端任务类型
+  • 做最小语法检查
+codex
+字段命名已确认：`started_at`、`finished_at`、`duration_ms`。现在打最小补丁。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\database.js
+diff --git a/src/database.js b/src/database.js
+index e2b723ebefda6ddbfd3f23081d759cd033f535c1..0d0d3b73955c3087ec250e5a61f249eed3697484
+--- a/src/database.js
++++ b/src/database.js
+@@ -137,6 +137,9 @@
+         scope TEXT NOT NULL DEFAULT '',
+         status TEXT NOT NULL DEFAULT 'pending',
+         sort_order INTEGER NOT NULL,
++        started_at TEXT,
++        finished_at TEXT,
++        duration_ms INTEGER NOT NULL DEFAULT 0,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -175,6 +178,9 @@
+     this.ensureColumn('plan_drafts', 'project_id', 'INTEGER');
+     this.ensureColumn('plans', 'project_id', 'INTEGER');
+     this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
++    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+
+diff --git a/src/database.js b/src/database.js
+index e2b723ebefda6ddbfd3f23081d759cd033f535c1..0d0d3b73955c3087ec250e5a61f249eed3697484
+--- a/src/database.js
++++ b/src/database.js
+@@ -137,6 +137,9 @@
+         scope TEXT NOT NULL DEFAULT '',
+         status TEXT NOT NULL DEFAULT 'pending',
+         sort_order INTEGER NOT NULL,
++        started_at TEXT,
++        finished_at TEXT,
++        duration_ms INTEGER NOT NULL DEFAULT 0,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -175,6 +178,9 @@
+     this.ensureColumn('plan_drafts', 'project_id', 'INTEGER');
+     this.ensureColumn('plans', 'project_id', 'INTEGER');
+     this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
++    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+
+**Updating patching strategy**
+
+Oh no, I realized that the developer mentioned to use the apply_patch tool, but in my current environment, there's no explicit apply_patch tool available. Instead, I've found that I can use a shell command for applying patches, which worked out! Now, I just need to revise my plan and figure out the different types of patches that I can apply. It feels a bit chaotic, but I'm working it out!
+codex
+数据库表和旧库迁移列已补上；接着同步 `PlanTask` 类型。
+  ✓ 确认耗时字段命名
+  ✓ 补充数据库迁移列
+  → 同步前端任务类型
+  • 做最小语法检查
+diff --git a/src/database.js b/src/database.js
+index e2b723ebefda6ddbfd3f23081d759cd033f535c1..0d0d3b73955c3087ec250e5a61f249eed3697484
+--- a/src/database.js
++++ b/src/database.js
+@@ -137,6 +137,9 @@
+         scope TEXT NOT NULL DEFAULT '',
+         status TEXT NOT NULL DEFAULT 'pending',
+         sort_order INTEGER NOT NULL,
++        started_at TEXT,
++        finished_at TEXT,
++        duration_ms INTEGER NOT NULL DEFAULT 0,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -175,6 +178,9 @@
+     this.ensureColumn('plan_drafts', 'project_id', 'INTEGER');
+     this.ensureColumn('plans', 'project_id', 'INTEGER');
+     this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
++    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\types.ts
+diff --git a/src/database.js b/src/database.js
+index e2b723ebefda6ddbfd3f23081d759cd033f535c1..0d0d3b73955c3087ec250e5a61f249eed3697484
+--- a/src/database.js
++++ b/src/database.js
+@@ -137,6 +137,9 @@
+         scope TEXT NOT NULL DEFAULT '',
+         status TEXT NOT NULL DEFAULT 'pending',
+         sort_order INTEGER NOT NULL,
++        started_at TEXT,
++        finished_at TEXT,
++        duration_ms INTEGER NOT NULL DEFAULT 0,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -175,6 +178,9 @@
+     this.ensureColumn('plan_drafts', 'project_id', 'INTEGER');
+     this.ensureColumn('plans', 'project_id', 'INTEGER');
+     this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
++    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1e47340f783e4ff353fa4672e7f58b99ed2efa5a..d892fe2901aa33c22c8322b3472b208ef912bf57
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -106,6 +106,9 @@
+   scope: string;
+   status: string;
+   sort_order: number;
++  started_at: string | null;
++  finished_at: string | null;
++  duration_ms: number;
+   updated_at: string;
+   /** JOIN plans 得到 */
+   file_path: string;
+
+diff --git a/src/database.js b/src/database.js
+index e2b723ebefda6ddbfd3f23081d759cd033f535c1..0d0d3b73955c3087ec250e5a61f249eed3697484
+--- a/src/database.js
++++ b/src/database.js
+@@ -137,6 +137,9 @@
+         scope TEXT NOT NULL DEFAULT '',
+         status TEXT NOT NULL DEFAULT 'pending',
+         sort_order INTEGER NOT NULL,
++        started_at TEXT,
++        finished_at TEXT,
++        duration_ms INTEGER NOT NULL DEFAULT 0,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -175,6 +178,9 @@
+     this.ensureColumn('plan_drafts', 'project_id', 'INTEGER');
+     this.ensureColumn('plans', 'project_id', 'INTEGER');
+     this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
++    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1e47340f783e4ff353fa4672e7f58b99ed2efa5a..d892fe2901aa33c22c8322b3472b208ef912bf57
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -106,6 +106,9 @@
+   scope: string;
+   status: string;
+   sort_order: number;
++  started_at: string | null;
++  finished_at: string | null;
++  duration_ms: number;
+   updated_at: string;
+   /** JOIN plans 得到 */
+   file_path: string;
+
+codex
+类型已同步；我会只做 scoped 文件相关的最小语法/类型检查。
+  ✓ 确认耗时字段命名
+  ✓ 补充数据库迁移列
+  ✓ 同步前端任务类型
+  → 做最小语法检查
+diff --git a/src/database.js b/src/database.js
+index e2b723ebefda6ddbfd3f23081d759cd033f535c1..0d0d3b73955c3087ec250e5a61f249eed3697484
+--- a/src/database.js
++++ b/src/database.js
+@@ -137,6 +137,9 @@
+         scope TEXT NOT NULL DEFAULT '',
+         status TEXT NOT NULL DEFAULT 'pending',
+         sort_order INTEGER NOT NULL,
++        started_at TEXT,
++        finished_at TEXT,
++        duration_ms INTEGER NOT NULL DEFAULT 0,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -175,6 +178,9 @@
+     this.ensureColumn('plan_drafts', 'project_id', 'INTEGER');
+     this.ensureColumn('plans', 'project_id', 'INTEGER');
+     this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
++    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1e47340f783e4ff353fa4672e7f58b99ed2efa5a..d892fe2901aa33c22c8322b3472b208ef912bf57
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -106,6 +106,9 @@
+   scope: string;
+   status: string;
+   sort_order: number;
++  started_at: string | null;
++  finished_at: string | null;
++  duration_ms: number;
+   updated_at: string;
+   /** JOIN plans 得到 */
+   file_path: string;
+
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new();
+node --check src/database.js
+if (Test-Path -LiteralPath '"'.\\node_modules\\.bin\\tsc.cmd') {
+  & '.\\node_modules\\.bin\\tsc.cmd' --noEmit --pretty false --skipLibCheck --lib es2020,dom src/renderer/types.ts
+} else {
+  Write-Error 'local tsc not found'
+  exit 2
+}" in D:\project\GitHub\autoplan
+2026-06-24T19:08:20.495878Z ERROR codex_core::tools::router: error={"output":"error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error.\r\n","metadata":{"exit_code":1,"duration_seconds":0.3}}
+ exited 1 in 315ms:
+error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error.
+
+diff --git a/src/database.js b/src/database.js
+index e2b723ebefda6ddbfd3f23081d759cd033f535c1..0d0d3b73955c3087ec250e5a61f249eed3697484
+--- a/src/database.js
++++ b/src/database.js
+@@ -137,6 +137,9 @@
+         scope TEXT NOT NULL DEFAULT '',
+         status TEXT NOT NULL DEFAULT 'pending',
+         sort_order INTEGER NOT NULL,
++        started_at TEXT,
++        finished_at TEXT,
++        duration_ms INTEGER NOT NULL DEFAULT 0,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -175,6 +178,9 @@
+     this.ensureColumn('plan_drafts', 'project_id', 'INTEGER');
+     this.ensureColumn('plans', 'project_id', 'INTEGER');
+     this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
++    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1e47340f783e4ff353fa4672e7f58b99ed2efa5a..d892fe2901aa33c22c8322b3472b208ef912bf57
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -106,6 +106,9 @@
+   scope: string;
+   status: string;
+   sort_order: number;
++  started_at: string | null;
++  finished_at: string | null;
++  duration_ms: number;
+   updated_at: string;
+   /** JOIN plans 得到 */
+   file_path: string;
+
+**Figuring out TypeScript issues**
+
+I’m looking into handling the TS5112 error related to TypeScript. It seems like I might need to run it with the --ignoreConfig option to get things working, but I want to be careful about that. It’s all about keeping things minimal, so I’ll make sure I’m not overcomplicating this. Let’s see if that does the trick and helps me move forward!
+codex
+`tsc` 要求显式忽略项目配置；我会重跑单文件类型检查。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new();
+node --check src/database.js
+& '"'.\\node_modules\\.bin\\tsc.cmd' --noEmit --pretty false --skipLibCheck --ignoreConfig --lib es2020,dom src/renderer/types.ts" in D:\project\GitHub\autoplan
+ succeeded in 477ms:
+diff --git a/src/database.js b/src/database.js
+index e2b723ebefda6ddbfd3f23081d759cd033f535c1..0d0d3b73955c3087ec250e5a61f249eed3697484
+--- a/src/database.js
++++ b/src/database.js
+@@ -137,6 +137,9 @@
+         scope TEXT NOT NULL DEFAULT '',
+         status TEXT NOT NULL DEFAULT 'pending',
+         sort_order INTEGER NOT NULL,
++        started_at TEXT,
++        finished_at TEXT,
++        duration_ms INTEGER NOT NULL DEFAULT 0,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -175,6 +178,9 @@
+     this.ensureColumn('plan_drafts', 'project_id', 'INTEGER');
+     this.ensureColumn('plans', 'project_id', 'INTEGER');
+     this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
++    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1e47340f783e4ff353fa4672e7f58b99ed2efa5a..d892fe2901aa33c22c8322b3472b208ef912bf57
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -106,6 +106,9 @@
+   scope: string;
+   status: string;
+   sort_order: number;
++  started_at: string | null;
++  finished_at: string | null;
++  duration_ms: number;
+   updated_at: string;
+   /** JOIN plans 得到 */
+   file_path: string;
+
+**Planning update inspection**
+
+I need to get the update plan complete, and it seems like I should inspect the differences in summary. First, I'll try `git diff -- src/database.js src/renderer/types.ts`, but the user mentioned not to output the full diff or use a tool. I can also run `git status --short -- scoped` to ensure only those two files are affected. Reading the status could be helpful too. Let's move forward with that!
+codex
+检查已通过；最后确认只改了 P001 的两个 scoped 文件。
+  ✓ 确认耗时字段命名
+  ✓ 补充数据库迁移列
+  ✓ 同步前端任务类型
+  ✓ 做最小语法检查
+diff --git a/src/database.js b/src/database.js
+index e2b723ebefda6ddbfd3f23081d759cd033f535c1..0d0d3b73955c3087ec250e5a61f249eed3697484
+--- a/src/database.js
++++ b/src/database.js
+@@ -137,6 +137,9 @@
+         scope TEXT NOT NULL DEFAULT '',
+         status TEXT NOT NULL DEFAULT 'pending',
+         sort_order INTEGER NOT NULL,
++        started_at TEXT,
++        finished_at TEXT,
++        duration_ms INTEGER NOT NULL DEFAULT 0,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -175,6 +178,9 @@
+     this.ensureColumn('plan_drafts', 'project_id', 'INTEGER');
+     this.ensureColumn('plans', 'project_id', 'INTEGER');
+     this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
++    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1e47340f783e4ff353fa4672e7f58b99ed2efa5a..d892fe2901aa33c22c8322b3472b208ef912bf57
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -106,6 +106,9 @@
+   scope: string;
+   status: string;
+   sort_order: number;
++  started_at: string | null;
++  finished_at: string | null;
++  duration_ms: number;
+   updated_at: string;
+   /** JOIN plans 得到 */
+   file_path: string;
+
+exec
+powershell.exe -Command 'git status --short -- src/database.js src/renderer/types.ts
+git diff --stat -- src/database.js src/renderer/types.ts' in D:\project\GitHub\autoplan
+ succeeded in 193ms:
+ M src/database.js
+ M src/renderer/types.ts
+ src/database.js       | 8 ++++++++
+ src/renderer/types.ts | 5 +++++
+ 2 files changed, 13 insertions(+)
+warning: in the working copy of 'src/database.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/types.ts', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/database.js b/src/database.js
+index e2b723ebefda6ddbfd3f23081d759cd033f535c1..0d0d3b73955c3087ec250e5a61f249eed3697484
+--- a/src/database.js
++++ b/src/database.js
+@@ -137,6 +137,9 @@
+         scope TEXT NOT NULL DEFAULT '',
+         status TEXT NOT NULL DEFAULT 'pending',
+         sort_order INTEGER NOT NULL,
++        started_at TEXT,
++        finished_at TEXT,
++        duration_ms INTEGER NOT NULL DEFAULT 0,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -175,6 +178,9 @@
+     this.ensureColumn('plan_drafts', 'project_id', 'INTEGER');
+     this.ensureColumn('plans', 'project_id', 'INTEGER');
+     this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
++    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1e47340f783e4ff353fa4672e7f58b99ed2efa5a..d892fe2901aa33c22c8322b3472b208ef912bf57
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -106,6 +106,9 @@
+   scope: string;
+   status: string;
+   sort_order: number;
++  started_at: string | null;
++  finished_at: string | null;
++  duration_ms: number;
+   updated_at: string;
+   /** JOIN plans 得到 */
+   file_path: string;
+
+codex
+改动范围确认正常；我再取一下行号，便于交付说明。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new();
+rg -n "started_at|finished_at|duration_ms" src/database.js src/renderer/types.ts' in D:\project\GitHub\autoplan
+ succeeded in 150ms:
+src/renderer/types.ts:109:  started_at: string | null;
+src/renderer/types.ts:110:  finished_at: string | null;
+src/renderer/types.ts:111:  duration_ms: number;
+src/database.js:140:        started_at TEXT,
+src/database.js:141:        finished_at TEXT,
+src/database.js:142:        duration_ms INTEGER NOT NULL DEFAULT 0,
+src/database.js:181:    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+src/database.js:182:    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+src/database.js:183:    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+
+diff --git a/src/database.js b/src/database.js
+index e2b723ebefda6ddbfd3f23081d759cd033f535c1..0d0d3b73955c3087ec250e5a61f249eed3697484
+--- a/src/database.js
++++ b/src/database.js
+@@ -137,6 +137,9 @@
+         scope TEXT NOT NULL DEFAULT '',
+         status TEXT NOT NULL DEFAULT 'pending',
+         sort_order INTEGER NOT NULL,
++        started_at TEXT,
++        finished_at TEXT,
++        duration_ms INTEGER NOT NULL DEFAULT 0,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -175,6 +178,9 @@
+     this.ensureColumn('plan_drafts', 'project_id', 'INTEGER');
+     this.ensureColumn('plans', 'project_id', 'INTEGER');
+     this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
++    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1e47340f783e4ff353fa4672e7f58b99ed2efa5a..d892fe2901aa33c22c8322b3472b208ef912bf57
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -106,6 +106,9 @@
+   scope: string;
+   status: string;
+   sort_order: number;
++  started_at: string | null;
++  finished_at: string | null;
++  duration_ms: number;
+   updated_at: string;
+   /** JOIN plans 得到 */
+   file_path: string;
+
+codex
+P001 已完成，只修改了指定 scope 文件，未修改 plan/checkbox/进度区。
+
+**改动**
+- `src/database.js:140` 为 `plan_tasks` 新增 `started_at`、`finished_at`、`duration_ms` 字段。
+- `src/database.js:181` 通过现有 `ensureColumn` 迁移机制兼容旧数据库，历史任务耗时默认 `0`，时间字段可为空。
+- `src/renderer/types.ts:109` 同步扩展 `PlanTask` 类型字段。
+
+**验证**
+- 已通过 `node --check src/database.js`。
+- 已通过单文件类型检查：`tsc --noEmit --ignoreConfig src/renderer/types.ts`。
+- 未运行全量 `check/smoke`，按任务约束留给 P006。
+diff --git a/src/database.js b/src/database.js
+index e2b723ebefda6ddbfd3f23081d759cd033f535c1..0d0d3b73955c3087ec250e5a61f249eed3697484
+--- a/src/database.js
++++ b/src/database.js
+@@ -137,6 +137,9 @@
+         scope TEXT NOT NULL DEFAULT '',
+         status TEXT NOT NULL DEFAULT 'pending',
+         sort_order INTEGER NOT NULL,
++        started_at TEXT,
++        finished_at TEXT,
++        duration_ms INTEGER NOT NULL DEFAULT 0,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -175,6 +178,9 @@
+     this.ensureColumn('plan_drafts', 'project_id', 'INTEGER');
+     this.ensureColumn('plans', 'project_id', 'INTEGER');
+     this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
++    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
++    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1e47340f783e4ff353fa4672e7f58b99ed2efa5a..d892fe2901aa33c22c8322b3472b208ef912bf57
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -106,6 +106,9 @@
+   scope: string;
+   status: string;
+   sort_order: number;
++  started_at: string | null;
++  finished_at: string | null;
++  duration_ms: number;
+   updated_at: string;
+   /** JOIN plans 得到 */
+   file_path: string;
+
+tokens used
+62,951
+P001 已完成，只修改了指定 scope 文件，未修改 plan/checkbox/进度区。
+
+**改动**
+- `src/database.js:140` 为 `plan_tasks` 新增 `started_at`、`finished_at`、`duration_ms` 字段。
+- `src/database.js:181` 通过现有 `ensureColumn` 迁移机制兼容旧数据库，历史任务耗时默认 `0`，时间字段可为空。
+- `src/renderer/types.ts:109` 同步扩展 `PlanTask` 类型字段。
+
+**验证**
+- 已通过 `node --check src/database.js`。
+- 已通过单文件类型检查：`tsc --noEmit --ignoreConfig src/renderer/types.ts`。
+- 未运行全量 `check/smoke`，按任务约束留给 P006。

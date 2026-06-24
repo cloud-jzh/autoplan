@@ -1,0 +1,30 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019efb6e-78aa-7710-bcc7-d3f220430318
+--------
+user
+你是开发执行者。
+请只执行指定任务 P006，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_6_20260625-032502.md
+指定任务：
+- [ ] P006: 执行图标替换回归验证 <!-- scope: package.json,src/renderer/components/icons.tsx,src/renderer/pages/ProjectsPage.tsx,src/renderer/pages/WorkspacePage.tsx,src/renderer/components/Composer.tsx,src/styles.css,ui/projects.html,ui/workspace.html -->
+任务 scope：package.json, src/renderer/components/icons.tsx, src/renderer/pages/projectspage.tsx, src/renderer/pages/workspacepage.tsx, src/renderer/components/composer.tsx, src/styles.css, ui/projects.html, ui/workspace.html
+
+完成后必须：
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 如需测试，只运行与当前任务直接相关的最小测试集，不要运行全量测试或与本任务无关的测试
+- 只有当前任务本身明确要求全量验证时，才允许运行全量测试
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+ERROR: You've hit your usage limit. Try again later.
+ERROR: You've hit your usage limit. Try again later.

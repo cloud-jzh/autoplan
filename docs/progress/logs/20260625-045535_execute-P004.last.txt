@@ -1,0 +1,8 @@
+已完成 P004，仅处理指定 scope 内的图标替换。
+
+- 流水线完成态/运行态改为 `Icon` SVG，未开始步骤仍显示序号：`src/renderer/pages/WorkspacePage.tsx:739`
+- 输入区添加附件、发送按钮、非图片附件占位均改为 `Icon`：`src/renderer/components/Composer.tsx:92`
+- 补充对应 SVG 图标样式，移除 `plus-icon` 字符样式依赖：`src/styles.css:337`
+- 保留文件选择、拖拽上传、键盘触发和提交行为；添加附件入口补充 `aria-label`
+- 已做最小检查：目标旧符号残留扫描通过，`git diff --check` 通过
+- 未修改 plan 文件，未勾选 checkbox，未更新进度区；未运行全量验证（P006 范围）

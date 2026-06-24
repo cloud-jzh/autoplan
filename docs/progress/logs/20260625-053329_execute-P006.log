@@ -1,0 +1,2945 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019efb8d-6b3a-7532-9a7d-d427869aa01c
+--------
+user
+你是开发执行者。
+请只执行指定任务 P006，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_7_20260625-033918.md
+指定任务：
+- [ ] P006: 补充上下文复用回归测试 <!-- scope: scripts/smoke-test.js -->
+任务 scope：scripts/smoke-test.js
+
+完成后必须：
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 如需测试，只运行与当前任务直接相关的最小测试集，不要运行全量测试或与本任务无关的测试
+- 只有当前任务本身明确要求全量验证时，才允许运行全量测试
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Exploring execution plans**
+
+I need to read the plan file and check the current working directory. I should look into the files available. I wonder if I should interact with the shell or use codegraph first, especially since I'm working with the codebase. Maybe I can call codegraph_explore on "scripts/smoke-test.js" to check for context reuse in the regression test? But what if codegraph isn't initialized? I'll consider using the plan tool first to see if that helps!
+codex
+我会只处理 `P006`，先读取只读计划上下文和目标脚本。
+  → 读取任务上下文
+  • 定位现有测试模式
+  • 补充回归测试
+  • 运行最小验证
+mcp: codegraph/codegraph_explore started
+mcp: codegraph/codegraph_explore (failed)
+codex
+CodeGraph 需要显式项目路径；我会带路径重试并读取目标文件。
+mcp: codegraph/codegraph_explore started
+mcp: codegraph/codegraph_explore (failed)
+**Considering shell commands**
+
+I need to use the shell and read the plan along with AGENTS. It sounds like Get-ChildItem might be useful here, but I wonder if there's a specific context where it fits best. I want to make sure I'm not overlooking anything important. It's all about getting everything organized and clear, right? I'll keep that in mind as I figure out the next steps for my task.
+codex
+索引未初始化，改用本地文件读取目标上下文。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; if (Test-Path AGENTS.md) { Get-Content -LiteralPath AGENTS.md -Encoding UTF8 }; '---PLAN---'; Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\docs\\plan\\plan_requirement_7_20260625-033918.md' -Encoding UTF8 | Select-String -Pattern 'P006|上下文|复用' -Context 4,8; '---SMOKE---'; Get-Content -LiteralPath 'scripts\\smoke-test.js' -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 308ms:
+---PLAN---
+
+> # 需求 #7 开发计划：同一 Plan 任务持续使用同一上下文
+  
+  ## 背景
+  
+> 当前 AutoPlan 在执行 plan 任务时，每次调用 Codex 都会通过 `codex exec` 启动一个新的非交互式会话。对于同一个 plan 任务，如果因为失败、停止、重试或手动再次执行而需要继续推进，新的会话无法继承该
+任务上一次的理解、已做分析和执行上下文，容易造成重复探索、遗漏前序约束或与上一轮执行结论不一致。
+  
+> 需求 #7 要求：同一个 plan 任务应该在同一个上下文内部持续执行。实现目标是以 `plan_id + task_key` 为任务上下文边界，首次执行创建 Codex 会话，后续同一任务继续执行时恢复该会话；不同任务仍保持隔离，避
+免上下文串扰。
+  
+  ## 任务拆解
+  
+> - [x] P001: 持久化任务上下文标识 <!-- scope: src/database.js,src/renderer/types.ts -->
+    - 验收要点：`plan_tasks` 表新增可空的 Codex 会话标识字段，能够记录同一任务首次执行产生的 session id。
+    - 验收要点：新增字段通过 `ensureColumn` 兼容历史 SQLite 数据库，旧任务缺失会话标识时不影响启动、快照和任务列表展示。
+>   - 验收要点：前端 `PlanTask` 类型同步新增上下文字段，现有任务耗时、状态、scope、排序字段类型不回退。
+>   - 验收要点：会话标识仅绑定到具体 `plan_tasks` 记录或 `plan_id + task_key`，不使用全局单例存储，避免跨 plan 或跨任务复用。
+  
+> - [x] P002: 保留任务同步中的上下文 <!-- scope: src/loopService.js -->
+    - 验收要点：`syncPlanTasks` 在重新解析 plan 文件时保留同一 `plan_id + task_key` 已有任务的 Codex 会话标识、耗时字段和关键状态信息。
+>   - 验收要点：任务标题、raw line、scope 或排序变化时仍能更新最新解析结果，但不会因为删除重建任务而丢失上下文。
+    - 验收要点：任务 key 被移除或改名时不把旧会话错误迁移到新任务；新增任务默认没有会话标识。
+>   - 验收要点：已完成任务的 checkbox 与进度区由现有 AutoPlan 回写流程继续负责，上下文保留逻辑不扩大 plan 文件写入范围。
+  
+  - [x] P003: 支持 Codex 会话恢复执行 <!-- scope: src/loopService.js -->
+>   - 验收要点：`runCodex` 支持传入已有 session id；存在 session id 时使用 `codex exec resume <session_id> -` 继续会话，不再为同一任务创建全新上下文。
+    - 验收要点：没有 session id、session id 为空或恢复失败时能够回退为新建 `codex exec`，并记录可排查事件，不导致任务流程卡死。
+    - 验收要点：新建会话时继续保留当前 `--cd`、`--color never`、`--output-last-message`、沙箱和 stdin prompt 行为；恢复会话时不传入 Codex CLI 不支持的参数。
+    - 验收要点：从 Codex 输出中捕获真实 session id，写入运行结果，日志文件和 last message 文件路径仍按现有规则生成。
+  
+> - [x] P004: 绑定任务执行与上下文生命周期 <!-- scope: src/loopService.js -->
+    - 验收要点：`executeTask` 执行前读取当前任务保存的 session id，并把它传给 Codex 调用；执行结束后把捕获到的 session id 写回对应任务。
+>   - 验收要点：同一任务失败后回到 `pending`、被停止后再次执行、或用户手动点击运行时，都会复用该任务已有上下文。
+>   - 验收要点：不同任务即使属于同一 plan，也不会复用彼此的 session id；并发任务各自维护独立上下文。
+>   - 验收要点：任务成功完成后保留 session id 作为审计信息，但不会让后续其他任务自动继承该上下文。
+  
+> - [x] P005: 暴露上下文状态与事件信息 <!-- scope: src/loopService.js,src/renderer/types.ts,src/renderer/pages/WorkspacePage.tsx,sr
+c/renderer/components/CodexLog.tsx -->
+    - 验收要点：`snapshot()` 的 `tasks`、`activeOperation`、`activeOperations` 和 `lastOperation` 能携带当前任务的 session id 或“新建/恢复”状态
+。
+>   - 验收要点：事件流在任务开始、恢复、回退新建、失败和完成时包含可读的上下文信息，方便定位某次任务是否复用了上下文。
+    - 验收要点：工作区 Codex 日志区域能展示当前执行是新会话还是恢复会话，不影响原有 logTail 和 activity 展示。
+    - 验收要点：界面只显示必要的短标识或状态文案，避免长 UUID 造成布局溢出；无 session id 的历史任务显示为普通任务。
+  
+> - [ ] P006: 补充上下文复用回归测试 <!-- scope: scripts/smoke-test.js -->
+    - 验收要点：smoke 测试覆盖同一任务首次执行产生 session id，并在失败后再次执行时传入同一个 session id。
+>   - 验收要点：smoke 测试覆盖同一 plan 的不同任务不会复用 session id，并发执行时每个任务拥有独立上下文。
+>   - 验收要点：smoke 测试覆盖 `syncPlanTasks` 后同一 `task_key` 的上下文仍保留，新增或改名任务不会继承旧上下文。
+    - 验收要点：现有 plan guard、scope 并发选择、任务完成回写、验收完成和耗时统计断言继续通过。
+  
+  - [ ] P007: 执行构建与端到端验证 <!-- scope: package.json,scripts/smoke-test.js,src/database.js,src/loopService.js,src/renderer
+/types.ts,src/renderer/pages/WorkspacePage.tsx,src/renderer/components/CodexLog.tsx -->
+    - 验收要点：`npm run check` 通过，确认 TypeScript、Node 语法检查和脚本检查无错误。
+>   - 验收要点：`npm run smoke` 通过，确认任务上下文复用、计划解析、执行、停止、完成和验收流程无回归。
+>   - 验收要点：手动验证同一任务连续两次执行时日志显示恢复同一 session，不同任务显示不同 session 或新建上下文。
+    - 验收要点：如 Codex CLI 恢复会话不可用，系统能清晰记录回退事件并继续新建会话执行，不出现无限重试或 UI 卡住。
+  
+  ## 总体验收标准
+  
+> - 上下文连续：同一个 plan 任务在失败、停止、重试或手动再次运行时，优先恢复该任务上一次的 Codex 会话继续执行。
+> - 任务隔离：上下文以 `plan_id + task_key` 为边界，不同任务、不同 plan、不同项目之间不会共享会话。
+  - 数据可靠：会话标识持久化到 SQLite，并在 plan 文件重新同步时保留；历史数据和无会话任务保持兼容。
+  - 流程稳定：plan guard、任务状态流转、并发 scope 控制、日志输出、进度区回写和验收流程保持原有行为。
+> - 可观测：事件流、活动日志或任务快照能够判断本次执行是新建上下文还是恢复上下文，并能定位关联 session。
+  - 验证通过：完成实现后 `npm run check` 与 `npm run smoke` 均通过，必要时补充手动验证记录。
+  
+  ## 进度区
+  
+  - 2026-06-25 AutoPlan 生成：需求 #7 开发计划已创建，待执行。
+  - P001 AutoPlan 完成：2026-06-24T19:46:58.214Z；日志：docs/progress/logs/20260625-034308_execute-P001.log
+  - P002 AutoPlan 完成：2026-06-24T19:46:58.224Z；日志：docs/progress/logs/20260625-034308_execute-P002.log
+  - P003 AutoPlan 完成：2026-06-24T21:16:36.775Z；日志：docs/progress/logs/20260625-050902_execute-P003.log
+---SMOKE---
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { saveAttachments } = require('../src/attachments');
+const { AppDatabase, nowIso } = require('../src/database');
+const { LoopService } = require('../src/loopService');
+const { acceptPlanDraft, createPlanDraft, updatePlanDraft } = require('../src/planDrafts');
+
+async function main() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-smoke-'));
+  const dbPath = path.join(tempRoot, 'data', 'autoplan.sqlite');
+  const workspace = path.join(tempRoot, 'workspace');
+  const otherWorkspace = path.join(tempRoot, 'other-workspace');
+
+  try {
+    const db = new AppDatabase(dbPath);
+    await db.init();
+    const defaultState = db.get('SELECT project_id FROM project_states ORDER BY project_id ASC LIMIT 1');
+    db.run('UPDATE project_states SET running = 1, phase = ?, updated_at = ? WHERE project_id = ?', [
+      'execute-task',
+      nowIso(),
+      defaultState.project_id,
+    ]);
+    const loop = new LoopService(db);
+    const projectId = loop.defaultProjectId();
+    const otherProjectId = insertProject(db, loop, 'Other Project', otherWorkspace);
+
+    assert.ok(projectId, '启动后应存在默认项目');
+    assert.equal(loop.snapshot(projectId).state.running, 0, '重启后不应继承旧的 running 状态');
+    assert.equal(loop.snapshot(projectId).state.phase, 'stopped', '重启后执行中阶段应复位为 stopped');
+    db.run('UPDATE project_states SET running = 1, phase = ?, updated_at = ? WHERE project_id = ?', [
+      'execute-task',
+      nowIso(),
+      projectId,
+    ]);
+    assert.equal(loop.snapshot(projectId).state.running, 0, '快照不应盲信 SQLite 残留 running 状态');
+    assert.equal(loop.snapshot(projectId).state.phase, 'stopped', '空闲时快照不应显示残留执行阶段');
+    assert.equal(loop.snapshot().activeProjectId, null, '未选择项目时快照应停留在项目列表');
+    assert.ok(loop.snapshot().projects.length >= 2, '项目列表应包含默认项目和新增项目');
+
+    const requirementId = insertRequirement(db, projectId);
+    insertFeedback(db, projectId);
+    insertRequirement(db, otherProjectId);
+
+    const imageFile = path.join(tempRoot, 'smoke.png');
+    fs.writeFileSync(
+      imageFile,
+      Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lZl0WQAAAABJRU5ErkJggg==', 'base64'),
+    );
+    const attachments = saveAttachments(db, path.join(tempRoot, 'attachments'), 'requirement', requirementId, [
+      { path: imageFile, name: 'smoke.png', type: 'image/png' },
+    ], projectId);
+
+    const draftId = createPlanDraft(db, {
+      projectId,
+      sourceType: 'requirement',
+      sourceId: requirementId,
+      body: '目标：\n普通文本验收\n允许拖拽图片附件',
+      attachments,
+    });
+    updatePlanDraft(db, draftId, `${loop.snapshot(projectId).planDrafts[0].markdown}\n<!-- smoke adjusted -->\n`);
+
+    let snapshot = loop.snapshot(projectId);
+    assert.equal(snapshot.requirements.length, 1, '当前项目只应显示自己的需求');
+    assert.equal(loop.snapshot(otherProjectId).requirements.length, 1, '另一个项目应保留独立需求');
+    assert.equal(snapshot.feedback.length, 1, '反馈模块应按项目读取列表');
+    assert.match(snapshot.requirements[0].body, /普通文本验收/, '需求正文应保留普通文本内容');
+    assert.equal(snapshot.attachments.length, 1, '附件应写入 SQLite 并绑定项目');
+    assert.equal(snapshot.attachments[0].project_id, projectId, '附件应记录 project_id');
+    assert.equal(snapshot.attachments[0].mime_type, 'image/png', '图片附件应保留 MIME 类型');
+    assert.ok(fs.existsSync(snapshot.attachments[0].stored_path), '附件文件应复制到持久化目录');
+    assert.equal(snapshot.planDrafts.length, 1, '发送后应生成计划草稿');
+    assert.match(snapshot.planDrafts[0].markdown, /smoke\.png.+file:\/\//, '计划草稿应通过链接引用图片附件');
+
+    loop.configure(projectId, {
+      workspacePath: workspace,
+      intervalSeconds: 5,
+      validationCommand: 'node -e "process.exit(0)"',
+    });
+    snapshot = loop.snapshot(projectId);
+    assert.equal(snapshot.state.workspace_path, workspace, '项目应能保存工作区路径');
+    assert.equal(snapshot.state.interval_seconds, 5, '项目应能保存循环间隔');
+
+    loop.ensureWorkspaceDirs(workspace);
+    const issueFile = path.join(workspace, 'docs', 'issues', 'smoke.md');
+    fs.writeFileSync(issueFile, '# Smoke 需求\n\n- [ ] 支持普通文本输入和附件\n', 'utf8');
+    const issueScan = loop.scanDirectory(path.join(workspace, 'docs', 'issues'), workspace, ['.md']);
+    loop.saveScan(projectId, 'issue', issueScan);
+    assert.equal(issueScan.files.length, 1, '扫描模块应发现 docs/issues 文件');
+    assert.equal(loop.snapshot(projectId).scans.length, 1, '扫描记录应按项目写入 SQLite');
+    assert.equal(loop.snapshot(otherProjectId).scans.length, 0, '其它项目不应看到当前项目扫描记录');
+
+    const planId = acceptPlanDraft(db, loop, workspace, draftId);
+    snapshot = loop.snapshot(projectId);
+    assert.equal(snapshot.planDrafts[0].status, 'accepted', '确认后计划草稿应标记 accepted');
+    assert.equal(snapshot.plans.length, 1, '确认后应加入当前项目任务系统');
+    assert.equal(snapshot.plans[0].project_id, projectId, 'plan 应绑定项目');
+    assert.equal(snapshot.tasks.length, 5, '任务模块应同步草稿中的 checkbox 为任务列表');
+    assert.ok(
+      snapshot.tasks.every((task) => hasTaskDurationShape(task)),
+      '任务快照应包含符合前端类型预期的耗时字段',
+    );
+    assert.equal(snapshot.plans[0].total_tasks, 5, 'plan 应记录总任务数');
+    assert.ok(
+      snapshot.tasks.every((task) => task.raw_line.includes('scope:')),
+      '入库任务应保留固定格式 scope 注释',
+    );
+    assert.ok(
+      snapshot.tasks.every((task) => task.scope === 'unknown'),
+      '无法判断 scope 的默认草稿任务应标记为 unknown',
+    );
+    assert.deepEqual(
+      loop.parallelTaskBatch([
+        { task_key: 'P001', title: 'A', raw_line: '- [ ] P001: A <!-- scope: lib/a.dart -->' },
+        { task_key: 'P002', title: 'B', raw_line: '- [ ] P002: B <!-- scope: lib/b.dart -->' },
+        { task_key: 'P003', title: 'C', raw_line: '- [ ] P003: C <!-- scope: lib/a.dart -->' },
+      ]).map((task) => task.task_key),
+      ['P001', 'P002'],
+      '互不重叠 scope 的任务应允许进入同一并发批次',
+    );
+    assert.deepEqual(
+      loop.parallelTaskBatch([
+        { task_key: 'P001', title: 'A', raw_line: '- [ ] P001: A <!-- scope: unknown -->' },
+        { task_key: 'P002', title: 'B', raw_line: '- [ ] P002: B <!-- scope: lib/b.dart -->' },
+      ]).map((task) => task.task_key),
+      ['P001'],
+      'unknown scope 任务应保持串行',
+    );
+    assert.deepEqual(
+      loop.parallelTaskBatch([
+        { task_key: 'P009', title: '补充自动化回归测试', raw_line: '- [ ] P009: 补充自动化回归测试 <!-- scope: test/a.dart -->' },
+        { task_key: 'P010', title: '执行回归验证', raw_line: '- [ ] P010: 执行回归验证 <!-- scope: test/b.dart -->' },
+      ]).map((task) => task.task_key),
+      ['P009'],
+      '测试/验证类任务应保持串行',
+    );
+
+    const plan = db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+    const planFile = path.join(workspace, plan.file_path);
+    const executableTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P001']);
+    const fakeLogFile = path.join(workspace, 'docs', 'progress', 'logs', 'fake-execute.log');
+    fs.writeFileSync(fakeLogFile, 'fake ok', 'utf8');
+    const originalRunCodex = loop.runCodex.bind(loop);
+    const originalPlanText = fs.readFileSync(planFile, 'utf8');
+    loop.runCodex = async (_workspace, prompt) => {
+      assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
+      assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
+      await sleep(20);
+      const runningTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+      assert.equal(runningTask.status, 'running', '任务开始后应写入 running 状态');
+      assertIsoString(runningTask.started_at, '任务开始后应写入 started_at');
+      assert.equal(runningTask.finished_at, null, '任务运行中不应写入 finished_at');
+      assert.equal(runningTask.duration_ms, 0, '首次运行中累计耗时应保持 0');
+      const runningSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
+      assertTaskDurationShape(runningSnapshotTask, '运行中任务快照');
+      assert.equal(typeof runningSnapshotTask.run_duration_ms, 'number', '运行中任务快照应包含实时耗时');
+      fs.writeFileSync(planFile, originalPlanText.replace('P002', 'P999'), 'utf8');
+      return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-last.txt') };
+    };
+    const executeResult = await loop.executeTask(workspace, plan, executableTask);
+    loop.runCodex = originalRunCodex;
+    assert.equal(executeResult.exitCode, 0, '模拟执行应成功');
+    loop.completeTask(workspace, plan, executableTask, executeResult);
+    const guardedPlanText = fs.readFileSync(planFile, 'utf8');
+    assert.match(guardedPlanText, /- \[x\] P001:/, '系统应在任务成功后勾选 checkbox');
+    assert.match(guardedPlanText, /P001 AutoPlan 完成/, '系统应在进度区写入完成记录');
+    assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
+    const completedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+    assert.equal(
+      completedTask.status,
+      'completed',
+      '系统应更新任务入库状态',
+    );
+    assertIsoString(completedTask.started_at, '任务完成后应保留 started_at');
+    assertIsoString(completedTask.finished_at, '任务完成后应写入 finished_at');
+    assert.ok(completedTask.duration_ms > 0, '任务完成后应写入正数 duration_ms');
+    const completedSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
+    assertTaskDurationShape(completedSnapshotTask, '已完成任务快照');
+    assert.ok(completedSnapshotTask.duration_ms > 0, '已完成任务快照应包含累计耗时');
+    const completedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P001');
+    assertTaskEventOrder(completedTaskEvents, ['task.succeeded', 'task.started'], '成功任务事件');
+    assertTaskEventMeta(completedTaskEvents[0], executableTask, 'completed', '成功结束任务事件');
+    assert.equal(completedTaskEvents[0].meta.log, fakeLogFile, '成功结束事件 meta 应包含日志路径');
+    assert.equal(completedTaskEvents[0].meta.exitCode, 0, '成功结束事件 meta 应包含退出码');
+    assertTaskEventMeta(completedTaskEvents[1], executableTask, 'running', '开始任务事件');
+    assert.equal(
+      db.get('SELECT completed_tasks FROM plans WHERE id = ?', [planId]).completed_tasks,
+      1,
+      '系统应更新 plan 完成计数',
+    );
+
+    const retryTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P002']);
+    loop.runCodex = async (_workspace, prompt) => {
+      assert.match(prompt, /只执行指定任务 P002/, '重试任务首次执行 prompt 应锁定指定任务');
+      await sleep(20);
+      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+      assert.equal(runningRetryTask.status, 'running', '失败前任务应处于 running 状态');
+      assertIsoString(runningRetryTask.started_at, '失败前任务应写入 started_at');
+      assert.equal(runningRetryTask.finished_at, null, '失败前任务运行中不应写入 finished_at');
+      assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '失败前任务快照');
+      return { exitCode: 1, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-failed.txt') };
+    };
+    const failedResult = await loop.executeTask(workspace, plan, retryTask);
+    loop.runCodex = originalRunCodex;
+    assert.equal(failedResult.exitCode, 1, '模拟失败应返回非 0 exitCode');
+    const failedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+    assert.equal(failedTask.status, 'pending', '任务失败后应回退为 pending');
+    assertIsoString(failedTask.started_at, '任务失败后应保留 started_at');
+    assertIsoString(failedTask.finished_at, '任务失败后应写入 finished_at');
+    assert.ok(failedTask.duration_ms > 0, '任务失败后应累计正数 duration_ms');
+    const failedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P002');
+    assertTaskEventOrder(failedTaskEvents, ['task.failed', 'task.started'], '失败任务事件');
+    assertTaskEventMeta(failedTaskEvents[0], retryTask, 'failed', '失败任务事件');
+    assert.equal(failedTaskEvents[0].meta.log, fakeLogFile, '失败事件 meta 应包含日志路径');
+    assert.equal(failedTaskEvents[0].meta.exitCode, 1, '失败事件 meta 应包含退出码');
+    assertTaskEventMeta(failedTaskEvents[1], retryTask, 'running', '失败前开始任务事件');
+
+    const firstAttemptDurationMs = failedTask.duration_ms;
+    const retryAttemptTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+    loop.runCodex = async (_workspace, prompt) => {
+      assert.match(prompt, /只执行指定任务 P002/, '重试任务再次执行 prompt 应锁定指定任务');
+      await sleep(20);
+      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+      assert.equal(runningRetryTask.status, 'running', '重试时任务应重新进入 running 状态');
+      assertIsoString(runningRetryTask.started_at, '重试时任务应刷新 started_at');
+      assert.equal(runningRetryTask.finished_at, null, '重试运行中应清空 finished_at');
+      assert.equal(runningRetryTask.duration_ms, firstAttemptDurationMs, '重试运行中不应丢失历史累计耗时');
+      return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-retry.txt') };
+    };
+    const retryResult = await loop.executeTask(workspace, plan, retryAttemptTask);
+    loop.runCodex = originalRunCodex;
+    assert.equal(retryResult.exitCode, 0, '模拟重试应成功');
+    loop.completeTask(workspace, plan, retryAttemptTask, retryResult);
+    const retriedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+    assert.equal(retriedTask.status, 'completed', '重试成功后任务应完成');
+    assertIsoString(retriedTask.finished_at, '重试成功后应写入 finished_at');
+    assert.ok(retriedTask.duration_ms > firstAttemptDurationMs, '重试成功后应继续累加 duration_ms');
+    assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '重试完成任务快照');
+
+    const stoppableTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P003']);
+    loop.startTaskRun(stoppableTask.id, nowIso());
+    await sleep(20);
+    loop.stopTask(projectId, stoppableTask.id);
+    const stoppedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+    assert.equal(stoppedTask.status, 'pending', '手动停止后任务应回到 pending 以便重试');
+    assertIsoString(stoppedTask.finished_at, '手动停止后应写入 finished_at');
+    assert.ok(stoppedTask.duration_ms > 0, '手动停止后应累计耗时');
+    const stoppedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P003');
+    assertTaskEventOrder(stoppedTaskEvents, ['task.stop.requested'], '手动停止任务事件');
+    assertTaskEventMeta(stoppedTaskEvents[0], stoppableTask, 'stopping', '手动停止任务事件');
+
+    const stoppedDurationMs = stoppedTask.duration_ms;
+    const retryStoppedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+    loop.runCodex = async (_workspace, prompt) => {
+      assert.match(prompt, /只执行指定任务 P003/, '停止后重试任务 prompt 应锁定指定任务');
+      await sleep(20);
+      const runningStoppedRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+      assert.equal(runningStoppedRetryTask.status, 'running', '停止后重试应重新进入 running 状态');
+      assert.equal(runningStoppedRetryTask.duration_ms, stoppedDurationMs, '停止后重试不应丢失停止前耗时');
+      return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-stopped-retry.txt') };
+    };
+    const stoppedRetryResult = await loop.executeTask(workspace, plan, retryStoppedTask);
+    loop.runCodex = originalRunCodex;
+    assert.equal(stoppedRetryResult.exitCode, 0, '手动停止后的重试应成功');
+    loop.completeTask(workspace, plan, retryStoppedTask, stoppedRetryResult);
+    const stoppedRetriedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+    assert.equal(stoppedRetriedTask.status, 'completed', '手动停止后任务应可重试完成');
+    assert.ok(stoppedRetriedTask.duration_ms > stoppedDurationMs, '手动停止后重试应继续累加耗时');
+    assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P003'), '停止后重试完成任务快照');
+
+    fs.writeFileSync(planFile, fs.readFileSync(planFile, 'utf8').replaceAll('- [ ]', '- [x]'), 'utf8');
+    loop.syncPlanTasks(planId, planFile);
+    await loop.validatePlan(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+    snapshot = loop.snapshot(projectId);
+    assert.equal(snapshot.plans[0].status, 'completed', '验收通过后 plan 应标记 completed');
+    assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+
+    const multiWorkspaceA = path.join(tempRoot, 'multi-a');
+    const multiWorkspaceB = path.join(tempRoot, 'multi-b');
+    const multiProjectA = insertProject(db, loop, 'Multi Project A', multiWorkspaceA);
+    const multiProjectB = insertProject(db, loop, 'Multi Project B', multiWorkspaceB);
+    const sameWorkspaceProject = insertProject(db, loop, 'Same Workspace Project', multiWorkspaceB);
+    loop.configure(multiProjectA, { workspacePath: multiWorkspaceA, intervalSeconds: 60, validationCommand: '' });
+    loop.configure(multiProjectB, { workspacePath: multiWorkspaceB, intervalSeconds: 60, validationCommand: '' });
+    loop.configure(sameWorkspaceProject, { workspacePath: multiWorkspaceB, intervalSeconds: 60, validationCommand: '' });
+
+    loop.start(multiProjectA);
+    loop.start(multiProjectB);
+    assert.equal(loop.snapshot(multiProjectA).state.running, 1, '项目 A 循环应保持运行中');
+    assert.equal(loop.snapshot(multiProjectB).state.running, 1, '项目 B 循环应保持运行中');
+    assert.ok(
+      loop.snapshot().projects.filter((project) => project.running).length >= 2,
+      '项目列表应能显示多个运行中项目',
+    );
+    assert.throws(
+      () => loop.start(sameWorkspaceProject),
+      /工作区正在被项目/,
+      '同一工作区不应被两个项目循环同时占用',
+    );
+    loop.stop(multiProjectA);
+    assert.equal(loop.snapshot(multiProjectA).state.running, 0, '停止项目 A 后 A 应停止');
+    assert.equal(loop.snapshot(multiProjectB).state.running, 1, '停止项目 A 不应影响项目 B');
+    loop.stop(multiProjectB);
+    assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
+
+    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, task events, scan, validation, duration stats, multi-loop');
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+function insertProject(db, loop, name, workspacePath) {
+  const now = nowIso();
+  const id = db.insert(
+    `INSERT INTO projects (name, workspace_path, description, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [name, workspacePath, '', now, now],
+  );
+  loop.ensureProjectState(id);
+  return id;
+}
+
+function insertRequirement(db, projectId) {
+  const now = nowIso();
+  return db.insert(
+    `INSERT INTO requirements (project_id, title, body, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [projectId, '普通文本需求', '目标：\n普通文本验收\n允许拖拽图片附件', 'open', now, now],
+  );
+}
+
+function insertFeedback(db, projectId) {
+  const now = nowIso();
+  db.insert(
+    `INSERT INTO feedback (project_id, requirement_id, title, body, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [projectId, null, '普通文本反馈', '列表展示\n重点内容\n可附加图片', 'open', now, now],
+  );
+}
+
+function sleep(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function taskByKey(snapshot, taskKey) {
+  return snapshot.tasks.find((task) => task.task_key === taskKey);
+}
+
+function taskEventsByKey(snapshot, taskKey) {
+  return snapshot.events.filter((event) => event.meta?.taskKey === taskKey);
+}
+
+function assertTaskEventOrder(events, expectedTypes, label) {
+  assert.deepEqual(
+    events.slice(0, expectedTypes.length).map((event) => event.type),
+    expectedTypes,
+    `${label} 应按最新事件在前返回`,
+  );
+  for (let index = 1; index < expectedTypes.length; index += 1) {
+    assert.ok(events[index - 1].id > events[index].id, `${label} 应按事件 id 倒序排列`);
+  }
+}
+
+function assertTaskEventMeta(event, task, status, label) {
+  assert.ok(event, `${label} 应存在`);
+  assert.ok(event.meta && typeof event.meta === 'object', `${label} 应包含结构化 meta`);
+  assert.equal(event.meta.taskId, task.id, `${label} meta 应包含 taskId`);
+  assert.equal(event.meta.taskKey, task.task_key, `${label} meta 应包含 taskKey`);
+  assert.equal(event.meta.taskTitle, task.title, `${label} meta 应包含 taskTitle`);
+  assert.equal(event.meta.planId, task.plan_id, `${label} meta 应包含 planId`);
+  assert.equal(event.meta.status, status, `${label} meta 应包含任务状态`);
+  if (event.meta.startedAt) assertIsoString(event.meta.startedAt, `${label} meta startedAt 应为 ISO 时间`);
+  if (event.meta.finishedAt) assertIsoString(event.meta.finishedAt, `${label} meta finishedAt 应为 ISO 时间`);
+}
+
+function hasTaskDurationShape(task) {
+  if (!task) return false;
+  const hasStartedAt = task.started_at === null || typeof task.started_at === 'string';
+  const hasFinishedAt = task.finished_at === null || typeof task.finished_at === 'string';
+  const hasDurationMs = typeof task.duration_ms === 'number' && Number.isFinite(task.duration_ms);
+  const hasRunDurationMs =
+    !Object.prototype.hasOwnProperty.call(task, 'run_duration_ms') ||
+    (typeof task.run_duration_ms === 'number' && Number.isFinite(task.run_duration_ms));
+  return hasStartedAt && hasFinishedAt && hasDurationMs && hasRunDurationMs;
+}
+
+function assertTaskDurationShape(task, label) {
+  assert.ok(task, `${label} 应存在`);
+  assert.ok(hasTaskDurationShape(task), `${label} 应包含符合前端类型预期的耗时字段`);
+}
+
+function assertIsoString(value, message) {
+  assert.equal(typeof value, 'string', message);
+  assert.ok(Number.isFinite(Date.parse(value)), message);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+
+
+codex
+已确认计划只读；下一步聚焦 `smoke-test.js` 的现有断言结构。
+  ✓ 读取任务上下文
+  → 定位现有测试模式
+  • 补充回归测试
+  • 运行最小验证
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; rg -n \"P006|session|codex|runCodex|executeTask|task_key|context|上下文|resume|codexSession|session_id\" docs\\plan\\plan_requirement_7_20260625-033918.md scripts\\smoke-test.js src\\loopService.js src\\database.js" in D:\project\GitHub\autoplan
+ succeeded in 175ms:
+scripts\smoke-test.js:115:        { task_key: 'P001', title: 'A', raw_line: '- [ ] P001: A <!-- scope: lib/a.dart -->' },
+scripts\smoke-test.js:116:        { task_key: 'P002', title: 'B', raw_line: '- [ ] P002: B <!-- scope: lib/b.dart -->' },
+scripts\smoke-test.js:117:        { task_key: 'P003', title: 'C', raw_line: '- [ ] P003: C <!-- scope: lib/a.dart -->' },
+scripts\smoke-test.js:118:      ]).map((task) => task.task_key),
+scripts\smoke-test.js:124:        { task_key: 'P001', title: 'A', raw_line: '- [ ] P001: A <!-- scope: unknown -->' },
+scripts\smoke-test.js:125:        { task_key: 'P002', title: 'B', raw_line: '- [ ] P002: B <!-- scope: lib/b.dart -->' },
+scripts\smoke-test.js:126:      ]).map((task) => task.task_key),
+scripts\smoke-test.js:132:        { task_key: 'P009', title: '补充自动化回归测试', raw_line: '- [ ] P009: 补充自动化回归测试 <!-- scope: test/a.dart -->' },
+scripts\smoke-test.js:133:        { task_key: 'P010', title: '执行回归验证', raw_line: '- [ ] P010: 执行回归验证 <!-- scope: test/b.dart -->' },
+scripts\smoke-test.js:134:      ]).map((task) => task.task_key),
+scripts\smoke-test.js:141:    const executableTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P001']);
+scripts\smoke-test.js:144:    const originalRunCodex = loop.runCodex.bind(loop);
+scripts\smoke-test.js:146:    loop.runCodex = async (_workspace, prompt) => {
+scripts\smoke-test.js:161:    const executeResult = await loop.executeTask(workspace, plan, executableTask);
+scripts\smoke-test.js:162:    loop.runCodex = originalRunCodex;
+scripts\smoke-test.js:193:    const retryTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P002']);
+scripts\smoke-test.js:194:    loop.runCodex = async (_workspace, prompt) => {
+scripts\smoke-test.js:204:    const failedResult = await loop.executeTask(workspace, plan, retryTask);
+scripts\smoke-test.js:205:    loop.runCodex = originalRunCodex;
+scripts\smoke-test.js:221:    loop.runCodex = async (_workspace, prompt) => {
+scripts\smoke-test.js:231:    const retryResult = await loop.executeTask(workspace, plan, retryAttemptTask);
+scripts\smoke-test.js:232:    loop.runCodex = originalRunCodex;
+scripts\smoke-test.js:241:    const stoppableTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P003']);
+scripts\smoke-test.js:255:    loop.runCodex = async (_workspace, prompt) => {
+scripts\smoke-test.js:263:    const stoppedRetryResult = await loop.executeTask(workspace, plan, retryStoppedTask);
+scripts\smoke-test.js:264:    loop.runCodex = originalRunCodex;
+scripts\smoke-test.js:347:  return snapshot.tasks.find((task) => task.task_key === taskKey);
+scripts\smoke-test.js:369:  assert.equal(event.meta.taskKey, task.task_key, `${label} meta 应包含 taskKey`);
+src\loopService.js:7:const { CodexActivityPrinter } = require('./codexActivity');
+src\loopService.js:21:  new RegExp(`\\bsession\\s+id:\\s*(${CODEX_SESSION_UUID_RE_SOURCE})\\b`, 'i'),
+src\loopService.js:22:  new RegExp(`"(?:session_id|sessionId)"\\s*:\\s*"(${CODEX_SESSION_UUID_RE_SOURCE})"`, 'i'),
+src\loopService.js:23:  new RegExp(`\\b(?:session_id|sessionId)\\s*[:=]\\s*(${CODEX_SESSION_UUID_RE_SOURCE})\\b`, 'i'),
+src\loopService.js:25:const CODEX_RESUME_FAILURE_RE = /(?:thread\/resume|resume failed|no rollout found|session\s+(?:not\s+found|missing)|conversation\s+not\s+found|unknown\s+session|invalid\s+session)/i;
+src\loopService.js:331:      // 一次只生成一个计划（保持串行，避免 codex 并发），剩余等下一轮 timer
+src\loopService.js:381:      const result = await this.executeTask(workspace, plan, task);
+src\loopService.js:452:  updateTaskCodexSession(taskId, sessionId, updatedAt = nowIso()) {
+src\loopService.js:453:    const normalizedSessionId = normalizeCodexSessionId(sessionId);
+src\loopService.js:457:       SET codex_session_id = ?, updated_at = ?
+src\loopService.js:508:  /** 中断某个 plan：停止正在执行的 codex 进程，未完成任务标记为 blocked，plan 标记为 interrupted */
+src\loopService.js:549:  resumePlan(projectId, planId) {
+src\loopService.js:556:    this.addEvent(projectId, 'plan.resumed', `plan #${planId} 已恢复`);
+src\loopService.js:574:    // 计算下一个 task_key
+src\loopService.js:575:    const existing = this.db.all('SELECT task_key FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order', [planId]);
+src\loopService.js:577:      const m = String(row.task_key || '').match(/P0*(\d+)/i);
+src\loopService.js:599:    const task = this.db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, taskKey]);
+src\loopService.js:715:    const result = await this.runCodex(workspace, prompt, 'generate-plan', { projectId });
+src\loopService.js:744:  /** 为单条需求/反馈生成计划（调 codex），并回写 linked_plan_id。失败返回 null，下轮重试。 */
+src\loopService.js:773:    const result = await this.runCodex(workspace, prompt, `gen-${intake.__type}-${intake.id}`, { projectId });
+src\loopService.js:804:        await this.executeTaskBatch(workspace, plan, batch);
+src\loopService.js:807:        const result = await this.executeTask(workspace, plan, task);
+src\loopService.js:834:  async executeTaskBatch(workspace, plan, tasks) {
+src\loopService.js:839:      `并发执行 ${tasks.map((task) => task.task_key).join(', ')}`,
+src\loopService.js:846:          result = await this.executeTask(workspace, plan, task, { parallel: true });
+src\loopService.js:865:  async executeTask(workspace, plan, task, options = {}) {
+src\loopService.js:870:    const startedSessionContext = codexSessionContextFields({
+src\loopService.js:871:      codexSessionId: existingSessionId,
+src\loopService.js:872:      codexSessionMode: existingSessionId ? 'resume' : 'new',
+src\loopService.js:882:      '- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区',
+src\loopService.js:895:      `请只执行指定任务 ${task.task_key}，不要提前执行其它任务，也不要顺手处理其它 checkbox。`,
+src\loopService.js:906:      result = await this.runCodexWithPlanGuard(workspace, prompt, `execute-${task.task_key}`, {
+src\loopService.js:911:        ...(existingSessionId ? { codexSessionId: existingSessionId } : {}),
+src\loopService.js:931:        ...codexSessionContextFields(result),
+src\loopService.js:948:      ...codexSessionContextFields(result),
+src\loopService.js:975:    const key = escapeRegExp(String(task.task_key || ''));
+src\loopService.js:982:    const note = `- ${task.task_key} AutoPlan 完成：${nowIso()}${relativeLog ? `；日志：${relativeLog}` : ''}`;
+src\loopService.js:1022:      await this.runCodexWithPlanGuard(workspace, prompt, `repair-${plan.id}-${attempt}`, {
+src\loopService.js:1068:      const matches = existingByKey.get(existing.task_key) || [];
+src\loopService.js:1070:      existingByKey.set(existing.task_key, matches);
+src\loopService.js:1095:          `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
+src\loopService.js:1135:        ...codexSessionContextFields(op),
+src\loopService.js:1148:  async runCodexWithPlanGuard(workspace, prompt, label, operation, planFile) {
+src\loopService.js:1150:    const result = await this.runCodex(workspace, prompt, label, operation);
+src\loopService.js:1164:  async runCodex(workspace, prompt, label, operation = {}) {
+src\loopService.js:1167:    if (!runtime) throw new Error('projectId is required for codex operations');
+src\loopService.js:1180:      codexSessionId: requestedSessionId || null,
+src\loopService.js:1181:      codexSessionRequestedId: requestedSessionId || null,
+src\loopService.js:1182:      codexSessionMode: requestedSessionId ? 'resume' : 'new',
+src\loopService.js:1183:      codexSessionState: requestedSessionId ? 'resume' : 'new',
+src\loopService.js:1190:    let sessionScanBuffer = '';
+src\loopService.js:1201:      const sessionId = capturedSessionId || (mode === 'resume' ? requestedSessionId : '');
+src\loopService.js:1202:      const codexSessionFields = codexSessionContextFields({
+src\loopService.js:1203:        codexSessionId: sessionId,
+src\loopService.js:1204:        codexSessionRequestedId: requestedSessionId,
+src\loopService.js:1205:        codexSessionMode: mode,
+src\loopService.js:1206:        codexSessionFallback: mode === 'new' && Boolean(requestedSessionId),
+src\loopService.js:1212:        sessionId: sessionId || null,
+src\loopService.js:1213:        codexSessionId: sessionId || null,
+src\loopService.js:1214:        codexSessionMode: mode,
+src\loopService.js:1215:        resumed: mode === 'resume',
+src\loopService.js:1216:        ...codexSessionFields,
+src\loopService.js:1220:      const child = spawn('codex', args, { shell: process.platform === 'win32', cwd: workspace });
+src\loopService.js:1221:      activeOperation.codexSessionMode = mode;
+src\loopService.js:1222:      activeOperation.codexSessionState = activeOperation.codexSessionFallback ? 'fallback-new' : mode;
+src\loopService.js:1223:      activeOperation.codexSessionId = mode === 'resume' ? requestedSessionId || null : capturedSessionId || null;
+src\loopService.js:1244:        sessionScanBuffer = `${sessionScanBuffer}${text}`.slice(-4000);
+src\loopService.js:1245:        const parsedSessionId = extractCodexSessionId(sessionScanBuffer);
+src\loopService.js:1248:          activeOperation.codexSessionId = parsedSessionId;
+src\loopService.js:1267:        this.addEvent(projectIdForEmit, 'codex.session.resume.started', `尝试恢复 Codex 会话 ${shortCodexSessionId(requestedSessionId)}`, {
+src\loopService.js:1268:          ...codexSessionContextFields({
+src\loopService.js:1269:            codexSessionId: requestedSessionId,
+src\loopService.js:1270:            codexSessionRequestedId: requestedSessionId,
+src\loopService.js:1271:            codexSessionMode: 'resume',
+src\loopService.js:1273:          sessionId: requestedSessionId,
+src\loopService.js:1278:        const resume = await runAttempt(codexResumeSessionArgs(requestedSessionId, lastFile), 'resume');
+src\loopService.js:1279:        const resumeFailed = resume.exitCode !== 0 && !extractCodexSessionId(resume.output) && isCodexResumeFailure(resume.output);
+src\loopService.js:1280:        if (!resumeFailed) return resultFor(resume.exitCode, 'resume');
+src\loopService.js:1282:        this.addEvent(projectIdForEmit, 'codex.session.resume.failed', `恢复 Codex 会话失败，已回退新建：${shortCodexSessionId(requestedSessionId)}`, {
+src\loopService.js:1283:          ...codexSessionContextFields({
+src\loopService.js:1284:            codexSessionRequestedId: requestedSessionId,
+src\loopService.js:1285:            codexSessionMode: 'new',
+src\loopService.js:1286:            codexSessionState: 'fallback-new',
+src\loopService.js:1287:            codexSessionFallback: true,
+src\loopService.js:1289:          sessionId: requestedSessionId,
+src\loopService.js:1293:          exitCode: resume.exitCode,
+src\loopService.js:1296:        activeOperation.codexSessionFallback = true;
+src\loopService.js:1297:        activeOperation.codexSessionRequestedId = requestedSessionId;
+src\loopService.js:1298:        activeOperation.codexSessionId = null;
+src\loopService.js:1299:        activeOperation.codexSessionMode = 'new';
+src\loopService.js:1300:        activeOperation.codexSessionState = 'fallback-new';
+src\loopService.js:1301:        appendInternalLog(`Codex resume failed for session ${requestedSessionId}; falling back to a new session.`);
+src\loopService.js:1303:        this.addEvent(projectIdForEmit, 'codex.session.resume.skipped', 'Codex session id 为空，已新建会话', {
+src\loopService.js:1304:          ...codexSessionContextFields({ codexSessionMode: 'new' }),
+src\loopService.js:1308:          reason: 'empty_session_id',
+src\loopService.js:1310:        appendInternalLog('Codex session id was empty; starting a new session.');
+src\loopService.js:1313:      const fresh = await runAttempt(codexNewSessionArgs(workspace, lastFile), 'new');
+src\loopService.js:1490:      taskKey: task?.task_key,
+src\loopService.js:1503:    codexSessionContextFields({
+src\loopService.js:1504:      codexSessionId: meta.codexSessionId ?? meta.codex_session_id ?? meta.sessionId ?? task?.codex_session_id,
+src\loopService.js:1505:      codexSessionRequestedId: meta.codexSessionRequestedId,
+src\loopService.js:1506:      codexSessionMode: meta.codexSessionMode,
+src\loopService.js:1507:      codexSessionState: meta.codexSessionState,
+src\loopService.js:1508:      codexSessionFallback: meta.codexSessionFallback,
+src\loopService.js:1525:  const taskLabel = task?.task_key ? `${task.task_key} 任务` : task?.id ? `任务 #${task.id}` : '任务';
+src\loopService.js:1537:  const codexContext = codexSessionReadableLabel(meta);
+src\loopService.js:1538:  return `${action}${separator}${taskLabel}：${taskTitle}${codexContext ? `（${codexContext}）` : ''}`;
+src\loopService.js:1609:    ...codexSessionContextFields(operation),
+src\loopService.js:1614:  const contexts = new Map();
+src\loopService.js:1616:    contexts.set(Number(runtime.lastOperation.taskId), codexSessionContextFields(runtime.lastOperation));
+src\loopService.js:1620:    contexts.set(Number(operation.taskId), codexSessionContextFields(operation));
+src\loopService.js:1622:  return contexts;
+src\loopService.js:1625:function codexSessionContextFields(source = {}) {
+src\loopService.js:1626:  const sessionId = operationCodexSessionId(source);
+src\loopService.js:1627:  const requestedSessionId = normalizeCodexSessionId(source.codexSessionRequestedId ?? source.requestedSessionId);
+src\loopService.js:1628:  const mode = normalizeCodexSessionMode(source.codexSessionMode);
+src\loopService.js:1629:  const fallback = Boolean(source.codexSessionFallback);
+src\loopService.js:1630:  const state = normalizeOptionalString(source.codexSessionState) || (fallback ? 'fallback-new' : mode);
+src\loopService.js:1631:  const label = codexSessionReadableLabel({
+src\loopService.js:1632:    codexSessionId: sessionId,
+src\loopService.js:1633:    codexSessionRequestedId: requestedSessionId,
+src\loopService.js:1634:    codexSessionMode: mode,
+src\loopService.js:1635:    codexSessionState: state,
+src\loopService.js:1636:    codexSessionFallback: fallback,
+src\loopService.js:1639:    codexSessionId: sessionId || undefined,
+src\loopService.js:1640:    codexSessionShortId: sessionId ? shortCodexSessionId(sessionId) : undefined,
+src\loopService.js:1641:    codexSessionMode: mode || undefined,
+src\loopService.js:1642:    codexSessionState: state || undefined,
+src\loopService.js:1643:    codexSessionLabel: label || undefined,
+src\loopService.js:1644:    codexSessionRequestedId: requestedSessionId || undefined,
+src\loopService.js:1645:    codexSessionRequestedShortId: requestedSessionId ? shortCodexSessionId(requestedSessionId) : undefined,
+src\loopService.js:1646:    codexSessionFallback: fallback || undefined,
+src\loopService.js:1652:  if (normalized === 'new' || normalized === 'resume') return normalized;
+src\loopService.js:1656:function codexSessionReadableLabel(source = {}) {
+src\loopService.js:1657:  const explicit = normalizeOptionalString(source.codexSessionLabel);
+src\loopService.js:1659:  const sessionId = operationCodexSessionId(source);
+src\loopService.js:1660:  const requestedSessionId = normalizeCodexSessionId(source.codexSessionRequestedId ?? source.requestedSessionId);
+src\loopService.js:1661:  const sessionShortId = sessionId ? shortCodexSessionId(sessionId) : '';
+src\loopService.js:1663:  const mode = normalizeCodexSessionMode(source.codexSessionMode);
+src\loopService.js:1664:  const state = normalizeOptionalString(source.codexSessionState);
+src\loopService.js:1665:  if (state === 'fallback-new' || source.codexSessionFallback) {
+src\loopService.js:1666:    if (sessionShortId && requestedShortId) return `回退新建会话 ${sessionShortId}（原 ${requestedShortId}）`;
+src\loopService.js:1667:    if (sessionShortId) return `回退新建会话 ${sessionShortId}`;
+src\loopService.js:1670:  if (mode === 'resume') return sessionShortId ? `恢复会话 ${sessionShortId}` : '恢复会话';
+src\loopService.js:1671:  if (mode === 'new') return sessionShortId ? `新建会话 ${sessionShortId}` : '新建会话';
+src\loopService.js:1672:  return sessionShortId ? `会话 ${sessionShortId}` : '';
+src\loopService.js:1675:function taskSnapshotRow(task, codexContext = null) {
+src\loopService.js:1681:  const sessionContext = codexSessionContextFields({
+src\loopService.js:1682:    codexSessionId: codexContext?.codexSessionId ?? task.codex_session_id,
+src\loopService.js:1683:    codexSessionRequestedId: codexContext?.codexSessionRequestedId,
+src\loopService.js:1684:    codexSessionMode: codexContext?.codexSessionMode,
+src\loopService.js:1685:    codexSessionState: codexContext?.codexSessionState,
+src\loopService.js:1686:    codexSessionFallback: codexContext?.codexSessionFallback,
+src\loopService.js:1694:    ...sessionContext,
+src\loopService.js:1766:  return ['codexSessionId', 'sessionId', 'codex_session_id'].some((key) => Object.prototype.hasOwnProperty.call(operation, key));
+src\loopService.js:1770:  return normalizeCodexSessionId(operation.codexSessionId ?? operation.sessionId ?? operation.codex_session_id);
+src\loopService.js:1792:function shortCodexSessionId(sessionId) {
+src\loopService.js:1793:  const normalized = normalizeCodexSessionId(sessionId);
+src\loopService.js:1798:function codexNewSessionArgs(workspace, lastFile) {
+src\loopService.js:1813:function codexResumeSessionArgs(sessionId, lastFile) {
+src\loopService.js:1816:    'resume',
+src\loopService.js:1819:    sessionId,
+src\loopService.js:1907:  const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
+src\loopService.js:1921:  const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
+src\database.js:134:        task_key TEXT NOT NULL,
+src\database.js:143:        codex_session_id TEXT,
+src\database.js:145:        UNIQUE(plan_id, task_key)
+src\database.js:185:    this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+docs\plan\plan_requirement_7_20260625-033918.md:1:# 需求 #7 开发计划：同一 Plan 任务持续使用同一上下文
+docs\plan\plan_requirement_7_20260625-033918.md:5:当前 AutoPlan 在执行 plan 任务时，每次调用 Codex 都会通过 `codex exec` 启动一个新的非交互式会话。对于同一个 plan 任务，如果因为失败、停止、重试或手动再次执行而需要继续推进，新的会话无法继承该任务上一次的理解、已做分析和执行上下文，容易造成重复探索、遗漏前序约束或与上一轮执行结论不一致。
+docs\plan\plan_requirement_7_20260625-033918.md:7:需求 #7 要求：同一个 plan 任务应该在同一个上下文内部持续执行。实现目标是以 `plan_id + task_key` 为任务上下文边界，首次执行创建 Codex 会话，后续同一任务继续执行时恢复该会话；不同任务仍保持隔离，避免上下文串扰。
+docs\plan\plan_requirement_7_20260625-033918.md:11:- [x] P001: 持久化任务上下文标识 <!-- scope: src/database.js,src/renderer/types.ts -->
+docs\plan\plan_requirement_7_20260625-033918.md:12:  - 验收要点：`plan_tasks` 表新增可空的 Codex 会话标识字段，能够记录同一任务首次执行产生的 session id。
+docs\plan\plan_requirement_7_20260625-033918.md:14:  - 验收要点：前端 `PlanTask` 类型同步新增上下文字段，现有任务耗时、状态、scope、排序字段类型不回退。
+docs\plan\plan_requirement_7_20260625-033918.md:15:  - 验收要点：会话标识仅绑定到具体 `plan_tasks` 记录或 `plan_id + task_key`，不使用全局单例存储，避免跨 plan 或跨任务复用。
+docs\plan\plan_requirement_7_20260625-033918.md:17:- [x] P002: 保留任务同步中的上下文 <!-- scope: src/loopService.js -->
+docs\plan\plan_requirement_7_20260625-033918.md:18:  - 验收要点：`syncPlanTasks` 在重新解析 plan 文件时保留同一 `plan_id + task_key` 已有任务的 Codex 会话标识、耗时字段和关键状态信息。
+docs\plan\plan_requirement_7_20260625-033918.md:19:  - 验收要点：任务标题、raw line、scope 或排序变化时仍能更新最新解析结果，但不会因为删除重建任务而丢失上下文。
+docs\plan\plan_requirement_7_20260625-033918.md:21:  - 验收要点：已完成任务的 checkbox 与进度区由现有 AutoPlan 回写流程继续负责，上下文保留逻辑不扩大 plan 文件写入范围。
+docs\plan\plan_requirement_7_20260625-033918.md:24:  - 验收要点：`runCodex` 支持传入已有 session id；存在 session id 时使用 `codex exec resume <session_id> -` 继续会话，不再为同一任务创建全新上下文。
+docs\plan\plan_requirement_7_20260625-033918.md:25:  - 验收要点：没有 session id、session id 为空或恢复失败时能够回退为新建 `codex exec`，并记录可排查事件，不导致任务流程卡死。
+docs\plan\plan_requirement_7_20260625-033918.md:27:  - 验收要点：从 Codex 输出中捕获真实 session id，写入运行结果，日志文件和 last message 文件路径仍按现有规则生成。
+docs\plan\plan_requirement_7_20260625-033918.md:29:- [x] P004: 绑定任务执行与上下文生命周期 <!-- scope: src/loopService.js -->
+docs\plan\plan_requirement_7_20260625-033918.md:30:  - 验收要点：`executeTask` 执行前读取当前任务保存的 session id，并把它传给 Codex 调用；执行结束后把捕获到的 session id 写回对应任务。
+docs\plan\plan_requirement_7_20260625-033918.md:31:  - 验收要点：同一任务失败后回到 `pending`、被停止后再次执行、或用户手动点击运行时，都会复用该任务已有上下文。
+docs\plan\plan_requirement_7_20260625-033918.md:32:  - 验收要点：不同任务即使属于同一 plan，也不会复用彼此的 session id；并发任务各自维护独立上下文。
+docs\plan\plan_requirement_7_20260625-033918.md:33:  - 验收要点：任务成功完成后保留 session id 作为审计信息，但不会让后续其他任务自动继承该上下文。
+docs\plan\plan_requirement_7_20260625-033918.md:35:- [x] P005: 暴露上下文状态与事件信息 <!-- scope: src/loopService.js,src/renderer/types.ts,src/renderer/pages/WorkspacePage.tsx,src/renderer/components/CodexLog.tsx -->
+docs\plan\plan_requirement_7_20260625-033918.md:36:  - 验收要点：`snapshot()` 的 `tasks`、`activeOperation`、`activeOperations` 和 `lastOperation` 能携带当前任务的 session id 或“新建/恢复”状态。
+docs\plan\plan_requirement_7_20260625-033918.md:37:  - 验收要点：事件流在任务开始、恢复、回退新建、失败和完成时包含可读的上下文信息，方便定位某次任务是否复用了上下文。
+docs\plan\plan_requirement_7_20260625-033918.md:39:  - 验收要点：界面只显示必要的短标识或状态文案，避免长 UUID 造成布局溢出；无 session id 的历史任务显示为普通任务。
+docs\plan\plan_requirement_7_20260625-033918.md:41:- [ ] P006: 补充上下文复用回归测试 <!-- scope: scripts/smoke-test.js -->
+docs\plan\plan_requirement_7_20260625-033918.md:42:  - 验收要点：smoke 测试覆盖同一任务首次执行产生 session id，并在失败后再次执行时传入同一个 session id。
+docs\plan\plan_requirement_7_20260625-033918.md:43:  - 验收要点：smoke 测试覆盖同一 plan 的不同任务不会复用 session id，并发执行时每个任务拥有独立上下文。
+docs\plan\plan_requirement_7_20260625-033918.md:44:  - 验收要点：smoke 测试覆盖 `syncPlanTasks` 后同一 `task_key` 的上下文仍保留，新增或改名任务不会继承旧上下文。
+docs\plan\plan_requirement_7_20260625-033918.md:49:  - 验收要点：`npm run smoke` 通过，确认任务上下文复用、计划解析、执行、停止、完成和验收流程无回归。
+docs\plan\plan_requirement_7_20260625-033918.md:50:  - 验收要点：手动验证同一任务连续两次执行时日志显示恢复同一 session，不同任务显示不同 session 或新建上下文。
+docs\plan\plan_requirement_7_20260625-033918.md:55:- 上下文连续：同一个 plan 任务在失败、停止、重试或手动再次运行时，优先恢复该任务上一次的 Codex 会话继续执行。
+docs\plan\plan_requirement_7_20260625-033918.md:56:- 任务隔离：上下文以 `plan_id + task_key` 为边界，不同任务、不同 plan、不同项目之间不会共享会话。
+docs\plan\plan_requirement_7_20260625-033918.md:59:- 可观测：事件流、活动日志或任务快照能够判断本次执行是新建上下文还是恢复上下文，并能定位关联 session。
+
+**Reviewing file requirements**
+
+I’m looking for a relevant file that isn't too large. I think I should use Get-Content to specify line ranges since I need the current smoke-test.js related to executeTask tests. It’s essential to reference the specific line numbers for accuracy. I want to ensure I’m retrieving the right segments without overwhelming myself or the system. Let’s keep it focused and efficient while aiming for completeness in the task at hand!
+codex
+现有脚本已有任务执行场景，我会查看相关区段后最小补测。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; "'$lines = Get-Content -LiteralPath '"'scripts\\smoke-test.js' -Encoding UTF8; foreach ("'$range in @(@(1,120),@(130,280),@(280,390))) { $start=$range[0]; $end=[Math]::Min($range[1], $lines.Length); "--- lines $start-$end ---"; for ($i=$start; $i -le $end; $i++) { '"'{0,4}: {1}' -f "'$i, $lines[$i-1] } }' in D:\project\GitHub\autoplan
+ succeeded in 249ms:
+--- lines 1-120 ---
+   1: const assert = require('node:assert/strict');
+   2: const fs = require('node:fs');
+   3: const os = require('node:os');
+   4: const path = require('node:path');
+   5: const { saveAttachments } = require('../src/attachments');
+   6: const { AppDatabase, nowIso } = require('../src/database');
+   7: const { LoopService } = require('../src/loopService');
+   8: const { acceptPlanDraft, createPlanDraft, updatePlanDraft } = require('../src/planDrafts');
+   9: 
+  10: async function main() {
+  11:   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-smoke-'));
+  12:   const dbPath = path.join(tempRoot, 'data', 'autoplan.sqlite');
+  13:   const workspace = path.join(tempRoot, 'workspace');
+  14:   const otherWorkspace = path.join(tempRoot, 'other-workspace');
+  15: 
+  16:   try {
+  17:     const db = new AppDatabase(dbPath);
+  18:     await db.init();
+  19:     const defaultState = db.get('SELECT project_id FROM project_states ORDER BY project_id ASC LIMIT 1');
+  20:     db.run('UPDATE project_states SET running = 1, phase = ?, updated_at = ? WHERE project_id = ?', [
+  21:       'execute-task',
+  22:       nowIso(),
+  23:       defaultState.project_id,
+  24:     ]);
+  25:     const loop = new LoopService(db);
+  26:     const projectId = loop.defaultProjectId();
+  27:     const otherProjectId = insertProject(db, loop, 'Other Project', otherWorkspace);
+  28: 
+  29:     assert.ok(projectId, '启动后应存在默认项目');
+  30:     assert.equal(loop.snapshot(projectId).state.running, 0, '重启后不应继承旧的 running 状态');
+  31:     assert.equal(loop.snapshot(projectId).state.phase, 'stopped', '重启后执行中阶段应复位为 stopped');
+  32:     db.run('UPDATE project_states SET running = 1, phase = ?, updated_at = ? WHERE project_id = ?', [
+  33:       'execute-task',
+  34:       nowIso(),
+  35:       projectId,
+  36:     ]);
+  37:     assert.equal(loop.snapshot(projectId).state.running, 0, '快照不应盲信 SQLite 残留 running 状态');
+  38:     assert.equal(loop.snapshot(projectId).state.phase, 'stopped', '空闲时快照不应显示残留执行阶段');
+  39:     assert.equal(loop.snapshot().activeProjectId, null, '未选择项目时快照应停留在项目列表');
+  40:     assert.ok(loop.snapshot().projects.length >= 2, '项目列表应包含默认项目和新增项目');
+  41: 
+  42:     const requirementId = insertRequirement(db, projectId);
+  43:     insertFeedback(db, projectId);
+  44:     insertRequirement(db, otherProjectId);
+  45: 
+  46:     const imageFile = path.join(tempRoot, 'smoke.png');
+  47:     fs.writeFileSync(
+  48:       imageFile,
+  49:       Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lZl0WQAAAABJRU5ErkJggg==', 'base64'),
+  50:     );
+  51:     const attachments = saveAttachments(db, path.join(tempRoot, 'attachments'), 'requirement', requirementId, [
+  52:       { path: imageFile, name: 'smoke.png', type: 'image/png' },
+  53:     ], projectId);
+  54: 
+  55:     const draftId = createPlanDraft(db, {
+  56:       projectId,
+  57:       sourceType: 'requirement',
+  58:       sourceId: requirementId,
+  59:       body: '目标：\n普通文本验收\n允许拖拽图片附件',
+  60:       attachments,
+  61:     });
+  62:     updatePlanDraft(db, draftId, `${loop.snapshot(projectId).planDrafts[0].markdown}\n<!-- smoke adjusted -->\n`);
+  63: 
+  64:     let snapshot = loop.snapshot(projectId);
+  65:     assert.equal(snapshot.requirements.length, 1, '当前项目只应显示自己的需求');
+  66:     assert.equal(loop.snapshot(otherProjectId).requirements.length, 1, '另一个项目应保留独立需求');
+  67:     assert.equal(snapshot.feedback.length, 1, '反馈模块应按项目读取列表');
+  68:     assert.match(snapshot.requirements[0].body, /普通文本验收/, '需求正文应保留普通文本内容');
+  69:     assert.equal(snapshot.attachments.length, 1, '附件应写入 SQLite 并绑定项目');
+  70:     assert.equal(snapshot.attachments[0].project_id, projectId, '附件应记录 project_id');
+  71:     assert.equal(snapshot.attachments[0].mime_type, 'image/png', '图片附件应保留 MIME 类型');
+  72:     assert.ok(fs.existsSync(snapshot.attachments[0].stored_path), '附件文件应复制到持久化目录');
+  73:     assert.equal(snapshot.planDrafts.length, 1, '发送后应生成计划草稿');
+  74:     assert.match(snapshot.planDrafts[0].markdown, /smoke\.png.+file:\/\//, '计划草稿应通过链接引用图片附件');
+  75: 
+  76:     loop.configure(projectId, {
+  77:       workspacePath: workspace,
+  78:       intervalSeconds: 5,
+  79:       validationCommand: 'node -e "process.exit(0)"',
+  80:     });
+  81:     snapshot = loop.snapshot(projectId);
+  82:     assert.equal(snapshot.state.workspace_path, workspace, '项目应能保存工作区路径');
+  83:     assert.equal(snapshot.state.interval_seconds, 5, '项目应能保存循环间隔');
+  84: 
+  85:     loop.ensureWorkspaceDirs(workspace);
+  86:     const issueFile = path.join(workspace, 'docs', 'issues', 'smoke.md');
+  87:     fs.writeFileSync(issueFile, '# Smoke 需求\n\n- [ ] 支持普通文本输入和附件\n', 'utf8');
+  88:     const issueScan = loop.scanDirectory(path.join(workspace, 'docs', 'issues'), workspace, ['.md']);
+  89:     loop.saveScan(projectId, 'issue', issueScan);
+  90:     assert.equal(issueScan.files.length, 1, '扫描模块应发现 docs/issues 文件');
+  91:     assert.equal(loop.snapshot(projectId).scans.length, 1, '扫描记录应按项目写入 SQLite');
+  92:     assert.equal(loop.snapshot(otherProjectId).scans.length, 0, '其它项目不应看到当前项目扫描记录');
+  93: 
+  94:     const planId = acceptPlanDraft(db, loop, workspace, draftId);
+  95:     snapshot = loop.snapshot(projectId);
+  96:     assert.equal(snapshot.planDrafts[0].status, 'accepted', '确认后计划草稿应标记 accepted');
+  97:     assert.equal(snapshot.plans.length, 1, '确认后应加入当前项目任务系统');
+  98:     assert.equal(snapshot.plans[0].project_id, projectId, 'plan 应绑定项目');
+  99:     assert.equal(snapshot.tasks.length, 5, '任务模块应同步草稿中的 checkbox 为任务列表');
+ 100:     assert.ok(
+ 101:       snapshot.tasks.every((task) => hasTaskDurationShape(task)),
+ 102:       '任务快照应包含符合前端类型预期的耗时字段',
+ 103:     );
+ 104:     assert.equal(snapshot.plans[0].total_tasks, 5, 'plan 应记录总任务数');
+ 105:     assert.ok(
+ 106:       snapshot.tasks.every((task) => task.raw_line.includes('scope:')),
+ 107:       '入库任务应保留固定格式 scope 注释',
+ 108:     );
+ 109:     assert.ok(
+ 110:       snapshot.tasks.every((task) => task.scope === 'unknown'),
+ 111:       '无法判断 scope 的默认草稿任务应标记为 unknown',
+ 112:     );
+ 113:     assert.deepEqual(
+ 114:       loop.parallelTaskBatch([
+ 115:         { task_key: 'P001', title: 'A', raw_line: '- [ ] P001: A <!-- scope: lib/a.dart -->' },
+ 116:         { task_key: 'P002', title: 'B', raw_line: '- [ ] P002: B <!-- scope: lib/b.dart -->' },
+ 117:         { task_key: 'P003', title: 'C', raw_line: '- [ ] P003: C <!-- scope: lib/a.dart -->' },
+ 118:       ]).map((task) => task.task_key),
+ 119:       ['P001', 'P002'],
+ 120:       '互不重叠 scope 的任务应允许进入同一并发批次',
+--- lines 130-280 ---
+ 130:     assert.deepEqual(
+ 131:       loop.parallelTaskBatch([
+ 132:         { task_key: 'P009', title: '补充自动化回归测试', raw_line: '- [ ] P009: 补充自动化回归测试 <!-- scope: test/a.dart -->' },
+ 133:         { task_key: 'P010', title: '执行回归验证', raw_line: '- [ ] P010: 执行回归验证 <!-- scope: test/b.dart -->' },
+ 134:       ]).map((task) => task.task_key),
+ 135:       ['P009'],
+ 136:       '测试/验证类任务应保持串行',
+ 137:     );
+ 138: 
+ 139:     const plan = db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+ 140:     const planFile = path.join(workspace, plan.file_path);
+ 141:     const executableTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P001']);
+ 142:     const fakeLogFile = path.join(workspace, 'docs', 'progress', 'logs', 'fake-execute.log');
+ 143:     fs.writeFileSync(fakeLogFile, 'fake ok', 'utf8');
+ 144:     const originalRunCodex = loop.runCodex.bind(loop);
+ 145:     const originalPlanText = fs.readFileSync(planFile, 'utf8');
+ 146:     loop.runCodex = async (_workspace, prompt) => {
+ 147:       assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
+ 148:       assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
+ 149:       await sleep(20);
+ 150:       const runningTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+ 151:       assert.equal(runningTask.status, 'running', '任务开始后应写入 running 状态');
+ 152:       assertIsoString(runningTask.started_at, '任务开始后应写入 started_at');
+ 153:       assert.equal(runningTask.finished_at, null, '任务运行中不应写入 finished_at');
+ 154:       assert.equal(runningTask.duration_ms, 0, '首次运行中累计耗时应保持 0');
+ 155:       const runningSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
+ 156:       assertTaskDurationShape(runningSnapshotTask, '运行中任务快照');
+ 157:       assert.equal(typeof runningSnapshotTask.run_duration_ms, 'number', '运行中任务快照应包含实时耗时');
+ 158:       fs.writeFileSync(planFile, originalPlanText.replace('P002', 'P999'), 'utf8');
+ 159:       return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-last.txt') };
+ 160:     };
+ 161:     const executeResult = await loop.executeTask(workspace, plan, executableTask);
+ 162:     loop.runCodex = originalRunCodex;
+ 163:     assert.equal(executeResult.exitCode, 0, '模拟执行应成功');
+ 164:     loop.completeTask(workspace, plan, executableTask, executeResult);
+ 165:     const guardedPlanText = fs.readFileSync(planFile, 'utf8');
+ 166:     assert.match(guardedPlanText, /- \[x\] P001:/, '系统应在任务成功后勾选 checkbox');
+ 167:     assert.match(guardedPlanText, /P001 AutoPlan 完成/, '系统应在进度区写入完成记录');
+ 168:     assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
+ 169:     const completedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+ 170:     assert.equal(
+ 171:       completedTask.status,
+ 172:       'completed',
+ 173:       '系统应更新任务入库状态',
+ 174:     );
+ 175:     assertIsoString(completedTask.started_at, '任务完成后应保留 started_at');
+ 176:     assertIsoString(completedTask.finished_at, '任务完成后应写入 finished_at');
+ 177:     assert.ok(completedTask.duration_ms > 0, '任务完成后应写入正数 duration_ms');
+ 178:     const completedSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
+ 179:     assertTaskDurationShape(completedSnapshotTask, '已完成任务快照');
+ 180:     assert.ok(completedSnapshotTask.duration_ms > 0, '已完成任务快照应包含累计耗时');
+ 181:     const completedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P001');
+ 182:     assertTaskEventOrder(completedTaskEvents, ['task.succeeded', 'task.started'], '成功任务事件');
+ 183:     assertTaskEventMeta(completedTaskEvents[0], executableTask, 'completed', '成功结束任务事件');
+ 184:     assert.equal(completedTaskEvents[0].meta.log, fakeLogFile, '成功结束事件 meta 应包含日志路径');
+ 185:     assert.equal(completedTaskEvents[0].meta.exitCode, 0, '成功结束事件 meta 应包含退出码');
+ 186:     assertTaskEventMeta(completedTaskEvents[1], executableTask, 'running', '开始任务事件');
+ 187:     assert.equal(
+ 188:       db.get('SELECT completed_tasks FROM plans WHERE id = ?', [planId]).completed_tasks,
+ 189:       1,
+ 190:       '系统应更新 plan 完成计数',
+ 191:     );
+ 192: 
+ 193:     const retryTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P002']);
+ 194:     loop.runCodex = async (_workspace, prompt) => {
+ 195:       assert.match(prompt, /只执行指定任务 P002/, '重试任务首次执行 prompt 应锁定指定任务');
+ 196:       await sleep(20);
+ 197:       const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+ 198:       assert.equal(runningRetryTask.status, 'running', '失败前任务应处于 running 状态');
+ 199:       assertIsoString(runningRetryTask.started_at, '失败前任务应写入 started_at');
+ 200:       assert.equal(runningRetryTask.finished_at, null, '失败前任务运行中不应写入 finished_at');
+ 201:       assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '失败前任务快照');
+ 202:       return { exitCode: 1, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-failed.txt') };
+ 203:     };
+ 204:     const failedResult = await loop.executeTask(workspace, plan, retryTask);
+ 205:     loop.runCodex = originalRunCodex;
+ 206:     assert.equal(failedResult.exitCode, 1, '模拟失败应返回非 0 exitCode');
+ 207:     const failedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+ 208:     assert.equal(failedTask.status, 'pending', '任务失败后应回退为 pending');
+ 209:     assertIsoString(failedTask.started_at, '任务失败后应保留 started_at');
+ 210:     assertIsoString(failedTask.finished_at, '任务失败后应写入 finished_at');
+ 211:     assert.ok(failedTask.duration_ms > 0, '任务失败后应累计正数 duration_ms');
+ 212:     const failedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P002');
+ 213:     assertTaskEventOrder(failedTaskEvents, ['task.failed', 'task.started'], '失败任务事件');
+ 214:     assertTaskEventMeta(failedTaskEvents[0], retryTask, 'failed', '失败任务事件');
+ 215:     assert.equal(failedTaskEvents[0].meta.log, fakeLogFile, '失败事件 meta 应包含日志路径');
+ 216:     assert.equal(failedTaskEvents[0].meta.exitCode, 1, '失败事件 meta 应包含退出码');
+ 217:     assertTaskEventMeta(failedTaskEvents[1], retryTask, 'running', '失败前开始任务事件');
+ 218: 
+ 219:     const firstAttemptDurationMs = failedTask.duration_ms;
+ 220:     const retryAttemptTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+ 221:     loop.runCodex = async (_workspace, prompt) => {
+ 222:       assert.match(prompt, /只执行指定任务 P002/, '重试任务再次执行 prompt 应锁定指定任务');
+ 223:       await sleep(20);
+ 224:       const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+ 225:       assert.equal(runningRetryTask.status, 'running', '重试时任务应重新进入 running 状态');
+ 226:       assertIsoString(runningRetryTask.started_at, '重试时任务应刷新 started_at');
+ 227:       assert.equal(runningRetryTask.finished_at, null, '重试运行中应清空 finished_at');
+ 228:       assert.equal(runningRetryTask.duration_ms, firstAttemptDurationMs, '重试运行中不应丢失历史累计耗时');
+ 229:       return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-retry.txt') };
+ 230:     };
+ 231:     const retryResult = await loop.executeTask(workspace, plan, retryAttemptTask);
+ 232:     loop.runCodex = originalRunCodex;
+ 233:     assert.equal(retryResult.exitCode, 0, '模拟重试应成功');
+ 234:     loop.completeTask(workspace, plan, retryAttemptTask, retryResult);
+ 235:     const retriedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+ 236:     assert.equal(retriedTask.status, 'completed', '重试成功后任务应完成');
+ 237:     assertIsoString(retriedTask.finished_at, '重试成功后应写入 finished_at');
+ 238:     assert.ok(retriedTask.duration_ms > firstAttemptDurationMs, '重试成功后应继续累加 duration_ms');
+ 239:     assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '重试完成任务快照');
+ 240: 
+ 241:     const stoppableTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P003']);
+ 242:     loop.startTaskRun(stoppableTask.id, nowIso());
+ 243:     await sleep(20);
+ 244:     loop.stopTask(projectId, stoppableTask.id);
+ 245:     const stoppedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+ 246:     assert.equal(stoppedTask.status, 'pending', '手动停止后任务应回到 pending 以便重试');
+ 247:     assertIsoString(stoppedTask.finished_at, '手动停止后应写入 finished_at');
+ 248:     assert.ok(stoppedTask.duration_ms > 0, '手动停止后应累计耗时');
+ 249:     const stoppedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P003');
+ 250:     assertTaskEventOrder(stoppedTaskEvents, ['task.stop.requested'], '手动停止任务事件');
+ 251:     assertTaskEventMeta(stoppedTaskEvents[0], stoppableTask, 'stopping', '手动停止任务事件');
+ 252: 
+ 253:     const stoppedDurationMs = stoppedTask.duration_ms;
+ 254:     const retryStoppedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+ 255:     loop.runCodex = async (_workspace, prompt) => {
+ 256:       assert.match(prompt, /只执行指定任务 P003/, '停止后重试任务 prompt 应锁定指定任务');
+ 257:       await sleep(20);
+ 258:       const runningStoppedRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+ 259:       assert.equal(runningStoppedRetryTask.status, 'running', '停止后重试应重新进入 running 状态');
+ 260:       assert.equal(runningStoppedRetryTask.duration_ms, stoppedDurationMs, '停止后重试不应丢失停止前耗时');
+ 261:       return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-stopped-retry.txt') };
+ 262:     };
+ 263:     const stoppedRetryResult = await loop.executeTask(workspace, plan, retryStoppedTask);
+ 264:     loop.runCodex = originalRunCodex;
+ 265:     assert.equal(stoppedRetryResult.exitCode, 0, '手动停止后的重试应成功');
+ 266:     loop.completeTask(workspace, plan, retryStoppedTask, stoppedRetryResult);
+ 267:     const stoppedRetriedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+ 268:     assert.equal(stoppedRetriedTask.status, 'completed', '手动停止后任务应可重试完成');
+ 269:     assert.ok(stoppedRetriedTask.duration_ms > stoppedDurationMs, '手动停止后重试应继续累加耗时');
+ 270:     assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P003'), '停止后重试完成任务快照');
+ 271: 
+ 272:     fs.writeFileSync(planFile, fs.readFileSync(planFile, 'utf8').replaceAll('- [ ]', '- [x]'), 'utf8');
+ 273:     loop.syncPlanTasks(planId, planFile);
+ 274:     await loop.validatePlan(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+ 275:     snapshot = loop.snapshot(projectId);
+ 276:     assert.equal(snapshot.plans[0].status, 'completed', '验收通过后 plan 应标记 completed');
+ 277:     assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+ 278: 
+ 279:     const multiWorkspaceA = path.join(tempRoot, 'multi-a');
+ 280:     const multiWorkspaceB = path.join(tempRoot, 'multi-b');
+--- lines 280-390 ---
+ 280:     const multiWorkspaceB = path.join(tempRoot, 'multi-b');
+ 281:     const multiProjectA = insertProject(db, loop, 'Multi Project A', multiWorkspaceA);
+ 282:     const multiProjectB = insertProject(db, loop, 'Multi Project B', multiWorkspaceB);
+ 283:     const sameWorkspaceProject = insertProject(db, loop, 'Same Workspace Project', multiWorkspaceB);
+ 284:     loop.configure(multiProjectA, { workspacePath: multiWorkspaceA, intervalSeconds: 60, validationCommand: '' });
+ 285:     loop.configure(multiProjectB, { workspacePath: multiWorkspaceB, intervalSeconds: 60, validationCommand: '' });
+ 286:     loop.configure(sameWorkspaceProject, { workspacePath: multiWorkspaceB, intervalSeconds: 60, validationCommand: '' });
+ 287: 
+ 288:     loop.start(multiProjectA);
+ 289:     loop.start(multiProjectB);
+ 290:     assert.equal(loop.snapshot(multiProjectA).state.running, 1, '项目 A 循环应保持运行中');
+ 291:     assert.equal(loop.snapshot(multiProjectB).state.running, 1, '项目 B 循环应保持运行中');
+ 292:     assert.ok(
+ 293:       loop.snapshot().projects.filter((project) => project.running).length >= 2,
+ 294:       '项目列表应能显示多个运行中项目',
+ 295:     );
+ 296:     assert.throws(
+ 297:       () => loop.start(sameWorkspaceProject),
+ 298:       /工作区正在被项目/,
+ 299:       '同一工作区不应被两个项目循环同时占用',
+ 300:     );
+ 301:     loop.stop(multiProjectA);
+ 302:     assert.equal(loop.snapshot(multiProjectA).state.running, 0, '停止项目 A 后 A 应停止');
+ 303:     assert.equal(loop.snapshot(multiProjectB).state.running, 1, '停止项目 A 不应影响项目 B');
+ 304:     loop.stop(multiProjectB);
+ 305:     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
+ 306: 
+ 307:     console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, task events, scan, validation, duration stats, multi-loop');
+ 308:   } finally {
+ 309:     fs.rmSync(tempRoot, { recursive: true, force: true });
+ 310:   }
+ 311: }
+ 312: 
+ 313: function insertProject(db, loop, name, workspacePath) {
+ 314:   const now = nowIso();
+ 315:   const id = db.insert(
+ 316:     `INSERT INTO projects (name, workspace_path, description, created_at, updated_at)
+ 317:      VALUES (?, ?, ?, ?, ?)`,
+ 318:     [name, workspacePath, '', now, now],
+ 319:   );
+ 320:   loop.ensureProjectState(id);
+ 321:   return id;
+ 322: }
+ 323: 
+ 324: function insertRequirement(db, projectId) {
+ 325:   const now = nowIso();
+ 326:   return db.insert(
+ 327:     `INSERT INTO requirements (project_id, title, body, status, created_at, updated_at)
+ 328:      VALUES (?, ?, ?, ?, ?, ?)`,
+ 329:     [projectId, '普通文本需求', '目标：\n普通文本验收\n允许拖拽图片附件', 'open', now, now],
+ 330:   );
+ 331: }
+ 332: 
+ 333: function insertFeedback(db, projectId) {
+ 334:   const now = nowIso();
+ 335:   db.insert(
+ 336:     `INSERT INTO feedback (project_id, requirement_id, title, body, status, created_at, updated_at)
+ 337:      VALUES (?, ?, ?, ?, ?, ?, ?)`,
+ 338:     [projectId, null, '普通文本反馈', '列表展示\n重点内容\n可附加图片', 'open', now, now],
+ 339:   );
+ 340: }
+ 341: 
+ 342: function sleep(milliseconds) {
+ 343:   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+ 344: }
+ 345: 
+ 346: function taskByKey(snapshot, taskKey) {
+ 347:   return snapshot.tasks.find((task) => task.task_key === taskKey);
+ 348: }
+ 349: 
+ 350: function taskEventsByKey(snapshot, taskKey) {
+ 351:   return snapshot.events.filter((event) => event.meta?.taskKey === taskKey);
+ 352: }
+ 353: 
+ 354: function assertTaskEventOrder(events, expectedTypes, label) {
+ 355:   assert.deepEqual(
+ 356:     events.slice(0, expectedTypes.length).map((event) => event.type),
+ 357:     expectedTypes,
+ 358:     `${label} 应按最新事件在前返回`,
+ 359:   );
+ 360:   for (let index = 1; index < expectedTypes.length; index += 1) {
+ 361:     assert.ok(events[index - 1].id > events[index].id, `${label} 应按事件 id 倒序排列`);
+ 362:   }
+ 363: }
+ 364: 
+ 365: function assertTaskEventMeta(event, task, status, label) {
+ 366:   assert.ok(event, `${label} 应存在`);
+ 367:   assert.ok(event.meta && typeof event.meta === 'object', `${label} 应包含结构化 meta`);
+ 368:   assert.equal(event.meta.taskId, task.id, `${label} meta 应包含 taskId`);
+ 369:   assert.equal(event.meta.taskKey, task.task_key, `${label} meta 应包含 taskKey`);
+ 370:   assert.equal(event.meta.taskTitle, task.title, `${label} meta 应包含 taskTitle`);
+ 371:   assert.equal(event.meta.planId, task.plan_id, `${label} meta 应包含 planId`);
+ 372:   assert.equal(event.meta.status, status, `${label} meta 应包含任务状态`);
+ 373:   if (event.meta.startedAt) assertIsoString(event.meta.startedAt, `${label} meta startedAt 应为 ISO 时间`);
+ 374:   if (event.meta.finishedAt) assertIsoString(event.meta.finishedAt, `${label} meta finishedAt 应为 ISO 时间`);
+ 375: }
+ 376: 
+ 377: function hasTaskDurationShape(task) {
+ 378:   if (!task) return false;
+ 379:   const hasStartedAt = task.started_at === null || typeof task.started_at === 'string';
+ 380:   const hasFinishedAt = task.finished_at === null || typeof task.finished_at === 'string';
+ 381:   const hasDurationMs = typeof task.duration_ms === 'number' && Number.isFinite(task.duration_ms);
+ 382:   const hasRunDurationMs =
+ 383:     !Object.prototype.hasOwnProperty.call(task, 'run_duration_ms') ||
+ 384:     (typeof task.run_duration_ms === 'number' && Number.isFinite(task.run_duration_ms));
+ 385:   return hasStartedAt && hasFinishedAt && hasDurationMs && hasRunDurationMs;
+ 386: }
+ 387: 
+ 388: function assertTaskDurationShape(task, label) {
+ 389:   assert.ok(task, `${label} 应存在`);
+ 390:   assert.ok(hasTaskDurationShape(task), `${label} 应包含符合前端类型预期的耗时字段`);
+
+codex
+输出被截断了，我会分段读取关键执行测试区域。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; "'$lines = Get-Content -LiteralPath '"'scripts\\smoke-test.js' -Encoding UTF8; foreach ("'$range in @(@(80,180),@(180,280))) { $start=$range[0]; $end=[Math]::Min($range[1], $lines.Length); "--- lines $start-$end ---"; for ($i=$start; $i -le $end; $i++) { '"'{0,4}: {1}' -f "'$i, $lines[$i-1] } }' in D:\project\GitHub\autoplan
+ succeeded in 238ms:
+--- lines 80-180 ---
+  80:     });
+  81:     snapshot = loop.snapshot(projectId);
+  82:     assert.equal(snapshot.state.workspace_path, workspace, '项目应能保存工作区路径');
+  83:     assert.equal(snapshot.state.interval_seconds, 5, '项目应能保存循环间隔');
+  84: 
+  85:     loop.ensureWorkspaceDirs(workspace);
+  86:     const issueFile = path.join(workspace, 'docs', 'issues', 'smoke.md');
+  87:     fs.writeFileSync(issueFile, '# Smoke 需求\n\n- [ ] 支持普通文本输入和附件\n', 'utf8');
+  88:     const issueScan = loop.scanDirectory(path.join(workspace, 'docs', 'issues'), workspace, ['.md']);
+  89:     loop.saveScan(projectId, 'issue', issueScan);
+  90:     assert.equal(issueScan.files.length, 1, '扫描模块应发现 docs/issues 文件');
+  91:     assert.equal(loop.snapshot(projectId).scans.length, 1, '扫描记录应按项目写入 SQLite');
+  92:     assert.equal(loop.snapshot(otherProjectId).scans.length, 0, '其它项目不应看到当前项目扫描记录');
+  93: 
+  94:     const planId = acceptPlanDraft(db, loop, workspace, draftId);
+  95:     snapshot = loop.snapshot(projectId);
+  96:     assert.equal(snapshot.planDrafts[0].status, 'accepted', '确认后计划草稿应标记 accepted');
+  97:     assert.equal(snapshot.plans.length, 1, '确认后应加入当前项目任务系统');
+  98:     assert.equal(snapshot.plans[0].project_id, projectId, 'plan 应绑定项目');
+  99:     assert.equal(snapshot.tasks.length, 5, '任务模块应同步草稿中的 checkbox 为任务列表');
+ 100:     assert.ok(
+ 101:       snapshot.tasks.every((task) => hasTaskDurationShape(task)),
+ 102:       '任务快照应包含符合前端类型预期的耗时字段',
+ 103:     );
+ 104:     assert.equal(snapshot.plans[0].total_tasks, 5, 'plan 应记录总任务数');
+ 105:     assert.ok(
+ 106:       snapshot.tasks.every((task) => task.raw_line.includes('scope:')),
+ 107:       '入库任务应保留固定格式 scope 注释',
+ 108:     );
+ 109:     assert.ok(
+ 110:       snapshot.tasks.every((task) => task.scope === 'unknown'),
+ 111:       '无法判断 scope 的默认草稿任务应标记为 unknown',
+ 112:     );
+ 113:     assert.deepEqual(
+ 114:       loop.parallelTaskBatch([
+ 115:         { task_key: 'P001', title: 'A', raw_line: '- [ ] P001: A <!-- scope: lib/a.dart -->' },
+ 116:         { task_key: 'P002', title: 'B', raw_line: '- [ ] P002: B <!-- scope: lib/b.dart -->' },
+ 117:         { task_key: 'P003', title: 'C', raw_line: '- [ ] P003: C <!-- scope: lib/a.dart -->' },
+ 118:       ]).map((task) => task.task_key),
+ 119:       ['P001', 'P002'],
+ 120:       '互不重叠 scope 的任务应允许进入同一并发批次',
+ 121:     );
+ 122:     assert.deepEqual(
+ 123:       loop.parallelTaskBatch([
+ 124:         { task_key: 'P001', title: 'A', raw_line: '- [ ] P001: A <!-- scope: unknown -->' },
+ 125:         { task_key: 'P002', title: 'B', raw_line: '- [ ] P002: B <!-- scope: lib/b.dart -->' },
+ 126:       ]).map((task) => task.task_key),
+ 127:       ['P001'],
+ 128:       'unknown scope 任务应保持串行',
+ 129:     );
+ 130:     assert.deepEqual(
+ 131:       loop.parallelTaskBatch([
+ 132:         { task_key: 'P009', title: '补充自动化回归测试', raw_line: '- [ ] P009: 补充自动化回归测试 <!-- scope: test/a.dart -->' },
+ 133:         { task_key: 'P010', title: '执行回归验证', raw_line: '- [ ] P010: 执行回归验证 <!-- scope: test/b.dart -->' },
+ 134:       ]).map((task) => task.task_key),
+ 135:       ['P009'],
+ 136:       '测试/验证类任务应保持串行',
+ 137:     );
+ 138: 
+ 139:     const plan = db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+ 140:     const planFile = path.join(workspace, plan.file_path);
+ 141:     const executableTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P001']);
+ 142:     const fakeLogFile = path.join(workspace, 'docs', 'progress', 'logs', 'fake-execute.log');
+ 143:     fs.writeFileSync(fakeLogFile, 'fake ok', 'utf8');
+ 144:     const originalRunCodex = loop.runCodex.bind(loop);
+ 145:     const originalPlanText = fs.readFileSync(planFile, 'utf8');
+ 146:     loop.runCodex = async (_workspace, prompt) => {
+ 147:       assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
+ 148:       assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
+ 149:       await sleep(20);
+ 150:       const runningTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+ 151:       assert.equal(runningTask.status, 'running', '任务开始后应写入 running 状态');
+ 152:       assertIsoString(runningTask.started_at, '任务开始后应写入 started_at');
+ 153:       assert.equal(runningTask.finished_at, null, '任务运行中不应写入 finished_at');
+ 154:       assert.equal(runningTask.duration_ms, 0, '首次运行中累计耗时应保持 0');
+ 155:       const runningSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
+ 156:       assertTaskDurationShape(runningSnapshotTask, '运行中任务快照');
+ 157:       assert.equal(typeof runningSnapshotTask.run_duration_ms, 'number', '运行中任务快照应包含实时耗时');
+ 158:       fs.writeFileSync(planFile, originalPlanText.replace('P002', 'P999'), 'utf8');
+ 159:       return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-last.txt') };
+ 160:     };
+ 161:     const executeResult = await loop.executeTask(workspace, plan, executableTask);
+ 162:     loop.runCodex = originalRunCodex;
+ 163:     assert.equal(executeResult.exitCode, 0, '模拟执行应成功');
+ 164:     loop.completeTask(workspace, plan, executableTask, executeResult);
+ 165:     const guardedPlanText = fs.readFileSync(planFile, 'utf8');
+ 166:     assert.match(guardedPlanText, /- \[x\] P001:/, '系统应在任务成功后勾选 checkbox');
+ 167:     assert.match(guardedPlanText, /P001 AutoPlan 完成/, '系统应在进度区写入完成记录');
+ 168:     assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
+ 169:     const completedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+ 170:     assert.equal(
+ 171:       completedTask.status,
+ 172:       'completed',
+ 173:       '系统应更新任务入库状态',
+ 174:     );
+ 175:     assertIsoString(completedTask.started_at, '任务完成后应保留 started_at');
+ 176:     assertIsoString(completedTask.finished_at, '任务完成后应写入 finished_at');
+ 177:     assert.ok(completedTask.duration_ms > 0, '任务完成后应写入正数 duration_ms');
+ 178:     const completedSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
+ 179:     assertTaskDurationShape(completedSnapshotTask, '已完成任务快照');
+ 180:     assert.ok(completedSnapshotTask.duration_ms > 0, '已完成任务快照应包含累计耗时');
+--- lines 180-280 ---
+ 180:     assert.ok(completedSnapshotTask.duration_ms > 0, '已完成任务快照应包含累计耗时');
+ 181:     const completedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P001');
+ 182:     assertTaskEventOrder(completedTaskEvents, ['task.succeeded', 'task.started'], '成功任务事件');
+ 183:     assertTaskEventMeta(completedTaskEvents[0], executableTask, 'completed', '成功结束任务事件');
+ 184:     assert.equal(completedTaskEvents[0].meta.log, fakeLogFile, '成功结束事件 meta 应包含日志路径');
+ 185:     assert.equal(completedTaskEvents[0].meta.exitCode, 0, '成功结束事件 meta 应包含退出码');
+ 186:     assertTaskEventMeta(completedTaskEvents[1], executableTask, 'running', '开始任务事件');
+ 187:     assert.equal(
+ 188:       db.get('SELECT completed_tasks FROM plans WHERE id = ?', [planId]).completed_tasks,
+ 189:       1,
+ 190:       '系统应更新 plan 完成计数',
+ 191:     );
+ 192: 
+ 193:     const retryTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P002']);
+ 194:     loop.runCodex = async (_workspace, prompt) => {
+ 195:       assert.match(prompt, /只执行指定任务 P002/, '重试任务首次执行 prompt 应锁定指定任务');
+ 196:       await sleep(20);
+ 197:       const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+ 198:       assert.equal(runningRetryTask.status, 'running', '失败前任务应处于 running 状态');
+ 199:       assertIsoString(runningRetryTask.started_at, '失败前任务应写入 started_at');
+ 200:       assert.equal(runningRetryTask.finished_at, null, '失败前任务运行中不应写入 finished_at');
+ 201:       assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '失败前任务快照');
+ 202:       return { exitCode: 1, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-failed.txt') };
+ 203:     };
+ 204:     const failedResult = await loop.executeTask(workspace, plan, retryTask);
+ 205:     loop.runCodex = originalRunCodex;
+ 206:     assert.equal(failedResult.exitCode, 1, '模拟失败应返回非 0 exitCode');
+ 207:     const failedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+ 208:     assert.equal(failedTask.status, 'pending', '任务失败后应回退为 pending');
+ 209:     assertIsoString(failedTask.started_at, '任务失败后应保留 started_at');
+ 210:     assertIsoString(failedTask.finished_at, '任务失败后应写入 finished_at');
+ 211:     assert.ok(failedTask.duration_ms > 0, '任务失败后应累计正数 duration_ms');
+ 212:     const failedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P002');
+ 213:     assertTaskEventOrder(failedTaskEvents, ['task.failed', 'task.started'], '失败任务事件');
+ 214:     assertTaskEventMeta(failedTaskEvents[0], retryTask, 'failed', '失败任务事件');
+ 215:     assert.equal(failedTaskEvents[0].meta.log, fakeLogFile, '失败事件 meta 应包含日志路径');
+ 216:     assert.equal(failedTaskEvents[0].meta.exitCode, 1, '失败事件 meta 应包含退出码');
+ 217:     assertTaskEventMeta(failedTaskEvents[1], retryTask, 'running', '失败前开始任务事件');
+ 218: 
+ 219:     const firstAttemptDurationMs = failedTask.duration_ms;
+ 220:     const retryAttemptTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+ 221:     loop.runCodex = async (_workspace, prompt) => {
+ 222:       assert.match(prompt, /只执行指定任务 P002/, '重试任务再次执行 prompt 应锁定指定任务');
+ 223:       await sleep(20);
+ 224:       const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+ 225:       assert.equal(runningRetryTask.status, 'running', '重试时任务应重新进入 running 状态');
+ 226:       assertIsoString(runningRetryTask.started_at, '重试时任务应刷新 started_at');
+ 227:       assert.equal(runningRetryTask.finished_at, null, '重试运行中应清空 finished_at');
+ 228:       assert.equal(runningRetryTask.duration_ms, firstAttemptDurationMs, '重试运行中不应丢失历史累计耗时');
+ 229:       return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-retry.txt') };
+ 230:     };
+ 231:     const retryResult = await loop.executeTask(workspace, plan, retryAttemptTask);
+ 232:     loop.runCodex = originalRunCodex;
+ 233:     assert.equal(retryResult.exitCode, 0, '模拟重试应成功');
+ 234:     loop.completeTask(workspace, plan, retryAttemptTask, retryResult);
+ 235:     const retriedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+ 236:     assert.equal(retriedTask.status, 'completed', '重试成功后任务应完成');
+ 237:     assertIsoString(retriedTask.finished_at, '重试成功后应写入 finished_at');
+ 238:     assert.ok(retriedTask.duration_ms > firstAttemptDurationMs, '重试成功后应继续累加 duration_ms');
+ 239:     assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '重试完成任务快照');
+ 240: 
+ 241:     const stoppableTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P003']);
+ 242:     loop.startTaskRun(stoppableTask.id, nowIso());
+ 243:     await sleep(20);
+ 244:     loop.stopTask(projectId, stoppableTask.id);
+ 245:     const stoppedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+ 246:     assert.equal(stoppedTask.status, 'pending', '手动停止后任务应回到 pending 以便重试');
+ 247:     assertIsoString(stoppedTask.finished_at, '手动停止后应写入 finished_at');
+ 248:     assert.ok(stoppedTask.duration_ms > 0, '手动停止后应累计耗时');
+ 249:     const stoppedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P003');
+ 250:     assertTaskEventOrder(stoppedTaskEvents, ['task.stop.requested'], '手动停止任务事件');
+ 251:     assertTaskEventMeta(stoppedTaskEvents[0], stoppableTask, 'stopping', '手动停止任务事件');
+ 252: 
+ 253:     const stoppedDurationMs = stoppedTask.duration_ms;
+ 254:     const retryStoppedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+ 255:     loop.runCodex = async (_workspace, prompt) => {
+ 256:       assert.match(prompt, /只执行指定任务 P003/, '停止后重试任务 prompt 应锁定指定任务');
+ 257:       await sleep(20);
+ 258:       const runningStoppedRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+ 259:       assert.equal(runningStoppedRetryTask.status, 'running', '停止后重试应重新进入 running 状态');
+ 260:       assert.equal(runningStoppedRetryTask.duration_ms, stoppedDurationMs, '停止后重试不应丢失停止前耗时');
+ 261:       return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-stopped-retry.txt') };
+ 262:     };
+ 263:     const stoppedRetryResult = await loop.executeTask(workspace, plan, retryStoppedTask);
+ 264:     loop.runCodex = originalRunCodex;
+ 265:     assert.equal(stoppedRetryResult.exitCode, 0, '手动停止后的重试应成功');
+ 266:     loop.completeTask(workspace, plan, retryStoppedTask, stoppedRetryResult);
+ 267:     const stoppedRetriedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+ 268:     assert.equal(stoppedRetriedTask.status, 'completed', '手动停止后任务应可重试完成');
+ 269:     assert.ok(stoppedRetriedTask.duration_ms > stoppedDurationMs, '手动停止后重试应继续累加耗时');
+ 270:     assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P003'), '停止后重试完成任务快照');
+ 271: 
+ 272:     fs.writeFileSync(planFile, fs.readFileSync(planFile, 'utf8').replaceAll('- [ ]', '- [x]'), 'utf8');
+ 273:     loop.syncPlanTasks(planId, planFile);
+ 274:     await loop.validatePlan(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+ 275:     snapshot = loop.snapshot(projectId);
+ 276:     assert.equal(snapshot.plans[0].status, 'completed', '验收通过后 plan 应标记 completed');
+ 277:     assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+ 278: 
+ 279:     const multiWorkspaceA = path.join(tempRoot, 'multi-a');
+ 280:     const multiWorkspaceB = path.join(tempRoot, 'multi-b');
+
+**Examining output truncation**
+
+I’m facing a truncation issue with line 154, where the output might be exceeding limits. I need to ensure it captures the exact range from 139 to 240. Perhaps I could try using Out-String -Width to rectify it? However, if the output is still too long, there may be an environment truncation character around 12k. It seems like I might need to split the outputs into two segments: 139-190 and 190-240 to handle this.
+codex
+还缺少中间断言细节，我会再缩小读取范围。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; "'$lines = Get-Content -LiteralPath '"'scripts\\smoke-test.js' -Encoding UTF8; foreach ("'$range in @(@(139,190),@(190,240))) { $start=$range[0]; $end=$range[1]; "--- lines $start-$end ---"; for ($i=$start; $i -le $end; $i++) { '"'{0,4}: {1}' -f "'$i, $lines[$i-1] } }' in D:\project\GitHub\autoplan
+ succeeded in 234ms:
+--- lines 139-190 ---
+ 139:     const plan = db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+ 140:     const planFile = path.join(workspace, plan.file_path);
+ 141:     const executableTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P001']);
+ 142:     const fakeLogFile = path.join(workspace, 'docs', 'progress', 'logs', 'fake-execute.log');
+ 143:     fs.writeFileSync(fakeLogFile, 'fake ok', 'utf8');
+ 144:     const originalRunCodex = loop.runCodex.bind(loop);
+ 145:     const originalPlanText = fs.readFileSync(planFile, 'utf8');
+ 146:     loop.runCodex = async (_workspace, prompt) => {
+ 147:       assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
+ 148:       assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
+ 149:       await sleep(20);
+ 150:       const runningTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+ 151:       assert.equal(runningTask.status, 'running', '任务开始后应写入 running 状态');
+ 152:       assertIsoString(runningTask.started_at, '任务开始后应写入 started_at');
+ 153:       assert.equal(runningTask.finished_at, null, '任务运行中不应写入 finished_at');
+ 154:       assert.equal(runningTask.duration_ms, 0, '首次运行中累计耗时应保持 0');
+ 155:       const runningSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
+ 156:       assertTaskDurationShape(runningSnapshotTask, '运行中任务快照');
+ 157:       assert.equal(typeof runningSnapshotTask.run_duration_ms, 'number', '运行中任务快照应包含实时耗时');
+ 158:       fs.writeFileSync(planFile, originalPlanText.replace('P002', 'P999'), 'utf8');
+ 159:       return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-last.txt') };
+ 160:     };
+ 161:     const executeResult = await loop.executeTask(workspace, plan, executableTask);
+ 162:     loop.runCodex = originalRunCodex;
+ 163:     assert.equal(executeResult.exitCode, 0, '模拟执行应成功');
+ 164:     loop.completeTask(workspace, plan, executableTask, executeResult);
+ 165:     const guardedPlanText = fs.readFileSync(planFile, 'utf8');
+ 166:     assert.match(guardedPlanText, /- \[x\] P001:/, '系统应在任务成功后勾选 checkbox');
+ 167:     assert.match(guardedPlanText, /P001 AutoPlan 完成/, '系统应在进度区写入完成记录');
+ 168:     assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
+ 169:     const completedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+ 170:     assert.equal(
+ 171:       completedTask.status,
+ 172:       'completed',
+ 173:       '系统应更新任务入库状态',
+ 174:     );
+ 175:     assertIsoString(completedTask.started_at, '任务完成后应保留 started_at');
+ 176:     assertIsoString(completedTask.finished_at, '任务完成后应写入 finished_at');
+ 177:     assert.ok(completedTask.duration_ms > 0, '任务完成后应写入正数 duration_ms');
+ 178:     const completedSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
+ 179:     assertTaskDurationShape(completedSnapshotTask, '已完成任务快照');
+ 180:     assert.ok(completedSnapshotTask.duration_ms > 0, '已完成任务快照应包含累计耗时');
+ 181:     const completedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P001');
+ 182:     assertTaskEventOrder(completedTaskEvents, ['task.succeeded', 'task.started'], '成功任务事件');
+ 183:     assertTaskEventMeta(completedTaskEvents[0], executableTask, 'completed', '成功结束任务事件');
+ 184:     assert.equal(completedTaskEvents[0].meta.log, fakeLogFile, '成功结束事件 meta 应包含日志路径');
+ 185:     assert.equal(completedTaskEvents[0].meta.exitCode, 0, '成功结束事件 meta 应包含退出码');
+ 186:     assertTaskEventMeta(completedTaskEvents[1], executableTask, 'running', '开始任务事件');
+ 187:     assert.equal(
+ 188:       db.get('SELECT completed_tasks FROM plans WHERE id = ?', [planId]).completed_tasks,
+ 189:       1,
+ 190:       '系统应更新 plan 完成计数',
+--- lines 190-240 ---
+ 190:       '系统应更新 plan 完成计数',
+ 191:     );
+ 192: 
+ 193:     const retryTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P002']);
+ 194:     loop.runCodex = async (_workspace, prompt) => {
+ 195:       assert.match(prompt, /只执行指定任务 P002/, '重试任务首次执行 prompt 应锁定指定任务');
+ 196:       await sleep(20);
+ 197:       const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+ 198:       assert.equal(runningRetryTask.status, 'running', '失败前任务应处于 running 状态');
+ 199:       assertIsoString(runningRetryTask.started_at, '失败前任务应写入 started_at');
+ 200:       assert.equal(runningRetryTask.finished_at, null, '失败前任务运行中不应写入 finished_at');
+ 201:       assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '失败前任务快照');
+ 202:       return { exitCode: 1, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-failed.txt') };
+ 203:     };
+ 204:     const failedResult = await loop.executeTask(workspace, plan, retryTask);
+ 205:     loop.runCodex = originalRunCodex;
+ 206:     assert.equal(failedResult.exitCode, 1, '模拟失败应返回非 0 exitCode');
+ 207:     const failedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+ 208:     assert.equal(failedTask.status, 'pending', '任务失败后应回退为 pending');
+ 209:     assertIsoString(failedTask.started_at, '任务失败后应保留 started_at');
+ 210:     assertIsoString(failedTask.finished_at, '任务失败后应写入 finished_at');
+ 211:     assert.ok(failedTask.duration_ms > 0, '任务失败后应累计正数 duration_ms');
+ 212:     const failedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P002');
+ 213:     assertTaskEventOrder(failedTaskEvents, ['task.failed', 'task.started'], '失败任务事件');
+ 214:     assertTaskEventMeta(failedTaskEvents[0], retryTask, 'failed', '失败任务事件');
+ 215:     assert.equal(failedTaskEvents[0].meta.log, fakeLogFile, '失败事件 meta 应包含日志路径');
+ 216:     assert.equal(failedTaskEvents[0].meta.exitCode, 1, '失败事件 meta 应包含退出码');
+ 217:     assertTaskEventMeta(failedTaskEvents[1], retryTask, 'running', '失败前开始任务事件');
+ 218: 
+ 219:     const firstAttemptDurationMs = failedTask.duration_ms;
+ 220:     const retryAttemptTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+ 221:     loop.runCodex = async (_workspace, prompt) => {
+ 222:       assert.match(prompt, /只执行指定任务 P002/, '重试任务再次执行 prompt 应锁定指定任务');
+ 223:       await sleep(20);
+ 224:       const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+ 225:       assert.equal(runningRetryTask.status, 'running', '重试时任务应重新进入 running 状态');
+ 226:       assertIsoString(runningRetryTask.started_at, '重试时任务应刷新 started_at');
+ 227:       assert.equal(runningRetryTask.finished_at, null, '重试运行中应清空 finished_at');
+ 228:       assert.equal(runningRetryTask.duration_ms, firstAttemptDurationMs, '重试运行中不应丢失历史累计耗时');
+ 229:       return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-retry.txt') };
+ 230:     };
+ 231:     const retryResult = await loop.executeTask(workspace, plan, retryAttemptTask);
+ 232:     loop.runCodex = originalRunCodex;
+ 233:     assert.equal(retryResult.exitCode, 0, '模拟重试应成功');
+ 234:     loop.completeTask(workspace, plan, retryAttemptTask, retryResult);
+ 235:     const retriedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+ 236:     assert.equal(retriedTask.status, 'completed', '重试成功后任务应完成');
+ 237:     assertIsoString(retriedTask.finished_at, '重试成功后应写入 finished_at');
+ 238:     assert.ok(retriedTask.duration_ms > firstAttemptDurationMs, '重试成功后应继续累加 duration_ms');
+ 239:     assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '重试完成任务快照');
+ 240: 
+
+**Inspecting service signatures**
+
+I need to look into the loopService signatures closely. I'm particularly interested in how the executeTask function handles the session parameter and the arguments for runCodex. There seems to be a lot to analyze, so I'll take my time to dig into the specifics. It looks like an essential step to ensure everything is functioning as expected. Let's explore the details to understand how they work together!
+codex
+现在需要确认 `executeTask` 传参和会话保存行为。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; "'$lines = Get-Content -LiteralPath '"'src\\loopService.js' -Encoding UTF8; foreach ("'$range in @(@(880,1025),@(1025,1135),@(430,470),@(1280,1335))) { $start=$range[0]; $end=[Math]::Min($range[1], $lines.Length); "--- lines $start-$end ---"; for ($i=$start; $i -le $end; $i++) { '"'{0,4}: {1}' -f "'$i, $lines[$i-1] } }' in D:\project\GitHub\autoplan
+ succeeded in 231ms:
+--- lines 880-1025 ---
+ 880:     const planFile = path.join(workspace, plan.file_path);
+ 881:     const completionRules = [
+ 882:       '- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区',
+ 883:       '- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区',
+ 884:       '- 只修改当前任务 scope 直接相关的业务文件',
+ 885:       '- 如需测试，只运行与当前任务直接相关的最小测试集，不要运行全量测试或与本任务无关的测试',
+ 886:       '- 只有当前任务本身明确要求全量验证时，才允许运行全量测试',
+ 887:       '- 不输出完整 diff、源码全文或长文件列表',
+ 888:       '- 中文文件读写使用 UTF-8',
+ 889:     ];
+ 890:     if (options.parallel) {
+ 891:       completionRules.unshift('- 当前为并发执行模式，不要读写其它任务的 scope');
+ 892:     }
+ 893:     const prompt = [
+ 894:       '你是开发执行者。',
+ 895:       `请只执行指定任务 ${task.task_key}，不要提前执行其它任务，也不要顺手处理其它 checkbox。`,
+ 896:       '',
+ 897:       `plan 文件（只读）：${planFile}`,
+ 898:       `指定任务：${task.raw_line}`,
+ 899:       `任务 scope：${task.scope || taskScopeText(task) || 'unknown'}`,
+ 900:       '',
+ 901:       '完成后必须：',
+ 902:       ...completionRules,
+ 903:     ].join('\n');
+ 904:     let result;
+ 905:     try {
+ 906:       result = await this.runCodexWithPlanGuard(workspace, prompt, `execute-${task.task_key}`, {
+ 907:         projectId: plan.project_id,
+ 908:         planId: plan.id,
+ 909:         taskId: task.id,
+ 910:         parallel: Boolean(options.parallel),
+ 911:         ...(existingSessionId ? { codexSessionId: existingSessionId } : {}),
+ 912:       }, planFile);
+ 913:     } catch (error) {
+ 914:       const finishedAt = nowIso();
+ 915:       const failedTask = this.recordTaskFailure(plan.project_id, plan, task, finishedAt, {
+ 916:         error: error?.message || String(error),
+ 917:         ...startedSessionContext,
+ 918:       });
+ 919:       if (failedTask) markTaskLifecycleEventRecorded(error);
+ 920:       throw error;
+ 921:     }
+ 922:     const finishedAt = nowIso();
+ 923:     result.finishedAt = finishedAt;
+ 924:     const capturedSessionId = operationCodexSessionId(result);
+ 925:     if (capturedSessionId) this.updateTaskCodexSession(task.id, capturedSessionId, finishedAt);
+ 926:     const succeeded = result.exitCode === 0;
+ 927:     if (!succeeded) {
+ 928:       this.recordTaskFailure(plan.project_id, plan, task, finishedAt, {
+ 929:         exitCode: result.exitCode,
+ 930:         log: result.logFile,
+ 931:         ...codexSessionContextFields(result),
+ 932:       });
+ 933:     }
+ 934:     return result;
+ 935:   }
+ 936: 
+ 937:   completeTask(workspace, plan, task, result) {
+ 938:     const planFile = path.join(workspace, plan.file_path);
+ 939:     const finishedAt = result?.finishedAt || nowIso();
+ 940:     this.markTaskCompletedInPlan(workspace, planFile, task, result);
+ 941:     const completedTask = this.finishTaskRun(task.id, TASK_EVENT_STATUS.COMPLETED, finishedAt) || task;
+ 942:     this.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.SUCCEEDED, completedTask, {
+ 943:       planId: plan.id,
+ 944:       status: TASK_EVENT_STATUS.COMPLETED,
+ 945:       finishedAt,
+ 946:       exitCode: result?.exitCode,
+ 947:       log: result?.logFile,
+ 948:       ...codexSessionContextFields(result),
+ 949:     });
+ 950:     this.refreshPlanProgress(plan.id, planFile);
+ 951:     this.emitUpdate(plan.project_id);
+ 952:   }
+ 953: 
+ 954:   refreshPlanProgress(planId, planFile) {
+ 955:     const totals = this.db.get(
+ 956:       `SELECT COUNT(*) AS total,
+ 957:               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed
+ 958:        FROM plan_tasks
+ 959:        WHERE plan_id = ?`,
+ 960:       [planId],
+ 961:     ) || { total: 0, completed: 0 };
+ 962:     const total = Number(totals.total || 0);
+ 963:     const completed = Number(totals.completed || 0);
+ 964:     const status = total > 0 && completed === total ? 'ready_for_validation' : 'running';
+ 965:     const hash = fs.existsSync(planFile) ? hashFile(planFile) : '';
+ 966:     this.db.run(
+ 967:       'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
+ 968:       [hash, status, total, completed, nowIso(), planId],
+ 969:     );
+ 970:   }
+ 971: 
+ 972:   markTaskCompletedInPlan(workspace, planFile, task, result) {
+ 973:     if (!fs.existsSync(planFile)) return;
+ 974:     const relativeLog = result?.logFile ? normalizeRelative(workspace, result.logFile) : '';
+ 975:     const key = escapeRegExp(String(task.task_key || ''));
+ 976:     const checkboxRe = new RegExp(`(^\\s*[-*]\\s+\\[)([ xX])(\\]\\s+${key}(?:\\b|[:：\\s-]))`, 'm');
+ 977:     let content = fs.readFileSync(planFile, 'utf8');
+ 978:     if (checkboxRe.test(content)) {
+ 979:       content = content.replace(checkboxRe, '$1x$3');
+ 980:     }
+ 981: 
+ 982:     const note = `- ${task.task_key} AutoPlan 完成：${nowIso()}${relativeLog ? `；日志：${relativeLog}` : ''}`;
+ 983:     const noteRe = new RegExp(`^\\s*-\\s+${key}\\s+AutoPlan 完成：.*$`, 'm');
+ 984:     if (noteRe.test(content)) {
+ 985:       content = content.replace(noteRe, note);
+ 986:     } else if (/##\s*进度区/.test(content)) {
+ 987:       content = `${content.trimEnd()}\n${note}\n`;
+ 988:     } else {
+ 989:       content = `${content.trimEnd()}\n\n## 进度区\n${note}\n`;
+ 990:     }
+ 991:     fs.writeFileSync(planFile, content, 'utf8');
+ 992:   }
+ 993: 
+ 994:   async validatePlan(workspace, plan) {
+ 995:     this.setPhase(plan.project_id, 'validate');
+ 996:     const planFile = path.join(workspace, plan.file_path);
+ 997:     const command = String(this.status(plan.project_id)?.validation_command || '').trim();
+ 998:     if (!command) {
+ 999:       // 验收命令为空：跳过校验，直接标记完成。
+1000:       this.db.run(
+1001:         'UPDATE plans SET status = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
+1002:         ['completed', nowIso(), plan.id],
+1003:       );
+1004:       this.addEvent(plan.project_id, 'plan.completed', '任务全部完成（验收命令为空，已跳过校验）');
+1005:       return;
+1006:     }
+1007:     let validation = await this.runShell(workspace, command, `validate-${plan.id}`, { projectId: plan.project_id });
+1008:     for (let attempt = 1; validation.exitCode !== 0 && attempt <= 2; attempt += 1) {
+1009:       this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', [
+1010:         'validation_failed',
+1011:         nowIso(),
+1012:         plan.id,
+1013:       ]);
+1014:       const prompt = [
+1015:         'plan 已完成，但宿主项目验收失败。请只修复验证错误。',
+1016:         `plan 文件（只读）：${planFile}`,
+1017:         '不要修改 plan 文件、checkbox 或进度区。',
+1018:         `失败命令：${command}`,
+1019:         '失败输出摘要：',
+1020:         tailText(validation.output, 12000),
+1021:       ].join('\n');
+1022:       await this.runCodexWithPlanGuard(workspace, prompt, `repair-${plan.id}-${attempt}`, {
+1023:         projectId: plan.project_id,
+1024:         planId: plan.id,
+1025:       }, planFile);
+--- lines 1025-1135 ---
+1025:       }, planFile);
+1026:       validation = await this.runShell(workspace, command, `validate-${plan.id}-repair-${attempt}`, {
+1027:         projectId: plan.project_id,
+1028:       });
+1029:     }
+1030: 
+1031:     if (validation.exitCode === 0) {
+1032:       this.db.run(
+1033:         'UPDATE plans SET status = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
+1034:         ['completed', nowIso(), plan.id],
+1035:       );
+1036:       this.addEvent(plan.project_id, 'plan.completed', plan.file_path);
+1037:     } else {
+1038:       this.addEvent(plan.project_id, 'validation.failed', validation.logFile);
+1039:     }
+1040:   }
+1041: 
+1042:   syncPlanTasks(planId, planFile) {
+1043:     if (!fs.existsSync(planFile)) return;
+1044:     normalizePlanTaskScopes(planFile);
+1045:     const text = fs.readFileSync(planFile, 'utf8');
+1046:     const regex = /^\s*[-*]\s+\[([ xX])\]\s+(.+)$/gm;
+1047:     const tasks = [];
+1048:     let match;
+1049:     let index = 0;
+1050:     while ((match = regex.exec(text))) {
+1051:       index += 1;
+1052:       const rawTitle = match[2].trim();
+1053:       const titleWithoutScope = stripTaskScopeComment(rawTitle);
+1054:       const idMatch = titleWithoutScope.match(/^([A-Za-z]+[-_]?\d+|P\d+)[:：\s-]+(.+)$/);
+1055:       tasks.push({
+1056:         key: idMatch?.[1] || `P${String(index).padStart(3, '0')}`,
+1057:         title: idMatch?.[2]?.trim() || titleWithoutScope || rawTitle,
+1058:         rawLine: ensureTaskScopeComment(match[0]),
+1059:         scope: taskScopeText({ raw_line: match[0], title: rawTitle }),
+1060:         status: match[1].toLowerCase() === 'x' ? 'completed' : 'pending',
+1061:         sortOrder: index,
+1062:       });
+1063:     }
+1064: 
+1065:     const existingTasks = this.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+1066:     const existingByKey = new Map();
+1067:     for (const existing of existingTasks) {
+1068:       const matches = existingByKey.get(existing.task_key) || [];
+1069:       matches.push(existing);
+1070:       existingByKey.set(existing.task_key, matches);
+1071:     }
+1072: 
+1073:     const syncedStatuses = [];
+1074:     for (const task of tasks) {
+1075:       const existing = existingByKey.get(task.key)?.shift();
+1076:       const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
+1077:       syncedStatuses.push(status);
+1078:       if (existing) {
+1079:         this.db.run(
+1080:           `UPDATE plan_tasks
+1081:            SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
+1082:            WHERE id = ?`,
+1083:           [
+1084:             task.title,
+1085:             task.rawLine,
+1086:             task.scope,
+1087:             status,
+1088:             task.sortOrder,
+1089:             nowIso(),
+1090:             existing.id,
+1091:           ],
+1092:         );
+1093:       } else {
+1094:         this.db.run(
+1095:           `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
+1096:            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+1097:           [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
+1098:         );
+1099:       }
+1100:     }
+1101: 
+1102:     for (const matches of existingByKey.values()) {
+1103:       for (const stale of matches) {
+1104:         this.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
+1105:       }
+1106:     }
+1107: 
+1108:     const completed = syncedStatuses.filter((status) => status === 'completed').length;
+1109:     const status = tasks.length > 0 && completed === tasks.length ? 'ready_for_validation' : 'running';
+1110:     this.db.run(
+1111:       'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
+1112:       [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
+1113:     );
+1114:   }
+1115: 
+1116:   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+1117:   archiveOperation(projectId, operationKey) {
+1118:     const runtime = this.runtime(projectId);
+1119:     if (!runtime) return;
+1120:     const op = operationKey ? runtime.activeOperations.get(operationKey) : runtime.activeOperation;
+1121:     if (op) {
+1122:       if (op.activity && typeof op.activity.flush === 'function') {
+1123:         op.activity.flush();
+1124:       }
+1125:       runtime.lastOperation = {
+1126:         label: op.label || '',
+1127:         projectId: op.projectId || null,
+1128:         planId: op.planId || null,
+1129:         taskId: op.taskId || null,
+1130:         startedAt: op.startedAt || null,
+1131:         finishedAt: nowIso(),
+1132:         exitCode: typeof op.exitCode === 'number' ? op.exitCode : null,
+1133:         logTail: (op.logBuffer || '').slice(-8000),
+1134:         activity: op.activity ? op.activity.getLines() : [],
+1135:         ...codexSessionContextFields(op),
+--- lines 430-470 ---
+ 430:     if (!taskId) return null;
+ 431:     return this.db.get(
+ 432:       `SELECT plan_tasks.*
+ 433:        FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
+ 434:        WHERE plan_tasks.id = ? AND plans.project_id = ?`,
+ 435:       [taskId, projectId],
+ 436:     );
+ 437:   }
+ 438: 
+ 439:   startTaskRun(taskId, startedAt = nowIso()) {
+ 440:     this.db.run(
+ 441:       `UPDATE plan_tasks
+ 442:        SET status = ?,
+ 443:            started_at = CASE WHEN status = ? AND started_at IS NOT NULL THEN started_at ELSE ? END,
+ 444:            finished_at = NULL,
+ 445:            updated_at = ?
+ 446:        WHERE id = ?`,
+ 447:       [TASK_EVENT_STATUS.RUNNING, TASK_EVENT_STATUS.RUNNING, startedAt, startedAt, taskId],
+ 448:     );
+ 449:     return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+ 450:   }
+ 451: 
+ 452:   updateTaskCodexSession(taskId, sessionId, updatedAt = nowIso()) {
+ 453:     const normalizedSessionId = normalizeCodexSessionId(sessionId);
+ 454:     if (!normalizedSessionId) return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+ 455:     this.db.run(
+ 456:       `UPDATE plan_tasks
+ 457:        SET codex_session_id = ?, updated_at = ?
+ 458:        WHERE id = ?`,
+ 459:       [normalizedSessionId, updatedAt, taskId],
+ 460:     );
+ 461:     return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+ 462:   }
+ 463: 
+ 464:   finishTaskRun(taskId, status, finishedAt = nowIso(), options = {}) {
+ 465:     const task = this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+ 466:     if (!task) return null;
+ 467:     const isRunning = task.status === TASK_EVENT_STATUS.RUNNING;
+ 468:     if (options.onlyIfRunning && !isRunning) return withTaskDurationMeta(task);
+ 469: 
+ 470:     const runDurationMs = isRunning ? taskRunDurationMs(task.started_at, finishedAt) : undefined;
+--- lines 1280-1335 ---
+1280:         if (!resumeFailed) return resultFor(resume.exitCode, 'resume');
+1281: 
+1282:         this.addEvent(projectIdForEmit, 'codex.session.resume.failed', `恢复 Codex 会话失败，已回退新建：${shortCodexSessionId(requestedSessionId)}`, {
+1283:           ...codexSessionContextFields({
+1284:             codexSessionRequestedId: requestedSessionId,
+1285:             codexSessionMode: 'new',
+1286:             codexSessionState: 'fallback-new',
+1287:             codexSessionFallback: true,
+1288:           }),
+1289:           sessionId: requestedSessionId,
+1290:           label,
+1291:           planId: operation.planId || null,
+1292:           taskId: operation.taskId || null,
+1293:           exitCode: resume.exitCode,
+1294:           log: logFile,
+1295:         });
+1296:         activeOperation.codexSessionFallback = true;
+1297:         activeOperation.codexSessionRequestedId = requestedSessionId;
+1298:         activeOperation.codexSessionId = null;
+1299:         activeOperation.codexSessionMode = 'new';
+1300:         activeOperation.codexSessionState = 'fallback-new';
+1301:         appendInternalLog(`Codex resume failed for session ${requestedSessionId}; falling back to a new session.`);
+1302:       } else if (hasSessionOption) {
+1303:         this.addEvent(projectIdForEmit, 'codex.session.resume.skipped', 'Codex session id 为空，已新建会话', {
+1304:           ...codexSessionContextFields({ codexSessionMode: 'new' }),
+1305:           label,
+1306:           planId: operation.planId || null,
+1307:           taskId: operation.taskId || null,
+1308:           reason: 'empty_session_id',
+1309:         });
+1310:         appendInternalLog('Codex session id was empty; starting a new session.');
+1311:       }
+1312: 
+1313:       const fresh = await runAttempt(codexNewSessionArgs(workspace, lastFile), 'new');
+1314:       return resultFor(fresh.exitCode, 'new');
+1315:     } finally {
+1316:       clearInterval(tailTimer);
+1317:       stream.end();
+1318:       if (operationKey && runtime.activeOperations.has(operationKey)) {
+1319:         this.archiveOperation(projectIdForEmit, operationKey);
+1320:       }
+1321:     }
+1322:   }
+1323: 
+1324:   async runShell(workspace, command, label, operation = {}) {
+1325:     const projectIdForEmit = operation.projectId;
+1326:     const runtime = this.runtime(projectIdForEmit);
+1327:     if (!runtime) throw new Error('projectId is required for shell operations');
+1328:     const logDir = path.join(workspace, 'docs', 'progress', 'logs');
+1329:     fs.mkdirSync(logDir, { recursive: true });
+1330:     const logFile = path.join(logDir, `${timestampForPath()}_${safePart(label)}.log`);
+1331:     const shellCommand = process.platform === 'win32' ? `chcp 65001>nul && ${command}` : command;
+1332:     const child = spawn(shellCommand, {
+1333:       shell: true,
+1334:       cwd: workspace,
+1335:       env: { ...process.env },
+
+codex
+我会读取 `executeTask` 起点与 runCodex 包装，避免测试参数断言写偏。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; "'$lines = Get-Content -LiteralPath '"'src\\loopService.js' -Encoding UTF8; foreach ("'$range in @(@(820,880),@(1135,1215),@(1215,1285))) { $start=$range[0]; $end=[Math]::Min($range[1], $lines.Length); "--- lines $start-$end ---"; for ($i=$start; $i -le $end; $i++) { '"'{0,4}: {1}' -f "'$i, $lines[$i-1] } }' in D:\project\GitHub\autoplan
+ succeeded in 246ms:
+--- lines 820-880 ---
+ 820:     for (const task of tasks) {
+ 821:       if (selected.length >= MAX_PARALLEL_TASKS) break;
+ 822:       const scopes = taskParallelScopes(task);
+ 823:       if (!scopes.length) {
+ 824:         if (!selected.length) return [task];
+ 825:         continue;
+ 826:       }
+ 827:       if (scopes.some((scope) => usedScopes.has(scope))) continue;
+ 828:       selected.push(task);
+ 829:       for (const scope of scopes) usedScopes.add(scope);
+ 830:     }
+ 831:     return selected.length > 1 ? selected : [tasks[0]];
+ 832:   }
+ 833: 
+ 834:   async executeTaskBatch(workspace, plan, tasks) {
+ 835:     this.setPhase(plan.project_id, 'execute-task');
+ 836:     this.addEvent(
+ 837:       plan.project_id,
+ 838:       'tasks.parallel.started',
+ 839:       `并发执行 ${tasks.map((task) => task.task_key).join(', ')}`,
+ 840:       { taskIds: tasks.map((task) => task.id) },
+ 841:     );
+ 842:     const results = await Promise.all(
+ 843:       tasks.map(async (task) => {
+ 844:         let result;
+ 845:         try {
+ 846:           result = await this.executeTask(workspace, plan, task, { parallel: true });
+ 847:         } catch (error) {
+ 848:           const finishedAt = nowIso();
+ 849:           if (!taskLifecycleEventRecorded(error)) {
+ 850:             this.recordTaskFailure(plan.project_id, plan, task, finishedAt, {
+ 851:               error: error?.message || String(error),
+ 852:             });
+ 853:           }
+ 854:           return { task, result: { exitCode: -1, finishedAt } };
+ 855:         }
+ 856:         if (result.exitCode === 0) {
+ 857:           this.completeTask(workspace, plan, task, result);
+ 858:         }
+ 859:         return { task, result };
+ 860:       }),
+ 861:     );
+ 862:     return results;
+ 863:   }
+ 864: 
+ 865:   async executeTask(workspace, plan, task, options = {}) {
+ 866:     this.setPhase(plan.project_id, 'execute-task');
+ 867:     const startedAt = nowIso();
+ 868:     const startedTask = this.startTaskRun(task.id, startedAt) || task;
+ 869:     const existingSessionId = operationCodexSessionId(startedTask);
+ 870:     const startedSessionContext = codexSessionContextFields({
+ 871:       codexSessionId: existingSessionId,
+ 872:       codexSessionMode: existingSessionId ? 'resume' : 'new',
+ 873:     });
+ 874:     this.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.STARTED, startedTask, {
+ 875:       planId: plan.id,
+ 876:       status: TASK_EVENT_STATUS.RUNNING,
+ 877:       startedAt,
+ 878:       ...startedSessionContext,
+ 879:     });
+ 880:     const planFile = path.join(workspace, plan.file_path);
+--- lines 1135-1215 ---
+1135:         ...codexSessionContextFields(op),
+1136:       };
+1137:     }
+1138:     if (operationKey) {
+1139:       runtime.activeChildren.delete(operationKey);
+1140:       runtime.activeOperations.delete(operationKey);
+1141:     } else {
+1142:       runtime.activeChildren.clear();
+1143:       runtime.activeOperations.clear();
+1144:     }
+1145:     refreshRuntimeActive(runtime);
+1146:   }
+1147: 
+1148:   async runCodexWithPlanGuard(workspace, prompt, label, operation, planFile) {
+1149:     const before = planFile && fs.existsSync(planFile) ? fs.readFileSync(planFile, 'utf8') : null;
+1150:     const result = await this.runCodex(workspace, prompt, label, operation);
+1151:     if (before !== null) {
+1152:       const changed = !fs.existsSync(planFile) || fs.readFileSync(planFile, 'utf8') !== before;
+1153:       if (changed) {
+1154:         fs.writeFileSync(planFile, before, 'utf8');
+1155:         this.addEvent(operation.projectId, 'plan.guard.restored', `Codex 修改了 plan，已恢复：${normalizeRelative(workspace, planFile)}`, {
+1156:           planId: operation.planId || null,
+1157:           taskId: operation.taskId || null,
+1158:         });
+1159:       }
+1160:     }
+1161:     return result;
+1162:   }
+1163: 
+1164:   async runCodex(workspace, prompt, label, operation = {}) {
+1165:     const projectIdForEmit = operation.projectId;
+1166:     const runtime = this.runtime(projectIdForEmit);
+1167:     if (!runtime) throw new Error('projectId is required for codex operations');
+1168:     const logDir = path.join(workspace, 'docs', 'progress', 'logs');
+1169:     fs.mkdirSync(logDir, { recursive: true });
+1170:     const prefix = `${timestampForPath()}_${safePart(label)}`;
+1171:     const logFile = path.join(logDir, `${prefix}.log`);
+1172:     const lastFile = path.join(logDir, `${prefix}.last.txt`);
+1173:     const hasSessionOption = hasCodexSessionOption(operation);
+1174:     const requestedSessionId = operationCodexSessionId(operation);
+1175:     const activeOperation = {
+1176:       ...operation,
+1177:       label,
+1178:       logFile,
+1179:       lastFile,
+1180:       codexSessionId: requestedSessionId || null,
+1181:       codexSessionRequestedId: requestedSessionId || null,
+1182:       codexSessionMode: requestedSessionId ? 'resume' : 'new',
+1183:       codexSessionState: requestedSessionId ? 'resume' : 'new',
+1184:       logBuffer: '',
+1185:       activity: new CodexActivityPrinter(200),
+1186:       startedAt: nowIso(),
+1187:     };
+1188:     let operationKey = null;
+1189:     let capturedSessionId = '';
+1190:     let sessionScanBuffer = '';
+1191:     const stream = fs.createWriteStream(logFile, { encoding: 'utf8' });
+1192:     const appendInternalLog = (message) => {
+1193:       const text = `\n[AutoPlan] ${message}\n`;
+1194:       stream.write(text);
+1195:       activeOperation.logBuffer = `${activeOperation.logBuffer || ''}${text}`;
+1196:       if (activeOperation.logBuffer.length > 24000) {
+1197:         activeOperation.logBuffer = activeOperation.logBuffer.slice(-16000);
+1198:       }
+1199:     };
+1200:     const resultFor = (exitCode, mode) => {
+1201:       const sessionId = capturedSessionId || (mode === 'resume' ? requestedSessionId : '');
+1202:       const codexSessionFields = codexSessionContextFields({
+1203:         codexSessionId: sessionId,
+1204:         codexSessionRequestedId: requestedSessionId,
+1205:         codexSessionMode: mode,
+1206:         codexSessionFallback: mode === 'new' && Boolean(requestedSessionId),
+1207:       });
+1208:       return {
+1209:         exitCode,
+1210:         logFile,
+1211:         lastFile,
+1212:         sessionId: sessionId || null,
+1213:         codexSessionId: sessionId || null,
+1214:         codexSessionMode: mode,
+1215:         resumed: mode === 'resume',
+--- lines 1215-1285 ---
+1215:         resumed: mode === 'resume',
+1216:         ...codexSessionFields,
+1217:       };
+1218:     };
+1219:     const runAttempt = async (args, mode) => {
+1220:       const child = spawn('codex', args, { shell: process.platform === 'win32', cwd: workspace });
+1221:       activeOperation.codexSessionMode = mode;
+1222:       activeOperation.codexSessionState = activeOperation.codexSessionFallback ? 'fallback-new' : mode;
+1223:       activeOperation.codexSessionId = mode === 'resume' ? requestedSessionId || null : capturedSessionId || null;
+1224:       if (operationKey) {
+1225:         runtime.activeChildren.set(operationKey, child);
+1226:         runtime.activeChild = child;
+1227:         runtime.activeOperation = activeOperation;
+1228:       } else {
+1229:         operationKey = registerRuntimeOperation(runtime, child, activeOperation);
+1230:       }
+1231:       child.stdin.setDefaultEncoding('utf8');
+1232:       child.stdin.end(prompt);
+1233: 
+1234:       let attemptOutput = '';
+1235:       // 累积原始日志 + 提取可读活动行
+1236:       const onChunk = (chunk) => {
+1237:         const text = chunk.toString('utf8');
+1238:         attemptOutput += text;
+1239:         if (!runtime.activeOperations.has(operationKey)) return;
+1240:         activeOperation.logBuffer = (activeOperation.logBuffer || '') + text;
+1241:         if (activeOperation.logBuffer.length > 24000) {
+1242:           activeOperation.logBuffer = activeOperation.logBuffer.slice(-16000);
+1243:         }
+1244:         sessionScanBuffer = `${sessionScanBuffer}${text}`.slice(-4000);
+1245:         const parsedSessionId = extractCodexSessionId(sessionScanBuffer);
+1246:         if (parsedSessionId) {
+1247:           capturedSessionId = parsedSessionId;
+1248:           activeOperation.codexSessionId = parsedSessionId;
+1249:         }
+1250:         // 喂给活动打印机，提取人类可读的进度行
+1251:         if (activeOperation.activity) activeOperation.activity.offer(text);
+1252:       };
+1253:       child.stdout.on('data', onChunk);
+1254:       child.stderr.on('data', onChunk);
+1255:       child.stdout.pipe(stream, { end: false });
+1256:       child.stderr.pipe(stream, { end: false });
+1257: 
+1258:       const exitCode = await waitForChild(child, 45 * 60 * 1000);
+1259:       if (runtime.activeOperations.has(operationKey)) activeOperation.exitCode = exitCode;
+1260:       return { exitCode, output: attemptOutput };
+1261:     };
+1262:     const tailTimer = setInterval(() => {
+1263:       if (projectIdForEmit) this.emitUpdate(projectIdForEmit);
+1264:     }, 600);
+1265:     try {
+1266:       if (requestedSessionId) {
+1267:         this.addEvent(projectIdForEmit, 'codex.session.resume.started', `尝试恢复 Codex 会话 ${shortCodexSessionId(requestedSessionId)}`, {
+1268:           ...codexSessionContextFields({
+1269:             codexSessionId: requestedSessionId,
+1270:             codexSessionRequestedId: requestedSessionId,
+1271:             codexSessionMode: 'resume',
+1272:           }),
+1273:           sessionId: requestedSessionId,
+1274:           label,
+1275:           planId: operation.planId || null,
+1276:           taskId: operation.taskId || null,
+1277:         });
+1278:         const resume = await runAttempt(codexResumeSessionArgs(requestedSessionId, lastFile), 'resume');
+1279:         const resumeFailed = resume.exitCode !== 0 && !extractCodexSessionId(resume.output) && isCodexResumeFailure(resume.output);
+1280:         if (!resumeFailed) return resultFor(resume.exitCode, 'resume');
+1281: 
+1282:         this.addEvent(projectIdForEmit, 'codex.session.resume.failed', `恢复 Codex 会话失败，已回退新建：${shortCodexSessionId(requestedSessionId)}`, {
+1283:           ...codexSessionContextFields({
+1284:             codexSessionRequestedId: requestedSessionId,
+1285:             codexSessionMode: 'new',
+
+codex
+会话上下文字段已确认；补测会拦截 `runCodex` 的第四参数。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; rg -n \"function operationCodexSessionId|function codexSessionContextFields|function hasCodexSessionOption|normalizeCodexSessionId|syncPlanTasks|codex_session_id\" src\\loopService.js src\\database.js" in D:\project\GitHub\autoplan
+ succeeded in 165ms:
+src\database.js:143:        codex_session_id TEXT,
+src\database.js:185:    this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+src\loopService.js:453:    const normalizedSessionId = normalizeCodexSessionId(sessionId);
+src\loopService.js:457:       SET codex_session_id = ?, updated_at = ?
+src\loopService.js:560:  /** 向现有 plan 追加一个任务：写回 plan 文件 + syncPlanTasks 重新解析 */
+src\loopService.js:598:    this.syncPlanTasks(planId, planFile);
+src\loopService.js:735:    this.syncPlanTasks(id, planFile);
+src\loopService.js:786:    this.syncPlanTasks(id, planFile);
+src\loopService.js:795:    this.syncPlanTasks(plan.id, planFile);
+src\loopService.js:1042:  syncPlanTasks(planId, planFile) {
+src\loopService.js:1504:      codexSessionId: meta.codexSessionId ?? meta.codex_session_id ?? meta.sessionId ?? task?.codex_session_id,
+src\loopService.js:1625:function codexSessionContextFields(source = {}) {
+src\loopService.js:1627:  const requestedSessionId = normalizeCodexSessionId(source.codexSessionRequestedId ?? source.requestedSessionId);
+src\loopService.js:1660:  const requestedSessionId = normalizeCodexSessionId(source.codexSessionRequestedId ?? source.requestedSessionId);
+src\loopService.js:1682:    codexSessionId: codexContext?.codexSessionId ?? task.codex_session_id,
+src\loopService.js:1765:function hasCodexSessionOption(operation = {}) {
+src\loopService.js:1766:  return ['codexSessionId', 'sessionId', 'codex_session_id'].some((key) => Object.prototype.hasOwnProperty.call(operation, key));
+src\loopService.js:1769:function operationCodexSessionId(operation = {}) {
+src\loopService.js:1770:  return normalizeCodexSessionId(operation.codexSessionId ?? operation.sessionId ?? operation.codex_session_id);
+src\loopService.js:1773:function normalizeCodexSessionId(value) {
+src\loopService.js:1793:  const normalized = normalizeCodexSessionId(sessionId);
+
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; "'$lines = Get-Content -LiteralPath '"'src\\loopService.js' -Encoding UTF8; foreach ("'$range in @(@(1040,1105),@(1105,1145),@(1620,1688),@(1760,1788))) { $start=$range[0]; $end=[Math]::Min($range[1], $lines.Length); "--- lines $start-$end ---"; for ($i=$start; $i -le $end; $i++) { '"'{0,4}: {1}' -f "'$i, $lines[$i-1] } }' in D:\project\GitHub\autoplan
+ succeeded in 221ms:
+--- lines 1040-1105 ---
+1040:   }
+1041: 
+1042:   syncPlanTasks(planId, planFile) {
+1043:     if (!fs.existsSync(planFile)) return;
+1044:     normalizePlanTaskScopes(planFile);
+1045:     const text = fs.readFileSync(planFile, 'utf8');
+1046:     const regex = /^\s*[-*]\s+\[([ xX])\]\s+(.+)$/gm;
+1047:     const tasks = [];
+1048:     let match;
+1049:     let index = 0;
+1050:     while ((match = regex.exec(text))) {
+1051:       index += 1;
+1052:       const rawTitle = match[2].trim();
+1053:       const titleWithoutScope = stripTaskScopeComment(rawTitle);
+1054:       const idMatch = titleWithoutScope.match(/^([A-Za-z]+[-_]?\d+|P\d+)[:：\s-]+(.+)$/);
+1055:       tasks.push({
+1056:         key: idMatch?.[1] || `P${String(index).padStart(3, '0')}`,
+1057:         title: idMatch?.[2]?.trim() || titleWithoutScope || rawTitle,
+1058:         rawLine: ensureTaskScopeComment(match[0]),
+1059:         scope: taskScopeText({ raw_line: match[0], title: rawTitle }),
+1060:         status: match[1].toLowerCase() === 'x' ? 'completed' : 'pending',
+1061:         sortOrder: index,
+1062:       });
+1063:     }
+1064: 
+1065:     const existingTasks = this.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+1066:     const existingByKey = new Map();
+1067:     for (const existing of existingTasks) {
+1068:       const matches = existingByKey.get(existing.task_key) || [];
+1069:       matches.push(existing);
+1070:       existingByKey.set(existing.task_key, matches);
+1071:     }
+1072: 
+1073:     const syncedStatuses = [];
+1074:     for (const task of tasks) {
+1075:       const existing = existingByKey.get(task.key)?.shift();
+1076:       const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
+1077:       syncedStatuses.push(status);
+1078:       if (existing) {
+1079:         this.db.run(
+1080:           `UPDATE plan_tasks
+1081:            SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
+1082:            WHERE id = ?`,
+1083:           [
+1084:             task.title,
+1085:             task.rawLine,
+1086:             task.scope,
+1087:             status,
+1088:             task.sortOrder,
+1089:             nowIso(),
+1090:             existing.id,
+1091:           ],
+1092:         );
+1093:       } else {
+1094:         this.db.run(
+1095:           `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
+1096:            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+1097:           [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
+1098:         );
+1099:       }
+1100:     }
+1101: 
+1102:     for (const matches of existingByKey.values()) {
+1103:       for (const stale of matches) {
+1104:         this.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
+1105:       }
+--- lines 1105-1145 ---
+1105:       }
+1106:     }
+1107: 
+1108:     const completed = syncedStatuses.filter((status) => status === 'completed').length;
+1109:     const status = tasks.length > 0 && completed === tasks.length ? 'ready_for_validation' : 'running';
+1110:     this.db.run(
+1111:       'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
+1112:       [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
+1113:     );
+1114:   }
+1115: 
+1116:   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+1117:   archiveOperation(projectId, operationKey) {
+1118:     const runtime = this.runtime(projectId);
+1119:     if (!runtime) return;
+1120:     const op = operationKey ? runtime.activeOperations.get(operationKey) : runtime.activeOperation;
+1121:     if (op) {
+1122:       if (op.activity && typeof op.activity.flush === 'function') {
+1123:         op.activity.flush();
+1124:       }
+1125:       runtime.lastOperation = {
+1126:         label: op.label || '',
+1127:         projectId: op.projectId || null,
+1128:         planId: op.planId || null,
+1129:         taskId: op.taskId || null,
+1130:         startedAt: op.startedAt || null,
+1131:         finishedAt: nowIso(),
+1132:         exitCode: typeof op.exitCode === 'number' ? op.exitCode : null,
+1133:         logTail: (op.logBuffer || '').slice(-8000),
+1134:         activity: op.activity ? op.activity.getLines() : [],
+1135:         ...codexSessionContextFields(op),
+1136:       };
+1137:     }
+1138:     if (operationKey) {
+1139:       runtime.activeChildren.delete(operationKey);
+1140:       runtime.activeOperations.delete(operationKey);
+1141:     } else {
+1142:       runtime.activeChildren.clear();
+1143:       runtime.activeOperations.clear();
+1144:     }
+1145:     refreshRuntimeActive(runtime);
+--- lines 1620-1688 ---
+1620:     contexts.set(Number(operation.taskId), codexSessionContextFields(operation));
+1621:   }
+1622:   return contexts;
+1623: }
+1624: 
+1625: function codexSessionContextFields(source = {}) {
+1626:   const sessionId = operationCodexSessionId(source);
+1627:   const requestedSessionId = normalizeCodexSessionId(source.codexSessionRequestedId ?? source.requestedSessionId);
+1628:   const mode = normalizeCodexSessionMode(source.codexSessionMode);
+1629:   const fallback = Boolean(source.codexSessionFallback);
+1630:   const state = normalizeOptionalString(source.codexSessionState) || (fallback ? 'fallback-new' : mode);
+1631:   const label = codexSessionReadableLabel({
+1632:     codexSessionId: sessionId,
+1633:     codexSessionRequestedId: requestedSessionId,
+1634:     codexSessionMode: mode,
+1635:     codexSessionState: state,
+1636:     codexSessionFallback: fallback,
+1637:   });
+1638:   return compactEventMeta({
+1639:     codexSessionId: sessionId || undefined,
+1640:     codexSessionShortId: sessionId ? shortCodexSessionId(sessionId) : undefined,
+1641:     codexSessionMode: mode || undefined,
+1642:     codexSessionState: state || undefined,
+1643:     codexSessionLabel: label || undefined,
+1644:     codexSessionRequestedId: requestedSessionId || undefined,
+1645:     codexSessionRequestedShortId: requestedSessionId ? shortCodexSessionId(requestedSessionId) : undefined,
+1646:     codexSessionFallback: fallback || undefined,
+1647:   });
+1648: }
+1649: 
+1650: function normalizeCodexSessionMode(mode) {
+1651:   const normalized = normalizeOptionalString(mode);
+1652:   if (normalized === 'new' || normalized === 'resume') return normalized;
+1653:   return undefined;
+1654: }
+1655: 
+1656: function codexSessionReadableLabel(source = {}) {
+1657:   const explicit = normalizeOptionalString(source.codexSessionLabel);
+1658:   if (explicit) return explicit;
+1659:   const sessionId = operationCodexSessionId(source);
+1660:   const requestedSessionId = normalizeCodexSessionId(source.codexSessionRequestedId ?? source.requestedSessionId);
+1661:   const sessionShortId = sessionId ? shortCodexSessionId(sessionId) : '';
+1662:   const requestedShortId = requestedSessionId ? shortCodexSessionId(requestedSessionId) : '';
+1663:   const mode = normalizeCodexSessionMode(source.codexSessionMode);
+1664:   const state = normalizeOptionalString(source.codexSessionState);
+1665:   if (state === 'fallback-new' || source.codexSessionFallback) {
+1666:     if (sessionShortId && requestedShortId) return `回退新建会话 ${sessionShortId}（原 ${requestedShortId}）`;
+1667:     if (sessionShortId) return `回退新建会话 ${sessionShortId}`;
+1668:     return requestedShortId ? `回退新建会话（原 ${requestedShortId}）` : '回退新建会话';
+1669:   }
+1670:   if (mode === 'resume') return sessionShortId ? `恢复会话 ${sessionShortId}` : '恢复会话';
+1671:   if (mode === 'new') return sessionShortId ? `新建会话 ${sessionShortId}` : '新建会话';
+1672:   return sessionShortId ? `会话 ${sessionShortId}` : '';
+1673: }
+1674: 
+1675: function taskSnapshotRow(task, codexContext = null) {
+1676:   if (!task) return task;
+1677:   const startedAt = normalizeOptionalString(task.started_at) || null;
+1678:   const finishedAt = normalizeOptionalString(task.finished_at) || null;
+1679:   const isRunning = task.status === TASK_EVENT_STATUS.RUNNING;
+1680:   const runDurationMs = isRunning ? taskRunDurationMs(startedAt, nowIso()) : undefined;
+1681:   const sessionContext = codexSessionContextFields({
+1682:     codexSessionId: codexContext?.codexSessionId ?? task.codex_session_id,
+1683:     codexSessionRequestedId: codexContext?.codexSessionRequestedId,
+1684:     codexSessionMode: codexContext?.codexSessionMode,
+1685:     codexSessionState: codexContext?.codexSessionState,
+1686:     codexSessionFallback: codexContext?.codexSessionFallback,
+1687:   });
+1688:   return {
+--- lines 1760-1788 ---
+1760:     return meta;
+1761:   }
+1762:   return meta;
+1763: }
+1764: 
+1765: function hasCodexSessionOption(operation = {}) {
+1766:   return ['codexSessionId', 'sessionId', 'codex_session_id'].some((key) => Object.prototype.hasOwnProperty.call(operation, key));
+1767: }
+1768: 
+1769: function operationCodexSessionId(operation = {}) {
+1770:   return normalizeCodexSessionId(operation.codexSessionId ?? operation.sessionId ?? operation.codex_session_id);
+1771: }
+1772: 
+1773: function normalizeCodexSessionId(value) {
+1774:   if (value === null || value === undefined) return '';
+1775:   return String(value).trim();
+1776: }
+1777: 
+1778: function extractCodexSessionId(text) {
+1779:   if (!text) return '';
+1780:   const source = String(text);
+1781:   for (const re of CODEX_SESSION_ID_RES) {
+1782:     const match = source.match(re);
+1783:     if (match?.[1]) return match[1];
+1784:   }
+1785:   return '';
+1786: }
+1787: 
+1788: function isCodexResumeFailure(output) {
+
+**Evaluating smoke-test modifications**
+
+I need to modify just the scripts/smoke-test.js and add regression tests for the main smoke flow. There are tasks P001-P005, where P001 completes, P002 initially fails but then succeeds, and P003 stops and retries successfully. I need assertions to check the session ID persistence and test how tasks interact with one another. I’m also reflecting on inspecting plan drafts and how to maintain existing behavior while simulating certain runs effectively.
+**Updating assertions and session handling**
+
+I need to update the code to include assertions for operations and possibly set a codexSessionId in the result. Using constants that resemble UUIDs seems like a good approach, especially since my session regex is only applicable in real scenarios. For P001, I want to ensure the session ID is returned after success and stored. For P002, the initial failure should not include a codexSessionId, but retrying should pass along the original session ID. I’m ensuring proper session tracking across tasks.
+**Updating plans and sessions**
+
+I need a clear plan for updating the project titles and scopes. I can keep the P004 session as is while renaming P005 to P105. If I delete the P005 row, then the P005 session won't carry over to the new P105, which is important. I should also create a new P006 session without inheriting any from P005. Later, I’ll mark checkboxes and ensure all validations pass. And we might need to clarify the scope for P006 and include progress for P005.
+**Inspecting plan draft**
+
+I’m looking at the plan draft generated by createPlanDraft, and I need to carefully inspect the default content. Running some tests after could be helpful. In the smoke file, it starts with initial asserts for five tasks that all have unknown scope and fixed comments. I realize regex could be useful to modify things, but I’m wondering if I need to know the exact lines. Reading the plan file at runtime could help. Creating a secondary plan might be cleaner and more organized, though. Let's check the schema insert plan too.
+codex
+为避免干扰主流程，我会查看 `plans` 表字段再决定测试落点。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; "'$lines = Get-Content -LiteralPath '"'src\\database.js' -Encoding UTF8; for ("'$i=80; $i -le 155; $i++) { '"'{0,4}: {1}' -f "'$i, $lines[$i-1] }' in D:\project\GitHub\autoplan
+ succeeded in 181ms:
+  80:         original_name TEXT NOT NULL,
+  81:         stored_path TEXT NOT NULL,
+  82:         mime_type TEXT,
+  83:         size INTEGER NOT NULL,
+  84:         hash TEXT NOT NULL,
+  85:         created_at TEXT NOT NULL
+  86:       );
+  87: 
+  88:       CREATE INDEX IF NOT EXISTS idx_attachments_owner
+  89:       ON attachments (owner_type, owner_id);
+  90: 
+  91:       CREATE TABLE IF NOT EXISTS plan_drafts (
+  92:         id INTEGER PRIMARY KEY AUTOINCREMENT,
+  93:         project_id INTEGER,
+  94:         source_type TEXT NOT NULL,
+  95:         source_id INTEGER NOT NULL,
+  96:         markdown TEXT NOT NULL,
+  97:         status TEXT NOT NULL DEFAULT 'draft',
+  98:         linked_plan_id INTEGER,
+  99:         created_at TEXT NOT NULL,
+ 100:         updated_at TEXT NOT NULL
+ 101:       );
+ 102: 
+ 103:       CREATE INDEX IF NOT EXISTS idx_plan_drafts_source
+ 104:       ON plan_drafts (source_type, source_id);
+ 105: 
+ 106:       CREATE TABLE IF NOT EXISTS scan_files (
+ 107:         project_id INTEGER NOT NULL DEFAULT 1,
+ 108:         scan_type TEXT NOT NULL,
+ 109:         file_path TEXT NOT NULL,
+ 110:         hash TEXT NOT NULL,
+ 111:         size INTEGER NOT NULL,
+ 112:         modified_at TEXT NOT NULL,
+ 113:         scanned_at TEXT NOT NULL,
+ 114:         PRIMARY KEY (project_id, scan_type, file_path)
+ 115:       );
+ 116: 
+ 117:       CREATE TABLE IF NOT EXISTS plans (
+ 118:         id INTEGER PRIMARY KEY AUTOINCREMENT,
+ 119:         project_id INTEGER,
+ 120:         issue_hash TEXT NOT NULL,
+ 121:         file_path TEXT NOT NULL,
+ 122:         hash TEXT NOT NULL,
+ 123:         status TEXT NOT NULL DEFAULT 'pending',
+ 124:         total_tasks INTEGER NOT NULL DEFAULT 0,
+ 125:         completed_tasks INTEGER NOT NULL DEFAULT 0,
+ 126:         validation_passed INTEGER NOT NULL DEFAULT 0,
+ 127:         created_at TEXT NOT NULL,
+ 128:         updated_at TEXT NOT NULL
+ 129:       );
+ 130: 
+ 131:       CREATE TABLE IF NOT EXISTS plan_tasks (
+ 132:         id INTEGER PRIMARY KEY AUTOINCREMENT,
+ 133:         plan_id INTEGER NOT NULL,
+ 134:         task_key TEXT NOT NULL,
+ 135:         title TEXT NOT NULL,
+ 136:         raw_line TEXT NOT NULL,
+ 137:         scope TEXT NOT NULL DEFAULT '',
+ 138:         status TEXT NOT NULL DEFAULT 'pending',
+ 139:         sort_order INTEGER NOT NULL,
+ 140:         started_at TEXT,
+ 141:         finished_at TEXT,
+ 142:         duration_ms INTEGER NOT NULL DEFAULT 0,
+ 143:         codex_session_id TEXT,
+ 144:         updated_at TEXT NOT NULL,
+ 145:         UNIQUE(plan_id, task_key)
+ 146:       );
+ 147: 
+ 148:       CREATE TABLE IF NOT EXISTS events (
+ 149:         id INTEGER PRIMARY KEY AUTOINCREMENT,
+ 150:         project_id INTEGER,
+ 151:         type TEXT NOT NULL,
+ 152:         message TEXT NOT NULL,
+ 153:         meta TEXT,
+ 154:         created_at TEXT NOT NULL
+ 155:       );
+
+**Evaluating validation strategies**
+
+I'm considering whether to insert a second plan after validation, perhaps near the end. This could help isolate issues. However, I think it's important to sync the context test after the validation process. It seems like I need to focus on having marks for the main plan's validation as well. There's a lot to think through, but I want to make sure I'm setting everything up correctly!
+**Designing helper functions**
+
+I'm looking to create a helper function called `await assertCodexSessionReuseSmoke`. It focuses on modifying the `smoke-test.js`. It's a good idea! I need to design this by simulating various scenarios, like failing, retrying, and ensuring tasks work independently or preserve context. I'll name tasks C001, C002, C003, etc., with a regex pattern to match task keys. I also need to think about how to structure the insert plan function.
+**Reviewing code structure**
+
+I need to replace the plan file to include 'x' for C001-3. It seems important to restore loop.runCodex in the finally block if assertions throw. The existing code sets things manually, but I should consider using try/finally for the helper. Since we have the originalRunCodex variable in main, defining helper functions to save and restore makes sense. Also, if the runCodex assertion throws, I want to ensure we restore properly. Before any patch, I need to inspect the package scripts.
+codex
+我会补一个独立 smoke 辅助用例，避免改变既有主流程断言。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; Get-Content -LiteralPath 'package.json' -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 166ms:
+{
+  "name": "autoplan",
+  "version": "0.1.4",
+  "description": "Electron app for issue-driven autonomous planning and development loops.",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "node scripts/dev.js",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/planDrafts.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "build": {
+    "appId": "com.autoplan.desktop",
+    "productName": "AutoPlan",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "assets/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.0",
+    "remark-gfm": "^4.0.1",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^33.3.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}
+
+**Ensuring log directory exists**
+
+I'm thinking about ensuring the directory for logs and progress exists based on a plan. It seems likely that it should already be there, but I should create it if it doesn't. I'll set up the path using `path.join`, and then use `fs.mkdirSync` with the recursive option to make sure the whole directory structure is created. I'll also need to write some context into a log file, maybe using a helper function for that.
+codex
+我会快速确认数据库 `get` 未命中返回值，再打补丁。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; rg -n \"get\\(sql|this\\.db\\.exec|return .*\\[0\\]\" src\\database.js" in D:\project\GitHub\autoplan
+ succeeded in 162ms:
+296:  get(sql, params = []) {
+298:    return rows[0] || null;
+
+codex
+数据库未命中返回 `null`；现在只修改 smoke 脚本。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\scripts\smoke-test.js
+diff --git a/scripts/smoke-test.js b/scripts/smoke-test.js
+index adf57df9e860fa079aaada903123118cc41a168f..99beec2ba7d956f5f201e3b88312008440d9fad0
+--- a/scripts/smoke-test.js
++++ b/scripts/smoke-test.js
+@@ -276,6 +276,8 @@
+     assert.equal(snapshot.plans[0].status, 'completed', '验收通过后 plan 应标记 completed');
+     assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+ 
++    await assertCodexSessionReuseSmoke(db, loop, projectId, workspace);
++
+     const multiWorkspaceA = path.join(tempRoot, 'multi-a');
+     const multiWorkspaceB = path.join(tempRoot, 'multi-b');
+     const multiProjectA = insertProject(db, loop, 'Multi Project A', multiWorkspaceA);
+@@ -304,7 +306,7 @@
+     loop.stop(multiProjectB);
+     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
+ 
+-    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, task events, scan, validation, duration stats, multi-loop');
++    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, task events, scan, validation, duration stats, codex session reuse, multi-loop');
+   } finally {
+     fs.rmSync(tempRoot, { recursive: true, force: true });
+   }
+
+diff --git a/scripts/smoke-test.js b/scripts/smoke-test.js
+index adf57df9e860fa079aaada903123118cc41a168f..99beec2ba7d956f5f201e3b88312008440d9fad0
+--- a/scripts/smoke-test.js
++++ b/scripts/smoke-test.js
+@@ -276,6 +276,8 @@
+     assert.equal(snapshot.plans[0].status, 'completed', '验收通过后 plan 应标记 completed');
+     assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+ 
++    await assertCodexSessionReuseSmoke(db, loop, projectId, workspace);
++
+     const multiWorkspaceA = path.join(tempRoot, 'multi-a');
+     const multiWorkspaceB = path.join(tempRoot, 'multi-b');
+     const multiProjectA = insertProject(db, loop, 'Multi Project A', multiWorkspaceA);
+@@ -304,7 +306,7 @@
+     loop.stop(multiProjectB);
+     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
+ 
+-    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, task events, scan, validation, duration stats, multi-loop');
++    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, task events, scan, validation, duration stats, codex session reuse, multi-loop');
+   } finally {
+     fs.rmSync(tempRoot, { recursive: true, force: true });
+   }
+
+**Considering tool usage**
+
+It looks like there's a hint that I should use the apply_patch tool, but it's only available in the shell. The message suggests running the command through the shell, which is fine, but I sense a possible warning here. I might need to proceed cautiously and make sure I add any necessary helpers. Alright, let’s keep this organized and figure out the next steps!
+codex
+已接入辅助用例入口；继续添加具体回归断言函数。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\scripts\smoke-test.js
+diff --git a/scripts/smoke-test.js b/scripts/smoke-test.js
+index adf57df9e860fa079aaada903123118cc41a168f..6b7972e75487b8ba35a2d56f58aa771e72dba6d0
+--- a/scripts/smoke-test.js
++++ b/scripts/smoke-test.js
+@@ -276,6 +276,8 @@
+     assert.equal(snapshot.plans[0].status, 'completed', '验收通过后 plan 应标记 completed');
+     assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+ 
++    await assertCodexSessionReuseSmoke(db, loop, projectId, workspace);
++
+     const multiWorkspaceA = path.join(tempRoot, 'multi-a');
+     const multiWorkspaceB = path.join(tempRoot, 'multi-b');
+     const multiProjectA = insertProject(db, loop, 'Multi Project A', multiWorkspaceA);
+@@ -304,7 +306,7 @@
+     loop.stop(multiProjectB);
+     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
+ 
+-    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, task events, scan, validation, duration stats, multi-loop');
++    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, task events, scan, validation, duration stats, codex session reuse, multi-loop');
+   } finally {
+     fs.rmSync(tempRoot, { recursive: true, force: true });
+   }
+@@ -339,6 +341,169 @@
+   );
+ }
+ 
++async function assertCodexSessionReuseSmoke(db, loop, projectId, workspace) {
++  const contextPlanRel = path.join('docs', 'plan', 'context-reuse-smoke.md');
++  const contextPlanFile = path.join(workspace, contextPlanRel);
++  fs.mkdirSync(path.dirname(contextPlanFile), { recursive: true });
++  fs.writeFileSync(
++    contextPlanFile,
++    [
++      '# Context reuse smoke',
++      '',
++      '- [ ] C001: 失败后复用上下文 <!-- scope: smoke/c001.js -->',
++      '- [ ] C002: 并发任务 A <!-- scope: smoke/c002.js -->',
++      '- [ ] C003: 并发任务 B <!-- scope: smoke/c003.js -->',
++      '- [ ] C004: 同步保留上下文 <!-- scope: smoke/c004.js -->',
++      '- [ ] C005: 同步改名旧任务 <!-- scope: smoke/c005.js -->',
++      '',
++    ].join('\n'),
++    'utf8',
++  );
++
++  const now = nowIso();
++  const contextPlanId = db.insert(
++    `INSERT INTO plans (project_id, issue_hash, file_path, hash, status, total_tasks, completed_tasks, validation_passed, created_at, updated_at)
++     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
++    [projectId, 'smoke-context-reuse', contextPlanRel, '', 'running', 0, 0, 0, now, now],
++  );
++  loop.syncPlanTasks(contextPlanId, contextPlanFile);
++  const contextPlan = db.get('SELECT * FROM plans WHERE id = ?', [contextPlanId]);
++  const contextTask = (taskKey) => db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [contextPlanId, taskKey]);
++
++  const logDir = path.join(workspace, 'docs', 'progress', 'logs');
++  fs.mkdirSync(logDir, { recursive: true });
++  const fakeLogFile = path.join(logDir, 'context-reuse-smoke.log');
++  fs.writeFileSync(fakeLogFile, 'context reuse smoke', 'utf8');
++
++  const retrySessionId = '11111111-1111-4111-8111-111111111111';
++  const parallelSessionA = '22222222-2222-4222-8222-222222222222';
++  const parallelSessionB = '33333333-3333-4333-8333-333333333333';
++  const syncKeptSessionId = '44444444-4444-4444-8444-444444444444';
++  const syncRenamedOldSessionId = '55555555-5555-4555-8555-555555555555';
++  const originalRunCodex = loop.runCodex.bind(loop);
++
++  try {
++    const retryTask = contextTask('C001');
++    loop.runCodex = async (_workspace, prompt, label, operation = {}) => {
++      assert.equal(_workspace, workspace, '会话复用 smoke 应使用当前工作区');
++      assert.match(prompt, /只执行指定任务 C001/, '首次失败执行 prompt 应锁定 C001');
++      assert.equal(label, 'execute-C001', '首次失败执行 label 应包含任务 key');
++      assert.equal(operation.planId, contextPlanId, '首次失败执行 operation 应绑定 plan');
++      assert.equal(operation.taskId, retryTask.id, '首次失败执行 operation 应绑定 task');
++      assert.equal(operation.codexSessionId, undefined, '首次执行不应传入已有 session id');
++      await sleep(5);
++      return {
++        exitCode: 1,
++        logFile: fakeLogFile,
++        lastFile: path.join(logDir, 'context-c001-failed.txt'),
++        codexSessionId: retrySessionId,
++        codexSessionMode: 'new',
++      };
++    };
++    const failedResult = await loop.executeTask(workspace, contextPlan, retryTask);
++    assert.equal(failedResult.exitCode, 1, '会话复用 smoke 首次执行应模拟失败');
++    const failedTask = contextTask('C001');
++    assert.equal(failedTask.status, 'pending', '失败任务应回到 pending 以便重试');
++    assert.equal(failedTask.codex_session_id, retrySessionId, '失败后应保存首次捕获的 session id');
++
++    loop.runCodex = async (_workspace, prompt, label, operation = {}) => {
++      assert.equal(_workspace, workspace, '重试执行应使用当前工作区');
++      assert.match(prompt, /只执行指定任务 C001/, '重试执行 prompt 应锁定 C001');
++      assert.equal(label, 'execute-C001', '重试执行 label 应包含任务 key');
++      assert.equal(operation.planId, contextPlanId, '重试执行 operation 应绑定 plan');
++      assert.equal(operation.taskId, retryTask.id, '重试执行 operation 应绑定 task');
++      assert.equal(operation.codexSessionId, retrySessionId, '失败后再次执行应传入同一个 session id');
++      await sleep(5);
++      return {
++        exitCode: 0,
++        logFile: fakeLogFile,
++        lastFile: path.join(logDir, 'context-c001-retry.txt'),
++        codexSessionId: retrySessionId,
++        codexSessionMode: 'resume',
++      };
++    };
++    const retryResult = await loop.executeTask(workspace, contextPlan, failedTask);
++    assert.equal(retryResult.exitCode, 0, '会话复用 smoke 重试应成功');
++    loop.completeTask(workspace, contextPlan, failedTask, retryResult);
++    const retriedTask = contextTask('C001');
++    assert.equal(retriedTask.status, 'completed', '重试成功后任务应完成');
++    assert.equal(retriedTask.codex_session_id, retrySessionId, '重试成功后应保留同一个 session id');
++
++    const parallelTasks = [contextTask('C002'), contextTask('C003')];
++    const parallelSessions = new Map([
++      [parallelTasks[0].id, parallelSessionA],
++      [parallelTasks[1].id, parallelSessionB],
++    ]);
++    const seenParallelTaskIds = new Set();
++    loop.runCodex = async (_workspace, prompt, label, operation = {}) => {
++      const currentTask = parallelTasks.find((task) => task.id === operation.taskId);
++      assert.ok(currentTask, '并发执行 operation 应绑定当前任务');
++      assert.match(prompt, new RegExp(`只执行指定任务 ${currentTask.task_key}`), '并发执行 prompt 应锁定当前任务');
++      assert.equal(label, `execute-${currentTask.task_key}`, '并发执行 label 应包含当前任务 key');
++      assert.equal(operation.planId, contextPlanId, '并发执行 operation 应绑定 plan');
++      assert.equal(operation.parallel, true, '并发执行 operation 应标记 parallel');
++      assert.equal(operation.codexSessionId, undefined, '同一 plan 的不同任务首次执行不应复用其它 session id');
++      seenParallelTaskIds.add(operation.taskId);
++      await sleep(currentTask.task_key === 'C002' ? 10 : 1);
++      return {
++        exitCode: 0,
++        logFile: fakeLogFile,
++        lastFile: path.join(logDir, `context-${currentTask.task_key}.txt`),
++        codexSessionId: parallelSessions.get(currentTask.id),
++        codexSessionMode: 'new',
++      };
++    };
++    const parallelResults = await loop.executeTaskBatch(workspace, contextPlan, parallelTasks);
++    assert.deepEqual(
++      parallelResults.map(({ result }) => result.exitCode),
++      [0, 0],
++      '并发会话 smoke 应全部执行成功',
++    );
++    assert.equal(seenParallelTaskIds.size, 2, '并发执行应覆盖两个独立任务');
++    const parallelTaskA = contextTask('C002');
++    const parallelTaskB = contextTask('C003');
++    assert.equal(parallelTaskA.codex_session_id, parallelSessionA, '并发任务 A 应保存自己的 session id');
++    assert.equal(parallelTaskB.codex_session_id, parallelSessionB, '并发任务 B 应保存自己的 session id');
++    assert.notEqual(parallelTaskA.codex_session_id, parallelTaskB.codex_session_id, '并发任务 session id 应彼此独立');
++    assert.notEqual(parallelTaskA.codex_session_id, retrySessionId, '并发任务 A 不应复用重试任务 session id');
++    assert.notEqual(parallelTaskB.codex_session_id, retrySessionId, '并发任务 B 不应复用重试任务 session id');
++
++    const syncKeptTask = contextTask('C004');
++    const syncRenamedTask = contextTask('C005');
++    loop.updateTaskCodexSession(syncKeptTask.id, syncKeptSessionId);
++    loop.updateTaskCodexSession(syncRenamedTask.id, syncRenamedOldSessionId);
++    fs.writeFileSync(
++      contextPlanFile,
++      [
++        '# Context reuse smoke',
++        '',
++        '- [x] C001: 失败后复用上下文 <!-- scope: smoke/c001.js -->',
++        '- [x] C002: 并发任务 A <!-- scope: smoke/c002.js -->',
++        '- [x] C003: 并发任务 B <!-- scope: smoke/c003.js -->',
++        '- [ ] C004: 同步保留上下文已更新 <!-- scope: smoke/c004-updated.js -->',
++        '- [ ] C105: 同步改名新任务 <!-- scope: smoke/c105.js -->',
++        '- [ ] C006: 同步新增任务 <!-- scope: smoke/c006.js -->',
++        '',
++      ].join('\n'),
++      'utf8',
++    );
++    loop.syncPlanTasks(contextPlanId, contextPlanFile);
++    const keptAfterSync = contextTask('C004');
++    const renamedAfterSync = contextTask('C105');
++    const addedAfterSync = contextTask('C006');
++    assert.equal(keptAfterSync.id, syncKeptTask.id, 'sync 后同一 task_key 应保留原任务记录');
++    assert.equal(keptAfterSync.codex_session_id, syncKeptSessionId, 'sync 后同一 task_key 应保留上下文');
++    assert.match(keptAfterSync.raw_line, /c004-updated\.js/, 'sync 后同一 task_key 应更新 raw line');
++    assert.equal(contextTask('C005'), null, '改名后的旧任务 key 应被移除');
++    assert.ok(renamedAfterSync, '改名后的新任务 key 应入库');
++    assert.equal(renamedAfterSync.codex_session_id, null, '改名任务不应继承旧 session id');
++    assert.ok(addedAfterSync, '新增任务应入库');
++    assert.equal(addedAfterSync.codex_session_id, null, '新增任务不应继承任何 session id');
++  } finally {
++    loop.runCodex = originalRunCodex;
++  }
++}
++
+ function sleep(milliseconds) {
+   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+ }
+
+diff --git a/scripts/smoke-test.js b/scripts/smoke-test.js
+index adf57df9e860fa079aaada903123118cc41a168f..6b7972e75487b8ba35a2d56f58aa771e72dba6d0
+--- a/scripts/smoke-test.js
++++ b/scripts/smoke-test.js
+@@ -276,6 +276,8 @@
+     assert.equal(snapshot.plans[0].status, 'completed', '验收通过后 plan 应标记 completed');
+     assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+ 
++    await assertCodexSessionReuseSmoke(db, loop, projectId, workspace);
++
+     const multiWorkspaceA = path.join(tempRoot, 'multi-a');
+     const multiWorkspaceB = path.join(tempRoot, 'multi-b');
+     const multiProjectA = insertProject(db, loop, 'Multi Project A', multiWorkspaceA);
+@@ -304,7 +306,7 @@
+     loop.stop(multiProjectB);
+     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
+ 
+-    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, task events, scan, validation, duration stats, multi-loop');
++    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, task events, scan, validation, duration stats, codex session reuse, multi-loop');
+   } finally {
+     fs.rmSync(tempRoot, { recursive: true, force: true });
+   }
+@@ -339,6 +341,169 @@
+   );
+ }
+ 
++async function assertCodexSessionReuseSmoke(db, loop, projectId, workspace) {
++  const contextPlanRel = path.join('docs', 'plan', 'context-reuse-smoke.md');
++  const contextPlanFile = path.join(workspace, contextPlanRel);
++  fs.mkdirSync(path.dirname(contextPlanFile), { recursive: true });
++  fs.writeFileSync(
++    contextPlanFile,
++    [
++      '# Context reuse smoke',
++      '',
++      '- [ ] C001: 失败后复用上下文 <!-- scope: smoke/c001.js -->',
++      '- [ ] C002: 并发任务 A <!-- scope: smoke/c002.js -->',
++      '- [ ] C003: 并发任务 B <!-- scope: smoke/c003.js -->',
++      '- [ ] C004: 同步保留上下文 <!-- scope: smoke/c004.js -->',
++      '- [ ] C005: 同步改名旧任务 <!-- scope: smoke/c005.js -->',
++      '',
++    ].join('\n'),
++    'utf8',
++  );
++
++  const now = nowIso();
++  const contextPlanId = db.insert(
++    `INSERT INTO plans (project_id, issue_hash, file_path, hash, status, total_tasks, completed_tasks, validation_passed, created_at, updated_at)
++     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
++    [projectId, 'smoke-context-reuse', contextPlanRel, '', 'running', 0, 0, 0, now, now],
++  );
++  loop.syncPlanTasks(contextPlanId, contextPlanFile);
++  const contextPlan = db.get('SELECT * FROM plans WHERE id = ?', [contextPlanId]);
++  const contextTask = (taskKey) => db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [contextPlanId, taskKey]);
++
++  const logDir = path.join(workspace, 'docs', 'progress', 'logs');
++  fs.mkdirSync(logDir, { recursive: true });
++  const fakeLogFile = path.join(logDir, 'context-reuse-smoke.log');
++  fs.writeFileSync(fakeLogFile, 'context reuse smoke', 'utf8');
++
++  const retrySessionId = '11111111-1111-4111-8111-111111111111';
++  const parallelSessionA = '22222222-2222-4222-8222-222222222222';
++  const parallelSessionB = '33333333-3333-4333-8333-333333333333';
++  const syncKeptSessionId = '44444444-4444-4444-8444-444444444444';
++  const syncRenamedOldSessionId = '55555555-5555-4555-8555-555555555555';
++  const originalRunCodex = loop.runCodex.bind(loop);
++
++  try {
++    const retryTask = contextTask('C001');
++    loop.runCodex = async (_workspace, prompt, label, operation = {}) => {
++      assert.equal(_workspace, workspace, '会话复用 smoke 应使用当前工作区');
++      assert.match(prompt, /只执行指定任务 C001/, '首次失败执行 prompt 应锁定 C001');
++      assert.equal(label, 'execute-C001', '首次失败执行 label 应包含任务 key');
++      assert.equal(operation.planId, contextPlanId, '首次失败执行 operation 应绑定 plan');
++      assert.equal(operation.taskId, retryTask.id, '首次失败执行 operation 应绑定 task');
++      assert.equal(operation.codexSessionId, undefined, '首次执行不应传入已有 session id');
++      await sleep(5);
++      return {
++        exitCode: 1,
++        logFile: fakeLogFile,
++        lastFile: path.join(logDir, 'context-c001-failed.txt'),
++        codexSessionId: retrySessionId,
++        codexSessionMode: 'new',
++      };
++    };
++    const failedResult = await loop.executeTask(workspace, contextPlan, retryTask);
++    assert.equal(failedResult.exitCode, 1, '会话复用 smoke 首次执行应模拟失败');
++    const failedTask = contextTask('C001');
++    assert.equal(failedTask.status, 'pending', '失败任务应回到 pending 以便重试');
++    assert.equal(failedTask.codex_session_id, retrySessionId, '失败后应保存首次捕获的 session id');
++
++    loop.runCodex = async (_workspace, prompt, label, operation = {}) => {
++      assert.equal(_workspace, workspace, '重试执行应使用当前工作区');
++      assert.match(prompt, /只执行指定任务 C001/, '重试执行 prompt 应锁定 C001');
++      assert.equal(label, 'execute-C001', '重试执行 label 应包含任务 key');
++      assert.equal(operation.planId, contextPlanId, '重试执行 operation 应绑定 plan');
++      assert.equal(operation.taskId, retryTask.id, '重试执行 operation 应绑定 task');
++      assert.equal(operation.codexSessionId, retrySessionId, '失败后再次执行应传入同一个 session id');
++      await sleep(5);
++      return {
++        exitCode: 0,
++        logFile: fakeLogFile,
++        lastFile: path.join(logDir, 'context-c001-retry.txt'),
++        codexSessionId: retrySessionId,
++        codexSessionMode: 'resume',
++      };
++    };
++    const retryResult = await loop.executeTask(workspace, contextPlan, failedTask);
++    assert.equal(retryResult.exitCode, 0, '会话复用 smoke 重试应成功');
++    loop.completeTask(workspace, contextPlan, failedTask, retryResult);
++    const retriedTask = contextTask('C001');
++    assert.equal(retriedTask.status, 'completed', '重试成功后任务应完成');
++    assert.equal(retriedTask.codex_session_id, retrySessionId, '重试成功后应保留同一个 session id');
++
++    const parallelTasks = [contextTask('C002'), contextTask('C003')];
++    const parallelSessions = new Map([
++      [parallelTasks[0].id, parallelSessionA],
++      [parallelTasks[1].id, parallelSessionB],
++    ]);
++    const seenParallelTaskIds = new Set();
++    loop.runCodex = async (_workspace, prompt, label, operation = {}) => {
++      const currentTask = parallelTasks.find((task) => task.id === operation.taskId);
++      assert.ok(currentTask, '并发执行 operation 应绑定当前任务');
++      assert.match(prompt, new RegExp(`只执行指定任务 ${currentTask.task_key}`), '并发执行 prompt 应锁定当前任务');
++      assert.equal(label, `execute-${currentTask.task_key}`, '并发执行 label 应包含当前任务 key');
++      assert.equal(operation.planId, contextPlanId, '并发执行 operation 应绑定 plan');
++      assert.equal(operation.parallel, true, '并发执行 operation 应标记 parallel');
++      assert.equal(operation.codexSessionId, undefined, '同一 plan 的不同任务首次执行不应复用其它 session id');
++      seenParallelTaskIds.add(operation.taskId);
++      await sleep(currentTask.task_key === 'C002' ? 10 : 1);
++      return {
++        exitCode: 0,
++        logFile: fakeLogFile,
++        lastFile: path.join(logDir, `context-${currentTask.task_key}.txt`),
++        codexSessionId: parallelSessions.get(currentTask.id),
++        codexSessionMode: 'new',
++      };
++    };
++    const parallelResults = await loop.executeTaskBatch(workspace, contextPlan, parallelTasks);
++    assert.deepEqual(
++      parallelResults.map(({ result }) => result.exitCode),
++      [0, 0],
++      '并发会话 smoke 应全部执行成功',
++    );
++    assert.equal(seenParallelTaskIds.size, 2, '并发执行应覆盖两个独立任务');
++    const parallelTaskA = contextTask('C002');
++    const parallelTaskB = contextTask('C003');
++    assert.equal(parallelTaskA.codex_session_id, parallelSessionA, '并发任务 A 应保存自己的 session id');
++    assert.equal(parallelTaskB.codex_session_id, parallelSessionB, '并发任务 B 应保存自己的 session id');
++    assert.notEqual(parallelTaskA.codex_session_id, parallelTaskB.codex_session_id, '并发任务 session id 应彼此独立');
++    assert.notEqual(parallelTaskA.codex_session_id, retrySessionId, '并发任务 A 不应复用重试任务 session id');
++    assert.notEqual(parallelTaskB.codex_session_id, retrySessionId, '并发任务 B 不应复用重试任务 session id');
++
++    const syncKeptTask = contextTask('C004');
++    const syncRenamedTask = contextTask('C005');
++    loop.updateTaskCodexSession(syncKeptTask.id, syncKeptSessionId);
++    loop.updateTaskCodexSession(syncRenamedTask.id, syncRenamedOldSessionId);
++    fs.writeFileSync(
++      contextPlanFile,
++      [
++        '# Context reuse smoke',
++        '',
++        '- [x] C001: 失败后复用上下文 <!-- scope: smoke/c001.js -->',
++        '- [x] C002: 并发任务 A <!-- scope: smoke/c002.js -->',
++        '- [x] C003: 并发任务 B <!-- scope: smoke/c003.js -->',
++        '- [ ] C004: 同步保留上下文已更新 <!-- scope: smoke/c004-updated.js -->',
++        '- [ ] C105: 同步改名新任务 <!-- scope: smoke/c105.js -->',
++        '- [ ] C006: 同步新增任务 <!-- scope: smoke/c006.js -->',
++        '',
++      ].join('\n'),
++      'utf8',
++    );
++    loop.syncPlanTasks(contextPlanId, contextPlanFile);
++    const keptAfterSync = contextTask('C004');
++    const renamedAfterSync = contextTask('C105');
++    const addedAfterSync = contextTask('C006');
++    assert.equal(keptAfterSync.id, syncKeptTask.id, 'sync 后同一 task_key 应保留原任务记录');
++    assert.equal(keptAfterSync.codex_session_id, syncKeptSessionId, 'sync 后同一 task_key 应保留上下文');
++    assert.match(keptAfterSync.raw_line, /c004-updated\.js/, 'sync 后同一 task_key 应更新 raw line');
++    assert.equal(contextTask('C005'), null, '改名后的旧任务 key 应被移除');
++    assert.ok(renamedAfterSync, '改名后的新任务 key 应入库');
++    assert.equal(renamedAfterSync.codex_session_id, null, '改名任务不应继承旧 session id');
++    assert.ok(addedAfterSync, '新增任务应入库');
++    assert.equal(addedAfterSync.codex_session_id, null, '新增任务不应继承任何 session id');
++  } finally {
++    loop.runCodex = originalRunCodex;
++  }
++}
++
+ function sleep(milliseconds) {
+   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+ }
+

@@ -1,0 +1,9 @@
+**完成**
+- 已完成 P002，未修改 plan 文件、未勾选 checkbox，也未处理其它任务。
+- 新增依赖 `react-markdown` 与 `remark-gfm`：`package.json:51`、`package.json:53`，锁文件同步：`package-lock.json:13`。
+- 新增 `MarkdownReader` 组件：`src/renderer/components/MarkdownReader.tsx:57`，支持 GFM 表格、任务勾选项、代码块、链接等。
+- 链接做了协议白名单与外链 `noopener noreferrer`：`src/renderer/components/MarkdownReader.tsx:18`、`src/renderer/components/MarkdownReader.tsx:39`。
+- 添加阅读样式，处理空内容、长链接、代码块和表格窄屏滚动：`src/styles.css:134`、`src/styles.css:137`、`src/styles.css:154`、`src/styles.css:156`。
+
+**验证**
+- 已运行最小验证：`npx tsc --noEmit --pretty false`，通过。

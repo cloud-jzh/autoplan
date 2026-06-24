@@ -1,0 +1,13 @@
+已完成 P005，仅修改 `scripts/smoke-test.js`。
+
+**变更**
+- `scripts/smoke-test.js:181` 增加成功任务事件断言：`task.succeeded` 在 `task.started` 前，且 meta 包含任务标识、日志和退出码。
+- `scripts/smoke-test.js:212` 增加失败任务事件断言：覆盖 `task.failed`、开始事件顺序，以及失败日志/退出码 meta。
+- `scripts/smoke-test.js:249` 增加手动停止类事件断言：覆盖 `task.stop.requested`，并验证后续重试可成功。
+- `scripts/smoke-test.js:350` 增加任务事件筛选、顺序和 meta 复用断言 helper。
+
+**验证**
+- `node --check scripts/smoke-test.js`
+- `npm run smoke`
+
+计划文件未修改、未勾选 checkbox。工作区已有其它非本任务变更，我未处理。

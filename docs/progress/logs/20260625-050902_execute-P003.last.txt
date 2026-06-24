@@ -1,0 +1,11 @@
+已完成 P003，未修改 plan 文件、未勾选 checkbox。
+
+**变更**
+- `src/loopService.js:1138`：`runCodex` 支持传入 `codexSessionId` / `sessionId` / `codex_session_id`。
+- `src/loopService.js:1236`：有 session id 时优先走 `codex exec resume ... -`；恢复失败会记录事件并回退新建会话。
+- `src/loopService.js:19`、`src/loopService.js:1623`：新增 session id 解析、恢复失败识别、新建/恢复参数构造。
+- `runCodex` 返回结果新增 `sessionId`、`codexSessionId`、`codexSessionMode`、`resumed`，供后续 P004 绑定任务生命周期使用。
+
+**验证**
+- 已运行最小验证：`node --check src/loopService.js`
+- 已确认：`docs/plan/plan_requirement_7_20260625-033918.md` 无 diff。

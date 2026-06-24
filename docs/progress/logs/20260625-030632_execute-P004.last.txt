@@ -1,0 +1,8 @@
+已完成 P004，仅修改指定 scope 文件，未更新 plan 文件/checkbox/进度区。
+
+- `src/renderer/utils/time.ts:55` 新增耗时格式化与运行中耗时计算，支持空值兜底、秒/分/小时中文短格式。
+- `src/renderer/components/PlanLists.tsx:29` 任务列表展示“未开始 / 已运行 xx / 耗时 xx”。
+- `src/renderer/components/PlanLists.tsx:43` Plan 卡展示总耗时与已完成任务耗时汇总。
+- `src/renderer/pages/WorkspacePage.tsx:431` 将任务快照传给 Plan 列表，随现有刷新更新汇总。
+- `src/styles.css:99`、`src/styles.css:398` 增加 stopped 状态与窄屏/长文本防溢出样式。
+- 验证：已运行 scope 内 `git diff --check`，无 whitespace 错误；未运行全量 check/smoke（属于 P006）。

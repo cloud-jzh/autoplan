@@ -1,0 +1,692 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019efb3c-fdeb-72a1-ba54-24f01c0da046
+--------
+user
+你是开发执行者。
+请只执行指定任务 P001，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_5_20260625-040346.md
+指定任务：
+- [ ] P001: 建立日志底部判定机制 <!-- scope: src/renderer/components/CodexLog.tsx -->
+任务 scope：src/renderer/components/codexlog.tsx
+
+完成后必须：
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 如需测试，只运行与当前任务直接相关的最小测试集，不要运行全量测试或与本任务无关的测试
+- 只有当前任务本身明确要求全量验证时，才允许运行全量测试
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会只处理 P001 的指定文件，先查看组件实现和相关约束。
+  → 查看目标组件现状
+  • 实现底部判定机制
+  • 最小验证改动
+mcp: codegraph/codegraph_explore started
+mcp: codegraph/codegraph_explore (failed)
+codex
+CodeGraph 需要显式项目路径；我会带上路径重新查看目标组件。
+mcp: codegraph/codegraph_explore started
+mcp: codegraph/codegraph_explore (failed)
+**Considering fallback options**
+
+I need to think about a fallback shell and inspect the AGENTS. I might plan to set the file to read-only so I can read from it without modifying anything. It's essential to check the relevant plan for details, but I’ve got to keep in mind that the user provided a task. My goal here is to inspect the target file using the shell without any risks of altering it.
+codex
+CodeGraph 未初始化，我将用本地搜索读取约束和目标文件。
+exec
+powershell.exe -Command 'Get-ChildItem -Force -Filter AGENTS.md; Get-ChildItem -Recurse -Force -Filter AGENTS.md | Select-Object -ExpandProperty FullName' in D:\project\GitHub\autoplan
+ succeeded in 368ms:
+**Planning file inspection**
+
+I need to inspect a file and maybe come up with a plan. To do this, I'm considering using Get-Content with UTF8 encoding, which should help. I want to avoid producing a long output if possible, so I'll keep it concise. Keeping things straightforward will make it easier to understand the file's content without overwhelming detail. Alright, let’s figure out the next steps!
+codex
+没有发现额外 AGENTS 约束；现在查看计划说明和目标组件。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); Write-Host '"'--- plan P001 context ---'; Select-String -Path 'docs\\plan\\plan_feedback_5_20260625-040346.md' -Pattern 'P001|日志底部|CodexLog|bottom|底部' -Context 2,4; Write-Host '--- target file ---'; Get-Content -Path 'src\\renderer\\components\\CodexLog.tsx' -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 478ms:
+--- plan P001 context ---
+
+  docs\plan\plan_feedback_5_20260625-040346.md:3:## 背景
+  docs\plan\plan_feedback_5_20260625-040346.md:4:
+> docs\plan\plan_feedback_5_20260625-040346.md:5:当前执行日志卡片由 `CodexLog` 展示实时日志或结构化活动行。现有逻辑在 `log` 或 `activity` 更新时直接把日志容器
+滚动到底部，这能保证用户看到最新日志，但也会在用户主动向上查看前面日志时被新日志打断，导致阅读历史输出不稳定。
+  docs\plan\plan_feedback_5_20260625-040346.md:6:
+> docs\plan\plan_feedback_5_20260625-040346.md:7:反馈 #5 要求：“日志卡片优化一下，如果内容在底部，则添加日志时自动滚动到底部，避免查看前面日志时自动滚动到底部”。本计划默认实现为：日志
+容器进入“粘底”状态时继续跟随新日志；用户滚动离开底部后暂停自动滚动；用户再次滚动到底部或初次打开日志时恢复自动跟随。
+  docs\plan\plan_feedback_5_20260625-040346.md:8:
+  docs\plan\plan_feedback_5_20260625-040346.md:9:## 任务拆解
+  docs\plan\plan_feedback_5_20260625-040346.md:10:
+> docs\plan\plan_feedback_5_20260625-040346.md:11:- [ ] P001: 建立日志底部判定机制 <!-- scope: src/renderer/components/CodexLog.t
+sx -->
+> docs\plan\plan_feedback_5_20260625-040346.md:12:  - 验收要点：在日志滚动容器内定义“接近底部”的判定逻辑，例如允许 16-32px 容差，避免因小数像素或字体渲染导致误判。
+> docs\plan\plan_feedback_5_20260625-040346.md:13:  - 验收要点：组件能记录用户当前是否处于底部，不依赖全局状态，不影响 `WorkspacePage` 的运行状态、日志标题和统计信息。
+> docs\plan\plan_feedback_5_20260625-040346.md:14:  - 验收要点：用户手动向上滚动超过容差后，组件状态切换为非粘底；用户滚回底部后，状态恢复为粘底。
+  docs\plan\plan_feedback_5_20260625-040346.md:15:  - 验收要点：空日志、仅一屏日志、超出一屏日志都能得到稳定判定，不出现滚动高度为 0 时的异常。
+  docs\plan\plan_feedback_5_20260625-040346.md:16:
+> docs\plan\plan_feedback_5_20260625-040346.md:17:- [ ] P002: 实现仅粘底时自动滚动 <!-- scope: src/renderer/components/CodexLog.t
+sx -->
+> docs\plan\plan_feedback_5_20260625-040346.md:18:  - 验收要点：当用户位于底部时，新增日志或活动行后自动滚动到最新内容底部，保持实时跟随体验。
+> docs\plan\plan_feedback_5_20260625-040346.md:19:  - 验收要点：当用户正在查看前面日志且不在底部时，新增日志或活动行不会修改 `scrollTop`，当前阅读位置保持稳定。
+> docs\plan\plan_feedback_5_20260625-040346.md:20:  - 验收要点：组件初次挂载、从空日志变为有日志、切换到新的日志内容时默认展示底部，避免进入页面后停留在旧内容顶部。
+  docs\plan\plan_feedback_5_20260625-040346.md:21:  - 验收要点：自动滚动在 React 渲染完成后执行，避免内容更新前读取旧 `scrollHeight` 造成滚动不到底。
+  docs\plan\plan_feedback_5_20260625-040346.md:22:
+> docs\plan\plan_feedback_5_20260625-040346.md:23:- [ ] P003: 覆盖原始日志与活动行两种模式 <!-- scope: src/renderer/components/CodexL
+og.tsx -->
+  docs\plan\plan_feedback_5_20260625-040346.md:24:  - 验收要点：`activity` 有内容时的结构化活动行模式遵循同一粘底策略，新增活动行不打断用户查看历史活动。
+  docs\plan\plan_feedback_5_20260625-040346.md:25:  - 验收要点：`activity` 为空时的原始 `logTail` 模式遵循同一粘底策略，追加原始日志时行为一致。
+  docs\plan\plan_feedback_5_20260625-040346.md:26:  - 验收要点：两种模式之间切换时不产生空白、闪跳或错误滚动；当前日志容器仍只渲染一种内容来源。
+  docs\plan\plan_feedback_5_20260625-040346.md:27:  - 验收要点：保留现有日志尾部截断展示策略和活动行角色样式，不改变日志文本内容、时间展示和角色标签。
+  docs\plan\plan_feedback_5_20260625-040346.md:28:
+> docs\plan\plan_feedback_5_20260625-040346.md:29:- [ ] P004: 验证日志卡片交互回归 <!-- scope: src/renderer/components/CodexLog.t
+sx,src/renderer/pages/WorkspacePage.tsx,src/styles.css -->
+> docs\plan\plan_feedback_5_20260625-040346.md:30:  - 验收要点：手动验证运行中的执行日志：停留底部时新日志持续自动跟随到底部。
+> docs\plan\plan_feedback_5_20260625-040346.md:31:  - 验收要点：手动验证向上滚动查看历史日志：后台继续追加日志时页面不跳到底部，阅读位置不被打断。
+> docs\plan\plan_feedback_5_20260625-040346.md:32:  - 验收要点：手动验证再次滚动到底部后：后续新增日志恢复自动跟随。
+  docs\plan\plan_feedback_5_20260625-040346.md:33:  - 验收要点：`npm run check` 与 `npm run build` 通过，确认 TypeScript、Vite 构建和现
+有主流程无语法或类型回归。
+  docs\plan\plan_feedback_5_20260625-040346.md:34:
+  docs\plan\plan_feedback_5_20260625-040346.md:35:## 总体验收标准
+  docs\plan\plan_feedback_5_20260625-040346.md:36:
+> docs\plan\plan_feedback_5_20260625-040346.md:37:- 粘底跟随：日志内容当前在底部时，新增日志自动滚动到最新内容底部。
+> docs\plan\plan_feedback_5_20260625-040346.md:38:- 阅读保护：用户主动向上查看历史日志时，新增日志不会强制跳到底部。
+> docs\plan\plan_feedback_5_20260625-040346.md:39:- 状态恢复：用户重新滚动到底部后，日志卡片恢复自动跟随最新日志。
+  docs\plan\plan_feedback_5_20260625-040346.md:40:- 模式一致：结构化活动行和原始日志尾部两种展示模式具备一致的滚动行为。
+  docs\plan\plan_feedback_5_20260625-040346.md:41:- 无业务回归：不改变任务执行、停止任务、事件流刷新、日志内容生成、日志截断和页面布局主流程。
+  docs\plan\plan_feedback_5_20260625-040346.md:42:- 构建通过：完成实现后 `npm run check` 与 `npm run build` 均通过，关键手动场景验证通过。
+  docs\plan\plan_feedback_5_20260625-040346.md:43:
+--- target file ---
+import { useEffect, useRef } from 'react';
+import type { ActivityLine } from '../types';
+import { formatChinaTime } from '../utils/time';
+
+const ROLE_CONFIG: Record<string, { label: string; cls: string }> = {
+  codex: { label: 'Codex', cls: 'act-codex' },
+  exec: { label: '执行', cls: 'act-exec' },
+  thinking: { label: '思考', cls: 'act-thinking' },
+  error: { label: '错误', cls: 'act-error' },
+  system: { label: '系统', cls: 'act-system' },
+  user: { label: '用户', cls: 'act-user' },
+  info: { label: '信息', cls: 'act-info' },
+};
+
+/**
+ * 以活动时间线显示 codex 执行过程（参考 run_advanced_plan_with_codex.dart 的 Activity 输出）。
+ * 优先用过滤后的 activity 行；若为空则回退到 logTail 原始尾部。
+ */
+export function CodexLog({
+  log,
+  activity,
+}: {
+  log: string;
+  activity?: ActivityLine[];
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const lines = activity && activity.length > 0 ? activity : null;
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [log, activity]);
+
+  if (!lines) {
+    return (
+      <div className="codex-log" ref={scrollRef}>
+        <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+      </div>
+    );
+  }
+
+  return (
+    <div className="codex-log" ref={scrollRef}>
+      {lines.map((line, index) => {
+        const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+        return (
+          <div className={`act-line ${config.cls}`} key={index}>
+            <span className="act-time">{formatChinaTime(line.at)}</span>
+            <span className="act-tag">{config.label}</span>
+            <span className="act-text">{line.text}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+
+
+**Clarifying scroll implementation**
+
+I need to focus on implementing P001, which involves establishing a log bottom determination mechanism. P002, regarding auto-scrolling, is something for the future. Currently, the existing useEffect always scrolls, but I'm not sure if that meets P001's requirements. 
+
+P001 centers around recording the isAtBottom state and the scroll handler. It's crucial to tread lightly here because I can't implement P002 just yet. If we retain the always-scroll effect, it might interfere with P001's objectives, especially when users scroll up manually.
+**Deciding on scroll behavior**
+
+I'm considering whether we should avoid changing the auto-scroll feature for now, since P002 mentions implementing auto-scrolling only when sticky to the bottom. If I'm developing P001, I have to be careful not to alter the existing useEffect, but leaving it unchanged may lead to issues with the bottom state being overwritten. 
+
+I might need to adjust it to maintain scrollTop. For P001, I'll likely add functions like `isNearBottom` and manage state through `isStickyToBottomRef`. I want to implement this without affecting the current behavior while ensuring that the state tracking user scroll position is addressed properly.
+codex
+已确认 P001 只要求判定机制；接下来只改 `CodexLog.tsx`。
+exec
+powershell.exe -Command "Get-Content -Path 'package.json' -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 521ms:
+{
+  "name": "autoplan",
+  "version": "0.1.4",
+  "description": "Electron app for issue-driven autonomous planning and development loops.",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "node scripts/dev.js",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/planDrafts.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "build": {
+    "appId": "com.autoplan.desktop",
+    "productName": "AutoPlan",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "assets/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.0",
+    "remark-gfm": "^4.0.1",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^33.3.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}
+
+**Understanding TS Patch Need**
+
+I think I need to apply a patch. I should explore the TypeScript setting `noUnusedLocals` to grasp its implications. It might involve understanding how this setting helps in identifying unused local variables in my code. This could improve code quality by highlighting inefficiencies. I'll take a closer look to ensure I fully understand how to implement this effectively. It seems like a valuable step!
+codex
+我会加入容差判定与滚动事件状态记录，不触碰自动滚动策略。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\CodexLog.tsx
+diff --git a/src/renderer/components/CodexLog.tsx b/src/renderer/components/CodexLog.tsx
+index d77b05f738953969d14843e6227c54d8cc7df1c2..18a80cef9353dc1c02f9680114053090f0725c95
+--- a/src/renderer/components/CodexLog.tsx
++++ b/src/renderer/components/CodexLog.tsx
+@@ -2,6 +2,8 @@
+ import type { ActivityLine } from '../types';
+ import { formatChinaTime } from '../utils/time';
+ 
++const LOG_BOTTOM_THRESHOLD_PX = 24;
++
+ const ROLE_CONFIG: Record<string, { label: string; cls: string }> = {
+   codex: { label: 'Codex', cls: 'act-codex' },
+   exec: { label: '执行', cls: 'act-exec' },
+@@ -12,6 +14,11 @@
+   info: { label: '信息', cls: 'act-info' },
+ };
+ 
++function isNearLogBottom(el: HTMLDivElement) {
++  const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
++  return maxScrollTop - el.scrollTop <= LOG_BOTTOM_THRESHOLD_PX;
++}
++
+ /**
+  * 以活动时间线显示 codex 执行过程（参考 run_advanced_plan_with_codex.dart 的 Activity 输出）。
+  * 优先用过滤后的 activity 行；若为空则回退到 logTail 原始尾部。
+@@ -24,23 +31,32 @@
+   activity?: ActivityLine[];
+ }) {
+   const scrollRef = useRef<HTMLDivElement>(null);
++  const isAtBottomRef = useRef(true);
+   const lines = activity && activity.length > 0 ? activity : null;
+ 
++  const updateBottomState = () => {
++    const el = scrollRef.current;
++    isAtBottomRef.current = el ? isNearLogBottom(el) : true;
++  };
++
+   useEffect(() => {
+     const el = scrollRef.current;
+-    if (el) el.scrollTop = el.scrollHeight;
++    if (el) {
++      el.scrollTop = el.scrollHeight;
++      updateBottomState();
++    }
+   }, [log, activity]);
+ 
+   if (!lines) {
+     return (
+-      <div className="codex-log" ref={scrollRef}>
++      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+         <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+       </div>
+     );
+   }
+ 
+   return (
+-    <div className="codex-log" ref={scrollRef}>
++    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+       {lines.map((line, index) => {
+         const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+         return (
+
+diff --git a/src/renderer/components/CodexLog.tsx b/src/renderer/components/CodexLog.tsx
+index d77b05f738953969d14843e6227c54d8cc7df1c2..18a80cef9353dc1c02f9680114053090f0725c95
+--- a/src/renderer/components/CodexLog.tsx
++++ b/src/renderer/components/CodexLog.tsx
+@@ -2,6 +2,8 @@
+ import type { ActivityLine } from '../types';
+ import { formatChinaTime } from '../utils/time';
+ 
++const LOG_BOTTOM_THRESHOLD_PX = 24;
++
+ const ROLE_CONFIG: Record<string, { label: string; cls: string }> = {
+   codex: { label: 'Codex', cls: 'act-codex' },
+   exec: { label: '执行', cls: 'act-exec' },
+@@ -12,6 +14,11 @@
+   info: { label: '信息', cls: 'act-info' },
+ };
+ 
++function isNearLogBottom(el: HTMLDivElement) {
++  const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
++  return maxScrollTop - el.scrollTop <= LOG_BOTTOM_THRESHOLD_PX;
++}
++
+ /**
+  * 以活动时间线显示 codex 执行过程（参考 run_advanced_plan_with_codex.dart 的 Activity 输出）。
+  * 优先用过滤后的 activity 行；若为空则回退到 logTail 原始尾部。
+@@ -24,23 +31,32 @@
+   activity?: ActivityLine[];
+ }) {
+   const scrollRef = useRef<HTMLDivElement>(null);
++  const isAtBottomRef = useRef(true);
+   const lines = activity && activity.length > 0 ? activity : null;
+ 
++  const updateBottomState = () => {
++    const el = scrollRef.current;
++    isAtBottomRef.current = el ? isNearLogBottom(el) : true;
++  };
++
+   useEffect(() => {
+     const el = scrollRef.current;
+-    if (el) el.scrollTop = el.scrollHeight;
++    if (el) {
++      el.scrollTop = el.scrollHeight;
++      updateBottomState();
++    }
+   }, [log, activity]);
+ 
+   if (!lines) {
+     return (
+-      <div className="codex-log" ref={scrollRef}>
++      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+         <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+       </div>
+     );
+   }
+ 
+   return (
+-    <div className="codex-log" ref={scrollRef}>
++    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+       {lines.map((line, index) => {
+         const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+         return (
+
+**Considering type validation options**
+
+I'm thinking about the command `npx tsc --noEmit --pretty false` for the entire TypeScript project. The user asks for minimal and direct relevance, which makes me wonder if that’s too much since it's not a full build. The command `npx tsc --noEmit` might provide minimal type validation, but it could still be comprehensive due to the project size. Before I run it, I should check the `tsconfig` settings for `noUnused`. That might help clarify my approach!
+codex
+改动已落在目标文件；现在做最小 TypeScript 校验。
+exec
+powershell.exe -Command 'npx tsc --noEmit --pretty false' in D:\project\GitHub\autoplan
+ succeeded in 4547ms:
+diff --git a/src/renderer/components/CodexLog.tsx b/src/renderer/components/CodexLog.tsx
+index d77b05f738953969d14843e6227c54d8cc7df1c2..18a80cef9353dc1c02f9680114053090f0725c95
+--- a/src/renderer/components/CodexLog.tsx
++++ b/src/renderer/components/CodexLog.tsx
+@@ -2,6 +2,8 @@
+ import type { ActivityLine } from '../types';
+ import { formatChinaTime } from '../utils/time';
+ 
++const LOG_BOTTOM_THRESHOLD_PX = 24;
++
+ const ROLE_CONFIG: Record<string, { label: string; cls: string }> = {
+   codex: { label: 'Codex', cls: 'act-codex' },
+   exec: { label: '执行', cls: 'act-exec' },
+@@ -12,6 +14,11 @@
+   info: { label: '信息', cls: 'act-info' },
+ };
+ 
++function isNearLogBottom(el: HTMLDivElement) {
++  const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
++  return maxScrollTop - el.scrollTop <= LOG_BOTTOM_THRESHOLD_PX;
++}
++
+ /**
+  * 以活动时间线显示 codex 执行过程（参考 run_advanced_plan_with_codex.dart 的 Activity 输出）。
+  * 优先用过滤后的 activity 行；若为空则回退到 logTail 原始尾部。
+@@ -24,23 +31,32 @@
+   activity?: ActivityLine[];
+ }) {
+   const scrollRef = useRef<HTMLDivElement>(null);
++  const isAtBottomRef = useRef(true);
+   const lines = activity && activity.length > 0 ? activity : null;
+ 
++  const updateBottomState = () => {
++    const el = scrollRef.current;
++    isAtBottomRef.current = el ? isNearLogBottom(el) : true;
++  };
++
+   useEffect(() => {
+     const el = scrollRef.current;
+-    if (el) el.scrollTop = el.scrollHeight;
++    if (el) {
++      el.scrollTop = el.scrollHeight;
++      updateBottomState();
++    }
+   }, [log, activity]);
+ 
+   if (!lines) {
+     return (
+-      <div className="codex-log" ref={scrollRef}>
++      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+         <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+       </div>
+     );
+   }
+ 
+   return (
+-    <div className="codex-log" ref={scrollRef}>
++    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+       {lines.map((line, index) => {
+         const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+         return (
+
+**Updating plan for code review**
+
+I need to update my plan and maybe finalize it. I should check the git diff summary to get line numbers for the final version, which might help. Instead of re-reading the whole file, I could use `Select-String`, but I'm thinking of using `rg -n` to locate constants, functions, and references like onScroll. I wonder if it's fine to skip re-reading the whole file, but still need those line numbers. So, rg it is!
+codex
+类型校验通过；我再抓取改动位置用于简短交付说明。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); rg -n "LOG_BOTTOM_THRESHOLD_PX|isNearLogBottom|isAtBottomRef|updateBottomState|onScroll" src'"\\renderer\\components\\CodexLog.tsx; git diff --stat -- src\\renderer\\components\\CodexLog.tsx" in D:\project\GitHub\autoplan
+ succeeded in 258ms:
+5:const LOG_BOTTOM_THRESHOLD_PX = 24;
+17:function isNearLogBottom(el: HTMLDivElement) {
+19:  return maxScrollTop - el.scrollTop <= LOG_BOTTOM_THRESHOLD_PX;
+34:  const isAtBottomRef = useRef(true);
+37:  const updateBottomState = () => {
+39:    isAtBottomRef.current = el ? isNearLogBottom(el) : true;
+46:      updateBottomState();
+52:      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+59:    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+ src/renderer/components/CodexLog.tsx | 22 +++++++++++++++++++---
+ 1 file changed, 19 insertions(+), 3 deletions(-)
+warning: in the working copy of 'src/renderer/components/CodexLog.tsx', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/components/CodexLog.tsx b/src/renderer/components/CodexLog.tsx
+index d77b05f738953969d14843e6227c54d8cc7df1c2..18a80cef9353dc1c02f9680114053090f0725c95
+--- a/src/renderer/components/CodexLog.tsx
++++ b/src/renderer/components/CodexLog.tsx
+@@ -2,6 +2,8 @@
+ import type { ActivityLine } from '../types';
+ import { formatChinaTime } from '../utils/time';
+ 
++const LOG_BOTTOM_THRESHOLD_PX = 24;
++
+ const ROLE_CONFIG: Record<string, { label: string; cls: string }> = {
+   codex: { label: 'Codex', cls: 'act-codex' },
+   exec: { label: '执行', cls: 'act-exec' },
+@@ -12,6 +14,11 @@
+   info: { label: '信息', cls: 'act-info' },
+ };
+ 
++function isNearLogBottom(el: HTMLDivElement) {
++  const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
++  return maxScrollTop - el.scrollTop <= LOG_BOTTOM_THRESHOLD_PX;
++}
++
+ /**
+  * 以活动时间线显示 codex 执行过程（参考 run_advanced_plan_with_codex.dart 的 Activity 输出）。
+  * 优先用过滤后的 activity 行；若为空则回退到 logTail 原始尾部。
+@@ -24,23 +31,32 @@
+   activity?: ActivityLine[];
+ }) {
+   const scrollRef = useRef<HTMLDivElement>(null);
++  const isAtBottomRef = useRef(true);
+   const lines = activity && activity.length > 0 ? activity : null;
+ 
++  const updateBottomState = () => {
++    const el = scrollRef.current;
++    isAtBottomRef.current = el ? isNearLogBottom(el) : true;
++  };
++
+   useEffect(() => {
+     const el = scrollRef.current;
+-    if (el) el.scrollTop = el.scrollHeight;
++    if (el) {
++      el.scrollTop = el.scrollHeight;
++      updateBottomState();
++    }
+   }, [log, activity]);
+ 
+   if (!lines) {
+     return (
+-      <div className="codex-log" ref={scrollRef}>
++      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+         <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+       </div>
+     );
+   }
+ 
+   return (
+-    <div className="codex-log" ref={scrollRef}>
++    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+       {lines.map((line, index) => {
+         const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+         return (
+
+**Checking line endings**
+
+I need to address a line endings warning. It seems a patch was applied, and now the file has LF line endings in the working copy while the original likely has CRLF. This might be fine for Windows, but I should consider converting to CRLF for consistency. The user is using Chinese UTF-8, so I should inspect the file's content to make sure nothing creates an entire diff due to line endings. I'll verify that with `git diff --numstat`.
+codex
+改动范围确认只包含目标组件，准备收尾。
+  ✓ 查看目标组件现状
+  ✓ 实现底部判定机制
+  ✓ 最小验证改动
+diff --git a/src/renderer/components/CodexLog.tsx b/src/renderer/components/CodexLog.tsx
+index d77b05f738953969d14843e6227c54d8cc7df1c2..18a80cef9353dc1c02f9680114053090f0725c95
+--- a/src/renderer/components/CodexLog.tsx
++++ b/src/renderer/components/CodexLog.tsx
+@@ -2,6 +2,8 @@
+ import type { ActivityLine } from '../types';
+ import { formatChinaTime } from '../utils/time';
+ 
++const LOG_BOTTOM_THRESHOLD_PX = 24;
++
+ const ROLE_CONFIG: Record<string, { label: string; cls: string }> = {
+   codex: { label: 'Codex', cls: 'act-codex' },
+   exec: { label: '执行', cls: 'act-exec' },
+@@ -12,6 +14,11 @@
+   info: { label: '信息', cls: 'act-info' },
+ };
+ 
++function isNearLogBottom(el: HTMLDivElement) {
++  const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
++  return maxScrollTop - el.scrollTop <= LOG_BOTTOM_THRESHOLD_PX;
++}
++
+ /**
+  * 以活动时间线显示 codex 执行过程（参考 run_advanced_plan_with_codex.dart 的 Activity 输出）。
+  * 优先用过滤后的 activity 行；若为空则回退到 logTail 原始尾部。
+@@ -24,23 +31,32 @@
+   activity?: ActivityLine[];
+ }) {
+   const scrollRef = useRef<HTMLDivElement>(null);
++  const isAtBottomRef = useRef(true);
+   const lines = activity && activity.length > 0 ? activity : null;
+ 
++  const updateBottomState = () => {
++    const el = scrollRef.current;
++    isAtBottomRef.current = el ? isNearLogBottom(el) : true;
++  };
++
+   useEffect(() => {
+     const el = scrollRef.current;
+-    if (el) el.scrollTop = el.scrollHeight;
++    if (el) {
++      el.scrollTop = el.scrollHeight;
++      updateBottomState();
++    }
+   }, [log, activity]);
+ 
+   if (!lines) {
+     return (
+-      <div className="codex-log" ref={scrollRef}>
++      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+         <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+       </div>
+     );
+   }
+ 
+   return (
+-    <div className="codex-log" ref={scrollRef}>
++    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+       {lines.map((line, index) => {
+         const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+         return (
+
+codex
+已完成 P001，未修改 plan 文件、未勾选 checkbox，也未处理其它任务。
+
+**完成内容**
+- 在 `src/renderer/components/CodexLog.tsx:5` 添加 24px 底部容差常量。
+- 在 `src/renderer/components/CodexLog.tsx:17` 添加接近底部判定函数，兼容空日志和一屏内日志。
+- 在 `src/renderer/components/CodexLog.tsx:34` 添加组件内 `ref` 状态记录当前是否处于底部。
+- 在 `src/renderer/components/CodexLog.tsx:52` 和 `src/renderer/components/CodexLog.tsx:59` 绑定滚动事件，用户上滑/回到底部时更新判定状态。
+
+**验证**
+- 已运行最小相关校验：`npx tsc --noEmit --pretty false`
+- 结果：通过
+
+说明：按 P001 范围仅建立底部判定机制，未提前实现 P002 的“仅粘底时自动滚动”策略。
+diff --git a/src/renderer/components/CodexLog.tsx b/src/renderer/components/CodexLog.tsx
+index d77b05f738953969d14843e6227c54d8cc7df1c2..18a80cef9353dc1c02f9680114053090f0725c95
+--- a/src/renderer/components/CodexLog.tsx
++++ b/src/renderer/components/CodexLog.tsx
+@@ -2,6 +2,8 @@
+ import type { ActivityLine } from '../types';
+ import { formatChinaTime } from '../utils/time';
+ 
++const LOG_BOTTOM_THRESHOLD_PX = 24;
++
+ const ROLE_CONFIG: Record<string, { label: string; cls: string }> = {
+   codex: { label: 'Codex', cls: 'act-codex' },
+   exec: { label: '执行', cls: 'act-exec' },
+@@ -12,6 +14,11 @@
+   info: { label: '信息', cls: 'act-info' },
+ };
+ 
++function isNearLogBottom(el: HTMLDivElement) {
++  const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
++  return maxScrollTop - el.scrollTop <= LOG_BOTTOM_THRESHOLD_PX;
++}
++
+ /**
+  * 以活动时间线显示 codex 执行过程（参考 run_advanced_plan_with_codex.dart 的 Activity 输出）。
+  * 优先用过滤后的 activity 行；若为空则回退到 logTail 原始尾部。
+@@ -24,23 +31,32 @@
+   activity?: ActivityLine[];
+ }) {
+   const scrollRef = useRef<HTMLDivElement>(null);
++  const isAtBottomRef = useRef(true);
+   const lines = activity && activity.length > 0 ? activity : null;
+ 
++  const updateBottomState = () => {
++    const el = scrollRef.current;
++    isAtBottomRef.current = el ? isNearLogBottom(el) : true;
++  };
++
+   useEffect(() => {
+     const el = scrollRef.current;
+-    if (el) el.scrollTop = el.scrollHeight;
++    if (el) {
++      el.scrollTop = el.scrollHeight;
++      updateBottomState();
++    }
+   }, [log, activity]);
+ 
+   if (!lines) {
+     return (
+-      <div className="codex-log" ref={scrollRef}>
++      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+         <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+       </div>
+     );
+   }
+ 
+   return (
+-    <div className="codex-log" ref={scrollRef}>
++    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+       {lines.map((line, index) => {
+         const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+         return (
+
+tokens used
+51,031
+已完成 P001，未修改 plan 文件、未勾选 checkbox，也未处理其它任务。
+
+**完成内容**
+- 在 `src/renderer/components/CodexLog.tsx:5` 添加 24px 底部容差常量。
+- 在 `src/renderer/components/CodexLog.tsx:17` 添加接近底部判定函数，兼容空日志和一屏内日志。
+- 在 `src/renderer/components/CodexLog.tsx:34` 添加组件内 `ref` 状态记录当前是否处于底部。
+- 在 `src/renderer/components/CodexLog.tsx:52` 和 `src/renderer/components/CodexLog.tsx:59` 绑定滚动事件，用户上滑/回到底部时更新判定状态。
+
+**验证**
+- 已运行最小相关校验：`npx tsc --noEmit --pretty false`
+- 结果：通过
+
+说明：按 P001 范围仅建立底部判定机制，未提前实现 P002 的“仅粘底时自动滚动”策略。

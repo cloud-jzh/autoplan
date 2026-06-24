@@ -1,0 +1,7 @@
+已完成 P003。
+
+- `src/renderer/pages/WorkspacePage.tsx:15` 引入 `IconName`，将工作区导航和统计卡片从字符图标替换为统一 `Icon` SVG 图标。
+- `src/renderer/pages/WorkspacePage.tsx:540` 更新导航图标渲染；`src/renderer/pages/WorkspacePage.tsx:783` 更新统计卡片图标渲染。
+- `src/styles.css:266`、`src/styles.css:311` 微调导航与统计图标容器对齐。
+- 验证通过：`npx tsc --noEmit`。
+- 未修改 plan 文件，未勾选 checkbox；本次改动仅限 P003 scope 相关文件。

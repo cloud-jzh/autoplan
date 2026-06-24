@@ -1,0 +1,4886 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019efb36-63eb-7df1-a6ec-8e893306c0f0
+--------
+user
+你是开发执行者。
+请只执行指定任务 P001，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_11_20260625-035545.md
+指定任务：
+- [ ] P001: 定义 Plan 全文读取接口 <!-- scope: src/main.js,src/preload.js,src/renderer/types.ts -->
+任务 scope：src/main.js, src/preload.js, src/renderer/types.ts
+
+完成后必须：
+- 当前为并发执行模式，不要读写其它任务的 scope
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 如需测试，只运行与当前任务直接相关的最小测试集，不要运行全量测试或与本任务无关的测试
+- 只有当前任务本身明确要求全量验证时，才允许运行全量测试
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Evaluating file queries**
+
+I’m trying to determine if the query can include scope files. It seems like I could use the `codegraph_explore` tool, but I saw that the guidelines suggest calling FIRST for almost any question. The user has a scope constraint, so I’m wondering if I should avoid going too broad. Codegraph might read relevant symbols across files, which could step outside the intended scope, but querying for specific file names could work. I’ll need to consider this carefully.
+codex
+我会只读取计划上下文和 P001 的三个 scope 文件，先确认现有 IPC/类型约定。
+  → 确认 P001 接口要求
+  • 检查现有 IPC 约定
+  • 实现读取接口声明
+  • 做最小语法核对
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); Get-Content -LiteralPath '"'D:\\project\\GitHub\\autoplan\\docs\\plan\\plan_requirement_11_20260625-035545.md' -Raw -Encoding UTF8; '--- src/main.js ---'; Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\src\\main.js' -Raw -Encoding UTF8; '--- src/preload.js ---'; Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\src\\preload.js' -Raw -Encoding UTF8; '--- src/renderer/types.ts ---'; Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\src\\renderer\\types.ts' -Raw -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 179ms:
+# 需求 #11 开发计划：Plan 支持全文 Markdown 阅读
+
+## 背景
+
+当前 AutoPlan 工作区的“任务与计划”区域中，Plan 列表仅展示文件路径、任务完成数、耗时、校验状态、哈希和更新时间等摘要信息；计划草稿虽然可以在 textarea 中查看和编辑原始 Markdown，但已确认加入任务系统的正式 Plan 缺少“阅读全文”的入口。随着计划内容变长，用户无法直接在应用内阅读完整计划，也无法按 Markdown 结构查看标题、列表、任务勾选项、代码块和链接等内容。
+
+需求 #11 要求“plan 计划，要支持阅读全文；用 markdown 组件阅读”。本计划默认实现为：在当前项目工作区的正式 Plan 列表中提供“阅读全文”入口，按需从工作区内的 Plan 文件读取 Markdown 全文，并通过专用 Markdown 阅读组件渲染；同时保留现有 Plan 摘要、任务执行、计划草稿编辑和搜索/过滤行为。
+
+## 任务拆解
+
+- [ ] P001: 定义 Plan 全文读取接口 <!-- scope: src/main.js,src/preload.js,src/renderer/types.ts -->
+  - 验收要点：新增前后端 IPC 能力，例如 `plans:read` / `readPlan`，入参至少包含 `projectId` 与 `planId`，返回 Plan id、文件路径、Markdown 全文、哈希、更新时间和可读错误信息。
+  - 验收要点：主进程读取计划文件时必须通过数据库中的 `plans.file_path` 和项目 `workspace_path` 解析真实路径，禁止读取当前项目工作区外的文件。
+  - 验收要点：缺失 Plan、缺失项目、文件不存在、路径越界和读取失败时返回可展示的错误状态，不导致渲染进程崩溃。
+  - 验收要点：不把所有 Plan 全文塞进常规 `snapshot()`，避免长文档随轮询高频刷新造成 UI 卡顿和 IPC 负担。
+
+- [ ] P002: 引入 Markdown 阅读组件 <!-- scope: package.json,package-lock.json,src/renderer/components/MarkdownReader.tsx,src/styles.css -->
+  - 验收要点：新增可复用 `MarkdownReader` 组件，使用明确的 Markdown 渲染方案渲染正文，支持标题、段落、列表、任务勾选项、引用、行内代码、代码块、表格和链接等常见计划内容。
+  - 验收要点：Markdown 中的原始 HTML 默认不执行脚本或危险事件；外部链接具备安全属性，避免引入 XSS 或 opener 风险。
+  - 验收要点：空 Markdown、纯空白 Markdown 和超长 Markdown 均有稳定展示，空内容显示“暂无计划正文”类提示。
+  - 验收要点：组件样式复用现有色彩、字号、圆角和阴影变量，代码块、表格和长链接在窄屏下不撑破布局。
+
+- [ ] P003: 增加 Plan 全文阅读入口 <!-- scope: src/renderer/components/PlanLists.tsx,src/styles.css -->
+  - 验收要点：每个正式 Plan 卡片在现有摘要信息旁新增“阅读全文”按钮或链接，按钮文案清晰且不会与任务执行按钮混淆。
+  - 验收要点：点击“阅读全文”后能打开对应 Plan 的全文阅读区域、抽屉或弹窗，并显示 Plan 文件路径、状态、更新时间和 Markdown 正文。
+  - 验收要点：阅读入口不改变 Plan 列表排序、任务完成数、耗时汇总、校验状态、哈希展示和已有搜索/过滤结果。
+  - 验收要点：同一列表中多个 Plan 的阅读状态互不串扰，关闭后再次打开能重新展示正确 Plan 内容。
+
+- [ ] P004: 接入工作区阅读状态与加载流程 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/PlanLists.tsx,src/renderer/types.ts -->
+  - 验收要点：工作区维护当前正在阅读的 Plan、加载中状态、读取错误和已加载正文，切换项目或离开工作区时清理阅读状态。
+  - 验收要点：读取过程中显示加载提示并禁用重复触发；读取成功后用 `MarkdownReader` 展示全文，读取失败时显示可恢复错误和重试入口。
+  - 验收要点：阅读面板支持关闭、重新打开、刷新读取内容，不影响需求/反馈提交、计划草稿保存、任务执行、停止任务和事件流刷新。
+  - 验收要点：若后台轮询刷新导致 Plan 状态或更新时间变化，阅读面板仍以当前打开的 Plan 为准，并能提示或支持重新读取最新正文。
+
+- [ ] P005: 完善可访问性与阅读体验 <!-- scope: src/renderer/components/MarkdownReader.tsx,src/renderer/components/PlanLists.tsx,src/styles.css -->
+  - 验收要点：全文阅读容器具备明确标题、关闭按钮、键盘可达焦点顺序和必要的 `aria-label` / `aria-modal` / `aria-live` 信息。
+  - 验收要点：阅读区域支持长文滚动，弹窗或抽屉不会遮挡关闭入口；宽屏与窄屏下正文、表格和代码块均可阅读。
+  - 验收要点：正文渲染保留 Markdown 层级和任务勾选视觉，Plan 任务行与 `scope` 注释在阅读时可完整查看。
+  - 验收要点：阅读模式只读，不提供会让用户误以为可编辑正式 Plan 的控件；计划草稿仍沿用现有编辑流程。
+
+- [ ] P006: 补充回归验证与构建检查 <!-- scope: scripts/smoke-test.js,src/main.js,src/preload.js,src/renderer/components/MarkdownReader.tsx,src/renderer/components/PlanLists.tsx,src/renderer/pages/WorkspacePage.tsx,src/styles.css -->
+  - 验收要点：补充或扩展 smoke 校验，覆盖读取存在的 Plan 文件、读取不存在的 Plan、项目隔离和路径越界保护等关键分支。
+  - 验收要点：`npm run check` 通过，确认 TypeScript、主进程脚本、预加载脚本和 smoke 脚本语法均无错误。
+  - 验收要点：`npm run build` 通过，确认 Markdown 阅读组件、依赖和样式可被 Vite 正常构建打包。
+  - 验收要点：手动验证至少一个已有 Plan 可以打开阅读全文，Markdown 标题、任务列表、代码块和长文本显示正常，关闭后列表恢复原状态。
+
+## 总体验收标准
+
+- 全文可读：用户能从工作区正式 Plan 列表打开任意当前项目 Plan 的完整 Markdown 正文，而不是只能看到摘要信息。
+- Markdown 渲染：正文通过专用 Markdown 组件渲染，标题、列表、任务勾选项、代码块、表格、引用和链接具备清晰可读的视觉样式。
+- 按需加载：Plan 全文通过用户点击后按需读取，不随 `snapshot()` 高频刷新批量传输长文本。
+- 安全隔离：读取文件仅限当前项目工作区内数据库记录对应的 Plan 文件，路径越界、文件缺失和读取失败均有明确错误提示。
+- 流程无回归：计划草稿编辑、确认加入任务系统、任务执行/停止、事件流刷新、搜索/过滤和项目切换保持原有行为。
+- 可访问性可用：阅读全文入口和阅读面板支持键盘访问、可关闭、可重试，窄屏下长文、表格和代码块不破坏布局。
+- 验证通过：完成实现后 `npm run check` 与 `npm run build` 均通过，关键读取场景和手动阅读场景验证通过。
+
+## 进度区
+
+- 2026-06-25 AutoPlan 生成：需求 #11 开发计划已创建，待执行。
+
+--- src/main.js ---
+const fs = require('node:fs');
+const path = require('node:path');
+const { app, BrowserWindow, ipcMain, Menu } = require('electron');
+const { saveAttachments } = require('./attachments');
+const { AppDatabase, nowIso } = require('./database');
+const { LoopService } = require('./loopService');
+const { updatePlanDraft } = require('./planDrafts');
+
+let mainWindow;
+let db;
+let loop;
+
+async function createApp() {
+  Menu.setApplicationMenu(null);
+  db = new AppDatabase(path.join(app.getPath('userData'), 'data', 'autoplan.sqlite'));
+  await db.init();
+  loop = new LoopService(db);
+  loop.on('update', (snapshot) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('loop:update', snapshot);
+    }
+  });
+
+  mainWindow = new BrowserWindow({
+    width: 1220,
+    height: 820,
+    minWidth: 980,
+    minHeight: 680,
+    icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  await loadRenderer(mainWindow);
+}
+
+app.whenReady().then(createApp);
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  if (loop) loop.stop();
+});
+
+ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+
+ipcMain.handle('projects:create', (_event, input = {}) => {
+  const now = nowIso();
+  const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+  const id = db.insert(
+    `INSERT INTO projects (name, workspace_path, description, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [name, input.workspacePath || '', input.description || '', now, now],
+  );
+  loop.ensureProjectState(id);
+  return loop.snapshot(id);
+});
+
+ipcMain.handle('projects:update', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const current = loop.project(projectId);
+  if (input.workspacePath !== undefined) {
+    loop.configure(projectId, { workspacePath: input.workspacePath });
+  }
+  db.run(
+    `UPDATE projects
+     SET name = ?, workspace_path = ?, description = ?, updated_at = ?
+     WHERE id = ?`,
+    [
+      String(input.name || current.name).trim(),
+      input.workspacePath ?? current.workspace_path,
+      input.description ?? current.description,
+      nowIso(),
+      projectId,
+    ],
+  );
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('projects:delete', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const state = loop.status(projectId);
+  if (state && state.running) throw new Error('请先停止该项目循环再删除');
+  loop.stop(projectId);
+  const taskIds = db
+    .all('SELECT id FROM plans WHERE project_id = ?', [projectId])
+    .map((row) => row.id);
+  for (const table of ['requirements', 'feedback', 'attachments', 'plan_drafts', 'events', 'scan_files']) {
+    db.run(`DELETE FROM ${table} WHERE project_id = ?`, [projectId]);
+  }
+  if (taskIds.length) {
+    const placeholders = taskIds.map(() => '?').join(',');
+    db.run(`DELETE FROM plan_tasks WHERE plan_id IN (${placeholders})`, taskIds);
+  }
+  db.run('DELETE FROM plans WHERE project_id = ?', [projectId]);
+  db.run('DELETE FROM project_states WHERE project_id = ?', [projectId]);
+  db.run('DELETE FROM projects WHERE id = ?', [projectId]);
+  return loop.snapshot(null);
+});
+
+ipcMain.handle('loop:configure', (_event, config = {}) => {
+  const projectId = requiredProjectId(config);
+  loop.configure(projectId, config);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('loop:start', (_event, input = {}) => {
+  requireManualAction(input, '启动循环');
+  const projectId = requiredProjectId(input);
+  loop.start(projectId);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('loop:stop', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  loop.stop(projectId);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('loop:runOnce', async (_event, input = {}) => {
+  requireManualAction(input, '单轮执行');
+  const projectId = requiredProjectId(input);
+  await loop.runOnce(projectId);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('tasks:run', async (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  await loop.runTask(projectId, requiredRecordId(input, 'taskId'));
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('tasks:stop', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  loop.stopTask(projectId, requiredRecordId(input, 'taskId'));
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('requirements:create', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const now = nowIso();
+  const id = db.insert(
+    `INSERT INTO requirements (project_id, title, body, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [projectId, titleFromBody(input.body, '未命名需求'), input.body || '', input.status || 'open', now, now],
+  );
+  saveAttachments(db, attachmentsRoot(), 'requirement', id, input.attachments, projectId);
+  // 计划生成交给循环扫描（runOnce）自动处理，不再走草稿中间态
+  loop.addEvent(projectId, 'requirement.created', `需求 #${id} 已创建，等待循环扫描生成计划`);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('requirements:update', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const id = requiredRecordId(input);
+  const current = db.get('SELECT * FROM requirements WHERE id = ? AND project_id = ?', [id, projectId]);
+  if (!current) throw new Error('需求不存在');
+  const body = input.body ?? current.body ?? '';
+  db.run(
+    `UPDATE requirements SET title = ?, body = ?, status = ?, updated_at = ? WHERE id = ? AND project_id = ?`,
+    [
+      input.title ?? titleFromBody(body, '未命名需求'),
+      body,
+      input.status ?? current.status ?? 'open',
+      nowIso(),
+      id,
+      projectId,
+    ],
+  );
+  saveAttachments(db, attachmentsRoot(), 'requirement', id, input.attachments, projectId);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('requirements:delete', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const id = requiredRecordId(input);
+  const rec = db.get('SELECT linked_plan_id FROM requirements WHERE id = ? AND project_id = ?', [id, projectId]);
+  if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+  deleteIntakeRecord('requirements', 'requirement', projectId, id);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('feedback:create', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const now = nowIso();
+  const id = db.insert(
+    `INSERT INTO feedback (project_id, requirement_id, title, body, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      projectId,
+      input.requirementId || null,
+      titleFromBody(input.body, '未命名反馈'),
+      input.body || '',
+      input.status || 'open',
+      now,
+      now,
+    ],
+  );
+  saveAttachments(db, attachmentsRoot(), 'feedback', id, input.attachments, projectId);
+  // 计划生成交给循环扫描（runOnce）自动处理，不再走草稿中间态
+  loop.addEvent(projectId, 'feedback.created', `反馈 #${id} 已创建，等待循环扫描生成计划`);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('feedback:update', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const id = requiredRecordId(input);
+  const current = db.get('SELECT * FROM feedback WHERE id = ? AND project_id = ?', [id, projectId]);
+  if (!current) throw new Error('反馈不存在');
+  const body = input.body ?? current.body ?? '';
+  db.run(
+    `UPDATE feedback
+     SET requirement_id = ?, title = ?, body = ?, status = ?, updated_at = ?
+     WHERE id = ? AND project_id = ?`,
+    [
+      input.requirementId === undefined ? current.requirement_id || null : input.requirementId || null,
+      input.title ?? titleFromBody(body, '未命名反馈'),
+      body,
+      input.status ?? current.status ?? 'open',
+      nowIso(),
+      id,
+      projectId,
+    ],
+  );
+  saveAttachments(db, attachmentsRoot(), 'feedback', id, input.attachments, projectId);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('feedback:delete', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const id = requiredRecordId(input);
+  const rec = db.get('SELECT linked_plan_id FROM feedback WHERE id = ? AND project_id = ?', [id, projectId]);
+  if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+  deleteIntakeRecord('feedback', 'feedback', projectId, id);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('planDrafts:update', (_event, input = {}) => {
+  updatePlanDraft(db, input.id, input.markdown);
+  const draft = db.get('SELECT project_id FROM plan_drafts WHERE id = ?', [input.id]);
+  return loop.snapshot(draft?.project_id || null);
+});
+
+// 中断需求/反馈关联的计划任务
+ipcMain.handle('intake:interrupt', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const table = input.type === 'feedback' ? 'feedback' : 'requirements';
+  const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+    requiredRecordId(input),
+    projectId,
+  ]);
+  if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+  return loop.snapshot(projectId);
+});
+
+// 恢复被中断的计划
+ipcMain.handle('intake:resume', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const table = input.type === 'feedback' ? 'feedback' : 'requirements';
+  const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+    requiredRecordId(input),
+    projectId,
+  ]);
+  if (rec?.linked_plan_id) loop.resumePlan(projectId, rec.linked_plan_id);
+  return loop.snapshot(projectId);
+});
+
+// 追加任务到需求/反馈关联的计划
+ipcMain.handle('intake:appendTask', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const table = input.type === 'feedback' ? 'feedback' : 'requirements';
+  const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+    requiredRecordId(input),
+    projectId,
+  ]);
+  if (!rec?.linked_plan_id) throw new Error('该需求/反馈尚未生成计划');
+  loop.appendTask(projectId, rec.linked_plan_id, input.title);
+  return loop.snapshot(projectId);
+});
+
+function attachmentsRoot() {
+  return path.join(app.getPath('userData'), 'data', 'attachments');
+}
+
+function loadRenderer(window) {
+  const devServerUrl = process.env.ELECTRON_RENDERER_URL;
+  if (devServerUrl) return window.loadURL(devServerUrl);
+
+  const builtIndex = path.join(__dirname, '..', 'dist', 'index.html');
+  if (!fs.existsSync(builtIndex)) {
+    throw new Error('Renderer build not found. Run npm run dev or npm run build first.');
+  }
+  return window.loadFile(builtIndex);
+}
+
+function requiredProjectId(input = {}) {
+  const projectId = Number(input.projectId || input.id || 0);
+  if (!projectId || !loop.project(projectId)) throw new Error('项目不存在');
+  return projectId;
+}
+
+function requireManualAction(input = {}, label = '操作') {
+  if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+}
+
+function requiredRecordId(input = {}, key = 'id') {
+  const id = Number(input[key] || input.id || 0);
+  if (!id) throw new Error('记录不存在');
+  return id;
+}
+
+function deleteIntakeRecord(table, ownerType, projectId, id) {
+  const current = db.get(`SELECT id FROM ${table} WHERE id = ? AND project_id = ?`, [id, projectId]);
+  if (!current) throw new Error('记录不存在');
+
+  if (ownerType === 'requirement') {
+    db.run('UPDATE feedback SET requirement_id = NULL, updated_at = ? WHERE project_id = ? AND requirement_id = ?', [
+      nowIso(),
+      projectId,
+      id,
+    ]);
+  }
+
+  db.run('DELETE FROM attachments WHERE project_id = ? AND owner_type = ? AND owner_id = ?', [projectId, ownerType, id]);
+  db.run('DELETE FROM plan_drafts WHERE project_id = ? AND source_type = ? AND source_id = ?', [projectId, ownerType, id]);
+  db.run(`DELETE FROM ${table} WHERE id = ? AND project_id = ?`, [id, projectId]);
+}
+
+function titleFromBody(body, fallback) {
+  const firstLine = String(body || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  return firstLine ? firstLine.slice(0, 80) : fallback;
+}
+
+--- src/preload.js ---
+const { pathToFileURL } = require('node:url');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
+
+contextBridge.exposeInMainWorld('autoplan', {
+  snapshot: (projectId) => ipcRenderer.invoke('snapshot', { projectId }),
+  createProject: (input) => ipcRenderer.invoke('projects:create', input),
+  updateProject: (input) => ipcRenderer.invoke('projects:update', input),
+  deleteProject: (input) => ipcRenderer.invoke('projects:delete', input),
+  configureLoop: (config) => ipcRenderer.invoke('loop:configure', config),
+  startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+  stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+  runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
+  runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+  stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+  createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+  updateRequirement: (input) => ipcRenderer.invoke('requirements:update', input),
+  deleteRequirement: (input) => ipcRenderer.invoke('requirements:delete', input),
+  createFeedback: (input) => ipcRenderer.invoke('feedback:create', input),
+  updateFeedback: (input) => ipcRenderer.invoke('feedback:update', input),
+  deleteFeedback: (input) => ipcRenderer.invoke('feedback:delete', input),
+  updatePlanDraft: (input) => ipcRenderer.invoke('planDrafts:update', input),
+  interruptIntake: (input) => ipcRenderer.invoke('intake:interrupt', input),
+  resumeIntake: (input) => ipcRenderer.invoke('intake:resume', input),
+  appendIntakeTask: (input) => ipcRenderer.invoke('intake:appendTask', input),
+  getDroppedFilePath: (file) => webUtils.getPathForFile(file),
+  toFileUrl: (filePath) => pathToFileURL(filePath).toString(),
+  onLoopUpdate: (handler) => {
+    const listener = (_event, snapshot) => handler(snapshot);
+    ipcRenderer.on('loop:update', listener);
+    return () => ipcRenderer.removeListener('loop:update', listener);
+  },
+});
+
+--- src/renderer/types.ts ---
+export type IntakeType = 'requirement' | 'feedback';
+export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'tasks' | 'events';
+
+export const WORKSPACE_SEARCH_SOURCE_TYPES = {
+  REQUIREMENT: 'requirement',
+  FEEDBACK: 'feedback',
+  PLAN_DRAFT: 'planDraft',
+  PLAN: 'plan',
+  TASK: 'task',
+  EVENT: 'event',
+} as const;
+
+export type WorkspaceSearchSourceType =
+  (typeof WORKSPACE_SEARCH_SOURCE_TYPES)[keyof typeof WORKSPACE_SEARCH_SOURCE_TYPES];
+
+export const WORKSPACE_SEARCH_HIT_FIELDS = {
+  TITLE: 'title',
+  BODY: 'body',
+  STATUS: 'status',
+  MARKDOWN: 'markdown',
+  FILE_PATH: 'filePath',
+  SOURCE_PATH: 'sourcePath',
+  TASK_KEY: 'taskKey',
+  SCOPE: 'scope',
+  RAW_LINE: 'rawLine',
+  EVENT_TYPE: 'eventType',
+  EVENT_MESSAGE: 'eventMessage',
+  EVENT_META: 'eventMeta',
+} as const;
+
+export type WorkspaceSearchHitField =
+  (typeof WORKSPACE_SEARCH_HIT_FIELDS)[keyof typeof WORKSPACE_SEARCH_HIT_FIELDS];
+
+export interface WorkspaceSearchQuery {
+  raw: string;
+  normalized: string;
+  terms: string[];
+  isEmpty: boolean;
+}
+
+export interface WorkspaceSearchSourceConfig {
+  type: WorkspaceSearchSourceType;
+  label: string;
+  targetTab: WorkspaceTab;
+}
+
+export interface WorkspaceSearchMatch {
+  field: WorkspaceSearchHitField;
+  label: string;
+  value: string;
+  snippet?: string;
+}
+
+export interface WorkspaceSearchResult {
+  id: string;
+  source: WorkspaceSearchSourceType;
+  targetTab: WorkspaceTab;
+  recordId: number;
+  title: string;
+  summary: string;
+  status: string | null;
+  updatedAt: string;
+  matches: WorkspaceSearchMatch[];
+}
+
+export interface WorkspaceSearchGroup {
+  source: WorkspaceSearchSourceType;
+  label: string;
+  targetTab: WorkspaceTab;
+  count: number;
+  results: WorkspaceSearchResult[];
+}
+
+export interface WorkspaceSearchState {
+  query: WorkspaceSearchQuery;
+  total: number;
+  results: WorkspaceSearchResult[];
+  groups: WorkspaceSearchGroup[];
+}
+
+export interface Project {
+  id: number;
+  name: string;
+  workspace_path: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+  running?: number;
+  phase?: string;
+  interval_seconds?: number;
+  validation_command?: string;
+}
+
+export interface ProjectState {
+  project_id: number;
+  running: number;
+  phase: string;
+  interval_seconds: number;
+  validation_command: string;
+  last_issue_hash?: string | null;
+  last_error?: string | null;
+  updated_at: string;
+  /** 由 snapshot 合并自 project.workspace_path */
+  workspace_path?: string;
+}
+
+export interface Requirement {
+  id: number;
+  project_id: number;
+  title: string;
+  body: string;
+  status: string;
+  source_path?: string | null;
+  source_hash?: string | null;
+  linked_plan_id?: number | null;
+  plan_status?: string | null;
+  plan_completed?: number | null;
+  plan_total?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Feedback {
+  id: number;
+  project_id: number;
+  requirement_id?: number | null;
+  title: string;
+  body: string;
+  status: string;
+  linked_plan_id?: number | null;
+  plan_status?: string | null;
+  plan_completed?: number | null;
+  plan_total?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Attachment {
+  id: number;
+  project_id: number;
+  owner_type: IntakeType;
+  owner_id: number;
+  original_name: string;
+  stored_path: string;
+  mime_type?: string | null;
+  size: number;
+  hash: string;
+  created_at: string;
+}
+
+export interface PlanDraft {
+  id: number;
+  project_id: number;
+  source_type: IntakeType;
+  source_id: number;
+  markdown: string;
+  status: string;
+  linked_plan_id?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Plan {
+  id: number;
+  project_id: number;
+  issue_hash: string;
+  file_path: string;
+  hash: string;
+  status: string;
+  total_tasks: number;
+  completed_tasks: number;
+  validation_passed: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlanTask {
+  id: number;
+  plan_id: number;
+  task_key: string;
+  title: string;
+  raw_line: string;
+  scope: string;
+  status: string;
+  sort_order: number;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number;
+  codex_session_id: string | null;
+  updated_at: string;
+  /** JOIN plans 得到 */
+  file_path: string;
+}
+
+export const TASK_EVENT_TYPES = {
+  STARTED: 'task.started',
+  SUCCEEDED: 'task.succeeded',
+  FAILED: 'task.failed',
+  STOP_REQUESTED: 'task.stop.requested',
+  STOPPED: 'task.stopped',
+  INTERRUPTED: 'task.interrupted',
+} as const;
+
+export const LEGACY_TASK_EVENT_TYPES = {
+  EXECUTED: 'task.executed',
+  STOPPING: 'task.stopping',
+} as const;
+
+export const TASK_EVENT_STATUS = {
+  PENDING: 'pending',
+  RUNNING: 'running',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+  STOPPING: 'stopping',
+  STOPPED: 'stopped',
+  INTERRUPTED: 'interrupted',
+} as const;
+
+export type TaskEventType = (typeof TASK_EVENT_TYPES)[keyof typeof TASK_EVENT_TYPES];
+export type LegacyTaskEventType = (typeof LEGACY_TASK_EVENT_TYPES)[keyof typeof LEGACY_TASK_EVENT_TYPES];
+export type TaskEventStatus = (typeof TASK_EVENT_STATUS)[keyof typeof TASK_EVENT_STATUS];
+
+export interface TaskEventSemantics {
+  status: TaskEventStatus;
+  label: string;
+}
+
+export const TASK_EVENT_SEMANTICS: Record<TaskEventType, TaskEventSemantics> = {
+  [TASK_EVENT_TYPES.STARTED]: { status: TASK_EVENT_STATUS.RUNNING, label: '开始了任务' },
+  [TASK_EVENT_TYPES.SUCCEEDED]: { status: TASK_EVENT_STATUS.COMPLETED, label: '结束了任务' },
+  [TASK_EVENT_TYPES.FAILED]: { status: TASK_EVENT_STATUS.FAILED, label: '任务失败' },
+  [TASK_EVENT_TYPES.STOP_REQUESTED]: { status: TASK_EVENT_STATUS.STOPPING, label: '请求停止任务' },
+  [TASK_EVENT_TYPES.STOPPED]: { status: TASK_EVENT_STATUS.STOPPED, label: '已停止任务' },
+  [TASK_EVENT_TYPES.INTERRUPTED]: { status: TASK_EVENT_STATUS.INTERRUPTED, label: '已中断任务' },
+};
+
+export const TASK_EVENT_COMPATIBILITY: Record<LegacyTaskEventType, TaskEventType> = {
+  [LEGACY_TASK_EVENT_TYPES.EXECUTED]: TASK_EVENT_TYPES.SUCCEEDED,
+  [LEGACY_TASK_EVENT_TYPES.STOPPING]: TASK_EVENT_TYPES.STOPPED,
+};
+
+export interface TaskEventMeta {
+  taskId?: number | null;
+  taskKey?: string | null;
+  taskTitle?: string | null;
+  planId?: number | null;
+  status?: TaskEventStatus | string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  exitCode?: number | null;
+  log?: string | null;
+  error?: string | null;
+  [key: string]: unknown;
+}
+
+export type AppEventStructuredMeta = TaskEventMeta | Record<string, unknown>;
+export type AppEventMeta = string | AppEventStructuredMeta;
+
+export interface AppEvent<TMeta extends AppEventMeta | null = string | null> {
+  id: number;
+  project_id: number;
+  type: string;
+  message: string;
+  meta?: TMeta;
+  created_at: string;
+}
+
+export interface ScanFile {
+  project_id: number;
+  scan_type: string;
+  file_path: string;
+  hash: string;
+  size: number;
+  modified_at: string;
+  scanned_at: string;
+}
+
+export interface AppSnapshot {
+  activeProjectId: number | null;
+  activeProject: Project | null;
+  projects: Project[];
+  state: ProjectState | null;
+  requirements: Requirement[];
+  feedback: Feedback[];
+  attachments: Attachment[];
+  planDrafts: PlanDraft[];
+  plans: Plan[];
+  tasks: PlanTask[];
+  events: AppEvent[];
+  scans: ScanFile[];
+  activeOperation: ActiveOperation | null;
+  activeOperations: ActiveOperation[];
+  lastOperation: ActiveOperation | null;
+}
+
+export interface ActivityLine {
+  role: string;
+  text: string;
+  at: string;
+}
+
+export interface ActiveOperation {
+  label: string;
+  projectId: number | null;
+  planId: number | null;
+  taskId: number | null;
+  startedAt: string | null;
+  finishedAt?: string | null;
+  exitCode?: number | null;
+  logTail: string;
+  activity: ActivityLine[];
+}
+
+export interface PendingAttachment {
+  path: string;
+  name: string;
+  size: number;
+  type: string;
+}
+
+export interface CreateIntakeInput {
+  projectId: number;
+  body: string;
+  attachments: PendingAttachment[];
+  title?: string;
+  status?: string;
+  autoRun?: boolean;
+  requirementId?: number | null;
+}
+
+export interface CreateProjectInput {
+  name: string;
+  workspacePath: string;
+  description?: string;
+}
+
+export interface UpdateProjectInput extends CreateProjectInput {
+  id: number;
+}
+
+export interface LoopConfigInput {
+  projectId: number;
+  workspacePath?: string;
+  intervalSeconds?: number;
+  validationCommand?: string;
+}
+
+export interface ProjectIdInput {
+  projectId: number;
+  manual?: boolean;
+}
+
+export interface RecordIdInput extends ProjectIdInput {
+  id: number;
+}
+
+export interface TaskIdInput extends ProjectIdInput {
+  taskId: number;
+}
+
+export interface IntakeActionInput extends ProjectIdInput {
+  type: IntakeType;
+  id: number;
+  title?: string;
+}
+
+export interface UpdateRequirementInput extends RecordIdInput {
+  title?: string;
+  body?: string;
+  status?: string;
+  attachments?: PendingAttachment[];
+}
+
+export interface UpdateFeedbackInput extends UpdateRequirementInput {
+  requirementId?: number | null;
+}
+
+export interface AutoplanApi {
+  snapshot: (projectId?: number | null) => Promise<AppSnapshot>;
+  createProject: (input: CreateProjectInput) => Promise<AppSnapshot>;
+  updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+  deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+  stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+  createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+  updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+  deleteRequirement: (input: RecordIdInput) => Promise<AppSnapshot>;
+  createFeedback: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+  updateFeedback: (input: UpdateFeedbackInput) => Promise<AppSnapshot>;
+  deleteFeedback: (input: RecordIdInput) => Promise<AppSnapshot>;
+  updatePlanDraft: (input: { id: number; markdown: string }) => Promise<AppSnapshot>;
+  interruptIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  resumeIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  appendIntakeTask: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  getDroppedFilePath: (file: File) => string;
+  toFileUrl: (filePath: string) => string;
+  onLoopUpdate: (handler: (snapshot: AppSnapshot) => void) => () => void;
+}
+
+declare global {
+  interface Window {
+    autoplan: AutoplanApi;
+  }
+}
+
+
+codex
+计划要求明确了；现在只在三个 scope 文件里定位已有 IPC 和 Plan 数据结构。
+  ✓ 确认 P001 接口要求
+  → 检查现有 IPC 约定
+  • 实现读取接口声明
+  • 做最小语法核对
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); rg -n "ipcMain'"\\.handle|plans|plan|file_path|workspace_path|snapshot|contextBridge|invoke\\(|AutoplanApi|interface Plan|type Plan\" src/main.js src/preload.js src/renderer/types.ts" in D:\project\GitHub\autoplan
+ succeeded in 165ms:
+src/renderer/types.ts:7:  PLAN_DRAFT: 'planDraft',
+src/renderer/types.ts:8:  PLAN: 'plan',
+src/renderer/types.ts:84:  workspace_path: string;
+src/renderer/types.ts:103:  /** 由 snapshot 合并自 project.workspace_path */
+src/renderer/types.ts:104:  workspace_path?: string;
+src/renderer/types.ts:115:  linked_plan_id?: number | null;
+src/renderer/types.ts:116:  plan_status?: string | null;
+src/renderer/types.ts:117:  plan_completed?: number | null;
+src/renderer/types.ts:118:  plan_total?: number | null;
+src/renderer/types.ts:130:  linked_plan_id?: number | null;
+src/renderer/types.ts:131:  plan_status?: string | null;
+src/renderer/types.ts:132:  plan_completed?: number | null;
+src/renderer/types.ts:133:  plan_total?: number | null;
+src/renderer/types.ts:151:export interface PlanDraft {
+src/renderer/types.ts:158:  linked_plan_id?: number | null;
+src/renderer/types.ts:163:export interface Plan {
+src/renderer/types.ts:167:  file_path: string;
+src/renderer/types.ts:177:export interface PlanTask {
+src/renderer/types.ts:179:  plan_id: number;
+src/renderer/types.ts:191:  /** JOIN plans 得到 */
+src/renderer/types.ts:192:  file_path: string;
+src/renderer/types.ts:246:  planId?: number | null;
+src/renderer/types.ts:271:  file_path: string;
+src/renderer/types.ts:286:  planDrafts: PlanDraft[];
+src/renderer/types.ts:287:  plans: Plan[];
+src/renderer/types.ts:305:  planId: number | null;
+src/renderer/types.ts:378:export interface AutoplanApi {
+src/renderer/types.ts:379:  snapshot: (projectId?: number | null) => Promise<AppSnapshot>;
+src/renderer/types.ts:401:  onLoopUpdate: (handler: (snapshot: AppSnapshot) => void) => () => void;
+src/renderer/types.ts:406:    autoplan: AutoplanApi;
+src/preload.js:2:const { contextBridge, ipcRenderer, webUtils } = require('electron');
+src/preload.js:4:contextBridge.exposeInMainWorld('autoplan', {
+src/preload.js:5:  snapshot: (projectId) => ipcRenderer.invoke('snapshot', { projectId }),
+src/preload.js:6:  createProject: (input) => ipcRenderer.invoke('projects:create', input),
+src/preload.js:7:  updateProject: (input) => ipcRenderer.invoke('projects:update', input),
+src/preload.js:8:  deleteProject: (input) => ipcRenderer.invoke('projects:delete', input),
+src/preload.js:9:  configureLoop: (config) => ipcRenderer.invoke('loop:configure', config),
+src/preload.js:10:  startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+src/preload.js:11:  stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+src/preload.js:12:  runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
+src/preload.js:13:  runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+src/preload.js:14:  stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+src/preload.js:15:  createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+src/preload.js:16:  updateRequirement: (input) => ipcRenderer.invoke('requirements:update', input),
+src/preload.js:17:  deleteRequirement: (input) => ipcRenderer.invoke('requirements:delete', input),
+src/preload.js:18:  createFeedback: (input) => ipcRenderer.invoke('feedback:create', input),
+src/preload.js:19:  updateFeedback: (input) => ipcRenderer.invoke('feedback:update', input),
+src/preload.js:20:  deleteFeedback: (input) => ipcRenderer.invoke('feedback:delete', input),
+src/preload.js:21:  updatePlanDraft: (input) => ipcRenderer.invoke('planDrafts:update', input),
+src/preload.js:22:  interruptIntake: (input) => ipcRenderer.invoke('intake:interrupt', input),
+src/preload.js:23:  resumeIntake: (input) => ipcRenderer.invoke('intake:resume', input),
+src/preload.js:24:  appendIntakeTask: (input) => ipcRenderer.invoke('intake:appendTask', input),
+src/preload.js:28:    const listener = (_event, snapshot) => handler(snapshot);
+src/main.js:7:const { updatePlanDraft } = require('./planDrafts');
+src/main.js:15:  db = new AppDatabase(path.join(app.getPath('userData'), 'data', 'autoplan.sqlite'));
+src/main.js:18:  loop.on('update', (snapshot) => {
+src/main.js:20:      mainWindow.webContents.send('loop:update', snapshot);
+src/main.js:50:ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+src/main.js:52:ipcMain.handle('projects:create', (_event, input = {}) => {
+src/main.js:56:    `INSERT INTO projects (name, workspace_path, description, created_at, updated_at)
+src/main.js:61:  return loop.snapshot(id);
+src/main.js:64:ipcMain.handle('projects:update', (_event, input = {}) => {
+src/main.js:72:     SET name = ?, workspace_path = ?, description = ?, updated_at = ?
+src/main.js:76:      input.workspacePath ?? current.workspace_path,
+src/main.js:82:  return loop.snapshot(projectId);
+src/main.js:85:ipcMain.handle('projects:delete', (_event, input = {}) => {
+src/main.js:91:    .all('SELECT id FROM plans WHERE project_id = ?', [projectId])
+src/main.js:93:  for (const table of ['requirements', 'feedback', 'attachments', 'plan_drafts', 'events', 'scan_files']) {
+src/main.js:98:    db.run(`DELETE FROM plan_tasks WHERE plan_id IN (${placeholders})`, taskIds);
+src/main.js:100:  db.run('DELETE FROM plans WHERE project_id = ?', [projectId]);
+src/main.js:103:  return loop.snapshot(null);
+src/main.js:106:ipcMain.handle('loop:configure', (_event, config = {}) => {
+src/main.js:109:  return loop.snapshot(projectId);
+src/main.js:112:ipcMain.handle('loop:start', (_event, input = {}) => {
+src/main.js:116:  return loop.snapshot(projectId);
+src/main.js:119:ipcMain.handle('loop:stop', (_event, input = {}) => {
+src/main.js:122:  return loop.snapshot(projectId);
+src/main.js:125:ipcMain.handle('loop:runOnce', async (_event, input = {}) => {
+src/main.js:129:  return loop.snapshot(projectId);
+src/main.js:132:ipcMain.handle('tasks:run', async (_event, input = {}) => {
+src/main.js:135:  return loop.snapshot(projectId);
+src/main.js:138:ipcMain.handle('tasks:stop', (_event, input = {}) => {
+src/main.js:141:  return loop.snapshot(projectId);
+src/main.js:144:ipcMain.handle('requirements:create', (_event, input = {}) => {
+src/main.js:155:  return loop.snapshot(projectId);
+src/main.js:158:ipcMain.handle('requirements:update', (_event, input = {}) => {
+src/main.js:176:  return loop.snapshot(projectId);
+src/main.js:179:ipcMain.handle('requirements:delete', (_event, input = {}) => {
+src/main.js:182:  const rec = db.get('SELECT linked_plan_id FROM requirements WHERE id = ? AND project_id = ?', [id, projectId]);
+src/main.js:183:  if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+src/main.js:185:  return loop.snapshot(projectId);
+src/main.js:188:ipcMain.handle('feedback:create', (_event, input = {}) => {
+src/main.js:207:  return loop.snapshot(projectId);
+src/main.js:210:ipcMain.handle('feedback:update', (_event, input = {}) => {
+src/main.js:231:  return loop.snapshot(projectId);
+src/main.js:234:ipcMain.handle('feedback:delete', (_event, input = {}) => {
+src/main.js:237:  const rec = db.get('SELECT linked_plan_id FROM feedback WHERE id = ? AND project_id = ?', [id, projectId]);
+src/main.js:238:  if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+src/main.js:240:  return loop.snapshot(projectId);
+src/main.js:243:ipcMain.handle('planDrafts:update', (_event, input = {}) => {
+src/main.js:245:  const draft = db.get('SELECT project_id FROM plan_drafts WHERE id = ?', [input.id]);
+src/main.js:246:  return loop.snapshot(draft?.project_id || null);
+src/main.js:250:ipcMain.handle('intake:interrupt', (_event, input = {}) => {
+src/main.js:253:  const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+src/main.js:257:  if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+src/main.js:258:  return loop.snapshot(projectId);
+src/main.js:262:ipcMain.handle('intake:resume', (_event, input = {}) => {
+src/main.js:265:  const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+src/main.js:269:  if (rec?.linked_plan_id) loop.resumePlan(projectId, rec.linked_plan_id);
+src/main.js:270:  return loop.snapshot(projectId);
+src/main.js:274:ipcMain.handle('intake:appendTask', (_event, input = {}) => {
+src/main.js:277:  const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+src/main.js:281:  if (!rec?.linked_plan_id) throw new Error('该需求/反馈尚未生成计划');
+src/main.js:282:  loop.appendTask(projectId, rec.linked_plan_id, input.title);
+src/main.js:283:  return loop.snapshot(projectId);
+src/main.js:330:  db.run('DELETE FROM plan_drafts WHERE project_id = ? AND source_type = ? AND source_id = ?', [projectId, ownerType, id]);
+
+**Inspecting main.js for details**
+
+I’m thinking about inspecting main.js, which has around 350 lines total. Hopefully, 330 lines will provide enough detail without being too overwhelming. It seems helpful to read it with line numbers so I can follow along easily. I also want to pay close attention to the imports and helper functions since those will be important for understanding the code's structure and functionality. Let’s proceed with that in mind!
+codex
+找到了 IPC 集中区，接下来查看主进程辅助函数和类型定义细节。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $i=0; Get-Content -LiteralPath '"'src\\main.js' -Encoding UTF8 | ForEach-Object { "'$i++; if ($i -le 380) { '"'{0,4}: {1}' -f "'$i, $_ } }; '"'--- types excerpt ---'; "'$i=0; Get-Content -LiteralPath '"'src\\renderer\\types.ts' -Encoding UTF8 | ForEach-Object { "'$i++; if (($i -ge 70 -and $i -le 210) -or ($i -ge 360 -and $i -le 410)) { '"'{0,4}: {1}' -f "'$i, $_ } }; '"'--- preload ---'; "'$i=0; Get-Content -LiteralPath '"'src\\preload.js' -Encoding UTF8 | ForEach-Object { "'$i++; '"'{0,4}: {1}' -f "'$i, $_ }' in D:\project\GitHub\autoplan
+ succeeded in 236ms:
+   1: const fs = require('node:fs');
+   2: const path = require('node:path');
+   3: const { app, BrowserWindow, ipcMain, Menu } = require('electron');
+   4: const { saveAttachments } = require('./attachments');
+   5: const { AppDatabase, nowIso } = require('./database');
+   6: const { LoopService } = require('./loopService');
+   7: const { updatePlanDraft } = require('./planDrafts');
+   8: 
+   9: let mainWindow;
+  10: let db;
+  11: let loop;
+  12: 
+  13: async function createApp() {
+  14:   Menu.setApplicationMenu(null);
+  15:   db = new AppDatabase(path.join(app.getPath('userData'), 'data', 'autoplan.sqlite'));
+  16:   await db.init();
+  17:   loop = new LoopService(db);
+  18:   loop.on('update', (snapshot) => {
+  19:     if (mainWindow && !mainWindow.isDestroyed()) {
+  20:       mainWindow.webContents.send('loop:update', snapshot);
+  21:     }
+  22:   });
+  23: 
+  24:   mainWindow = new BrowserWindow({
+  25:     width: 1220,
+  26:     height: 820,
+  27:     minWidth: 980,
+  28:     minHeight: 680,
+  29:     icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
+  30:     autoHideMenuBar: true,
+  31:     webPreferences: {
+  32:       preload: path.join(__dirname, 'preload.js'),
+  33:       contextIsolation: true,
+  34:       nodeIntegration: false,
+  35:     },
+  36:   });
+  37:   await loadRenderer(mainWindow);
+  38: }
+  39: 
+  40: app.whenReady().then(createApp);
+  41: 
+  42: app.on('window-all-closed', () => {
+  43:   if (process.platform !== 'darwin') app.quit();
+  44: });
+  45: 
+  46: app.on('before-quit', () => {
+  47:   if (loop) loop.stop();
+  48: });
+  49: 
+  50: ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+  51: 
+  52: ipcMain.handle('projects:create', (_event, input = {}) => {
+  53:   const now = nowIso();
+  54:   const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+  55:   const id = db.insert(
+  56:     `INSERT INTO projects (name, workspace_path, description, created_at, updated_at)
+  57:      VALUES (?, ?, ?, ?, ?)`,
+  58:     [name, input.workspacePath || '', input.description || '', now, now],
+  59:   );
+  60:   loop.ensureProjectState(id);
+  61:   return loop.snapshot(id);
+  62: });
+  63: 
+  64: ipcMain.handle('projects:update', (_event, input = {}) => {
+  65:   const projectId = requiredProjectId(input);
+  66:   const current = loop.project(projectId);
+  67:   if (input.workspacePath !== undefined) {
+  68:     loop.configure(projectId, { workspacePath: input.workspacePath });
+  69:   }
+  70:   db.run(
+  71:     `UPDATE projects
+  72:      SET name = ?, workspace_path = ?, description = ?, updated_at = ?
+  73:      WHERE id = ?`,
+  74:     [
+  75:       String(input.name || current.name).trim(),
+  76:       input.workspacePath ?? current.workspace_path,
+  77:       input.description ?? current.description,
+  78:       nowIso(),
+  79:       projectId,
+  80:     ],
+  81:   );
+  82:   return loop.snapshot(projectId);
+  83: });
+  84: 
+  85: ipcMain.handle('projects:delete', (_event, input = {}) => {
+  86:   const projectId = requiredProjectId(input);
+  87:   const state = loop.status(projectId);
+  88:   if (state && state.running) throw new Error('请先停止该项目循环再删除');
+  89:   loop.stop(projectId);
+  90:   const taskIds = db
+  91:     .all('SELECT id FROM plans WHERE project_id = ?', [projectId])
+  92:     .map((row) => row.id);
+  93:   for (const table of ['requirements', 'feedback', 'attachments', 'plan_drafts', 'events', 'scan_files']) {
+  94:     db.run(`DELETE FROM ${table} WHERE project_id = ?`, [projectId]);
+  95:   }
+  96:   if (taskIds.length) {
+  97:     const placeholders = taskIds.map(() => '?').join(',');
+  98:     db.run(`DELETE FROM plan_tasks WHERE plan_id IN (${placeholders})`, taskIds);
+  99:   }
+ 100:   db.run('DELETE FROM plans WHERE project_id = ?', [projectId]);
+ 101:   db.run('DELETE FROM project_states WHERE project_id = ?', [projectId]);
+ 102:   db.run('DELETE FROM projects WHERE id = ?', [projectId]);
+ 103:   return loop.snapshot(null);
+ 104: });
+ 105: 
+ 106: ipcMain.handle('loop:configure', (_event, config = {}) => {
+ 107:   const projectId = requiredProjectId(config);
+ 108:   loop.configure(projectId, config);
+ 109:   return loop.snapshot(projectId);
+ 110: });
+ 111: 
+ 112: ipcMain.handle('loop:start', (_event, input = {}) => {
+ 113:   requireManualAction(input, '启动循环');
+ 114:   const projectId = requiredProjectId(input);
+ 115:   loop.start(projectId);
+ 116:   return loop.snapshot(projectId);
+ 117: });
+ 118: 
+ 119: ipcMain.handle('loop:stop', (_event, input = {}) => {
+ 120:   const projectId = requiredProjectId(input);
+ 121:   loop.stop(projectId);
+ 122:   return loop.snapshot(projectId);
+ 123: });
+ 124: 
+ 125: ipcMain.handle('loop:runOnce', async (_event, input = {}) => {
+ 126:   requireManualAction(input, '单轮执行');
+ 127:   const projectId = requiredProjectId(input);
+ 128:   await loop.runOnce(projectId);
+ 129:   return loop.snapshot(projectId);
+ 130: });
+ 131: 
+ 132: ipcMain.handle('tasks:run', async (_event, input = {}) => {
+ 133:   const projectId = requiredProjectId(input);
+ 134:   await loop.runTask(projectId, requiredRecordId(input, 'taskId'));
+ 135:   return loop.snapshot(projectId);
+ 136: });
+ 137: 
+ 138: ipcMain.handle('tasks:stop', (_event, input = {}) => {
+ 139:   const projectId = requiredProjectId(input);
+ 140:   loop.stopTask(projectId, requiredRecordId(input, 'taskId'));
+ 141:   return loop.snapshot(projectId);
+ 142: });
+ 143: 
+ 144: ipcMain.handle('requirements:create', (_event, input = {}) => {
+ 145:   const projectId = requiredProjectId(input);
+ 146:   const now = nowIso();
+ 147:   const id = db.insert(
+ 148:     `INSERT INTO requirements (project_id, title, body, status, created_at, updated_at)
+ 149:      VALUES (?, ?, ?, ?, ?, ?)`,
+ 150:     [projectId, titleFromBody(input.body, '未命名需求'), input.body || '', input.status || 'open', now, now],
+ 151:   );
+ 152:   saveAttachments(db, attachmentsRoot(), 'requirement', id, input.attachments, projectId);
+ 153:   // 计划生成交给循环扫描（runOnce）自动处理，不再走草稿中间态
+ 154:   loop.addEvent(projectId, 'requirement.created', `需求 #${id} 已创建，等待循环扫描生成计划`);
+ 155:   return loop.snapshot(projectId);
+ 156: });
+ 157: 
+ 158: ipcMain.handle('requirements:update', (_event, input = {}) => {
+ 159:   const projectId = requiredProjectId(input);
+ 160:   const id = requiredRecordId(input);
+ 161:   const current = db.get('SELECT * FROM requirements WHERE id = ? AND project_id = ?', [id, projectId]);
+ 162:   if (!current) throw new Error('需求不存在');
+ 163:   const body = input.body ?? current.body ?? '';
+ 164:   db.run(
+ 165:     `UPDATE requirements SET title = ?, body = ?, status = ?, updated_at = ? WHERE id = ? AND project_id = ?`,
+ 166:     [
+ 167:       input.title ?? titleFromBody(body, '未命名需求'),
+ 168:       body,
+ 169:       input.status ?? current.status ?? 'open',
+ 170:       nowIso(),
+ 171:       id,
+ 172:       projectId,
+ 173:     ],
+ 174:   );
+ 175:   saveAttachments(db, attachmentsRoot(), 'requirement', id, input.attachments, projectId);
+ 176:   return loop.snapshot(projectId);
+ 177: });
+ 178: 
+ 179: ipcMain.handle('requirements:delete', (_event, input = {}) => {
+ 180:   const projectId = requiredProjectId(input);
+ 181:   const id = requiredRecordId(input);
+ 182:   const rec = db.get('SELECT linked_plan_id FROM requirements WHERE id = ? AND project_id = ?', [id, projectId]);
+ 183:   if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+ 184:   deleteIntakeRecord('requirements', 'requirement', projectId, id);
+ 185:   return loop.snapshot(projectId);
+ 186: });
+ 187: 
+ 188: ipcMain.handle('feedback:create', (_event, input = {}) => {
+ 189:   const projectId = requiredProjectId(input);
+ 190:   const now = nowIso();
+ 191:   const id = db.insert(
+ 192:     `INSERT INTO feedback (project_id, requirement_id, title, body, status, created_at, updated_at)
+ 193:      VALUES (?, ?, ?, ?, ?, ?, ?)`,
+ 194:     [
+ 195:       projectId,
+ 196:       input.requirementId || null,
+ 197:       titleFromBody(input.body, '未命名反馈'),
+ 198:       input.body || '',
+ 199:       input.status || 'open',
+ 200:       now,
+ 201:       now,
+ 202:     ],
+ 203:   );
+ 204:   saveAttachments(db, attachmentsRoot(), 'feedback', id, input.attachments, projectId);
+ 205:   // 计划生成交给循环扫描（runOnce）自动处理，不再走草稿中间态
+ 206:   loop.addEvent(projectId, 'feedback.created', `反馈 #${id} 已创建，等待循环扫描生成计划`);
+ 207:   return loop.snapshot(projectId);
+ 208: });
+ 209: 
+ 210: ipcMain.handle('feedback:update', (_event, input = {}) => {
+ 211:   const projectId = requiredProjectId(input);
+ 212:   const id = requiredRecordId(input);
+ 213:   const current = db.get('SELECT * FROM feedback WHERE id = ? AND project_id = ?', [id, projectId]);
+ 214:   if (!current) throw new Error('反馈不存在');
+ 215:   const body = input.body ?? current.body ?? '';
+ 216:   db.run(
+ 217:     `UPDATE feedback
+ 218:      SET requirement_id = ?, title = ?, body = ?, status = ?, updated_at = ?
+ 219:      WHERE id = ? AND project_id = ?`,
+ 220:     [
+ 221:       input.requirementId === undefined ? current.requirement_id || null : input.requirementId || null,
+ 222:       input.title ?? titleFromBody(body, '未命名反馈'),
+ 223:       body,
+ 224:       input.status ?? current.status ?? 'open',
+ 225:       nowIso(),
+ 226:       id,
+ 227:       projectId,
+ 228:     ],
+ 229:   );
+ 230:   saveAttachments(db, attachmentsRoot(), 'feedback', id, input.attachments, projectId);
+ 231:   return loop.snapshot(projectId);
+ 232: });
+ 233: 
+ 234: ipcMain.handle('feedback:delete', (_event, input = {}) => {
+ 235:   const projectId = requiredProjectId(input);
+ 236:   const id = requiredRecordId(input);
+ 237:   const rec = db.get('SELECT linked_plan_id FROM feedback WHERE id = ? AND project_id = ?', [id, projectId]);
+ 238:   if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+ 239:   deleteIntakeRecord('feedback', 'feedback', projectId, id);
+ 240:   return loop.snapshot(projectId);
+ 241: });
+ 242: 
+ 243: ipcMain.handle('planDrafts:update', (_event, input = {}) => {
+ 244:   updatePlanDraft(db, input.id, input.markdown);
+ 245:   const draft = db.get('SELECT project_id FROM plan_drafts WHERE id = ?', [input.id]);
+ 246:   return loop.snapshot(draft?.project_id || null);
+ 247: });
+ 248: 
+ 249: // 中断需求/反馈关联的计划任务
+ 250: ipcMain.handle('intake:interrupt', (_event, input = {}) => {
+ 251:   const projectId = requiredProjectId(input);
+ 252:   const table = input.type === 'feedback' ? 'feedback' : 'requirements';
+ 253:   const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+ 254:     requiredRecordId(input),
+ 255:     projectId,
+ 256:   ]);
+ 257:   if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+ 258:   return loop.snapshot(projectId);
+ 259: });
+ 260: 
+ 261: // 恢复被中断的计划
+ 262: ipcMain.handle('intake:resume', (_event, input = {}) => {
+ 263:   const projectId = requiredProjectId(input);
+ 264:   const table = input.type === 'feedback' ? 'feedback' : 'requirements';
+ 265:   const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+ 266:     requiredRecordId(input),
+ 267:     projectId,
+ 268:   ]);
+ 269:   if (rec?.linked_plan_id) loop.resumePlan(projectId, rec.linked_plan_id);
+ 270:   return loop.snapshot(projectId);
+ 271: });
+ 272: 
+ 273: // 追加任务到需求/反馈关联的计划
+ 274: ipcMain.handle('intake:appendTask', (_event, input = {}) => {
+ 275:   const projectId = requiredProjectId(input);
+ 276:   const table = input.type === 'feedback' ? 'feedback' : 'requirements';
+ 277:   const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+ 278:     requiredRecordId(input),
+ 279:     projectId,
+ 280:   ]);
+ 281:   if (!rec?.linked_plan_id) throw new Error('该需求/反馈尚未生成计划');
+ 282:   loop.appendTask(projectId, rec.linked_plan_id, input.title);
+ 283:   return loop.snapshot(projectId);
+ 284: });
+ 285: 
+ 286: function attachmentsRoot() {
+ 287:   return path.join(app.getPath('userData'), 'data', 'attachments');
+ 288: }
+ 289: 
+ 290: function loadRenderer(window) {
+ 291:   const devServerUrl = process.env.ELECTRON_RENDERER_URL;
+ 292:   if (devServerUrl) return window.loadURL(devServerUrl);
+ 293: 
+ 294:   const builtIndex = path.join(__dirname, '..', 'dist', 'index.html');
+ 295:   if (!fs.existsSync(builtIndex)) {
+ 296:     throw new Error('Renderer build not found. Run npm run dev or npm run build first.');
+ 297:   }
+ 298:   return window.loadFile(builtIndex);
+ 299: }
+ 300: 
+ 301: function requiredProjectId(input = {}) {
+ 302:   const projectId = Number(input.projectId || input.id || 0);
+ 303:   if (!projectId || !loop.project(projectId)) throw new Error('项目不存在');
+ 304:   return projectId;
+ 305: }
+ 306: 
+ 307: function requireManualAction(input = {}, label = '操作') {
+ 308:   if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+ 309: }
+ 310: 
+ 311: function requiredRecordId(input = {}, key = 'id') {
+ 312:   const id = Number(input[key] || input.id || 0);
+ 313:   if (!id) throw new Error('记录不存在');
+ 314:   return id;
+ 315: }
+ 316: 
+ 317: function deleteIntakeRecord(table, ownerType, projectId, id) {
+ 318:   const current = db.get(`SELECT id FROM ${table} WHERE id = ? AND project_id = ?`, [id, projectId]);
+ 319:   if (!current) throw new Error('记录不存在');
+ 320: 
+ 321:   if (ownerType === 'requirement') {
+ 322:     db.run('UPDATE feedback SET requirement_id = NULL, updated_at = ? WHERE project_id = ? AND requirement_id = ?', [
+ 323:       nowIso(),
+ 324:       projectId,
+ 325:       id,
+ 326:     ]);
+ 327:   }
+ 328: 
+ 329:   db.run('DELETE FROM attachments WHERE project_id = ? AND owner_type = ? AND owner_id = ?', [projectId, ownerType, id]);
+ 330:   db.run('DELETE FROM plan_drafts WHERE project_id = ? AND source_type = ? AND source_id = ?', [projectId, ownerType, id]);
+ 331:   db.run(`DELETE FROM ${table} WHERE id = ? AND project_id = ?`, [id, projectId]);
+ 332: }
+ 333: 
+ 334: function titleFromBody(body, fallback) {
+ 335:   const firstLine = String(body || '')
+ 336:     .split(/\r?\n/)
+ 337:     .map((line) => line.trim())
+ 338:     .find(Boolean);
+ 339:   return firstLine ? firstLine.slice(0, 80) : fallback;
+ 340: }
+--- types excerpt ---
+  70:   count: number;
+  71:   results: WorkspaceSearchResult[];
+  72: }
+  73: 
+  74: export interface WorkspaceSearchState {
+  75:   query: WorkspaceSearchQuery;
+  76:   total: number;
+  77:   results: WorkspaceSearchResult[];
+  78:   groups: WorkspaceSearchGroup[];
+  79: }
+  80: 
+  81: export interface Project {
+  82:   id: number;
+  83:   name: string;
+  84:   workspace_path: string;
+  85:   description: string;
+  86:   created_at: string;
+  87:   updated_at: string;
+  88:   running?: number;
+  89:   phase?: string;
+  90:   interval_seconds?: number;
+  91:   validation_command?: string;
+  92: }
+  93: 
+  94: export interface ProjectState {
+  95:   project_id: number;
+  96:   running: number;
+  97:   phase: string;
+  98:   interval_seconds: number;
+  99:   validation_command: string;
+ 100:   last_issue_hash?: string | null;
+ 101:   last_error?: string | null;
+ 102:   updated_at: string;
+ 103:   /** 由 snapshot 合并自 project.workspace_path */
+ 104:   workspace_path?: string;
+ 105: }
+ 106: 
+ 107: export interface Requirement {
+ 108:   id: number;
+ 109:   project_id: number;
+ 110:   title: string;
+ 111:   body: string;
+ 112:   status: string;
+ 113:   source_path?: string | null;
+ 114:   source_hash?: string | null;
+ 115:   linked_plan_id?: number | null;
+ 116:   plan_status?: string | null;
+ 117:   plan_completed?: number | null;
+ 118:   plan_total?: number | null;
+ 119:   created_at: string;
+ 120:   updated_at: string;
+ 121: }
+ 122: 
+ 123: export interface Feedback {
+ 124:   id: number;
+ 125:   project_id: number;
+ 126:   requirement_id?: number | null;
+ 127:   title: string;
+ 128:   body: string;
+ 129:   status: string;
+ 130:   linked_plan_id?: number | null;
+ 131:   plan_status?: string | null;
+ 132:   plan_completed?: number | null;
+ 133:   plan_total?: number | null;
+ 134:   created_at: string;
+ 135:   updated_at: string;
+ 136: }
+ 137: 
+ 138: export interface Attachment {
+ 139:   id: number;
+ 140:   project_id: number;
+ 141:   owner_type: IntakeType;
+ 142:   owner_id: number;
+ 143:   original_name: string;
+ 144:   stored_path: string;
+ 145:   mime_type?: string | null;
+ 146:   size: number;
+ 147:   hash: string;
+ 148:   created_at: string;
+ 149: }
+ 150: 
+ 151: export interface PlanDraft {
+ 152:   id: number;
+ 153:   project_id: number;
+ 154:   source_type: IntakeType;
+ 155:   source_id: number;
+ 156:   markdown: string;
+ 157:   status: string;
+ 158:   linked_plan_id?: number | null;
+ 159:   created_at: string;
+ 160:   updated_at: string;
+ 161: }
+ 162: 
+ 163: export interface Plan {
+ 164:   id: number;
+ 165:   project_id: number;
+ 166:   issue_hash: string;
+ 167:   file_path: string;
+ 168:   hash: string;
+ 169:   status: string;
+ 170:   total_tasks: number;
+ 171:   completed_tasks: number;
+ 172:   validation_passed: number;
+ 173:   created_at: string;
+ 174:   updated_at: string;
+ 175: }
+ 176: 
+ 177: export interface PlanTask {
+ 178:   id: number;
+ 179:   plan_id: number;
+ 180:   task_key: string;
+ 181:   title: string;
+ 182:   raw_line: string;
+ 183:   scope: string;
+ 184:   status: string;
+ 185:   sort_order: number;
+ 186:   started_at: string | null;
+ 187:   finished_at: string | null;
+ 188:   duration_ms: number;
+ 189:   codex_session_id: string | null;
+ 190:   updated_at: string;
+ 191:   /** JOIN plans 得到 */
+ 192:   file_path: string;
+ 193: }
+ 194: 
+ 195: export const TASK_EVENT_TYPES = {
+ 196:   STARTED: 'task.started',
+ 197:   SUCCEEDED: 'task.succeeded',
+ 198:   FAILED: 'task.failed',
+ 199:   STOP_REQUESTED: 'task.stop.requested',
+ 200:   STOPPED: 'task.stopped',
+ 201:   INTERRUPTED: 'task.interrupted',
+ 202: } as const;
+ 203: 
+ 204: export const LEGACY_TASK_EVENT_TYPES = {
+ 205:   EXECUTED: 'task.executed',
+ 206:   STOPPING: 'task.stopping',
+ 207: } as const;
+ 208: 
+ 209: export const TASK_EVENT_STATUS = {
+ 210:   PENDING: 'pending',
+ 360: 
+ 361: export interface IntakeActionInput extends ProjectIdInput {
+ 362:   type: IntakeType;
+ 363:   id: number;
+ 364:   title?: string;
+ 365: }
+ 366: 
+ 367: export interface UpdateRequirementInput extends RecordIdInput {
+ 368:   title?: string;
+ 369:   body?: string;
+ 370:   status?: string;
+ 371:   attachments?: PendingAttachment[];
+ 372: }
+ 373: 
+ 374: export interface UpdateFeedbackInput extends UpdateRequirementInput {
+ 375:   requirementId?: number | null;
+ 376: }
+ 377: 
+ 378: export interface AutoplanApi {
+ 379:   snapshot: (projectId?: number | null) => Promise<AppSnapshot>;
+ 380:   createProject: (input: CreateProjectInput) => Promise<AppSnapshot>;
+ 381:   updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+ 382:   deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+ 383:   configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+ 384:   startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+ 385:   stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+ 386:   runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+ 387:   runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+ 388:   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+ 389:   createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+ 390:   updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+ 391:   deleteRequirement: (input: RecordIdInput) => Promise<AppSnapshot>;
+ 392:   createFeedback: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+ 393:   updateFeedback: (input: UpdateFeedbackInput) => Promise<AppSnapshot>;
+ 394:   deleteFeedback: (input: RecordIdInput) => Promise<AppSnapshot>;
+ 395:   updatePlanDraft: (input: { id: number; markdown: string }) => Promise<AppSnapshot>;
+ 396:   interruptIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+ 397:   resumeIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+ 398:   appendIntakeTask: (input: IntakeActionInput) => Promise<AppSnapshot>;
+ 399:   getDroppedFilePath: (file: File) => string;
+ 400:   toFileUrl: (filePath: string) => string;
+ 401:   onLoopUpdate: (handler: (snapshot: AppSnapshot) => void) => () => void;
+ 402: }
+ 403: 
+ 404: declare global {
+ 405:   interface Window {
+ 406:     autoplan: AutoplanApi;
+ 407:   }
+ 408: }
+--- preload ---
+   1: const { pathToFileURL } = require('node:url');
+   2: const { contextBridge, ipcRenderer, webUtils } = require('electron');
+   3: 
+   4: contextBridge.exposeInMainWorld('autoplan', {
+   5:   snapshot: (projectId) => ipcRenderer.invoke('snapshot', { projectId }),
+   6:   createProject: (input) => ipcRenderer.invoke('projects:create', input),
+   7:   updateProject: (input) => ipcRenderer.invoke('projects:update', input),
+   8:   deleteProject: (input) => ipcRenderer.invoke('projects:delete', input),
+   9:   configureLoop: (config) => ipcRenderer.invoke('loop:configure', config),
+  10:   startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+  11:   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+  12:   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
+  13:   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+  14:   stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+  15:   createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+  16:   updateRequirement: (input) => ipcRenderer.invoke('requirements:update', input),
+  17:   deleteRequirement: (input) => ipcRenderer.invoke('requirements:delete', input),
+  18:   createFeedback: (input) => ipcRenderer.invoke('feedback:create', input),
+  19:   updateFeedback: (input) => ipcRenderer.invoke('feedback:update', input),
+  20:   deleteFeedback: (input) => ipcRenderer.invoke('feedback:delete', input),
+  21:   updatePlanDraft: (input) => ipcRenderer.invoke('planDrafts:update', input),
+  22:   interruptIntake: (input) => ipcRenderer.invoke('intake:interrupt', input),
+  23:   resumeIntake: (input) => ipcRenderer.invoke('intake:resume', input),
+  24:   appendIntakeTask: (input) => ipcRenderer.invoke('intake:appendTask', input),
+  25:   getDroppedFilePath: (file) => webUtils.getPathForFile(file),
+  26:   toFileUrl: (filePath) => pathToFileURL(filePath).toString(),
+  27:   onLoopUpdate: (handler) => {
+  28:     const listener = (_event, snapshot) => handler(snapshot);
+  29:     ipcRenderer.on('loop:update', listener);
+  30:     return () => ipcRenderer.removeListener('loop:update', listener);
+  31:   },
+  32: });
+
+codex
+主进程文件输出被截断了，我会分段读取相关函数区，避免碰其它文件。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); function ShowRange($Path,$Start,$End){ $i=0; Get-Content -LiteralPath $Path -Encoding UTF8 | ForEach-Object { $i++; if($i -ge $Start -and $i -le $End){ '"'{0,4}: {1}' -f "'$i, $_ } } }; '"'--- main 120-360 ---'; ShowRange 'src\\main.js' 120 360; '--- main 360-460 ---'; ShowRange 'src\\main.js' 360 460; '--- types 140-185 ---'; ShowRange 'src\\renderer\\types.ts' 140 185;" in D:\project\GitHub\autoplan
+ succeeded in 228ms:
+--- main 120-360 ---
+ 120:   const projectId = requiredProjectId(input);
+ 121:   loop.stop(projectId);
+ 122:   return loop.snapshot(projectId);
+ 123: });
+ 124: 
+ 125: ipcMain.handle('loop:runOnce', async (_event, input = {}) => {
+ 126:   requireManualAction(input, '单轮执行');
+ 127:   const projectId = requiredProjectId(input);
+ 128:   await loop.runOnce(projectId);
+ 129:   return loop.snapshot(projectId);
+ 130: });
+ 131: 
+ 132: ipcMain.handle('tasks:run', async (_event, input = {}) => {
+ 133:   const projectId = requiredProjectId(input);
+ 134:   await loop.runTask(projectId, requiredRecordId(input, 'taskId'));
+ 135:   return loop.snapshot(projectId);
+ 136: });
+ 137: 
+ 138: ipcMain.handle('tasks:stop', (_event, input = {}) => {
+ 139:   const projectId = requiredProjectId(input);
+ 140:   loop.stopTask(projectId, requiredRecordId(input, 'taskId'));
+ 141:   return loop.snapshot(projectId);
+ 142: });
+ 143: 
+ 144: ipcMain.handle('requirements:create', (_event, input = {}) => {
+ 145:   const projectId = requiredProjectId(input);
+ 146:   const now = nowIso();
+ 147:   const id = db.insert(
+ 148:     `INSERT INTO requirements (project_id, title, body, status, created_at, updated_at)
+ 149:      VALUES (?, ?, ?, ?, ?, ?)`,
+ 150:     [projectId, titleFromBody(input.body, '未命名需求'), input.body || '', input.status || 'open', now, now],
+ 151:   );
+ 152:   saveAttachments(db, attachmentsRoot(), 'requirement', id, input.attachments, projectId);
+ 153:   // 计划生成交给循环扫描（runOnce）自动处理，不再走草稿中间态
+ 154:   loop.addEvent(projectId, 'requirement.created', `需求 #${id} 已创建，等待循环扫描生成计划`);
+ 155:   return loop.snapshot(projectId);
+ 156: });
+ 157: 
+ 158: ipcMain.handle('requirements:update', (_event, input = {}) => {
+ 159:   const projectId = requiredProjectId(input);
+ 160:   const id = requiredRecordId(input);
+ 161:   const current = db.get('SELECT * FROM requirements WHERE id = ? AND project_id = ?', [id, projectId]);
+ 162:   if (!current) throw new Error('需求不存在');
+ 163:   const body = input.body ?? current.body ?? '';
+ 164:   db.run(
+ 165:     `UPDATE requirements SET title = ?, body = ?, status = ?, updated_at = ? WHERE id = ? AND project_id = ?`,
+ 166:     [
+ 167:       input.title ?? titleFromBody(body, '未命名需求'),
+ 168:       body,
+ 169:       input.status ?? current.status ?? 'open',
+ 170:       nowIso(),
+ 171:       id,
+ 172:       projectId,
+ 173:     ],
+ 174:   );
+ 175:   saveAttachments(db, attachmentsRoot(), 'requirement', id, input.attachments, projectId);
+ 176:   return loop.snapshot(projectId);
+ 177: });
+ 178: 
+ 179: ipcMain.handle('requirements:delete', (_event, input = {}) => {
+ 180:   const projectId = requiredProjectId(input);
+ 181:   const id = requiredRecordId(input);
+ 182:   const rec = db.get('SELECT linked_plan_id FROM requirements WHERE id = ? AND project_id = ?', [id, projectId]);
+ 183:   if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+ 184:   deleteIntakeRecord('requirements', 'requirement', projectId, id);
+ 185:   return loop.snapshot(projectId);
+ 186: });
+ 187: 
+ 188: ipcMain.handle('feedback:create', (_event, input = {}) => {
+ 189:   const projectId = requiredProjectId(input);
+ 190:   const now = nowIso();
+ 191:   const id = db.insert(
+ 192:     `INSERT INTO feedback (project_id, requirement_id, title, body, status, created_at, updated_at)
+ 193:      VALUES (?, ?, ?, ?, ?, ?, ?)`,
+ 194:     [
+ 195:       projectId,
+ 196:       input.requirementId || null,
+ 197:       titleFromBody(input.body, '未命名反馈'),
+ 198:       input.body || '',
+ 199:       input.status || 'open',
+ 200:       now,
+ 201:       now,
+ 202:     ],
+ 203:   );
+ 204:   saveAttachments(db, attachmentsRoot(), 'feedback', id, input.attachments, projectId);
+ 205:   // 计划生成交给循环扫描（runOnce）自动处理，不再走草稿中间态
+ 206:   loop.addEvent(projectId, 'feedback.created', `反馈 #${id} 已创建，等待循环扫描生成计划`);
+ 207:   return loop.snapshot(projectId);
+ 208: });
+ 209: 
+ 210: ipcMain.handle('feedback:update', (_event, input = {}) => {
+ 211:   const projectId = requiredProjectId(input);
+ 212:   const id = requiredRecordId(input);
+ 213:   const current = db.get('SELECT * FROM feedback WHERE id = ? AND project_id = ?', [id, projectId]);
+ 214:   if (!current) throw new Error('反馈不存在');
+ 215:   const body = input.body ?? current.body ?? '';
+ 216:   db.run(
+ 217:     `UPDATE feedback
+ 218:      SET requirement_id = ?, title = ?, body = ?, status = ?, updated_at = ?
+ 219:      WHERE id = ? AND project_id = ?`,
+ 220:     [
+ 221:       input.requirementId === undefined ? current.requirement_id || null : input.requirementId || null,
+ 222:       input.title ?? titleFromBody(body, '未命名反馈'),
+ 223:       body,
+ 224:       input.status ?? current.status ?? 'open',
+ 225:       nowIso(),
+ 226:       id,
+ 227:       projectId,
+ 228:     ],
+ 229:   );
+ 230:   saveAttachments(db, attachmentsRoot(), 'feedback', id, input.attachments, projectId);
+ 231:   return loop.snapshot(projectId);
+ 232: });
+ 233: 
+ 234: ipcMain.handle('feedback:delete', (_event, input = {}) => {
+ 235:   const projectId = requiredProjectId(input);
+ 236:   const id = requiredRecordId(input);
+ 237:   const rec = db.get('SELECT linked_plan_id FROM feedback WHERE id = ? AND project_id = ?', [id, projectId]);
+ 238:   if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+ 239:   deleteIntakeRecord('feedback', 'feedback', projectId, id);
+ 240:   return loop.snapshot(projectId);
+ 241: });
+ 242: 
+ 243: ipcMain.handle('planDrafts:update', (_event, input = {}) => {
+ 244:   updatePlanDraft(db, input.id, input.markdown);
+ 245:   const draft = db.get('SELECT project_id FROM plan_drafts WHERE id = ?', [input.id]);
+ 246:   return loop.snapshot(draft?.project_id || null);
+ 247: });
+ 248: 
+ 249: // 中断需求/反馈关联的计划任务
+ 250: ipcMain.handle('intake:interrupt', (_event, input = {}) => {
+ 251:   const projectId = requiredProjectId(input);
+ 252:   const table = input.type === 'feedback' ? 'feedback' : 'requirements';
+ 253:   const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+ 254:     requiredRecordId(input),
+ 255:     projectId,
+ 256:   ]);
+ 257:   if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+ 258:   return loop.snapshot(projectId);
+ 259: });
+ 260: 
+ 261: // 恢复被中断的计划
+ 262: ipcMain.handle('intake:resume', (_event, input = {}) => {
+ 263:   const projectId = requiredProjectId(input);
+ 264:   const table = input.type === 'feedback' ? 'feedback' : 'requirements';
+ 265:   const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+ 266:     requiredRecordId(input),
+ 267:     projectId,
+ 268:   ]);
+ 269:   if (rec?.linked_plan_id) loop.resumePlan(projectId, rec.linked_plan_id);
+ 270:   return loop.snapshot(projectId);
+ 271: });
+ 272: 
+ 273: // 追加任务到需求/反馈关联的计划
+ 274: ipcMain.handle('intake:appendTask', (_event, input = {}) => {
+ 275:   const projectId = requiredProjectId(input);
+ 276:   const table = input.type === 'feedback' ? 'feedback' : 'requirements';
+ 277:   const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+ 278:     requiredRecordId(input),
+ 279:     projectId,
+ 280:   ]);
+ 281:   if (!rec?.linked_plan_id) throw new Error('该需求/反馈尚未生成计划');
+ 282:   loop.appendTask(projectId, rec.linked_plan_id, input.title);
+ 283:   return loop.snapshot(projectId);
+ 284: });
+ 285: 
+ 286: function attachmentsRoot() {
+ 287:   return path.join(app.getPath('userData'), 'data', 'attachments');
+ 288: }
+ 289: 
+ 290: function loadRenderer(window) {
+ 291:   const devServerUrl = process.env.ELECTRON_RENDERER_URL;
+ 292:   if (devServerUrl) return window.loadURL(devServerUrl);
+ 293: 
+ 294:   const builtIndex = path.join(__dirname, '..', 'dist', 'index.html');
+ 295:   if (!fs.existsSync(builtIndex)) {
+ 296:     throw new Error('Renderer build not found. Run npm run dev or npm run build first.');
+ 297:   }
+ 298:   return window.loadFile(builtIndex);
+ 299: }
+ 300: 
+ 301: function requiredProjectId(input = {}) {
+ 302:   const projectId = Number(input.projectId || input.id || 0);
+ 303:   if (!projectId || !loop.project(projectId)) throw new Error('项目不存在');
+ 304:   return projectId;
+ 305: }
+ 306: 
+ 307: function requireManualAction(input = {}, label = '操作') {
+ 308:   if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+ 309: }
+ 310: 
+ 311: function requiredRecordId(input = {}, key = 'id') {
+ 312:   const id = Number(input[key] || input.id || 0);
+ 313:   if (!id) throw new Error('记录不存在');
+ 314:   return id;
+ 315: }
+ 316: 
+ 317: function deleteIntakeRecord(table, ownerType, projectId, id) {
+ 318:   const current = db.get(`SELECT id FROM ${table} WHERE id = ? AND project_id = ?`, [id, projectId]);
+ 319:   if (!current) throw new Error('记录不存在');
+ 320: 
+ 321:   if (ownerType === 'requirement') {
+ 322:     db.run('UPDATE feedback SET requirement_id = NULL, updated_at = ? WHERE project_id = ? AND requirement_id = ?', [
+ 323:       nowIso(),
+ 324:       projectId,
+ 325:       id,
+ 326:     ]);
+ 327:   }
+ 328: 
+ 329:   db.run('DELETE FROM attachments WHERE project_id = ? AND owner_type = ? AND owner_id = ?', [projectId, ownerType, id]);
+ 330:   db.run('DELETE FROM plan_drafts WHERE project_id = ? AND source_type = ? AND source_id = ?', [projectId, ownerType, id]);
+ 331:   db.run(`DELETE FROM ${table} WHERE id = ? AND project_id = ?`, [id, projectId]);
+ 332: }
+ 333: 
+ 334: function titleFromBody(body, fallback) {
+ 335:   const firstLine = String(body || '')
+ 336:     .split(/\r?\n/)
+ 337:     .map((line) => line.trim())
+ 338:     .find(Boolean);
+ 339:   return firstLine ? firstLine.slice(0, 80) : fallback;
+ 340: }
+--- main 360-460 ---
+--- types 140-185 ---
+ 140:   project_id: number;
+ 141:   owner_type: IntakeType;
+ 142:   owner_id: number;
+ 143:   original_name: string;
+ 144:   stored_path: string;
+ 145:   mime_type?: string | null;
+ 146:   size: number;
+ 147:   hash: string;
+ 148:   created_at: string;
+ 149: }
+ 150: 
+ 151: export interface PlanDraft {
+ 152:   id: number;
+ 153:   project_id: number;
+ 154:   source_type: IntakeType;
+ 155:   source_id: number;
+ 156:   markdown: string;
+ 157:   status: string;
+ 158:   linked_plan_id?: number | null;
+ 159:   created_at: string;
+ 160:   updated_at: string;
+ 161: }
+ 162: 
+ 163: export interface Plan {
+ 164:   id: number;
+ 165:   project_id: number;
+ 166:   issue_hash: string;
+ 167:   file_path: string;
+ 168:   hash: string;
+ 169:   status: string;
+ 170:   total_tasks: number;
+ 171:   completed_tasks: number;
+ 172:   validation_passed: number;
+ 173:   created_at: string;
+ 174:   updated_at: string;
+ 175: }
+ 176: 
+ 177: export interface PlanTask {
+ 178:   id: number;
+ 179:   plan_id: number;
+ 180:   task_key: string;
+ 181:   title: string;
+ 182:   raw_line: string;
+ 183:   scope: string;
+ 184:   status: string;
+ 185:   sort_order: number;
+
+**Evaluating plan structure**
+
+I’m looking at a structure where I need to return the Plan ID and file path. It seems like flattening the `ReadPlanResult` could help by consolidating fields for easier consumption. I could use the pattern to ensure that if there's an error or no plan, the relevant fields are empty. It’d also be neat to define the type more clearly. So, if the plan is missing, I could set the `markdown` as empty and return an error string. That feels like a solid approach!
+**Considering UI requirements**
+
+Hmm, it seems the future UI might need to handle cases where there's an error and no plan available. I could consider including a `path` or `filePath` field to make things clearer. Having this in mind could really help ensure that all necessary information is being returned and makes it easier to troubleshoot in the UI. I'll need to keep these requirements in check as I finalize the structure. It feels like covering all bases is the right approach!
+**Considering file updates**
+
+I’m looking at `fs.promises.realpath`, which correctly follows symlinks—great! I think I won’t have any `readPlan` name conflicts, so that's a relief. I just need to edit three scope files, which feels manageable. I’ll make sure to use `apply_patch` for those. Oh, and before I apply the patch, I need to remember to include the preamble. It's all coming together nicely!
+codex
+实现会保持 `snapshot()` 不变，只新增按需 `plans:read` 通道和类型。
+  ✓ 确认 P001 接口要求
+  ✓ 检查现有 IPC 约定
+  → 实现读取接口声明
+  • 做最小语法核对
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\main.js
+diff --git a/src/main.js b/src/main.js
+index c71199b330195c0da7be7192b36bb3fbf7297adf..1ebb909012cad05ea81097203c80c2bc644eac00
+--- a/src/main.js
++++ b/src/main.js
+@@ -49,6 +49,8 @@
+ 
+ ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+ 
++ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
++
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+   const now = nowIso();
+   const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+@@ -304,6 +306,89 @@
+   return projectId;
+ }
+ 
++async function readPlan(input = {}) {
++  const projectId = Number(input.projectId || 0);
++  const planId = Number(input.planId || input.id || 0);
++  if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
++  if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
++
++  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
++  if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
++
++  const plan = db.get(
++    'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
++    [planId, projectId],
++  );
++  if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
++  if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
++  if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
++
++  try {
++    const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
++    const markdown = await fs.promises.readFile(planPath, 'utf8');
++    return planReadResult(plan, markdown, null);
++  } catch (error) {
++    return planReadResult(plan, '', planReadErrorMessage(error));
++  }
++}
++
++async function resolvePlanPath(workspacePath, filePath) {
++  const workspaceRoot = path.resolve(workspacePath);
++  const requestedPath = path.resolve(workspaceRoot, filePath);
++  if (!isInsidePath(workspaceRoot, requestedPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++
++  let workspaceRealPath;
++  try {
++    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
++  } catch {
++    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
++  }
++
++  const fileRealPath = await fs.promises.realpath(requestedPath);
++  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++  return fileRealPath;
++}
++
++function isInsidePath(rootPath, targetPath) {
++  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
++  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
++  const relativePath = path.relative(resolvedRoot, resolvedTarget);
++  return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
++}
++
++function normalizePathForCompare(value) {
++  return process.platform === 'win32' ? value.toLowerCase() : value;
++}
++
++function planReadResult(plan, markdown, error) {
++  return {
++    ok: !error,
++    id: plan?.id ?? null,
++    project_id: plan?.project_id ?? null,
++    file_path: plan?.file_path || '',
++    markdown,
++    hash: plan?.hash || '',
++    updated_at: plan?.updated_at || '',
++    error,
++  };
++}
++
++function planReadError(code, message) {
++  const error = new Error(message);
++  error.code = code;
++  return error;
++}
++
++function planReadErrorMessage(error) {
++  if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
++  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
++  return error?.message || '计划文件读取失败';
++}
++
+ function requireManualAction(input = {}, label = '操作') {
+   if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+ }
+
+diff --git a/src/main.js b/src/main.js
+index c71199b330195c0da7be7192b36bb3fbf7297adf..1ebb909012cad05ea81097203c80c2bc644eac00
+--- a/src/main.js
++++ b/src/main.js
+@@ -49,6 +49,8 @@
+ 
+ ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+ 
++ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
++
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+   const now = nowIso();
+   const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+@@ -304,6 +306,89 @@
+   return projectId;
+ }
+ 
++async function readPlan(input = {}) {
++  const projectId = Number(input.projectId || 0);
++  const planId = Number(input.planId || input.id || 0);
++  if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
++  if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
++
++  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
++  if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
++
++  const plan = db.get(
++    'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
++    [planId, projectId],
++  );
++  if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
++  if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
++  if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
++
++  try {
++    const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
++    const markdown = await fs.promises.readFile(planPath, 'utf8');
++    return planReadResult(plan, markdown, null);
++  } catch (error) {
++    return planReadResult(plan, '', planReadErrorMessage(error));
++  }
++}
++
++async function resolvePlanPath(workspacePath, filePath) {
++  const workspaceRoot = path.resolve(workspacePath);
++  const requestedPath = path.resolve(workspaceRoot, filePath);
++  if (!isInsidePath(workspaceRoot, requestedPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++
++  let workspaceRealPath;
++  try {
++    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
++  } catch {
++    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
++  }
++
++  const fileRealPath = await fs.promises.realpath(requestedPath);
++  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++  return fileRealPath;
++}
++
++function isInsidePath(rootPath, targetPath) {
++  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
++  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
++  const relativePath = path.relative(resolvedRoot, resolvedTarget);
++  return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
++}
++
++function normalizePathForCompare(value) {
++  return process.platform === 'win32' ? value.toLowerCase() : value;
++}
++
++function planReadResult(plan, markdown, error) {
++  return {
++    ok: !error,
++    id: plan?.id ?? null,
++    project_id: plan?.project_id ?? null,
++    file_path: plan?.file_path || '',
++    markdown,
++    hash: plan?.hash || '',
++    updated_at: plan?.updated_at || '',
++    error,
++  };
++}
++
++function planReadError(code, message) {
++  const error = new Error(message);
++  error.code = code;
++  return error;
++}
++
++function planReadErrorMessage(error) {
++  if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
++  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
++  return error?.message || '计划文件读取失败';
++}
++
+ function requireManualAction(input = {}, label = '操作') {
+   if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+ }
+
+codex
+主进程通道已加好；现在补 preload 暴露方法和渲染端类型。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\preload.js
+diff --git a/src/main.js b/src/main.js
+index c71199b330195c0da7be7192b36bb3fbf7297adf..1ebb909012cad05ea81097203c80c2bc644eac00
+--- a/src/main.js
++++ b/src/main.js
+@@ -49,6 +49,8 @@
+ 
+ ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+ 
++ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
++
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+   const now = nowIso();
+   const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+@@ -304,6 +306,89 @@
+   return projectId;
+ }
+ 
++async function readPlan(input = {}) {
++  const projectId = Number(input.projectId || 0);
++  const planId = Number(input.planId || input.id || 0);
++  if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
++  if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
++
++  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
++  if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
++
++  const plan = db.get(
++    'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
++    [planId, projectId],
++  );
++  if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
++  if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
++  if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
++
++  try {
++    const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
++    const markdown = await fs.promises.readFile(planPath, 'utf8');
++    return planReadResult(plan, markdown, null);
++  } catch (error) {
++    return planReadResult(plan, '', planReadErrorMessage(error));
++  }
++}
++
++async function resolvePlanPath(workspacePath, filePath) {
++  const workspaceRoot = path.resolve(workspacePath);
++  const requestedPath = path.resolve(workspaceRoot, filePath);
++  if (!isInsidePath(workspaceRoot, requestedPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++
++  let workspaceRealPath;
++  try {
++    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
++  } catch {
++    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
++  }
++
++  const fileRealPath = await fs.promises.realpath(requestedPath);
++  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++  return fileRealPath;
++}
++
++function isInsidePath(rootPath, targetPath) {
++  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
++  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
++  const relativePath = path.relative(resolvedRoot, resolvedTarget);
++  return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
++}
++
++function normalizePathForCompare(value) {
++  return process.platform === 'win32' ? value.toLowerCase() : value;
++}
++
++function planReadResult(plan, markdown, error) {
++  return {
++    ok: !error,
++    id: plan?.id ?? null,
++    project_id: plan?.project_id ?? null,
++    file_path: plan?.file_path || '',
++    markdown,
++    hash: plan?.hash || '',
++    updated_at: plan?.updated_at || '',
++    error,
++  };
++}
++
++function planReadError(code, message) {
++  const error = new Error(message);
++  error.code = code;
++  return error;
++}
++
++function planReadErrorMessage(error) {
++  if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
++  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
++  return error?.message || '计划文件读取失败';
++}
++
+ function requireManualAction(input = {}, label = '操作') {
+   if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+ }
+diff --git a/src/preload.js b/src/preload.js
+index e7971cf26bb001ed6606436db6b8a3ee30107d1f..67d16009fdedf5668edaf1f6abf05917f450453f
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -10,6 +10,7 @@
+   startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
++  readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+   createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+
+diff --git a/src/main.js b/src/main.js
+index c71199b330195c0da7be7192b36bb3fbf7297adf..1ebb909012cad05ea81097203c80c2bc644eac00
+--- a/src/main.js
++++ b/src/main.js
+@@ -49,6 +49,8 @@
+ 
+ ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+ 
++ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
++
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+   const now = nowIso();
+   const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+@@ -304,6 +306,89 @@
+   return projectId;
+ }
+ 
++async function readPlan(input = {}) {
++  const projectId = Number(input.projectId || 0);
++  const planId = Number(input.planId || input.id || 0);
++  if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
++  if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
++
++  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
++  if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
++
++  const plan = db.get(
++    'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
++    [planId, projectId],
++  );
++  if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
++  if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
++  if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
++
++  try {
++    const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
++    const markdown = await fs.promises.readFile(planPath, 'utf8');
++    return planReadResult(plan, markdown, null);
++  } catch (error) {
++    return planReadResult(plan, '', planReadErrorMessage(error));
++  }
++}
++
++async function resolvePlanPath(workspacePath, filePath) {
++  const workspaceRoot = path.resolve(workspacePath);
++  const requestedPath = path.resolve(workspaceRoot, filePath);
++  if (!isInsidePath(workspaceRoot, requestedPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++
++  let workspaceRealPath;
++  try {
++    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
++  } catch {
++    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
++  }
++
++  const fileRealPath = await fs.promises.realpath(requestedPath);
++  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++  return fileRealPath;
++}
++
++function isInsidePath(rootPath, targetPath) {
++  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
++  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
++  const relativePath = path.relative(resolvedRoot, resolvedTarget);
++  return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
++}
++
++function normalizePathForCompare(value) {
++  return process.platform === 'win32' ? value.toLowerCase() : value;
++}
++
++function planReadResult(plan, markdown, error) {
++  return {
++    ok: !error,
++    id: plan?.id ?? null,
++    project_id: plan?.project_id ?? null,
++    file_path: plan?.file_path || '',
++    markdown,
++    hash: plan?.hash || '',
++    updated_at: plan?.updated_at || '',
++    error,
++  };
++}
++
++function planReadError(code, message) {
++  const error = new Error(message);
++  error.code = code;
++  return error;
++}
++
++function planReadErrorMessage(error) {
++  if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
++  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
++  return error?.message || '计划文件读取失败';
++}
++
+ function requireManualAction(input = {}, label = '操作') {
+   if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+ }
+diff --git a/src/preload.js b/src/preload.js
+index e7971cf26bb001ed6606436db6b8a3ee30107d1f..67d16009fdedf5668edaf1f6abf05917f450453f
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -10,6 +10,7 @@
+   startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
++  readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+   createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+
+codex
+preload 已暴露 `readPlan`，继续补输入/返回类型。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\types.ts
+diff --git a/src/main.js b/src/main.js
+index c71199b330195c0da7be7192b36bb3fbf7297adf..1ebb909012cad05ea81097203c80c2bc644eac00
+--- a/src/main.js
++++ b/src/main.js
+@@ -49,6 +49,8 @@
+ 
+ ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+ 
++ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
++
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+   const now = nowIso();
+   const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+@@ -304,6 +306,89 @@
+   return projectId;
+ }
+ 
++async function readPlan(input = {}) {
++  const projectId = Number(input.projectId || 0);
++  const planId = Number(input.planId || input.id || 0);
++  if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
++  if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
++
++  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
++  if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
++
++  const plan = db.get(
++    'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
++    [planId, projectId],
++  );
++  if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
++  if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
++  if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
++
++  try {
++    const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
++    const markdown = await fs.promises.readFile(planPath, 'utf8');
++    return planReadResult(plan, markdown, null);
++  } catch (error) {
++    return planReadResult(plan, '', planReadErrorMessage(error));
++  }
++}
++
++async function resolvePlanPath(workspacePath, filePath) {
++  const workspaceRoot = path.resolve(workspacePath);
++  const requestedPath = path.resolve(workspaceRoot, filePath);
++  if (!isInsidePath(workspaceRoot, requestedPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++
++  let workspaceRealPath;
++  try {
++    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
++  } catch {
++    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
++  }
++
++  const fileRealPath = await fs.promises.realpath(requestedPath);
++  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++  return fileRealPath;
++}
++
++function isInsidePath(rootPath, targetPath) {
++  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
++  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
++  const relativePath = path.relative(resolvedRoot, resolvedTarget);
++  return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
++}
++
++function normalizePathForCompare(value) {
++  return process.platform === 'win32' ? value.toLowerCase() : value;
++}
++
++function planReadResult(plan, markdown, error) {
++  return {
++    ok: !error,
++    id: plan?.id ?? null,
++    project_id: plan?.project_id ?? null,
++    file_path: plan?.file_path || '',
++    markdown,
++    hash: plan?.hash || '',
++    updated_at: plan?.updated_at || '',
++    error,
++  };
++}
++
++function planReadError(code, message) {
++  const error = new Error(message);
++  error.code = code;
++  return error;
++}
++
++function planReadErrorMessage(error) {
++  if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
++  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
++  return error?.message || '计划文件读取失败';
++}
++
+ function requireManualAction(input = {}, label = '操作') {
+   if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+ }
+diff --git a/src/preload.js b/src/preload.js
+index e7971cf26bb001ed6606436db6b8a3ee30107d1f..67d16009fdedf5668edaf1f6abf05917f450453f
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -10,6 +10,7 @@
+   startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
++  readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+   createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 96b965d951d08fa15f1d983aaedf6ec0cfad5722..85a2543c48dde7a29f616e3becc94f06b5de3bee
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -160,9 +160,9 @@
+   updated_at: string;
+ }
+ 
+-export interface Plan {
+-  id: number;
+-  project_id: number;
++export interface Plan {
++  id: number;
++  project_id: number;
+   issue_hash: string;
+   file_path: string;
+   hash: string;
+@@ -171,8 +171,19 @@
+   completed_tasks: number;
+   validation_passed: number;
+   created_at: string;
+-  updated_at: string;
+-}
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface PlanTask {
+   id: number;
+@@ -354,9 +365,13 @@
+   id: number;
+ }
+ 
+-export interface TaskIdInput extends ProjectIdInput {
+-  taskId: number;
+-}
++export interface TaskIdInput extends ProjectIdInput {
++  taskId: number;
++}
++
++export interface ReadPlanInput extends ProjectIdInput {
++  planId: number;
++}
+ 
+ export interface IntakeActionInput extends ProjectIdInput {
+   type: IntakeType;
+@@ -381,10 +396,11 @@
+   updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+   deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+   configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+-  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
++  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
++  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+   updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+
+diff --git a/src/main.js b/src/main.js
+index c71199b330195c0da7be7192b36bb3fbf7297adf..1ebb909012cad05ea81097203c80c2bc644eac00
+--- a/src/main.js
++++ b/src/main.js
+@@ -49,6 +49,8 @@
+ 
+ ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+ 
++ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
++
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+   const now = nowIso();
+   const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+@@ -304,6 +306,89 @@
+   return projectId;
+ }
+ 
++async function readPlan(input = {}) {
++  const projectId = Number(input.projectId || 0);
++  const planId = Number(input.planId || input.id || 0);
++  if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
++  if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
++
++  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
++  if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
++
++  const plan = db.get(
++    'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
++    [planId, projectId],
++  );
++  if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
++  if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
++  if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
++
++  try {
++    const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
++    const markdown = await fs.promises.readFile(planPath, 'utf8');
++    return planReadResult(plan, markdown, null);
++  } catch (error) {
++    return planReadResult(plan, '', planReadErrorMessage(error));
++  }
++}
++
++async function resolvePlanPath(workspacePath, filePath) {
++  const workspaceRoot = path.resolve(workspacePath);
++  const requestedPath = path.resolve(workspaceRoot, filePath);
++  if (!isInsidePath(workspaceRoot, requestedPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++
++  let workspaceRealPath;
++  try {
++    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
++  } catch {
++    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
++  }
++
++  const fileRealPath = await fs.promises.realpath(requestedPath);
++  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++  return fileRealPath;
++}
++
++function isInsidePath(rootPath, targetPath) {
++  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
++  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
++  const relativePath = path.relative(resolvedRoot, resolvedTarget);
++  return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
++}
++
++function normalizePathForCompare(value) {
++  return process.platform === 'win32' ? value.toLowerCase() : value;
++}
++
++function planReadResult(plan, markdown, error) {
++  return {
++    ok: !error,
++    id: plan?.id ?? null,
++    project_id: plan?.project_id ?? null,
++    file_path: plan?.file_path || '',
++    markdown,
++    hash: plan?.hash || '',
++    updated_at: plan?.updated_at || '',
++    error,
++  };
++}
++
++function planReadError(code, message) {
++  const error = new Error(message);
++  error.code = code;
++  return error;
++}
++
++function planReadErrorMessage(error) {
++  if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
++  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
++  return error?.message || '计划文件读取失败';
++}
++
+ function requireManualAction(input = {}, label = '操作') {
+   if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+ }
+diff --git a/src/preload.js b/src/preload.js
+index e7971cf26bb001ed6606436db6b8a3ee30107d1f..67d16009fdedf5668edaf1f6abf05917f450453f
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -10,6 +10,7 @@
+   startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
++  readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+   createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 96b965d951d08fa15f1d983aaedf6ec0cfad5722..85a2543c48dde7a29f616e3becc94f06b5de3bee
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -160,9 +160,9 @@
+   updated_at: string;
+ }
+ 
+-export interface Plan {
+-  id: number;
+-  project_id: number;
++export interface Plan {
++  id: number;
++  project_id: number;
+   issue_hash: string;
+   file_path: string;
+   hash: string;
+@@ -171,8 +171,19 @@
+   completed_tasks: number;
+   validation_passed: number;
+   created_at: string;
+-  updated_at: string;
+-}
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface PlanTask {
+   id: number;
+@@ -354,9 +365,13 @@
+   id: number;
+ }
+ 
+-export interface TaskIdInput extends ProjectIdInput {
+-  taskId: number;
+-}
++export interface TaskIdInput extends ProjectIdInput {
++  taskId: number;
++}
++
++export interface ReadPlanInput extends ProjectIdInput {
++  planId: number;
++}
+ 
+ export interface IntakeActionInput extends ProjectIdInput {
+   type: IntakeType;
+@@ -381,10 +396,11 @@
+   updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+   deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+   configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+-  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
++  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
++  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+   updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+
+codex
+改动完成，接下来只检查新增片段和 JS 语法。
+  ✓ 确认 P001 接口要求
+  ✓ 检查现有 IPC 约定
+  ✓ 实现读取接口声明
+  → 做最小语法核对
+diff --git a/src/main.js b/src/main.js
+index c71199b330195c0da7be7192b36bb3fbf7297adf..1ebb909012cad05ea81097203c80c2bc644eac00
+--- a/src/main.js
++++ b/src/main.js
+@@ -49,6 +49,8 @@
+ 
+ ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+ 
++ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
++
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+   const now = nowIso();
+   const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+@@ -304,6 +306,89 @@
+   return projectId;
+ }
+ 
++async function readPlan(input = {}) {
++  const projectId = Number(input.projectId || 0);
++  const planId = Number(input.planId || input.id || 0);
++  if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
++  if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
++
++  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
++  if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
++
++  const plan = db.get(
++    'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
++    [planId, projectId],
++  );
++  if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
++  if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
++  if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
++
++  try {
++    const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
++    const markdown = await fs.promises.readFile(planPath, 'utf8');
++    return planReadResult(plan, markdown, null);
++  } catch (error) {
++    return planReadResult(plan, '', planReadErrorMessage(error));
++  }
++}
++
++async function resolvePlanPath(workspacePath, filePath) {
++  const workspaceRoot = path.resolve(workspacePath);
++  const requestedPath = path.resolve(workspaceRoot, filePath);
++  if (!isInsidePath(workspaceRoot, requestedPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++
++  let workspaceRealPath;
++  try {
++    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
++  } catch {
++    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
++  }
++
++  const fileRealPath = await fs.promises.realpath(requestedPath);
++  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++  return fileRealPath;
++}
++
++function isInsidePath(rootPath, targetPath) {
++  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
++  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
++  const relativePath = path.relative(resolvedRoot, resolvedTarget);
++  return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
++}
++
++function normalizePathForCompare(value) {
++  return process.platform === 'win32' ? value.toLowerCase() : value;
++}
++
++function planReadResult(plan, markdown, error) {
++  return {
++    ok: !error,
++    id: plan?.id ?? null,
++    project_id: plan?.project_id ?? null,
++    file_path: plan?.file_path || '',
++    markdown,
++    hash: plan?.hash || '',
++    updated_at: plan?.updated_at || '',
++    error,
++  };
++}
++
++function planReadError(code, message) {
++  const error = new Error(message);
++  error.code = code;
++  return error;
++}
++
++function planReadErrorMessage(error) {
++  if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
++  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
++  return error?.message || '计划文件读取失败';
++}
++
+ function requireManualAction(input = {}, label = '操作') {
+   if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+ }
+diff --git a/src/preload.js b/src/preload.js
+index e7971cf26bb001ed6606436db6b8a3ee30107d1f..67d16009fdedf5668edaf1f6abf05917f450453f
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -10,6 +10,7 @@
+   startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
++  readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+   createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 96b965d951d08fa15f1d983aaedf6ec0cfad5722..85a2543c48dde7a29f616e3becc94f06b5de3bee
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -160,9 +160,9 @@
+   updated_at: string;
+ }
+ 
+-export interface Plan {
+-  id: number;
+-  project_id: number;
++export interface Plan {
++  id: number;
++  project_id: number;
+   issue_hash: string;
+   file_path: string;
+   hash: string;
+@@ -171,8 +171,19 @@
+   completed_tasks: number;
+   validation_passed: number;
+   created_at: string;
+-  updated_at: string;
+-}
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface PlanTask {
+   id: number;
+@@ -354,9 +365,13 @@
+   id: number;
+ }
+ 
+-export interface TaskIdInput extends ProjectIdInput {
+-  taskId: number;
+-}
++export interface TaskIdInput extends ProjectIdInput {
++  taskId: number;
++}
++
++export interface ReadPlanInput extends ProjectIdInput {
++  planId: number;
++}
+ 
+ export interface IntakeActionInput extends ProjectIdInput {
+   type: IntakeType;
+@@ -381,10 +396,11 @@
+   updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+   deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+   configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+-  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
++  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
++  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+   updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); function ShowRange($Path,$Start,$End){ $i=0; Get-Content -LiteralPath $Path -Encoding UTF8 | ForEach-Object { $i++; if($i -ge $Start -and $i -le $End){ '"'{0,4}: {1}' -f "'$i, $_ } } }; '"'--- main readPlan ---'; ShowRange 'src\\main.js' 48 56; ShowRange 'src\\main.js' 301 390; '--- preload readPlan ---'; ShowRange 'src\\preload.js' 8 16; '--- types readPlan ---'; ShowRange 'src\\renderer\\types.ts' 163 190; ShowRange 'src\\renderer\\types.ts' 350 392" in D:\project\GitHub\autoplan
+ succeeded in 251ms:
+--- main readPlan ---
+  48: });
+  49: 
+  50: ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+  51: 
+  52: ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
+  53: 
+  54: ipcMain.handle('projects:create', (_event, input = {}) => {
+  55:   const now = nowIso();
+  56:   const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+ 301: }
+ 302: 
+ 303: function requiredProjectId(input = {}) {
+ 304:   const projectId = Number(input.projectId || input.id || 0);
+ 305:   if (!projectId || !loop.project(projectId)) throw new Error('项目不存在');
+ 306:   return projectId;
+ 307: }
+ 308: 
+ 309: async function readPlan(input = {}) {
+ 310:   const projectId = Number(input.projectId || 0);
+ 311:   const planId = Number(input.planId || input.id || 0);
+ 312:   if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
+ 313:   if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
+ 314: 
+ 315:   const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
+ 316:   if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
+ 317: 
+ 318:   const plan = db.get(
+ 319:     'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
+ 320:     [planId, projectId],
+ 321:   );
+ 322:   if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
+ 323:   if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
+ 324:   if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
+ 325: 
+ 326:   try {
+ 327:     const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
+ 328:     const markdown = await fs.promises.readFile(planPath, 'utf8');
+ 329:     return planReadResult(plan, markdown, null);
+ 330:   } catch (error) {
+ 331:     return planReadResult(plan, '', planReadErrorMessage(error));
+ 332:   }
+ 333: }
+ 334: 
+ 335: async function resolvePlanPath(workspacePath, filePath) {
+ 336:   const workspaceRoot = path.resolve(workspacePath);
+ 337:   const requestedPath = path.resolve(workspaceRoot, filePath);
+ 338:   if (!isInsidePath(workspaceRoot, requestedPath)) {
+ 339:     throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
+ 340:   }
+ 341: 
+ 342:   let workspaceRealPath;
+ 343:   try {
+ 344:     workspaceRealPath = await fs.promises.realpath(workspaceRoot);
+ 345:   } catch {
+ 346:     throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
+ 347:   }
+ 348: 
+ 349:   const fileRealPath = await fs.promises.realpath(requestedPath);
+ 350:   if (!isInsidePath(workspaceRealPath, fileRealPath)) {
+ 351:     throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
+ 352:   }
+ 353:   return fileRealPath;
+ 354: }
+ 355: 
+ 356: function isInsidePath(rootPath, targetPath) {
+ 357:   const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
+ 358:   const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
+ 359:   const relativePath = path.relative(resolvedRoot, resolvedTarget);
+ 360:   return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
+ 361: }
+ 362: 
+ 363: function normalizePathForCompare(value) {
+ 364:   return process.platform === 'win32' ? value.toLowerCase() : value;
+ 365: }
+ 366: 
+ 367: function planReadResult(plan, markdown, error) {
+ 368:   return {
+ 369:     ok: !error,
+ 370:     id: plan?.id ?? null,
+ 371:     project_id: plan?.project_id ?? null,
+ 372:     file_path: plan?.file_path || '',
+ 373:     markdown,
+ 374:     hash: plan?.hash || '',
+ 375:     updated_at: plan?.updated_at || '',
+ 376:     error,
+ 377:   };
+ 378: }
+ 379: 
+ 380: function planReadError(code, message) {
+ 381:   const error = new Error(message);
+ 382:   error.code = code;
+ 383:   return error;
+ 384: }
+ 385: 
+ 386: function planReadErrorMessage(error) {
+ 387:   if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
+ 388:   if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
+ 389:   return error?.message || '计划文件读取失败';
+ 390: }
+--- preload readPlan ---
+   8:   deleteProject: (input) => ipcRenderer.invoke('projects:delete', input),
+   9:   configureLoop: (config) => ipcRenderer.invoke('loop:configure', config),
+  10:   startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+  11:   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+  12:   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
+  13:   readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+  14:   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+  15:   stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+  16:   createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+--- types readPlan ---
+ 163: export interface Plan {
+ 164:   id: number;
+ 165:   project_id: number;
+ 166:   issue_hash: string;
+ 167:   file_path: string;
+ 168:   hash: string;
+ 169:   status: string;
+ 170:   total_tasks: number;
+ 171:   completed_tasks: number;
+ 172:   validation_passed: number;
+ 173:   created_at: string;
+ 174:   updated_at: string;
+ 175: }
+ 176: 
+ 177: export interface ReadPlanResult {
+ 178:   ok: boolean;
+ 179:   id: number | null;
+ 180:   project_id: number | null;
+ 181:   file_path: string;
+ 182:   markdown: string;
+ 183:   hash: string;
+ 184:   updated_at: string;
+ 185:   error: string | null;
+ 186: }
+ 187: 
+ 188: export interface PlanTask {
+ 189:   id: number;
+ 190:   plan_id: number;
+ 350: }
+ 351: 
+ 352: export interface LoopConfigInput {
+ 353:   projectId: number;
+ 354:   workspacePath?: string;
+ 355:   intervalSeconds?: number;
+ 356:   validationCommand?: string;
+ 357: }
+ 358: 
+ 359: export interface ProjectIdInput {
+ 360:   projectId: number;
+ 361:   manual?: boolean;
+ 362: }
+ 363: 
+ 364: export interface RecordIdInput extends ProjectIdInput {
+ 365:   id: number;
+ 366: }
+ 367: 
+ 368: export interface TaskIdInput extends ProjectIdInput {
+ 369:   taskId: number;
+ 370: }
+ 371: 
+ 372: export interface ReadPlanInput extends ProjectIdInput {
+ 373:   planId: number;
+ 374: }
+ 375: 
+ 376: export interface IntakeActionInput extends ProjectIdInput {
+ 377:   type: IntakeType;
+ 378:   id: number;
+ 379:   title?: string;
+ 380: }
+ 381: 
+ 382: export interface UpdateRequirementInput extends RecordIdInput {
+ 383:   title?: string;
+ 384:   body?: string;
+ 385:   status?: string;
+ 386:   attachments?: PendingAttachment[];
+ 387: }
+ 388: 
+ 389: export interface UpdateFeedbackInput extends UpdateRequirementInput {
+ 390:   requirementId?: number | null;
+ 391: }
+ 392: 
+
+diff --git a/src/main.js b/src/main.js
+index c71199b330195c0da7be7192b36bb3fbf7297adf..1ebb909012cad05ea81097203c80c2bc644eac00
+--- a/src/main.js
++++ b/src/main.js
+@@ -49,6 +49,8 @@
+ 
+ ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+ 
++ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
++
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+   const now = nowIso();
+   const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+@@ -304,6 +306,89 @@
+   return projectId;
+ }
+ 
++async function readPlan(input = {}) {
++  const projectId = Number(input.projectId || 0);
++  const planId = Number(input.planId || input.id || 0);
++  if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
++  if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
++
++  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
++  if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
++
++  const plan = db.get(
++    'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
++    [planId, projectId],
++  );
++  if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
++  if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
++  if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
++
++  try {
++    const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
++    const markdown = await fs.promises.readFile(planPath, 'utf8');
++    return planReadResult(plan, markdown, null);
++  } catch (error) {
++    return planReadResult(plan, '', planReadErrorMessage(error));
++  }
++}
++
++async function resolvePlanPath(workspacePath, filePath) {
++  const workspaceRoot = path.resolve(workspacePath);
++  const requestedPath = path.resolve(workspaceRoot, filePath);
++  if (!isInsidePath(workspaceRoot, requestedPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++
++  let workspaceRealPath;
++  try {
++    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
++  } catch {
++    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
++  }
++
++  const fileRealPath = await fs.promises.realpath(requestedPath);
++  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++  return fileRealPath;
++}
++
++function isInsidePath(rootPath, targetPath) {
++  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
++  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
++  const relativePath = path.relative(resolvedRoot, resolvedTarget);
++  return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
++}
++
++function normalizePathForCompare(value) {
++  return process.platform === 'win32' ? value.toLowerCase() : value;
++}
++
++function planReadResult(plan, markdown, error) {
++  return {
++    ok: !error,
++    id: plan?.id ?? null,
++    project_id: plan?.project_id ?? null,
++    file_path: plan?.file_path || '',
++    markdown,
++    hash: plan?.hash || '',
++    updated_at: plan?.updated_at || '',
++    error,
++  };
++}
++
++function planReadError(code, message) {
++  const error = new Error(message);
++  error.code = code;
++  return error;
++}
++
++function planReadErrorMessage(error) {
++  if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
++  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
++  return error?.message || '计划文件读取失败';
++}
++
+ function requireManualAction(input = {}, label = '操作') {
+   if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+ }
+diff --git a/src/preload.js b/src/preload.js
+index e7971cf26bb001ed6606436db6b8a3ee30107d1f..67d16009fdedf5668edaf1f6abf05917f450453f
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -10,6 +10,7 @@
+   startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
++  readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+   createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 96b965d951d08fa15f1d983aaedf6ec0cfad5722..85a2543c48dde7a29f616e3becc94f06b5de3bee
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -160,9 +160,9 @@
+   updated_at: string;
+ }
+ 
+-export interface Plan {
+-  id: number;
+-  project_id: number;
++export interface Plan {
++  id: number;
++  project_id: number;
+   issue_hash: string;
+   file_path: string;
+   hash: string;
+@@ -171,8 +171,19 @@
+   completed_tasks: number;
+   validation_passed: number;
+   created_at: string;
+-  updated_at: string;
+-}
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface PlanTask {
+   id: number;
+@@ -354,9 +365,13 @@
+   id: number;
+ }
+ 
+-export interface TaskIdInput extends ProjectIdInput {
+-  taskId: number;
+-}
++export interface TaskIdInput extends ProjectIdInput {
++  taskId: number;
++}
++
++export interface ReadPlanInput extends ProjectIdInput {
++  planId: number;
++}
+ 
+ export interface IntakeActionInput extends ProjectIdInput {
+   type: IntakeType;
+@@ -381,10 +396,11 @@
+   updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+   deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+   configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+-  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
++  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
++  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+   updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $i=0; Get-Content -LiteralPath '"'src\\renderer\\types.ts' -Encoding UTF8 | ForEach-Object { "'$i++; if($i -ge 393 -and $i -le 420){ '"'{0,4}: {1}' -f "'$i, $_ } }' in D:\project\GitHub\autoplan
+ succeeded in 280ms:
+ 393: export interface AutoplanApi {
+ 394:   snapshot: (projectId?: number | null) => Promise<AppSnapshot>;
+ 395:   createProject: (input: CreateProjectInput) => Promise<AppSnapshot>;
+ 396:   updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+ 397:   deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+ 398:   configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+ 399:   startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+ 400:   stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+ 401:   runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+ 402:   readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
+ 403:   runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+ 404:   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+ 405:   createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+ 406:   updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+ 407:   deleteRequirement: (input: RecordIdInput) => Promise<AppSnapshot>;
+ 408:   createFeedback: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+ 409:   updateFeedback: (input: UpdateFeedbackInput) => Promise<AppSnapshot>;
+ 410:   deleteFeedback: (input: RecordIdInput) => Promise<AppSnapshot>;
+ 411:   updatePlanDraft: (input: { id: number; markdown: string }) => Promise<AppSnapshot>;
+ 412:   interruptIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+ 413:   resumeIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+ 414:   appendIntakeTask: (input: IntakeActionInput) => Promise<AppSnapshot>;
+ 415:   getDroppedFilePath: (file: File) => string;
+ 416:   toFileUrl: (filePath: string) => string;
+ 417:   onLoopUpdate: (handler: (snapshot: AppSnapshot) => void) => () => void;
+ 418: }
+ 419: 
+ 420: declare global {
+
+diff --git a/src/main.js b/src/main.js
+index c71199b330195c0da7be7192b36bb3fbf7297adf..1ebb909012cad05ea81097203c80c2bc644eac00
+--- a/src/main.js
++++ b/src/main.js
+@@ -49,6 +49,8 @@
+ 
+ ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+ 
++ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
++
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+   const now = nowIso();
+   const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+@@ -304,6 +306,89 @@
+   return projectId;
+ }
+ 
++async function readPlan(input = {}) {
++  const projectId = Number(input.projectId || 0);
++  const planId = Number(input.planId || input.id || 0);
++  if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
++  if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
++
++  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
++  if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
++
++  const plan = db.get(
++    'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
++    [planId, projectId],
++  );
++  if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
++  if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
++  if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
++
++  try {
++    const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
++    const markdown = await fs.promises.readFile(planPath, 'utf8');
++    return planReadResult(plan, markdown, null);
++  } catch (error) {
++    return planReadResult(plan, '', planReadErrorMessage(error));
++  }
++}
++
++async function resolvePlanPath(workspacePath, filePath) {
++  const workspaceRoot = path.resolve(workspacePath);
++  const requestedPath = path.resolve(workspaceRoot, filePath);
++  if (!isInsidePath(workspaceRoot, requestedPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++
++  let workspaceRealPath;
++  try {
++    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
++  } catch {
++    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
++  }
++
++  const fileRealPath = await fs.promises.realpath(requestedPath);
++  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++  return fileRealPath;
++}
++
++function isInsidePath(rootPath, targetPath) {
++  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
++  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
++  const relativePath = path.relative(resolvedRoot, resolvedTarget);
++  return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
++}
++
++function normalizePathForCompare(value) {
++  return process.platform === 'win32' ? value.toLowerCase() : value;
++}
++
++function planReadResult(plan, markdown, error) {
++  return {
++    ok: !error,
++    id: plan?.id ?? null,
++    project_id: plan?.project_id ?? null,
++    file_path: plan?.file_path || '',
++    markdown,
++    hash: plan?.hash || '',
++    updated_at: plan?.updated_at || '',
++    error,
++  };
++}
++
++function planReadError(code, message) {
++  const error = new Error(message);
++  error.code = code;
++  return error;
++}
++
++function planReadErrorMessage(error) {
++  if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
++  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
++  return error?.message || '计划文件读取失败';
++}
++
+ function requireManualAction(input = {}, label = '操作') {
+   if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+ }
+diff --git a/src/preload.js b/src/preload.js
+index e7971cf26bb001ed6606436db6b8a3ee30107d1f..67d16009fdedf5668edaf1f6abf05917f450453f
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -10,6 +10,7 @@
+   startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
++  readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+   createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 96b965d951d08fa15f1d983aaedf6ec0cfad5722..85a2543c48dde7a29f616e3becc94f06b5de3bee
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -160,9 +160,9 @@
+   updated_at: string;
+ }
+ 
+-export interface Plan {
+-  id: number;
+-  project_id: number;
++export interface Plan {
++  id: number;
++  project_id: number;
+   issue_hash: string;
+   file_path: string;
+   hash: string;
+@@ -171,8 +171,19 @@
+   completed_tasks: number;
+   validation_passed: number;
+   created_at: string;
+-  updated_at: string;
+-}
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface PlanTask {
+   id: number;
+@@ -354,9 +365,13 @@
+   id: number;
+ }
+ 
+-export interface TaskIdInput extends ProjectIdInput {
+-  taskId: number;
+-}
++export interface TaskIdInput extends ProjectIdInput {
++  taskId: number;
++}
++
++export interface ReadPlanInput extends ProjectIdInput {
++  planId: number;
++}
+ 
+ export interface IntakeActionInput extends ProjectIdInput {
+   type: IntakeType;
+@@ -381,10 +396,11 @@
+   updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+   deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+   configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+-  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
++  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
++  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+   updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+
+codex
+新增片段看起来一致；现在运行仅针对改动 JS 的语法检查。
+exec
+powershell.exe -Command "node --check .\\src\\main.js; if ("'$LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; node --check .'"\\src\\preload.js" in D:\project\GitHub\autoplan
+ succeeded in 289ms:
+diff --git a/src/main.js b/src/main.js
+index c71199b330195c0da7be7192b36bb3fbf7297adf..1ebb909012cad05ea81097203c80c2bc644eac00
+--- a/src/main.js
++++ b/src/main.js
+@@ -49,6 +49,8 @@
+ 
+ ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+ 
++ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
++
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+   const now = nowIso();
+   const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+@@ -304,6 +306,89 @@
+   return projectId;
+ }
+ 
++async function readPlan(input = {}) {
++  const projectId = Number(input.projectId || 0);
++  const planId = Number(input.planId || input.id || 0);
++  if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
++  if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
++
++  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
++  if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
++
++  const plan = db.get(
++    'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
++    [planId, projectId],
++  );
++  if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
++  if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
++  if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
++
++  try {
++    const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
++    const markdown = await fs.promises.readFile(planPath, 'utf8');
++    return planReadResult(plan, markdown, null);
++  } catch (error) {
++    return planReadResult(plan, '', planReadErrorMessage(error));
++  }
++}
++
++async function resolvePlanPath(workspacePath, filePath) {
++  const workspaceRoot = path.resolve(workspacePath);
++  const requestedPath = path.resolve(workspaceRoot, filePath);
++  if (!isInsidePath(workspaceRoot, requestedPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++
++  let workspaceRealPath;
++  try {
++    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
++  } catch {
++    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
++  }
++
++  const fileRealPath = await fs.promises.realpath(requestedPath);
++  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++  return fileRealPath;
++}
++
++function isInsidePath(rootPath, targetPath) {
++  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
++  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
++  const relativePath = path.relative(resolvedRoot, resolvedTarget);
++  return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
++}
++
++function normalizePathForCompare(value) {
++  return process.platform === 'win32' ? value.toLowerCase() : value;
++}
++
++function planReadResult(plan, markdown, error) {
++  return {
++    ok: !error,
++    id: plan?.id ?? null,
++    project_id: plan?.project_id ?? null,
++    file_path: plan?.file_path || '',
++    markdown,
++    hash: plan?.hash || '',
++    updated_at: plan?.updated_at || '',
++    error,
++  };
++}
++
++function planReadError(code, message) {
++  const error = new Error(message);
++  error.code = code;
++  return error;
++}
++
++function planReadErrorMessage(error) {
++  if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
++  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
++  return error?.message || '计划文件读取失败';
++}
++
+ function requireManualAction(input = {}, label = '操作') {
+   if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+ }
+diff --git a/src/preload.js b/src/preload.js
+index e7971cf26bb001ed6606436db6b8a3ee30107d1f..67d16009fdedf5668edaf1f6abf05917f450453f
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -10,6 +10,7 @@
+   startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
++  readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+   createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 96b965d951d08fa15f1d983aaedf6ec0cfad5722..85a2543c48dde7a29f616e3becc94f06b5de3bee
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -160,9 +160,9 @@
+   updated_at: string;
+ }
+ 
+-export interface Plan {
+-  id: number;
+-  project_id: number;
++export interface Plan {
++  id: number;
++  project_id: number;
+   issue_hash: string;
+   file_path: string;
+   hash: string;
+@@ -171,8 +171,19 @@
+   completed_tasks: number;
+   validation_passed: number;
+   created_at: string;
+-  updated_at: string;
+-}
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface PlanTask {
+   id: number;
+@@ -354,9 +365,13 @@
+   id: number;
+ }
+ 
+-export interface TaskIdInput extends ProjectIdInput {
+-  taskId: number;
+-}
++export interface TaskIdInput extends ProjectIdInput {
++  taskId: number;
++}
++
++export interface ReadPlanInput extends ProjectIdInput {
++  planId: number;
++}
+ 
+ export interface IntakeActionInput extends ProjectIdInput {
+   type: IntakeType;
+@@ -381,10 +396,11 @@
+   updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+   deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+   configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+-  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
++  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
++  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+   updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+
+codex
+JS 已通过语法检查；再用本地 TypeScript 编译器只校验类型文件。
+exec
+powershell.exe -Command "if (Test-Path -LiteralPath '.\\node_modules\\.bin\\tsc.cmd') { .\\node_modules\\.bin\\tsc.cmd --noEmit --pretty false --skipLibCheck --target ES2020 --moduleResolution node .\\src\\renderer\\types.ts } else { Write-Output 'local tsc not found; skipped' }" in D:\project\GitHub\autoplan
+2026-06-24T20:02:04.411936Z ERROR codex_core::tools::router: error={"output":"error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error.\r\n","metadata":{"exit_code":1,"duration_seconds":0.3}}
+ exited 1 in 312ms:
+error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error.
+
+diff --git a/src/main.js b/src/main.js
+index c71199b330195c0da7be7192b36bb3fbf7297adf..1ebb909012cad05ea81097203c80c2bc644eac00
+--- a/src/main.js
++++ b/src/main.js
+@@ -49,6 +49,8 @@
+ 
+ ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+ 
++ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
++
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+   const now = nowIso();
+   const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+@@ -304,6 +306,89 @@
+   return projectId;
+ }
+ 
++async function readPlan(input = {}) {
++  const projectId = Number(input.projectId || 0);
++  const planId = Number(input.planId || input.id || 0);
++  if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
++  if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
++
++  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
++  if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
++
++  const plan = db.get(
++    'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
++    [planId, projectId],
++  );
++  if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
++  if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
++  if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
++
++  try {
++    const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
++    const markdown = await fs.promises.readFile(planPath, 'utf8');
++    return planReadResult(plan, markdown, null);
++  } catch (error) {
++    return planReadResult(plan, '', planReadErrorMessage(error));
++  }
++}
++
++async function resolvePlanPath(workspacePath, filePath) {
++  const workspaceRoot = path.resolve(workspacePath);
++  const requestedPath = path.resolve(workspaceRoot, filePath);
++  if (!isInsidePath(workspaceRoot, requestedPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++
++  let workspaceRealPath;
++  try {
++    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
++  } catch {
++    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
++  }
++
++  const fileRealPath = await fs.promises.realpath(requestedPath);
++  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++  return fileRealPath;
++}
++
++function isInsidePath(rootPath, targetPath) {
++  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
++  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
++  const relativePath = path.relative(resolvedRoot, resolvedTarget);
++  return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
++}
++
++function normalizePathForCompare(value) {
++  return process.platform === 'win32' ? value.toLowerCase() : value;
++}
++
++function planReadResult(plan, markdown, error) {
++  return {
++    ok: !error,
++    id: plan?.id ?? null,
++    project_id: plan?.project_id ?? null,
++    file_path: plan?.file_path || '',
++    markdown,
++    hash: plan?.hash || '',
++    updated_at: plan?.updated_at || '',
++    error,
++  };
++}
++
++function planReadError(code, message) {
++  const error = new Error(message);
++  error.code = code;
++  return error;
++}
++
++function planReadErrorMessage(error) {
++  if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
++  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
++  return error?.message || '计划文件读取失败';
++}
++
+ function requireManualAction(input = {}, label = '操作') {
+   if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+ }
+diff --git a/src/preload.js b/src/preload.js
+index e7971cf26bb001ed6606436db6b8a3ee30107d1f..67d16009fdedf5668edaf1f6abf05917f450453f
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -10,6 +10,7 @@
+   startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
++  readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+   createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 96b965d951d08fa15f1d983aaedf6ec0cfad5722..85a2543c48dde7a29f616e3becc94f06b5de3bee
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -160,9 +160,9 @@
+   updated_at: string;
+ }
+ 
+-export interface Plan {
+-  id: number;
+-  project_id: number;
++export interface Plan {
++  id: number;
++  project_id: number;
+   issue_hash: string;
+   file_path: string;
+   hash: string;
+@@ -171,8 +171,19 @@
+   completed_tasks: number;
+   validation_passed: number;
+   created_at: string;
+-  updated_at: string;
+-}
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface PlanTask {
+   id: number;
+@@ -354,9 +365,13 @@
+   id: number;
+ }
+ 
+-export interface TaskIdInput extends ProjectIdInput {
+-  taskId: number;
+-}
++export interface TaskIdInput extends ProjectIdInput {
++  taskId: number;
++}
++
++export interface ReadPlanInput extends ProjectIdInput {
++  planId: number;
++}
+ 
+ export interface IntakeActionInput extends ProjectIdInput {
+   type: IntakeType;
+@@ -381,10 +396,11 @@
+   updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+   deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+   configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+-  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
++  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
++  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+   updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+
+**Deciding on TypeScript fix**
+
+I’ve encountered a validation failure due to TS5112, and now I need to decide how to fix it. I’m considering rerunning with `--ignoreConfig` if that's supported. Is this caused by TypeScript version 5.8? I want to keep things minimal. 
+
+I think I can execute `tsc --noEmit --pretty false --skipLibCheck --target ES2020 --moduleResolution node --ignoreConfig .\src\renderer\types.ts`. It’s a bit confusing, so let’s see if this resolves the issue!
+codex
+本地 `tsc` 要求显式忽略配置；我会按单文件模式重跑一次。
+exec
+powershell.exe -Command ".\\node_modules\\.bin\\tsc.cmd --noEmit --pretty false --skipLibCheck --target ES2020 --moduleResolution node --ignoreConfig .\\src\\renderer\\types.ts" in D:\project\GitHub\autoplan
+2026-06-24T20:02:10.949604Z ERROR codex_core::tools::router: error={"output":"error TS5107: Option 'moduleResolution=node10' is deprecated and will stop functioning in TypeScript 7.0. Specify compilerOption '\"ignoreDeprecations\": \"6.0\"' to silence this error.\r\n  Visit https://aka.ms/ts6 for migration information.\r\n","metadata":{"exit_code":1,"duration_seconds":0.4}}
+ exited 1 in 440ms:
+error TS5107: Option 'moduleResolution=node10' is deprecated and will stop functioning in TypeScript 7.0. Specify compilerOption '"ignoreDeprecations": "6.0"' to silence this error.
+  Visit https://aka.ms/ts6 for migration information.
+
+diff --git a/src/main.js b/src/main.js
+index c71199b330195c0da7be7192b36bb3fbf7297adf..1ebb909012cad05ea81097203c80c2bc644eac00
+--- a/src/main.js
++++ b/src/main.js
+@@ -49,6 +49,8 @@
+ 
+ ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+ 
++ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
++
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+   const now = nowIso();
+   const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+@@ -304,6 +306,89 @@
+   return projectId;
+ }
+ 
++async function readPlan(input = {}) {
++  const projectId = Number(input.projectId || 0);
++  const planId = Number(input.planId || input.id || 0);
++  if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
++  if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
++
++  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
++  if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
++
++  const plan = db.get(
++    'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
++    [planId, projectId],
++  );
++  if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
++  if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
++  if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
++
++  try {
++    const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
++    const markdown = await fs.promises.readFile(planPath, 'utf8');
++    return planReadResult(plan, markdown, null);
++  } catch (error) {
++    return planReadResult(plan, '', planReadErrorMessage(error));
++  }
++}
++
++async function resolvePlanPath(workspacePath, filePath) {
++  const workspaceRoot = path.resolve(workspacePath);
++  const requestedPath = path.resolve(workspaceRoot, filePath);
++  if (!isInsidePath(workspaceRoot, requestedPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++
++  let workspaceRealPath;
++  try {
++    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
++  } catch {
++    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
++  }
++
++  const fileRealPath = await fs.promises.realpath(requestedPath);
++  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++  return fileRealPath;
++}
++
++function isInsidePath(rootPath, targetPath) {
++  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
++  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
++  const relativePath = path.relative(resolvedRoot, resolvedTarget);
++  return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
++}
++
++function normalizePathForCompare(value) {
++  return process.platform === 'win32' ? value.toLowerCase() : value;
++}
++
++function planReadResult(plan, markdown, error) {
++  return {
++    ok: !error,
++    id: plan?.id ?? null,
++    project_id: plan?.project_id ?? null,
++    file_path: plan?.file_path || '',
++    markdown,
++    hash: plan?.hash || '',
++    updated_at: plan?.updated_at || '',
++    error,
++  };
++}
++
++function planReadError(code, message) {
++  const error = new Error(message);
++  error.code = code;
++  return error;
++}
++
++function planReadErrorMessage(error) {
++  if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
++  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
++  return error?.message || '计划文件读取失败';
++}
++
+ function requireManualAction(input = {}, label = '操作') {
+   if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+ }
+diff --git a/src/preload.js b/src/preload.js
+index e7971cf26bb001ed6606436db6b8a3ee30107d1f..67d16009fdedf5668edaf1f6abf05917f450453f
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -10,6 +10,7 @@
+   startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
++  readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+   createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 96b965d951d08fa15f1d983aaedf6ec0cfad5722..85a2543c48dde7a29f616e3becc94f06b5de3bee
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -160,9 +160,9 @@
+   updated_at: string;
+ }
+ 
+-export interface Plan {
+-  id: number;
+-  project_id: number;
++export interface Plan {
++  id: number;
++  project_id: number;
+   issue_hash: string;
+   file_path: string;
+   hash: string;
+@@ -171,8 +171,19 @@
+   completed_tasks: number;
+   validation_passed: number;
+   created_at: string;
+-  updated_at: string;
+-}
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface PlanTask {
+   id: number;
+@@ -354,9 +365,13 @@
+   id: number;
+ }
+ 
+-export interface TaskIdInput extends ProjectIdInput {
+-  taskId: number;
+-}
++export interface TaskIdInput extends ProjectIdInput {
++  taskId: number;
++}
++
++export interface ReadPlanInput extends ProjectIdInput {
++  planId: number;
++}
+ 
+ export interface IntakeActionInput extends ProjectIdInput {
+   type: IntakeType;
+@@ -381,10 +396,11 @@
+   updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+   deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+   configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+-  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
++  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
++  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+   updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+
+codex
+单文件 TS 检查遇到解析模式弃用提示，改用现代解析模式继续验证。
+exec
+powershell.exe -Command ".\\node_modules\\.bin\\tsc.cmd --noEmit --pretty false --skipLibCheck --target ES2020 --module ESNext --moduleResolution bundler --ignoreConfig .\\src\\renderer\\types.ts" in D:\project\GitHub\autoplan
+ succeeded in 547ms:
+diff --git a/src/main.js b/src/main.js
+index c71199b330195c0da7be7192b36bb3fbf7297adf..1ebb909012cad05ea81097203c80c2bc644eac00
+--- a/src/main.js
++++ b/src/main.js
+@@ -49,6 +49,8 @@
+ 
+ ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+ 
++ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
++
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+   const now = nowIso();
+   const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+@@ -304,6 +306,89 @@
+   return projectId;
+ }
+ 
++async function readPlan(input = {}) {
++  const projectId = Number(input.projectId || 0);
++  const planId = Number(input.planId || input.id || 0);
++  if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
++  if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
++
++  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
++  if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
++
++  const plan = db.get(
++    'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
++    [planId, projectId],
++  );
++  if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
++  if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
++  if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
++
++  try {
++    const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
++    const markdown = await fs.promises.readFile(planPath, 'utf8');
++    return planReadResult(plan, markdown, null);
++  } catch (error) {
++    return planReadResult(plan, '', planReadErrorMessage(error));
++  }
++}
++
++async function resolvePlanPath(workspacePath, filePath) {
++  const workspaceRoot = path.resolve(workspacePath);
++  const requestedPath = path.resolve(workspaceRoot, filePath);
++  if (!isInsidePath(workspaceRoot, requestedPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++
++  let workspaceRealPath;
++  try {
++    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
++  } catch {
++    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
++  }
++
++  const fileRealPath = await fs.promises.realpath(requestedPath);
++  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++  return fileRealPath;
++}
++
++function isInsidePath(rootPath, targetPath) {
++  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
++  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
++  const relativePath = path.relative(resolvedRoot, resolvedTarget);
++  return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
++}
++
++function normalizePathForCompare(value) {
++  return process.platform === 'win32' ? value.toLowerCase() : value;
++}
++
++function planReadResult(plan, markdown, error) {
++  return {
++    ok: !error,
++    id: plan?.id ?? null,
++    project_id: plan?.project_id ?? null,
++    file_path: plan?.file_path || '',
++    markdown,
++    hash: plan?.hash || '',
++    updated_at: plan?.updated_at || '',
++    error,
++  };
++}
++
++function planReadError(code, message) {
++  const error = new Error(message);
++  error.code = code;
++  return error;
++}
++
++function planReadErrorMessage(error) {
++  if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
++  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
++  return error?.message || '计划文件读取失败';
++}
++
+ function requireManualAction(input = {}, label = '操作') {
+   if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+ }
+diff --git a/src/preload.js b/src/preload.js
+index e7971cf26bb001ed6606436db6b8a3ee30107d1f..67d16009fdedf5668edaf1f6abf05917f450453f
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -10,6 +10,7 @@
+   startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
++  readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+   createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 96b965d951d08fa15f1d983aaedf6ec0cfad5722..85a2543c48dde7a29f616e3becc94f06b5de3bee
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -160,9 +160,9 @@
+   updated_at: string;
+ }
+ 
+-export interface Plan {
+-  id: number;
+-  project_id: number;
++export interface Plan {
++  id: number;
++  project_id: number;
+   issue_hash: string;
+   file_path: string;
+   hash: string;
+@@ -171,8 +171,19 @@
+   completed_tasks: number;
+   validation_passed: number;
+   created_at: string;
+-  updated_at: string;
+-}
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface PlanTask {
+   id: number;
+@@ -354,9 +365,13 @@
+   id: number;
+ }
+ 
+-export interface TaskIdInput extends ProjectIdInput {
+-  taskId: number;
+-}
++export interface TaskIdInput extends ProjectIdInput {
++  taskId: number;
++}
++
++export interface ReadPlanInput extends ProjectIdInput {
++  planId: number;
++}
+ 
+ export interface IntakeActionInput extends ProjectIdInput {
+   type: IntakeType;
+@@ -381,10 +396,11 @@
+   updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+   deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+   configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+-  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
++  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
++  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+   updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+
+**Checking git status**
+
+I want to verify the changes without overwhelming myself or the user with too much detail. It seems like checking a git diff summary will help, but I’ll avoid outputting the entire diff. Instead, I’ll use `git status --short` to get a concise overview of what’s been modified. This should give me clarity while keeping things manageable. Let’s get that organized!
+codex
+最小检查已通过；最后确认只改了 P001 scope 内文件。
+exec
+powershell.exe -Command 'git status --short -- src/main.js src/preload.js src/renderer/types.ts' in D:\project\GitHub\autoplan
+ succeeded in 225ms:
+ M src/main.js
+ M src/preload.js
+ M src/renderer/types.ts
+
+diff --git a/src/main.js b/src/main.js
+index c71199b330195c0da7be7192b36bb3fbf7297adf..1ebb909012cad05ea81097203c80c2bc644eac00
+--- a/src/main.js
++++ b/src/main.js
+@@ -49,6 +49,8 @@
+ 
+ ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+ 
++ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
++
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+   const now = nowIso();
+   const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+@@ -304,6 +306,89 @@
+   return projectId;
+ }
+ 
++async function readPlan(input = {}) {
++  const projectId = Number(input.projectId || 0);
++  const planId = Number(input.planId || input.id || 0);
++  if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
++  if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
++
++  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
++  if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
++
++  const plan = db.get(
++    'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
++    [planId, projectId],
++  );
++  if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
++  if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
++  if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
++
++  try {
++    const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
++    const markdown = await fs.promises.readFile(planPath, 'utf8');
++    return planReadResult(plan, markdown, null);
++  } catch (error) {
++    return planReadResult(plan, '', planReadErrorMessage(error));
++  }
++}
++
++async function resolvePlanPath(workspacePath, filePath) {
++  const workspaceRoot = path.resolve(workspacePath);
++  const requestedPath = path.resolve(workspaceRoot, filePath);
++  if (!isInsidePath(workspaceRoot, requestedPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++
++  let workspaceRealPath;
++  try {
++    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
++  } catch {
++    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
++  }
++
++  const fileRealPath = await fs.promises.realpath(requestedPath);
++  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++  return fileRealPath;
++}
++
++function isInsidePath(rootPath, targetPath) {
++  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
++  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
++  const relativePath = path.relative(resolvedRoot, resolvedTarget);
++  return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
++}
++
++function normalizePathForCompare(value) {
++  return process.platform === 'win32' ? value.toLowerCase() : value;
++}
++
++function planReadResult(plan, markdown, error) {
++  return {
++    ok: !error,
++    id: plan?.id ?? null,
++    project_id: plan?.project_id ?? null,
++    file_path: plan?.file_path || '',
++    markdown,
++    hash: plan?.hash || '',
++    updated_at: plan?.updated_at || '',
++    error,
++  };
++}
++
++function planReadError(code, message) {
++  const error = new Error(message);
++  error.code = code;
++  return error;
++}
++
++function planReadErrorMessage(error) {
++  if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
++  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
++  return error?.message || '计划文件读取失败';
++}
++
+ function requireManualAction(input = {}, label = '操作') {
+   if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+ }
+diff --git a/src/preload.js b/src/preload.js
+index e7971cf26bb001ed6606436db6b8a3ee30107d1f..67d16009fdedf5668edaf1f6abf05917f450453f
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -10,6 +10,7 @@
+   startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
++  readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+   createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 96b965d951d08fa15f1d983aaedf6ec0cfad5722..85a2543c48dde7a29f616e3becc94f06b5de3bee
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -160,9 +160,9 @@
+   updated_at: string;
+ }
+ 
+-export interface Plan {
+-  id: number;
+-  project_id: number;
++export interface Plan {
++  id: number;
++  project_id: number;
+   issue_hash: string;
+   file_path: string;
+   hash: string;
+@@ -171,8 +171,19 @@
+   completed_tasks: number;
+   validation_passed: number;
+   created_at: string;
+-  updated_at: string;
+-}
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface PlanTask {
+   id: number;
+@@ -354,9 +365,13 @@
+   id: number;
+ }
+ 
+-export interface TaskIdInput extends ProjectIdInput {
+-  taskId: number;
+-}
++export interface TaskIdInput extends ProjectIdInput {
++  taskId: number;
++}
++
++export interface ReadPlanInput extends ProjectIdInput {
++  planId: number;
++}
+ 
+ export interface IntakeActionInput extends ProjectIdInput {
+   type: IntakeType;
+@@ -381,10 +396,11 @@
+   updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+   deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+   configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+-  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
++  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
++  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+   updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+
+  ✓ 确认 P001 接口要求
+  ✓ 检查现有 IPC 约定
+  ✓ 实现读取接口声明
+  ✓ 做最小语法核对
+diff --git a/src/main.js b/src/main.js
+index c71199b330195c0da7be7192b36bb3fbf7297adf..1ebb909012cad05ea81097203c80c2bc644eac00
+--- a/src/main.js
++++ b/src/main.js
+@@ -49,6 +49,8 @@
+ 
+ ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+ 
++ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
++
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+   const now = nowIso();
+   const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+@@ -304,6 +306,89 @@
+   return projectId;
+ }
+ 
++async function readPlan(input = {}) {
++  const projectId = Number(input.projectId || 0);
++  const planId = Number(input.planId || input.id || 0);
++  if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
++  if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
++
++  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
++  if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
++
++  const plan = db.get(
++    'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
++    [planId, projectId],
++  );
++  if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
++  if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
++  if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
++
++  try {
++    const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
++    const markdown = await fs.promises.readFile(planPath, 'utf8');
++    return planReadResult(plan, markdown, null);
++  } catch (error) {
++    return planReadResult(plan, '', planReadErrorMessage(error));
++  }
++}
++
++async function resolvePlanPath(workspacePath, filePath) {
++  const workspaceRoot = path.resolve(workspacePath);
++  const requestedPath = path.resolve(workspaceRoot, filePath);
++  if (!isInsidePath(workspaceRoot, requestedPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++
++  let workspaceRealPath;
++  try {
++    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
++  } catch {
++    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
++  }
++
++  const fileRealPath = await fs.promises.realpath(requestedPath);
++  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++  return fileRealPath;
++}
++
++function isInsidePath(rootPath, targetPath) {
++  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
++  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
++  const relativePath = path.relative(resolvedRoot, resolvedTarget);
++  return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
++}
++
++function normalizePathForCompare(value) {
++  return process.platform === 'win32' ? value.toLowerCase() : value;
++}
++
++function planReadResult(plan, markdown, error) {
++  return {
++    ok: !error,
++    id: plan?.id ?? null,
++    project_id: plan?.project_id ?? null,
++    file_path: plan?.file_path || '',
++    markdown,
++    hash: plan?.hash || '',
++    updated_at: plan?.updated_at || '',
++    error,
++  };
++}
++
++function planReadError(code, message) {
++  const error = new Error(message);
++  error.code = code;
++  return error;
++}
++
++function planReadErrorMessage(error) {
++  if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
++  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
++  return error?.message || '计划文件读取失败';
++}
++
+ function requireManualAction(input = {}, label = '操作') {
+   if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+ }
+diff --git a/src/preload.js b/src/preload.js
+index e7971cf26bb001ed6606436db6b8a3ee30107d1f..67d16009fdedf5668edaf1f6abf05917f450453f
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -10,6 +10,7 @@
+   startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
++  readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+   createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 96b965d951d08fa15f1d983aaedf6ec0cfad5722..85a2543c48dde7a29f616e3becc94f06b5de3bee
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -160,9 +160,9 @@
+   updated_at: string;
+ }
+ 
+-export interface Plan {
+-  id: number;
+-  project_id: number;
++export interface Plan {
++  id: number;
++  project_id: number;
+   issue_hash: string;
+   file_path: string;
+   hash: string;
+@@ -171,8 +171,19 @@
+   completed_tasks: number;
+   validation_passed: number;
+   created_at: string;
+-  updated_at: string;
+-}
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface PlanTask {
+   id: number;
+@@ -354,9 +365,13 @@
+   id: number;
+ }
+ 
+-export interface TaskIdInput extends ProjectIdInput {
+-  taskId: number;
+-}
++export interface TaskIdInput extends ProjectIdInput {
++  taskId: number;
++}
++
++export interface ReadPlanInput extends ProjectIdInput {
++  planId: number;
++}
+ 
+ export interface IntakeActionInput extends ProjectIdInput {
+   type: IntakeType;
+@@ -381,10 +396,11 @@
+   updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+   deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+   configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+-  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
++  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
++  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+   updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+
+codex
+**完成**
+- 已完成 P001，仅修改 scope 内文件：`src/main.js`、`src/preload.js`、`src/renderer/types.ts`。
+- 新增 `plans:read` IPC：`src/main.js:52`，通过 `readPlan` 按需读取 Plan 全文：`src/main.js:309`。
+- 主进程基于 `projects.workspace_path` 与 `plans.file_path` 解析真实路径，并拒绝工作区外路径：`src/main.js:335`。
+- preload 暴露 `window.autoplan.readPlan`：`src/preload.js:13`。
+- 新增 `ReadPlanResult` / `ReadPlanInput` 与 API 类型声明：`src/renderer/types.ts:177`、`src/renderer/types.ts:372`、`src/renderer/types.ts:402`。
+- 未修改 plan 文件，未勾选 checkbox，未处理其它任务。
+
+**验证**
+- 通过：`node --check .\src\main.js`
+- 通过：`node --check .\src\preload.js`
+- 通过：`.\node_modules\.bin\tsc.cmd --noEmit --pretty false --skipLibCheck --target ES2020 --module ESNext --moduleResolution bundler --ignoreConfig .\src\renderer\types.ts`
+diff --git a/src/main.js b/src/main.js
+index c71199b330195c0da7be7192b36bb3fbf7297adf..1ebb909012cad05ea81097203c80c2bc644eac00
+--- a/src/main.js
++++ b/src/main.js
+@@ -49,6 +49,8 @@
+ 
+ ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+ 
++ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
++
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+   const now = nowIso();
+   const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+@@ -304,6 +306,89 @@
+   return projectId;
+ }
+ 
++async function readPlan(input = {}) {
++  const projectId = Number(input.projectId || 0);
++  const planId = Number(input.planId || input.id || 0);
++  if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
++  if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
++
++  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
++  if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
++
++  const plan = db.get(
++    'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
++    [planId, projectId],
++  );
++  if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
++  if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
++  if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
++
++  try {
++    const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
++    const markdown = await fs.promises.readFile(planPath, 'utf8');
++    return planReadResult(plan, markdown, null);
++  } catch (error) {
++    return planReadResult(plan, '', planReadErrorMessage(error));
++  }
++}
++
++async function resolvePlanPath(workspacePath, filePath) {
++  const workspaceRoot = path.resolve(workspacePath);
++  const requestedPath = path.resolve(workspaceRoot, filePath);
++  if (!isInsidePath(workspaceRoot, requestedPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++
++  let workspaceRealPath;
++  try {
++    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
++  } catch {
++    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
++  }
++
++  const fileRealPath = await fs.promises.realpath(requestedPath);
++  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
++    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
++  }
++  return fileRealPath;
++}
++
++function isInsidePath(rootPath, targetPath) {
++  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
++  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
++  const relativePath = path.relative(resolvedRoot, resolvedTarget);
++  return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
++}
++
++function normalizePathForCompare(value) {
++  return process.platform === 'win32' ? value.toLowerCase() : value;
++}
++
++function planReadResult(plan, markdown, error) {
++  return {
++    ok: !error,
++    id: plan?.id ?? null,
++    project_id: plan?.project_id ?? null,
++    file_path: plan?.file_path || '',
++    markdown,
++    hash: plan?.hash || '',
++    updated_at: plan?.updated_at || '',
++    error,
++  };
++}
++
++function planReadError(code, message) {
++  const error = new Error(message);
++  error.code = code;
++  return error;
++}
++
++function planReadErrorMessage(error) {
++  if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
++  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
++  return error?.message || '计划文件读取失败';
++}
++
+ function requireManualAction(input = {}, label = '操作') {
+   if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+ }
+diff --git a/src/preload.js b/src/preload.js
+index e7971cf26bb001ed6606436db6b8a3ee30107d1f..67d16009fdedf5668edaf1f6abf05917f450453f
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -10,6 +10,7 @@
+   startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
++  readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+   createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 96b965d951d08fa15f1d983aaedf6ec0cfad5722..85a2543c48dde7a29f616e3becc94f06b5de3bee
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -160,9 +160,9 @@
+   updated_at: string;
+ }
+ 
+-export interface Plan {
+-  id: number;
+-  project_id: number;
++export interface Plan {
++  id: number;
++  project_id: number;
+   issue_hash: string;
+   file_path: string;
+   hash: string;
+@@ -171,8 +171,19 @@
+   completed_tasks: number;
+   validation_passed: number;
+   created_at: string;
+-  updated_at: string;
+-}
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface PlanTask {
+   id: number;
+@@ -354,9 +365,13 @@
+   id: number;
+ }
+ 
+-export interface TaskIdInput extends ProjectIdInput {
+-  taskId: number;
+-}
++export interface TaskIdInput extends ProjectIdInput {
++  taskId: number;
++}
++
++export interface ReadPlanInput extends ProjectIdInput {
++  planId: number;
++}
+ 
+ export interface IntakeActionInput extends ProjectIdInput {
+   type: IntakeType;
+@@ -381,10 +396,11 @@
+   updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+   deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+   configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+-  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+-  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
++  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
++  readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
++  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+   createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+   updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+
+tokens used
+114,645
+**完成**
+- 已完成 P001，仅修改 scope 内文件：`src/main.js`、`src/preload.js`、`src/renderer/types.ts`。
+- 新增 `plans:read` IPC：`src/main.js:52`，通过 `readPlan` 按需读取 Plan 全文：`src/main.js:309`。
+- 主进程基于 `projects.workspace_path` 与 `plans.file_path` 解析真实路径，并拒绝工作区外路径：`src/main.js:335`。
+- preload 暴露 `window.autoplan.readPlan`：`src/preload.js:13`。
+- 新增 `ReadPlanResult` / `ReadPlanInput` 与 API 类型声明：`src/renderer/types.ts:177`、`src/renderer/types.ts:372`、`src/renderer/types.ts:402`。
+- 未修改 plan 文件，未勾选 checkbox，未处理其它任务。
+
+**验证**
+- 通过：`node --check .\src\main.js`
+- 通过：`node --check .\src\preload.js`
+- 通过：`.\node_modules\.bin\tsc.cmd --noEmit --pretty false --skipLibCheck --target ES2020 --module ESNext --moduleResolution bundler --ignoreConfig .\src\renderer\types.ts`

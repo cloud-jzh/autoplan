@@ -1,0 +1,3312 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019efb6a-b9f6-7170-984a-79bb80f6127b
+--------
+user
+你是开发执行者。
+请只执行指定任务 P004，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_6_20260625-032502.md
+指定任务：
+- [ ] P004: 替换流水线与输入区图标 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/Composer.tsx,src/styles.css -->
+任务 scope：src/renderer/pages/workspacepage.tsx, src/renderer/components/composer.tsx, src/styles.css
+
+完成后必须：
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 如需测试，只运行与当前任务直接相关的最小测试集，不要运行全量测试或与本任务无关的测试
+- 只有当前任务本身明确要求全量验证时，才允许运行全量测试
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会先读取只读计划上下文和目标文件，确认 P004 的具体图标替换范围。
+  → 读取 P004 上下文
+  • 定位现有图标实现
+  • 替换目标图标样式
+  • 做最小静态检查
+exec
+powershell.exe -Command "Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\docs\\plan\\plan_requirement_6_20260625-032502.md' -Encoding UTF8 | Select-String -Pattern 'P004|图标|流水线|输入区' -Context 3,6" in D:\project\GitHub\autoplan
+ succeeded in 206ms:
+
+> # 需求 #6 开发计划：系统界面图标统一使用 Icon
+  
+  ## 背景
+  
+> 当前界面中部分导航、统计卡片、操作按钮、状态节点和输入区按钮直接使用字符符号或 emoji 作为图标。需求 #6 要求系统界面的图标统一使用 icon，而不是使用 emoji，以保证视觉风格一致、跨平台渲染稳定、可访问性明确，并便于后
+续维护主题色、尺寸和悬浮态。
+  
+  ## 任务拆解
+  
+> - [x] P001: 建立统一 SVG 图标体系 <!-- scope: src/renderer/components/icons.tsx,src/styles.css -->
+>   - 验收要点：新增本地图标组件或图标映射，默认使用 SVG icon，不新增非必要运行时依赖。
+>   - 验收要点：图标组件支持统一的 `size`、`className`、`title` 或 `aria-hidden` 语义，装饰图标不被屏幕阅读器重复朗读。
+>   - 验收要点：覆盖当前界面需要的概览、需求、反馈、任务、事件、计划、运行、完成、编辑、删除、警告、刷新、附件、发送等基础图标。
+>   - 验收要点：图标颜色默认继承文本色或使用现有 CSS 变量，能够适配品牌色、成功、警告、危险和普通按钮状态。
+  
+> - [x] P002: 替换项目页操作图标 <!-- scope: src/renderer/pages/ProjectsPage.tsx,src/styles.css -->
+    - 验收要点：项目卡片右键菜单或更多菜单中的进入工作区、编辑、删除操作均使用 SVG icon，按钮文字和点击行为保持不变。
+    - 验收要点：删除确认弹窗的警告视觉改为统一 Icon 组件，保留现有危险色、圆形背景和居中布局。
+>   - 验收要点：项目页不再把 emoji 或字符符号作为操作图标来源，搜索、创建、编辑、删除流程无回归。
+>   - 验收要点：图标与文字间距、对齐、悬浮态和危险态在窄屏及长项目名称下不挤压、不错位。
+  
+> - [x] P003: 替换工作区导航与统计图标 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/styles.css -->
+>   - 验收要点：工作区侧边导航的概览、需求、反馈、任务与计划、事件流图标改为统一 SVG icon，当前选中态样式保持一致。
+>   - 验收要点：概览统计卡片中的需求数、计划数、任务进度、循环间隔图标改为 Icon 组件，`StatCard` 不再依赖字符串图标。
+>   - 验收要点：图标替换后统计卡片的颜色、尺寸、圆形背景、文字层级和响应式布局与现有视觉保持一致或更稳定。
+>   - 验收要点：工作区标题、返回项目列表、查看任务等文字入口不因图标替换丢失可点击区域或可访问标签。
+  
+> - [ ] P004: 替换流水线与输入区图标 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/Composer.tsx,src/sty
+les.css -->
+>   - 验收要点：循环阶段流水线中的完成态和运行态使用 SVG icon，未开始步骤仍可显示序号，阶段状态语义保持清晰。
+>   - 验收要点：需求/反馈输入区的添加附件、发送按钮和非图片附件占位改为 Icon 组件，不再使用字符图形充当图标。
+    - 验收要点：按钮 `aria-label`、键盘触发、文件选择、拖拽上传和提交表单行为保持不变。
+>   - 验收要点：输入区图标在禁用、悬浮、拖拽高亮和紧凑布局下尺寸统一，不影响文本区域高度自适应。
+  
+> - [x] P005: 同步静态界面原型图标 <!-- scope: ui/projects.html,ui/workspace.html,ui/README.md -->
+>   - 验收要点：静态项目页和工作区原型中用于导航、统计、操作、警告、附件和流水线状态的 emoji 或字符符号改为 inline SVG 或可复用 icon 片段。
+>   - 验收要点：原型页面的视觉说明与实际 React 界面保持一致，`ui/README.md` 补充“界面图标使用 icon，不使用 emoji”的设计约束。
+>   - 验收要点：原型中的示例业务文案、时间、状态、占位内容不被误删，仅替换承担图标职责的符号。
+>   - 验收要点：浏览器直接打开静态 HTML 时图标可见，无需依赖外部 CDN 或网络资源。
+  
+> - [ ] P006: 执行图标替换回归验证 <!-- scope: package.json,src/renderer/components/icons.tsx,src/renderer/pages/ProjectsPage.tsx
+,src/renderer/pages/WorkspacePage.tsx,src/renderer/components/Composer.tsx,src/styles.css,ui/projects.html,ui/workspace
+.html -->
+    - 验收要点：`npm run check` 通过，确认 TypeScript、主进程脚本和现有检查无错误。
+    - 验收要点：`npm run build` 通过，确认新增或替换的 SVG icon 可被 Vite 正常构建。
+>   - 验收要点：对 `src/renderer`、`src/styles.css` 和 `ui` 执行字符扫描，确认无承担图标职责的 emoji 或字符符号残留。
+>   - 验收要点：手动核对项目页、工作区概览、任务与计划、事件流、需求/反馈输入区，确认图标展示清晰且主要交互无回归。
+  
+  ## 总体验收标准
+  
+> - 图标统一：系统界面中所有承担图标职责的元素均使用 SVG icon 或统一 Icon 组件，不再使用 emoji 作为图标。
+> - 视觉一致：图标尺寸、线宽、颜色、悬浮态、危险态和选中态遵循现有设计变量，页面整体风格统一。
+  - 交互无回归：项目管理、工作区导航、输入提交、附件上传、任务查看、删除确认等核心交互保持原有行为。
+> - 可访问性明确：装饰性图标正确隐藏，功能性按钮保留可读 `aria-label` 或文字说明，键盘操作不受影响。
+> - 构建通过：完成实现后 `npm run check` 与 `npm run build` 均通过，静态原型无需外部资源即可正常显示图标。
+  
+  ## 进度区
+  
+  - 2026-06-25 AutoPlan 生成：需求 #6 开发计划已创建，待执行。
+  - P001 AutoPlan 完成：2026-06-24T19:39:14.797Z；日志：docs/progress/logs/20260625-032739_execute-P001.log
+  - P005 AutoPlan 完成：2026-06-24T19:39:14.812Z；日志：docs/progress/logs/20260625-032739_execute-P005.log
+
+
+
+**Exploring code files**
+
+I need to inspect files now. First, I think I'll use the codegraph_explore tool to look at the code. I wonder if I need to retrieve the files first, or maybe a shell command will work. Should I include a preamble? Maybe not if it’s trivial? I guess I can just call codegraph directly for efficiency. Let's see how that goes!
+codex
+已确认 P004 验收点；现在定位当前字符图标和已建 Icon 组件。
+mcp: codegraph/codegraph_explore started
+mcp: codegraph/codegraph_explore (failed)
+**Continuing with shell execution**
+
+I see that Codegraph is unavailable, so it looks like I need to proceed with the shell instead. I attempted to initialize at first, but maybe that's not necessary? If I do, it could create a .codegraph file that's not in scope, which isn't ideal. Instead, I should use the shell for searching relevant files. Let's keep moving forward with that approach!
+codex
+CodeGraph 未初始化，我会改用本地搜索，只看 P004 scope 文件。
+exec
+powershell.exe -Command 'rg -n "[✅🔄📎➤▶▶️✔✓⏳⚠️📄🖼️📷🗑️✕×＋+]|icon|Icon|Stage|pipeline|attachment|send|file|aria-label" src/renderer/pages/WorkspacePage.tsx src/renderer/components/Composer.tsx src/styles.css' in D:\project\GitHub\autoplan
+ succeeded in 148ms:
+src/renderer/components/Composer.tsx:10:  onAddFiles: (type: IntakeType, files: FileList | File[] | null) => void;
+src/renderer/components/Composer.tsx:26:  const fileInputRef = useRef<HTMLInputElement>(null);
+src/renderer/components/Composer.tsx:40:  const addFiles = (files: FileList | File[] | null) => onAddFiles(type, files);
+src/renderer/components/Composer.tsx:65:        addFiles(event.dataTransfer.files);
+src/renderer/components/Composer.tsx:81:            className={`attachment-dropzone attachment-trigger${dragOver ? ' drag-over' : ''}`}
+src/renderer/components/Composer.tsx:82:            onClick={() => fileInputRef.current?.click()}
+src/renderer/components/Composer.tsx:86:                fileInputRef.current?.click();
+src/renderer/components/Composer.tsx:96:                addFiles(event.target.files);
+src/renderer/components/Composer.tsx:99:              ref={fileInputRef}
+src/renderer/components/Composer.tsx:100:              type="file"
+src/renderer/components/Composer.tsx:102:            <span className="plus-icon">+</span>
+src/renderer/components/Composer.tsx:105:            attachments={pendingAttachments}
+src/renderer/components/Composer.tsx:111:          <button className="send-button" type="submit" aria-label={submitLabel}>
+src/renderer/components/Composer.tsx:121:  attachments,
+src/renderer/components/Composer.tsx:124:  attachments: PendingAttachment[];
+src/renderer/components/Composer.tsx:128:    <div className="attachment-list pending">
+src/renderer/components/Composer.tsx:129:      {attachments.map((attachment, index) => (
+src/renderer/components/Composer.tsx:130:        <div className="pending-attachment" key={`${attachment.path}-${attachment.size}`}>
+src/renderer/components/Composer.tsx:131:          <PendingAttachmentPreview attachment={attachment} />
+src/renderer/components/Composer.tsx:132:          <span title={attachment.name || attachment.path}>{attachment.name || attachment.path}</span>
+src/renderer/components/Composer.tsx:133:          <small>{formatBytes(attachment.size)}</small>
+src/renderer/components/Composer.tsx:143:function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+src/renderer/components/Composer.tsx:144:  if (!attachment.type.startsWith('image/')) {
+src/renderer/components/Composer.tsx:145:    return <span className="pending-file-icon">文件</span>;
+src/renderer/components/Composer.tsx:150:      src={window.autoplan.toFileUrl(attachment.path)}
+src/renderer/components/Composer.tsx:151:      alt={attachment.name || '附件'}
+src/renderer/pages/WorkspacePage.tsx:15:import { Icon, type IconName } from '../components/icons';
+src/renderer/pages/WorkspacePage.tsx:24:const tabs: Array<{ id: WorkspaceTab; label: string; icon: IconName }> = [
+src/renderer/pages/WorkspacePage.tsx:25:  { id: 'overview', label: '概览', icon: 'overview' },
+src/renderer/pages/WorkspacePage.tsx:26:  { id: 'requirement', label: '需求', icon: 'requirement' },
+src/renderer/pages/WorkspacePage.tsx:27:  { id: 'feedback', label: '反馈', icon: 'feedback' },
+src/renderer/pages/WorkspacePage.tsx:28:  { id: 'tasks', label: '任务与计划', icon: 'tasks' },
+src/renderer/pages/WorkspacePage.tsx:29:  { id: 'events', label: '事件流', icon: 'events' },
+src/renderer/pages/WorkspacePage.tsx:72:  const addPendingFiles = useCallback((type: IntakeType, files: FileList | File[] | null) => {
+src/renderer/pages/WorkspacePage.tsx:73:    const selected = Array.from(files || [])
+src/renderer/pages/WorkspacePage.tsx:74:      .map((file) => ({ path: getFilePath(file), name: file.name, size: file.size, type: file.type }))
+src/renderer/pages/WorkspacePage.tsx:75:      .filter((file) => file.path);
+src/renderer/pages/WorkspacePage.tsx:79:      for (const file of selected) {
+src/renderer/pages/WorkspacePage.tsx:80:        if (!nextItems.some((item) => item.path === file.path && item.size === file.size)) nextItems.push(file);
+src/renderer/pages/WorkspacePage.tsx:100:          attachments: pendingAttachments.requirement,
+src/renderer/pages/WorkspacePage.tsx:121:          attachments: pendingAttachments.feedback,
+src/renderer/pages/WorkspacePage.tsx:345:              placeholder="输入需求，Enter 发送，Shift+Enter 换行"
+src/renderer/pages/WorkspacePage.tsx:349:              attachments={snapshot.attachments}
+src/renderer/pages/WorkspacePage.tsx:369:              placeholder="输入反馈，Enter 发送，Shift+Enter 换行"
+src/renderer/pages/WorkspacePage.tsx:373:              attachments={snapshot.attachments}
+src/renderer/pages/WorkspacePage.tsx:541:            <Icon name={tab.icon} size={18} aria-hidden="true" />
+src/renderer/pages/WorkspacePage.tsx:578:    <div className="workspace-search" role="search" aria-label="工作区搜索">
+src/renderer/pages/WorkspacePage.tsx:580:        <Icon name="search" size={16} className="workspace-search-icon" aria-hidden="true" />
+src/renderer/pages/WorkspacePage.tsx:582:          aria-label="搜索当前工作区"
+src/renderer/pages/WorkspacePage.tsx:599:            aria-label="清空工作区搜索关键字"
+src/renderer/pages/WorkspacePage.tsx:601:            <Icon name="close" size={15} aria-hidden="true" />
+src/renderer/pages/WorkspacePage.tsx:613:  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+src/renderer/pages/WorkspacePage.tsx:618:    snapshot.requirements.length +
+src/renderer/pages/WorkspacePage.tsx:619:    snapshot.feedback.length +
+src/renderer/pages/WorkspacePage.tsx:620:    snapshot.planDrafts.length +
+src/renderer/pages/WorkspacePage.tsx:621:    snapshot.plans.length +
+src/renderer/pages/WorkspacePage.tsx:622:    snapshot.tasks.length +
+src/renderer/pages/WorkspacePage.tsx:638:    (count, group) => count + group.filter((item) => normalizeSearchQuery(toSearchText(item)).includes(normalizedQuery)).length,
+src/renderer/pages/WorkspacePage.tsx:646:  if (Array.isArray(value)) return value.map((item) => toSearchText(item, depth + 1)).join(' ');
+src/renderer/pages/WorkspacePage.tsx:649:      .map((item) => toSearchText(item, depth + 1))
+src/renderer/pages/WorkspacePage.tsx:686:        <StatCard icon="requirement" value={String(reqCount)} label="需求" accent="brand" />
+src/renderer/pages/WorkspacePage.tsx:688:          icon="plan"
+src/renderer/pages/WorkspacePage.tsx:694:        <StatCard icon="tasks" value={`${doneTasks}/${totalTasks}`} label="任务进度" accent="success" />
+src/renderer/pages/WorkspacePage.tsx:695:        <StatCard icon="refresh" value={`${state?.interval_seconds || 5}s`} label="循环间隔" accent="warning" />
+src/renderer/pages/WorkspacePage.tsx:733:              <div className="pipeline">
+src/renderer/pages/WorkspacePage.tsx:739:                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
+src/renderer/pages/WorkspacePage.tsx:768:  icon,
+src/renderer/pages/WorkspacePage.tsx:774:  icon: IconName;
+src/renderer/pages/WorkspacePage.tsx:783:        <Icon name={icon} size={20} aria-hidden="true" />
+src/styles.css:108:.app-icon { display: inline-block; flex: 0 0 auto; width: var(--icon-size, 1em); height: var(--icon-size, 1em); color: inherit; vertical-align: -0.14em; }
+src/styles.css:109:.app-icon * { vector-effect: non-scaling-stroke; }
+src/styles.css:110:.app-icon-muted { color: var(--text-3); }
+src/styles.css:111:.app-icon-brand { color: var(--brand-600); }
+src/styles.css:112:.app-icon-success { color: var(--success); }
+src/styles.css:113:.app-icon-warning { color: var(--warning); }
+src/styles.css:114:.app-icon-danger { color: var(--danger); }
+src/styles.css:115:.icon-with-text { display: inline-flex; align-items: center; gap: 6px; }
+src/styles.css:116:.icon-surface { display: inline-grid; place-items: center; width: var(--icon-surface-size, 36px); height: var(--icon-surface-size, 36px); border-radius: 50%; color: var(--icon-surface-color, currentColor); background: var(--icon-surface-bg, transparent); }
+src/styles.css:117:.icon-surface-brand { --icon-surface-color: var(--brand-600); --icon-surface-bg: var(--brand-50); }
+src/styles.css:118:.icon-surface-success { --icon-surface-color: var(--success); --icon-surface-bg: var(--success-bg); }
+src/styles.css:119:.icon-surface-warning { --icon-surface-color: var(--warning); --icon-surface-bg: var(--warning-bg); }
+src/styles.css:120:.icon-surface-danger { --icon-surface-color: var(--danger); --icon-surface-bg: var(--danger-bg); }
+src/styles.css:180:/* 需求/反馈卡片：进度 + 操作脚 + 追加任务 */
+src/styles.css:200:.attachment-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+src/styles.css:201:.attachment-thumb, .attachment-file { display: grid; gap: 6px; width: 120px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); color: var(--text-1); }
+src/styles.css:202:.attachment-thumb img { width: 100%; aspect-ratio: 1; border-radius: 4px; object-fit: cover; background: var(--brand-50); }
+src/styles.css:203:.attachment-thumb span, .attachment-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+src/styles.css:204:.attachment-file small { color: var(--text-3); font-size: 12px; }
+src/styles.css:236:.ctx-more-icon { --icon-size: 18px; }
+src/styles.css:237:.ctx-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 60; min-width: 150px; padding: 5px; background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; gap: 2px; }
+src/styles.css:279:.workspace-search + .topbar-actions { margin-left: 0; }
+src/styles.css:284:.workspace-search-icon { position: absolute; left: 13px; top: 50%; z-index: 1; color: var(--text-3); transform: translateY(-50%); pointer-events: none; }
+src/styles.css:332:.pipeline { display: flex; align-items: flex-start; gap: 0; overflow-x: auto; }
+src/styles.css:415:.attachment-trigger { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; }
+src/styles.css:416:.attachment-trigger:hover, .attachment-trigger.drag-over { background: var(--bg-hover); }
+src/styles.css:417:.attachment-trigger input { display: none; }
+src/styles.css:418:.plus-icon { display: block; color: var(--text-3); font-size: 28px; font-weight: 300; line-height: 1; }
+src/styles.css:421:.send-button { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border: 0; border-radius: 50%; padding: 0; background: var(--brand-grad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 6px 14px rgba(77,110,255,0.4); }
+src/styles.css:422:.send-button:hover { filter: brightness(1.05); }
+src/styles.css:423:.attachment-list.pending { display: flex; align-items: center; min-width: 0; max-width: min(520px,54vw); gap: 8px; overflow-x: auto; }
+src/styles.css:424:.pending-attachment { display: grid; grid-template-columns: 42px 1fr auto auto; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); }
+src/styles.css:425:.pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+src/styles.css:427:.pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
+src/styles.css:428:.pending-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+src/styles.css:429:.pending-attachment small { color: var(--text-3); }
+src/styles.css:430:.pending-attachment button { padding: 5px 8px; font-size: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); }
+src/styles.css:456:.modal-danger-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--danger-bg); color: var(--danger); margin: 0 auto 14px; }
+src/styles.css:466:  .workspace-search + .topbar-actions { margin-left: auto; }
+
+**Exploring workspace needs**
+
+I need to open the relevant sections and consider incorporating an icons component. There’s also a thought about workspace pipeline lines being around 600, and I’ll need to use Get-Content with line numbers. But I need to keep in mind not to use Python scripts for large chunks, so Powershell is probably the way to go here. I might also have to inspect the imports.
+codex
+定位到字符图标残留：输入区 `+`、文件占位，以及流水线状态符号。
+exec
+powershell.exe -Command '$files = @('"'src/renderer/components/icons.tsx','src/renderer/components/Composer.tsx','src/renderer/pages/WorkspacePage.tsx','src/styles.css'); foreach ("'$file in $files) { Write-Host "--- $file"; $i=0; Get-Content -LiteralPath $file -Encoding UTF8 | ForEach-Object { $i++; if (($file -like '"'*icons.tsx' -and "'$i -le 220) -or ($file -like '"'*Composer.tsx' -and "'$i -le 180) -or ($file -like '"'*WorkspacePage.tsx' -and (("'$i -ge 600 -and $i -le 700) -or ($i -ge 1 -and $i -le 30))) -or ($file -eq '"'src/styles.css' -and (("'$i -ge 320 -and $i -le 440) -or ($i -ge 90 -and $i -le 125)))) { '"'{0,4}: {1}' -f "'$i, $_ } } }' in D:\project\GitHub\autoplan
+ succeeded in 274ms:
+--- src/renderer/components/icons.tsx
+   1: import * as React from 'react';
+   2: 
+   3: const overviewIcon = (
+   4:   <>
+   5:     <rect x="3.5" y="4" width="7" height="7" rx="1.6" />
+   6:     <rect x="13.5" y="4" width="7" height="7" rx="1.6" />
+   7:     <rect x="3.5" y="14" width="7" height="6" rx="1.6" />
+   8:     <path d="M14 17h6" />
+   9:     <path d="M17 14v6" />
+  10:   </>
+  11: );
+  12: 
+  13: const requirementIcon = (
+  14:   <>
+  15:     <path d="M6.5 3.5h7.8L18 7.2v13.3H6.5z" />
+  16:     <path d="M14 3.8v3.7h3.7" />
+  17:     <path d="M9 11h6" />
+  18:     <path d="M9 15h6" />
+  19:     <path d="M9 18h3.5" />
+  20:   </>
+  21: );
+  22: 
+  23: const feedbackIcon = (
+  24:   <>
+  25:     <path d="M5 5.5h14v9.2H9.7L6.2 18v-3.3H5z" />
+  26:     <path d="M8.5 9.2h7" />
+  27:     <path d="M8.5 12h4.8" />
+  28:   </>
+  29: );
+  30: 
+  31: const taskIcon = (
+  32:   <>
+  33:     <path d="M8 6h12" />
+  34:     <path d="M8 12h12" />
+  35:     <path d="M8 18h12" />
+  36:     <path d="m3.8 6 1.1 1.1L7 4.9" />
+  37:     <path d="m3.8 12 1.1 1.1L7 10.9" />
+  38:     <path d="m3.8 18 1.1 1.1L7 16.9" />
+  39:   </>
+  40: );
+  41: 
+  42: const eventIcon = (
+  43:   <>
+  44:     <path d="M4 12h3l2-5 4 10 2-5h5" />
+  45:     <circle cx="4" cy="12" r="1.4" />
+  46:     <circle cx="20" cy="12" r="1.4" />
+  47:   </>
+  48: );
+  49: 
+  50: const planIcon = (
+  51:   <>
+  52:     <rect x="4" y="5" width="16" height="15" rx="2" />
+  53:     <path d="M8 3.5v3" />
+  54:     <path d="M16 3.5v3" />
+  55:     <path d="M4 9h16" />
+  56:     <path d="M8 13h3" />
+  57:     <path d="M13.5 13H16" />
+  58:     <path d="M8 16.5h5" />
+  59:   </>
+  60: );
+  61: 
+  62: const runIcon = (
+  63:   <>
+  64:     <circle cx="12" cy="12" r="8.5" />
+  65:     <path d="m10.2 8.7 5.1 3.3-5.1 3.3z" />
+  66:   </>
+  67: );
+  68: 
+  69: const completeIcon = (
+  70:   <>
+  71:     <circle cx="12" cy="12" r="8.5" />
+  72:     <path d="m8.2 12.2 2.4 2.4 5.2-5.2" />
+  73:   </>
+  74: );
+  75: 
+  76: const editIcon = (
+  77:   <>
+  78:     <path d="M4.5 19.5h4.2L19 9.2 14.8 5 4.5 15.3z" />
+  79:     <path d="m13.6 6.2 4.2 4.2" />
+  80:   </>
+  81: );
+  82: 
+  83: const deleteIcon = (
+  84:   <>
+  85:     <path d="M5 7h14" />
+  86:     <path d="M9 7V5h6v2" />
+  87:     <path d="M7 7.5 8 20h8l1-12.5" />
+  88:     <path d="M10.2 11v5" />
+  89:     <path d="M13.8 11v5" />
+  90:   </>
+  91: );
+  92: 
+  93: const warningIcon = (
+  94:   <>
+  95:     <path d="M10.4 4.5 3.6 17.2A1.8 1.8 0 0 0 5.2 20h13.6a1.8 1.8 0 0 0 1.6-2.8L13.6 4.5a1.8 1.8 0 0 0-3.2 0z" />
+  96:     <path d="M12 9v4.5" />
+  97:     <path d="M12 17h.01" />
+  98:   </>
+  99: );
+ 100: 
+ 101: const refreshIcon = (
+ 102:   <>
+ 103:     <path d="M20 6v5h-5" />
+ 104:     <path d="M4 18v-5h5" />
+ 105:     <path d="M18.2 10A6.5 6.5 0 0 0 7 6.4L4 9" />
+ 106:     <path d="M5.8 14A6.5 6.5 0 0 0 17 17.6l3-2.6" />
+ 107:   </>
+ 108: );
+ 109: 
+ 110: const attachmentIcon = (
+ 111:   <>
+ 112:     <path d="m8.6 12.5 5.8-5.8a3 3 0 0 1 4.2 4.2l-7.2 7.2a4.2 4.2 0 0 1-6-6l7.1-7.1" />
+ 113:     <path d="m10.8 14.7 5.6-5.6" />
+ 114:   </>
+ 115: );
+ 116: 
+ 117: const sendIcon = (
+ 118:   <>
+ 119:     <path d="M20 4 9.5 14.5" />
+ 120:     <path d="m20 4-5.6 16-4.9-5.5L4 12z" />
+ 121:   </>
+ 122: );
+ 123: 
+ 124: const plusIcon = (
+ 125:   <>
+ 126:     <circle cx="12" cy="12" r="8.5" />
+ 127:     <path d="M12 8v8" />
+ 128:     <path d="M8 12h8" />
+ 129:   </>
+ 130: );
+ 131: 
+ 132: const closeIcon = (
+ 133:   <>
+ 134:     <path d="M7 7 17 17" />
+ 135:     <path d="M17 7 7 17" />
+ 136:   </>
+ 137: );
+ 138: 
+ 139: const searchIcon = (
+ 140:   <>
+ 141:     <circle cx="10.5" cy="10.5" r="6" />
+ 142:     <path d="m15 15 4.5 4.5" />
+ 143:   </>
+ 144: );
+ 145: 
+ 146: const enterIcon = (
+ 147:   <>
+ 148:     <path d="M4.5 12h10" />
+ 149:     <path d="m11 8 4 4-4 4" />
+ 150:     <path d="M14.5 5H19v14h-4.5" />
+ 151:   </>
+ 152: );
+ 153: 
+ 154: const backIcon = (
+ 155:   <>
+ 156:     <path d="M19.5 12h-15" />
+ 157:     <path d="m9 7-5 5 5 5" />
+ 158:   </>
+ 159: );
+ 160: 
+ 161: const fileIcon = (
+ 162:   <>
+ 163:     <path d="M6.5 3.5h8L18 7v13.5H6.5z" />
+ 164:     <path d="M14.2 3.8v3.5h3.5" />
+ 165:   </>
+ 166: );
+ 167: 
+ 168: const ICONS = {
+ 169:   overview: overviewIcon,
+ 170:   requirement: requirementIcon,
+ 171:   requirements: requirementIcon,
+ 172:   feedback: feedbackIcon,
+ 173:   task: taskIcon,
+ 174:   tasks: taskIcon,
+ 175:   event: eventIcon,
+ 176:   events: eventIcon,
+ 177:   plan: planIcon,
+ 178:   plans: planIcon,
+ 179:   run: runIcon,
+ 180:   running: runIcon,
+ 181:   complete: completeIcon,
+ 182:   completed: completeIcon,
+ 183:   edit: editIcon,
+ 184:   delete: deleteIcon,
+ 185:   trash: deleteIcon,
+ 186:   warning: warningIcon,
+ 187:   alert: warningIcon,
+ 188:   refresh: refreshIcon,
+ 189:   attachment: attachmentIcon,
+ 190:   attachments: attachmentIcon,
+ 191:   send: sendIcon,
+ 192:   plus: plusIcon,
+ 193:   close: closeIcon,
+ 194:   search: searchIcon,
+ 195:   enter: enterIcon,
+ 196:   open: enterIcon,
+ 197:   back: backIcon,
+ 198:   file: fileIcon,
+ 199: } as const;
+ 200: 
+ 201: export type IconName = keyof typeof ICONS;
+ 202: 
+ 203: export const iconNames = Object.freeze(Object.keys(ICONS) as IconName[]);
+ 204: 
+ 205: type IconSize = number | string;
+ 206: 
+ 207: export interface IconProps extends Omit<React.SVGProps<SVGSVGElement>, 'children' | 'height' | 'viewBox' | 'width'> {
+ 208:   name: IconName;
+ 209:   size?: IconSize;
+ 210:   title?: string;
+ 211: }
+ 212: 
+ 213: function isAriaHidden(value: IconProps['aria-hidden']) {
+ 214:   return value === true || value === 'true';
+ 215: }
+ 216: 
+ 217: function formatIconSize(size: IconSize) {
+ 218:   return typeof size === 'number' ? `${size}px` : size;
+ 219: }
+ 220: 
+--- src/renderer/components/Composer.tsx
+   1: import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+   2: import type { IntakeType, PendingAttachment } from '../types';
+   3: import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+   4: 
+   5: interface ComposerProps {
+   6:   pendingAttachments: PendingAttachment[];
+   7:   placeholder: string;
+   8:   submitLabel: string;
+   9:   type: IntakeType;
+  10:   onAddFiles: (type: IntakeType, files: FileList | File[] | null) => void;
+  11:   onRemoveAttachment: (type: IntakeType, index: number) => void;
+  12:   onSubmit: (body: string) => Promise<boolean>;
+  13: }
+  14: 
+  15: export function Composer({
+  16:   pendingAttachments,
+  17:   placeholder,
+  18:   submitLabel,
+  19:   type,
+  20:   onAddFiles,
+  21:   onRemoveAttachment,
+  22:   onSubmit,
+  23: }: ComposerProps) {
+  24:   const [body, setBody] = useState('');
+  25:   const [dragOver, setDragOver] = useState(false);
+  26:   const fileInputRef = useRef<HTMLInputElement>(null);
+  27:   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  28: 
+  29:   useEffect(() => {
+  30:     if (textareaRef.current) autoGrowTextarea(textareaRef.current);
+  31:   }, [body]);
+  32: 
+  33:   const submit = async (event: FormEvent<HTMLFormElement>) => {
+  34:     event.preventDefault();
+  35:     if (!body.trim() && !pendingAttachments.length) return;
+  36:     const succeeded = await onSubmit(body);
+  37:     if (succeeded) setBody('');
+  38:   };
+  39: 
+  40:   const addFiles = (files: FileList | File[] | null) => onAddFiles(type, files);
+  41: 
+  42:   const handleTextareaKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  43:     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
+  44:     event.preventDefault();
+  45:     event.currentTarget.form?.requestSubmit();
+  46:   };
+  47: 
+  48:   const clearDragState = (event: DragEvent<HTMLElement>) => {
+  49:     const relatedTarget = event.relatedTarget as Node | null;
+  50:     if (relatedTarget && event.currentTarget.contains(relatedTarget)) return;
+  51:     setDragOver(false);
+  52:   };
+  53: 
+  54:   return (
+  55:     <form
+  56:       className={`composer docked-composer compact-composer${dragOver ? ' drag-over' : ''}`}
+  57:       onDragLeave={clearDragState}
+  58:       onDragOver={(event) => {
+  59:         event.preventDefault();
+  60:         setDragOver(true);
+  61:       }}
+  62:       onDrop={(event) => {
+  63:         event.preventDefault();
+  64:         setDragOver(false);
+  65:         addFiles(event.dataTransfer.files);
+  66:       }}
+  67:       onSubmit={submit}
+  68:     >
+  69:       <textarea
+  70:         name="body"
+  71:         onChange={(event) => setBody(event.target.value)}
+  72:         onInput={(event) => autoGrowTextarea(event.currentTarget)}
+  73:         onKeyDown={handleTextareaKeyDown}
+  74:         placeholder={placeholder}
+  75:         ref={textareaRef}
+  76:         value={body}
+  77:       />
+  78:       <div className="composer-bottom">
+  79:         <div className="composer-tools">
+  80:           <div
+  81:             className={`attachment-dropzone attachment-trigger${dragOver ? ' drag-over' : ''}`}
+  82:             onClick={() => fileInputRef.current?.click()}
+  83:             onKeyDown={(event) => {
+  84:               if (event.key === 'Enter' || event.key === ' ') {
+  85:                 event.preventDefault();
+  86:                 fileInputRef.current?.click();
+  87:               }
+  88:             }}
+  89:             role="button"
+  90:             tabIndex={0}
+  91:             title="添加附件"
+  92:           >
+  93:             <input
+  94:               multiple
+  95:               onChange={(event) => {
+  96:                 addFiles(event.target.files);
+  97:                 event.target.value = '';
+  98:               }}
+  99:               ref={fileInputRef}
+ 100:               type="file"
+ 101:             />
+ 102:             <span className="plus-icon">+</span>
+ 103:           </div>
+ 104:           <PendingAttachmentList
+ 105:             attachments={pendingAttachments}
+ 106:             onRemove={(index) => onRemoveAttachment(type, index)}
+ 107:           />
+ 108:         </div>
+ 109:         <div className="composer-actions">
+ 110:           <span>Enter 发送</span>
+ 111:           <button className="send-button" type="submit" aria-label={submitLabel}>
+ 112:             →
+ 113:           </button>
+ 114:         </div>
+ 115:       </div>
+ 116:     </form>
+ 117:   );
+ 118: }
+ 119: 
+ 120: function PendingAttachmentList({
+ 121:   attachments,
+ 122:   onRemove,
+ 123: }: {
+ 124:   attachments: PendingAttachment[];
+ 125:   onRemove: (index: number) => void;
+ 126: }) {
+ 127:   return (
+ 128:     <div className="attachment-list pending">
+ 129:       {attachments.map((attachment, index) => (
+ 130:         <div className="pending-attachment" key={`${attachment.path}-${attachment.size}`}>
+ 131:           <PendingAttachmentPreview attachment={attachment} />
+ 132:           <span title={attachment.name || attachment.path}>{attachment.name || attachment.path}</span>
+ 133:           <small>{formatBytes(attachment.size)}</small>
+ 134:           <button type="button" onClick={() => onRemove(index)}>
+ 135:             移除
+ 136:           </button>
+ 137:         </div>
+ 138:       ))}
+ 139:     </div>
+ 140:   );
+ 141: }
+ 142: 
+ 143: function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+ 144:   if (!attachment.type.startsWith('image/')) {
+ 145:     return <span className="pending-file-icon">文件</span>;
+ 146:   }
+ 147:   return (
+ 148:     <img
+ 149:       className="pending-thumb"
+ 150:       src={window.autoplan.toFileUrl(attachment.path)}
+ 151:       alt={attachment.name || '附件'}
+ 152:     />
+ 153:   );
+ 154: }
+--- src/renderer/pages/WorkspacePage.tsx
+   1: import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+   2: import { useNavigate, useParams } from 'react-router-dom';
+   3: import type {
+   4:   AppSnapshot,
+   5:   IntakeType,
+   6:   PendingAttachment,
+   7:   Project,
+   8:   ProjectState,
+   9:   WorkspaceTab,
+  10: } from '../types';
+  11: import { useSnapshot } from '../hooks/useSnapshot';
+  12: import { IntakePanel } from '../components/IntakePanel';
+  13: import { EventList, PlanList, TaskList } from '../components/PlanLists';
+  14: import { CodexLog } from '../components/CodexLog';
+  15: import { Icon, type IconName } from '../components/icons';
+  16: import { getFilePath } from '../components/shared';
+  17: import { formatChinaTime } from '../utils/time';
+  18: 
+  19: const emptyPendingAttachments: Record<IntakeType, PendingAttachment[]> = {
+  20:   requirement: [],
+  21:   feedback: [],
+  22: };
+  23: 
+  24: const tabs: Array<{ id: WorkspaceTab; label: string; icon: IconName }> = [
+  25:   { id: 'overview', label: '概览', icon: 'overview' },
+  26:   { id: 'requirement', label: '需求', icon: 'requirement' },
+  27:   { id: 'feedback', label: '反馈', icon: 'feedback' },
+  28:   { id: 'tasks', label: '任务与计划', icon: 'tasks' },
+  29:   { id: 'events', label: '事件流', icon: 'events' },
+  30: ];
+ 600:           >
+ 601:             <Icon name="close" size={15} aria-hidden="true" />
+ 602:           </button>
+ 603:         ) : null}
+ 604:       </div>
+ 605:       <span className={`workspace-search-count${hasQuery && hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
+ 606:         {resultLabel}
+ 607:       </span>
+ 608:     </div>
+ 609:   );
+ 610: }
+ 611: 
+ 612: function normalizeSearchQuery(value: string) {
+ 613:   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+ 614: }
+ 615: 
+ 616: function countSearchableItems(snapshot: AppSnapshot) {
+ 617:   return (
+ 618:     snapshot.requirements.length +
+ 619:     snapshot.feedback.length +
+ 620:     snapshot.planDrafts.length +
+ 621:     snapshot.plans.length +
+ 622:     snapshot.tasks.length +
+ 623:     snapshot.events.length
+ 624:   );
+ 625: }
+ 626: 
+ 627: function countWorkspaceSearchMatches(snapshot: AppSnapshot, normalizedQuery: string) {
+ 628:   const groups: unknown[][] = [
+ 629:     snapshot.requirements,
+ 630:     snapshot.feedback,
+ 631:     snapshot.planDrafts,
+ 632:     snapshot.plans,
+ 633:     snapshot.tasks,
+ 634:     snapshot.events,
+ 635:   ];
+ 636: 
+ 637:   return groups.reduce(
+ 638:     (count, group) => count + group.filter((item) => normalizeSearchQuery(toSearchText(item)).includes(normalizedQuery)).length,
+ 639:     0,
+ 640:   );
+ 641: }
+ 642: 
+ 643: function toSearchText(value: unknown, depth = 0): string {
+ 644:   if (value === null || value === undefined || depth > 6) return '';
+ 645:   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+ 646:   if (Array.isArray(value)) return value.map((item) => toSearchText(item, depth + 1)).join(' ');
+ 647:   if (typeof value === 'object') {
+ 648:     return Object.values(value as Record<string, unknown>)
+ 649:       .map((item) => toSearchText(item, depth + 1))
+ 650:       .join(' ');
+ 651:   }
+ 652:   return '';
+ 653: }
+ 654: 
+ 655: function OverviewView({
+ 656:   snapshot,
+ 657:   state,
+ 658:   onGoTasks,
+ 659: }: {
+ 660:   snapshot: AppSnapshot;
+ 661:   state: ProjectState | null;
+ 662:   onGoTasks: () => void;
+ 663: }) {
+ 664:   const reqCount = snapshot.requirements.length;
+ 665:   const planCount = snapshot.plans.length;
+ 666:   const runningPlan = snapshot.plans.find((plan) => !['completed'].includes(plan.status));
+ 667:   const doneTasks = snapshot.tasks.filter((task) => task.status === 'completed').length;
+ 668:   const totalTasks = snapshot.tasks.length;
+ 669: 
+ 670:   const phases = ['scan', 'generate-plan', 'execute-task', 'validate', 'completed'];
+ 671:   const currentPhase = state?.phase || 'idle';
+ 672:   const activeIndex = phases.indexOf(currentPhase);
+ 673:   const operation = snapshot.activeOperation || snapshot.lastOperation;
+ 674:   const operationActive = Boolean(snapshot.activeOperation);
+ 675:   const operationTime = operation?.startedAt ? `开始于 ${formatChinaTime(operation.startedAt)}` : '';
+ 676:   const operationExit =
+ 677:     operation && !operationActive && typeof operation.exitCode === 'number'
+ 678:       ? ` · 退出码 ${operation.exitCode}${operation.exitCode === 0 ? '（成功）' : '（失败）'}`
+ 679:       : '';
+ 680:   const operationHint = operation ? `${operationTime}${operationExit}` : '等待下一次执行';
+ 681:   const operationTitle = operation ? `${operationActive ? '执行日志' : '最近执行'} · ${operation.label}` : '执行日志';
+ 682: 
+ 683:   return (
+ 684:     <>
+ 685:       <div className="stat-grid">
+ 686:         <StatCard icon="requirement" value={String(reqCount)} label="需求" accent="brand" />
+ 687:         <StatCard
+ 688:           icon="plan"
+ 689:           value={String(planCount)}
+ 690:           label="计划"
+ 691:           sub={runningPlan ? `${runningPlan.completed_tasks}/${runningPlan.total_tasks} 任务` : '无进行中'}
+ 692:           accent="info"
+ 693:         />
+ 694:         <StatCard icon="tasks" value={`${doneTasks}/${totalTasks}`} label="任务进度" accent="success" />
+ 695:         <StatCard icon="refresh" value={`${state?.interval_seconds || 5}s`} label="循环间隔" accent="warning" />
+ 696:       </div>
+ 697: 
+ 698:       <div className="overview-grid">
+ 699:         <div className="overview-main-column">
+ 700:           <section className="card live-log-card">
+--- src/styles.css
+  90: .editor .button-row button[type="submit"] { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+  91: .editor .button-row button[type="submit"]:hover { background: var(--brand-700); }
+  92: 
+  93: .chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; }
+  94: .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  95: .chip-pending { color: var(--text-3); background: var(--bg-soft); }
+  96: .chip-running { color: var(--info); background: var(--info-bg); }
+  97: .chip-completed { color: var(--success); background: var(--success-bg); }
+  98: .chip-failed { color: var(--danger); background: var(--danger-bg); }
+  99: .chip-stopped { color: var(--warning); background: var(--warning-bg); }
+ 100: .chip-waiting { color: var(--warning); background: var(--warning-bg); }
+ 101: .chip-accepted { color: var(--success); background: var(--success-bg); }
+ 102: 
+ 103: .empty { color: var(--text-3); padding: 28px 18px; text-align: center; font-size: 13px; }
+ 104: .error-banner { padding: 12px 16px; margin-bottom: 16px; border-radius: var(--r-md); background: var(--danger-bg); border: 1px solid #f3c2c4; color: var(--danger); font-size: 13px; }
+ 105: .req { color: var(--danger); }
+ 106: .danger-text { color: var(--danger); }
+ 107: 
+ 108: .app-icon { display: inline-block; flex: 0 0 auto; width: var(--icon-size, 1em); height: var(--icon-size, 1em); color: inherit; vertical-align: -0.14em; }
+ 109: .app-icon * { vector-effect: non-scaling-stroke; }
+ 110: .app-icon-muted { color: var(--text-3); }
+ 111: .app-icon-brand { color: var(--brand-600); }
+ 112: .app-icon-success { color: var(--success); }
+ 113: .app-icon-warning { color: var(--warning); }
+ 114: .app-icon-danger { color: var(--danger); }
+ 115: .icon-with-text { display: inline-flex; align-items: center; gap: 6px; }
+ 116: .icon-surface { display: inline-grid; place-items: center; width: var(--icon-surface-size, 36px); height: var(--icon-surface-size, 36px); border-radius: 50%; color: var(--icon-surface-color, currentColor); background: var(--icon-surface-bg, transparent); }
+ 117: .icon-surface-brand { --icon-surface-color: var(--brand-600); --icon-surface-bg: var(--brand-50); }
+ 118: .icon-surface-success { --icon-surface-color: var(--success); --icon-surface-bg: var(--success-bg); }
+ 119: .icon-surface-warning { --icon-surface-color: var(--warning); --icon-surface-bg: var(--warning-bg); }
+ 120: .icon-surface-danger { --icon-surface-color: var(--danger); --icon-surface-bg: var(--danger-bg); }
+ 121: 
+ 122: .list { display: grid; gap: 10px; padding: 16px 18px; }
+ 123: .list.compact { max-height: none; overflow: auto; }
+ 124: .item { min-width: 0; border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 12px; background: var(--bg-soft); }
+ 125: .item-title { display: flex; justify-content: space-between; gap: 12px; min-width: 0; font-weight: 650; align-items: center; }
+ 320: .overview-main-column, .overview-side-column { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+ 321: .overview-side-column .card-head h2 { white-space: nowrap; }
+ 322: .loop-card { background: var(--brand-grad); color: #fff; border-radius: var(--r-lg); padding: 22px 24px; position: relative; overflow: hidden; box-shadow: 0 18px 40px rgba(77,110,255,0.28); }
+ 323: .loop-card .lc-top { display: flex; align-items: center; gap: 12px; }
+ 324: .loop-card .lc-status { font-size: 13px; opacity: 0.9; }
+ 325: .loop-card .lc-phase { font-size: 22px; font-weight: 800; margin-top: 4px; }
+ 326: .loop-card .lc-meta { display: flex; gap: 22px; margin-top: 16px; font-size: 12px; opacity: 0.92; }
+ 327: .loop-card .lc-meta b { display: block; font-size: 15px; font-weight: 700; margin-top: 2px; }
+ 328: .loop-card .lc-led { width: 12px; height: 12px; border-radius: 50%; background: #b6f5cf; box-shadow: 0 0 0 4px rgba(182,245,207,0.25); }
+ 329: .loop-card .lc-led.running { animation: led-pulse 1.6s ease-in-out infinite; }
+ 330: .loop-card .lc-led.stopped { background: #cfd6e6; box-shadow: 0 0 0 4px rgba(207,214,230,0.25); }
+ 331: 
+ 332: .pipeline { display: flex; align-items: flex-start; gap: 0; overflow-x: auto; }
+ 333: .pipe-step { flex: 1 1 0; min-width: 0; text-align: center; position: relative; }
+ 334: .pipe-node { width: 40px; height: 40px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--bg-elevated); border: 2px solid var(--line); color: var(--text-3); font-weight: 700; font-size: 14px; position: relative; z-index: 1; }
+ 335: .pipe-step.done .pipe-node { background: var(--success); border-color: var(--success); color: #fff; }
+ 336: .pipe-step.active .pipe-node { background: var(--brand-600); border-color: var(--brand-600); color: #fff; box-shadow: 0 0 0 5px var(--brand-50); }
+ 337: .pipe-step::before { content: ""; position: absolute; top: 20px; left: -50%; right: 50%; height: 2px; background: var(--line); z-index: 0; }
+ 338: .pipe-step:first-child::before { display: none; }
+ 339: .pipe-step.done::before, .pipe-step.active::before { background: var(--success); }
+ 340: .pipe-label { font-size: 12px; font-weight: 600; margin-top: 10px; color: var(--text-2); }
+ 341: .pipe-step.active .pipe-label { color: var(--brand-600); }
+ 342: 
+ 343: /* 实时执行日志（对话格式） */
+ 344: .live-log-card { display: flex; flex-direction: column; min-height: 0; }
+ 345: .live-log-card .card-head h2 { display: flex; align-items: center; gap: 8px; }
+ 346: .overview-main-column > .live-log-card { height: 440px; }
+ 347: .overview-main-column > .live-log-card .codex-log { flex: 1 1 auto; min-height: 0; max-height: none; }
+ 348: .log-card-head { align-items: stretch; flex-direction: column; gap: 8px; padding: 12px 18px; }
+ 349: .log-title-line { display: flex; align-items: center; gap: 12px; min-width: 0; }
+ 350: .log-title-line h2 { flex: 0 0 auto; }
+ 351: .log-title-line .hint { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ 352: .log-phase-chip { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px; padding: 4px 9px; background: var(--bg-soft); color: var(--text-2); font-size: 12px; font-weight: 700; white-space: nowrap; }
+ 353: .log-phase-chip.running { color: var(--success); background: var(--success-bg); border-color: transparent; }
+ 354: .log-summary { display: flex; align-items: center; gap: 18px; color: var(--text-3); font-size: 12px; }
+ 355: .log-summary b { color: var(--text-1); margin-left: 4px; }
+ 356: .live-dot {
+ 357:   width: 8px; height: 8px; border-radius: 50%; background: var(--success);
+ 358:   box-shadow: 0 0 0 3px var(--success-bg);
+ 359:   animation: led-pulse 1.4s ease-in-out infinite;
+ 360: }
+ 361: .live-dot.idle { background: var(--text-4); box-shadow: 0 0 0 3px var(--line); animation: none; }
+ 362: .codex-log {
+ 363:   margin: 0; padding: 10px;
+ 364:   background: #1b2438; color: #d6e1f5;
+ 365:   border-radius: 0 0 var(--r-lg) var(--r-lg);
+ 366:   max-height: 380px; min-height: 120px; overflow: auto;
+ 367:   font-family: var(--font-mono); font-size: 12px; line-height: 1.6;
+ 368: }
+ 369: .codex-raw { margin: 0; white-space: pre-wrap; word-break: break-word; color: #8a96b0; padding: 8px; }
+ 370: 
+ 371: /* 活动时间线行 */
+ 372: .act-line {
+ 373:   display: grid; grid-template-columns: 56px 52px 1fr; gap: 8px;
+ 374:   align-items: baseline; padding: 4px 8px; border-radius: 4px;
+ 375: }
+ 376: .act-line:hover { background: rgba(255,255,255,0.04); }
+ 377: .act-time { color: #5a6680; font-size: 11px; font-variant-numeric: tabular-nums; }
+ 378: .act-tag {
+ 379:   display: inline-block; font-size: 10px; font-weight: 700;
+ 380:   padding: 1px 7px; border-radius: 999px; text-align: center;
+ 381:   letter-spacing: 0.02em;
+ 382: }
+ 383: .act-text { color: #c8d3ec; word-break: break-word; white-space: pre-wrap; }
+ 384: 
+ 385: .act-codex .act-tag { background: rgba(109,93,252,0.3); color: #c4b8ff; }
+ 386: .act-codex .act-text { color: #e0e6ff; }
+ 387: .act-exec .act-tag { background: rgba(24,169,87,0.3); color: #7fe0a8; }
+ 388: .act-exec .act-text { color: #9fd8b8; }
+ 389: .act-thinking .act-tag { background: rgba(224,134,0,0.3); color: #ffc878; }
+ 390: .act-thinking .act-text { color: #d8b878; font-style: italic; }
+ 391: .act-error .act-tag { background: rgba(229,72,77,0.35); color: #ff9498; }
+ 392: .act-error .act-text { color: #ff9498; }
+ 393: .act-system .act-tag { background: rgba(124,135,155,0.3); color: #a0aac0; }
+ 394: .act-system .act-text { color: #a0aac0; }
+ 395: .act-user .act-tag { background: rgba(59,110,245,0.3); color: #8ab0ff; }
+ 396: .act-user .act-text { color: #b8c8f0; }
+ 397: .act-info .act-tag { background: rgba(124,135,155,0.25); color: #8a96b0; }
+ 398: .act-info .act-text { color: #b0bbd6; }
+ 399: 
+ 400: .intake-layout { display: grid; grid-template-rows: minmax(0,1fr) auto; gap: 16px; flex: 1 1 0; min-height: 0; max-width: 880px; margin: 0 auto; width: 100%; }
+ 401: .intake-layout > .composer { margin-bottom: 24px; }
+ 402: .intake-stream { display: grid; grid-template-rows: auto minmax(0,1fr); min-height: 0; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--bg-elevated); padding: 18px; }
+ 403: .section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+ 404: .section-heading h2 { margin-bottom: 0; }
+ 405: .section-heading span { color: var(--text-3); font-size: 12px; }
+ 406: .intake-list { min-height: 0; overflow: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 10px; }
+ 407: 
+ 408: .composer { background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-xl); padding: 14px 16px 12px; box-shadow: var(--shadow-lg); transition: border-color 0.16s, box-shadow 0.16s; }
+ 409: .composer:focus-within { border-color: var(--brand-500); box-shadow: 0 18px 48px rgba(37,62,120,0.2); }
+ 410: .composer.drag-over { border-color: var(--brand-500); background: var(--brand-50); }
+ 411: .composer textarea { width: 100%; border: 0; outline: none; resize: none; background: transparent; font: inherit; font-size: 14.5px; line-height: 1.5; color: var(--text-1); min-height: 58px; max-height: 180px; overflow: auto; }
+ 412: .composer textarea::placeholder { color: var(--text-4); }
+ 413: .composer-bottom { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+ 414: .composer-tools { display: flex; align-items: center; gap: 10px; min-width: 0; }
+ 415: .attachment-trigger { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; }
+ 416: .attachment-trigger:hover, .attachment-trigger.drag-over { background: var(--bg-hover); }
+ 417: .attachment-trigger input { display: none; }
+ 418: .plus-icon { display: block; color: var(--text-3); font-size: 28px; font-weight: 300; line-height: 1; }
+ 419: .composer-actions { display: flex; align-items: center; justify-content: end; gap: 10px; margin-left: auto; }
+ 420: .composer-actions span { color: var(--text-3); font-size: 12px; }
+ 421: .send-button { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border: 0; border-radius: 50%; padding: 0; background: var(--brand-grad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 6px 14px rgba(77,110,255,0.4); }
+ 422: .send-button:hover { filter: brightness(1.05); }
+ 423: .attachment-list.pending { display: flex; align-items: center; min-width: 0; max-width: min(520px,54vw); gap: 8px; overflow-x: auto; }
+ 424: .pending-attachment { display: grid; grid-template-columns: 42px 1fr auto auto; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); }
+ 425: .pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+ 426: .pending-thumb { object-fit: cover; }
+ 427: .pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
+ 428: .pending-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ 429: .pending-attachment small { color: var(--text-3); }
+ 430: .pending-attachment button { padding: 5px 8px; font-size: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); }
+ 431: 
+ 432: .task-layout { display: grid; grid-template-columns: 320px minmax(0,1fr); gap: 18px; flex: 1 1 0; min-height: 0; }
+ 433: .task-sidebar { display: grid; grid-template-rows: auto minmax(0,1fr); gap: 16px; min-height: 0; }
+ 434: .task-sidebar > form.editor { min-height: 0; }
+ 435: .task-main { display: grid; grid-template-rows: 1fr; gap: 16px; min-height: 0; }
+ 436: .task-status-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; min-height: 0; }
+ 437: .primary-section, .side-section, .task-status-grid .card { min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+ 438: .side-section .list, .task-status-grid .list, .primary-section .list { overflow: auto; }
+ 439: .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; color: var(--text-3); font-size: 11.5px; font-weight: 600; }
+ 440: .field:last-child { margin-bottom: 0; }
+
+**Focusing on output**
+
+I need to ensure I'm not overwhelming the user with a bunch of icons. It might be better to streamline things and focus on just the essential ones. I should think about opening a tail of icons to help clarify which properties I’m exporting. By being more targeted in my approach, I can make it easier for the user to understand what's important. Let's see how that plays out!
+codex
+Icon 基础组件已有附件、发送、完成、运行、文件图标，接下来只接入这些组件。
+exec
+powershell.exe -Command '$i=0; Get-Content -LiteralPath '"'src/renderer/components/icons.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if ($i -ge 168 -and $i -le 230) { '"'{0,4}: {1}' -f "'$i, $_ } } ; Write-Host '"'--- Composer'; "'$i=0; Get-Content -LiteralPath '"'src/renderer/components/Composer.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if ($i -ge 1 -and $i -le 180) { '"'{0,4}: {1}' -f "'$i, $_ } } ; Write-Host '"'--- Workspace pipeline'; "'$i=0; Get-Content -LiteralPath '"'src/renderer/pages/WorkspacePage.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if ($i -ge 620 -and $i -le 690) { '"'{0,4}: {1}' -f "'$i, $_ } }' in D:\project\GitHub\autoplan
+ succeeded in 256ms:
+ 168: const ICONS = {
+ 169:   overview: overviewIcon,
+ 170:   requirement: requirementIcon,
+ 171:   requirements: requirementIcon,
+ 172:   feedback: feedbackIcon,
+ 173:   task: taskIcon,
+ 174:   tasks: taskIcon,
+ 175:   event: eventIcon,
+ 176:   events: eventIcon,
+ 177:   plan: planIcon,
+ 178:   plans: planIcon,
+ 179:   run: runIcon,
+ 180:   running: runIcon,
+ 181:   complete: completeIcon,
+ 182:   completed: completeIcon,
+ 183:   edit: editIcon,
+ 184:   delete: deleteIcon,
+ 185:   trash: deleteIcon,
+ 186:   warning: warningIcon,
+ 187:   alert: warningIcon,
+ 188:   refresh: refreshIcon,
+ 189:   attachment: attachmentIcon,
+ 190:   attachments: attachmentIcon,
+ 191:   send: sendIcon,
+ 192:   plus: plusIcon,
+ 193:   close: closeIcon,
+ 194:   search: searchIcon,
+ 195:   enter: enterIcon,
+ 196:   open: enterIcon,
+ 197:   back: backIcon,
+ 198:   file: fileIcon,
+ 199: } as const;
+ 200: 
+ 201: export type IconName = keyof typeof ICONS;
+ 202: 
+ 203: export const iconNames = Object.freeze(Object.keys(ICONS) as IconName[]);
+ 204: 
+ 205: type IconSize = number | string;
+ 206: 
+ 207: export interface IconProps extends Omit<React.SVGProps<SVGSVGElement>, 'children' | 'height' | 'viewBox' | 'width'> {
+ 208:   name: IconName;
+ 209:   size?: IconSize;
+ 210:   title?: string;
+ 211: }
+ 212: 
+ 213: function isAriaHidden(value: IconProps['aria-hidden']) {
+ 214:   return value === true || value === 'true';
+ 215: }
+ 216: 
+ 217: function formatIconSize(size: IconSize) {
+ 218:   return typeof size === 'number' ? `${size}px` : size;
+ 219: }
+ 220: 
+ 221: export function Icon({
+ 222:   name,
+ 223:   size = 20,
+ 224:   title,
+ 225:   className,
+ 226:   style,
+ 227:   role,
+ 228:   'aria-hidden': ariaHidden,
+ 229:   'aria-label': ariaLabel,
+ 230:   ...svgProps
+--- Composer
+   1: import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+   2: import type { IntakeType, PendingAttachment } from '../types';
+   3: import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+   4: 
+   5: interface ComposerProps {
+   6:   pendingAttachments: PendingAttachment[];
+   7:   placeholder: string;
+   8:   submitLabel: string;
+   9:   type: IntakeType;
+  10:   onAddFiles: (type: IntakeType, files: FileList | File[] | null) => void;
+  11:   onRemoveAttachment: (type: IntakeType, index: number) => void;
+  12:   onSubmit: (body: string) => Promise<boolean>;
+  13: }
+  14: 
+  15: export function Composer({
+  16:   pendingAttachments,
+  17:   placeholder,
+  18:   submitLabel,
+  19:   type,
+  20:   onAddFiles,
+  21:   onRemoveAttachment,
+  22:   onSubmit,
+  23: }: ComposerProps) {
+  24:   const [body, setBody] = useState('');
+  25:   const [dragOver, setDragOver] = useState(false);
+  26:   const fileInputRef = useRef<HTMLInputElement>(null);
+  27:   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  28: 
+  29:   useEffect(() => {
+  30:     if (textareaRef.current) autoGrowTextarea(textareaRef.current);
+  31:   }, [body]);
+  32: 
+  33:   const submit = async (event: FormEvent<HTMLFormElement>) => {
+  34:     event.preventDefault();
+  35:     if (!body.trim() && !pendingAttachments.length) return;
+  36:     const succeeded = await onSubmit(body);
+  37:     if (succeeded) setBody('');
+  38:   };
+  39: 
+  40:   const addFiles = (files: FileList | File[] | null) => onAddFiles(type, files);
+  41: 
+  42:   const handleTextareaKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  43:     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
+  44:     event.preventDefault();
+  45:     event.currentTarget.form?.requestSubmit();
+  46:   };
+  47: 
+  48:   const clearDragState = (event: DragEvent<HTMLElement>) => {
+  49:     const relatedTarget = event.relatedTarget as Node | null;
+  50:     if (relatedTarget && event.currentTarget.contains(relatedTarget)) return;
+  51:     setDragOver(false);
+  52:   };
+  53: 
+  54:   return (
+  55:     <form
+  56:       className={`composer docked-composer compact-composer${dragOver ? ' drag-over' : ''}`}
+  57:       onDragLeave={clearDragState}
+  58:       onDragOver={(event) => {
+  59:         event.preventDefault();
+  60:         setDragOver(true);
+  61:       }}
+  62:       onDrop={(event) => {
+  63:         event.preventDefault();
+  64:         setDragOver(false);
+  65:         addFiles(event.dataTransfer.files);
+  66:       }}
+  67:       onSubmit={submit}
+  68:     >
+  69:       <textarea
+  70:         name="body"
+  71:         onChange={(event) => setBody(event.target.value)}
+  72:         onInput={(event) => autoGrowTextarea(event.currentTarget)}
+  73:         onKeyDown={handleTextareaKeyDown}
+  74:         placeholder={placeholder}
+  75:         ref={textareaRef}
+  76:         value={body}
+  77:       />
+  78:       <div className="composer-bottom">
+  79:         <div className="composer-tools">
+  80:           <div
+  81:             className={`attachment-dropzone attachment-trigger${dragOver ? ' drag-over' : ''}`}
+  82:             onClick={() => fileInputRef.current?.click()}
+  83:             onKeyDown={(event) => {
+  84:               if (event.key === 'Enter' || event.key === ' ') {
+  85:                 event.preventDefault();
+  86:                 fileInputRef.current?.click();
+  87:               }
+  88:             }}
+  89:             role="button"
+  90:             tabIndex={0}
+  91:             title="添加附件"
+  92:           >
+  93:             <input
+  94:               multiple
+  95:               onChange={(event) => {
+  96:                 addFiles(event.target.files);
+  97:                 event.target.value = '';
+  98:               }}
+  99:               ref={fileInputRef}
+ 100:               type="file"
+ 101:             />
+ 102:             <span className="plus-icon">+</span>
+ 103:           </div>
+ 104:           <PendingAttachmentList
+ 105:             attachments={pendingAttachments}
+ 106:             onRemove={(index) => onRemoveAttachment(type, index)}
+ 107:           />
+ 108:         </div>
+ 109:         <div className="composer-actions">
+ 110:           <span>Enter 发送</span>
+ 111:           <button className="send-button" type="submit" aria-label={submitLabel}>
+ 112:             →
+ 113:           </button>
+ 114:         </div>
+ 115:       </div>
+ 116:     </form>
+ 117:   );
+ 118: }
+ 119: 
+ 120: function PendingAttachmentList({
+ 121:   attachments,
+ 122:   onRemove,
+ 123: }: {
+ 124:   attachments: PendingAttachment[];
+ 125:   onRemove: (index: number) => void;
+ 126: }) {
+ 127:   return (
+ 128:     <div className="attachment-list pending">
+ 129:       {attachments.map((attachment, index) => (
+ 130:         <div className="pending-attachment" key={`${attachment.path}-${attachment.size}`}>
+ 131:           <PendingAttachmentPreview attachment={attachment} />
+ 132:           <span title={attachment.name || attachment.path}>{attachment.name || attachment.path}</span>
+ 133:           <small>{formatBytes(attachment.size)}</small>
+ 134:           <button type="button" onClick={() => onRemove(index)}>
+ 135:             移除
+ 136:           </button>
+ 137:         </div>
+ 138:       ))}
+ 139:     </div>
+ 140:   );
+ 141: }
+ 142: 
+ 143: function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+ 144:   if (!attachment.type.startsWith('image/')) {
+ 145:     return <span className="pending-file-icon">文件</span>;
+ 146:   }
+ 147:   return (
+ 148:     <img
+ 149:       className="pending-thumb"
+ 150:       src={window.autoplan.toFileUrl(attachment.path)}
+ 151:       alt={attachment.name || '附件'}
+ 152:     />
+ 153:   );
+ 154: }
+--- Workspace pipeline
+ 620:     snapshot.planDrafts.length +
+ 621:     snapshot.plans.length +
+ 622:     snapshot.tasks.length +
+ 623:     snapshot.events.length
+ 624:   );
+ 625: }
+ 626: 
+ 627: function countWorkspaceSearchMatches(snapshot: AppSnapshot, normalizedQuery: string) {
+ 628:   const groups: unknown[][] = [
+ 629:     snapshot.requirements,
+ 630:     snapshot.feedback,
+ 631:     snapshot.planDrafts,
+ 632:     snapshot.plans,
+ 633:     snapshot.tasks,
+ 634:     snapshot.events,
+ 635:   ];
+ 636: 
+ 637:   return groups.reduce(
+ 638:     (count, group) => count + group.filter((item) => normalizeSearchQuery(toSearchText(item)).includes(normalizedQuery)).length,
+ 639:     0,
+ 640:   );
+ 641: }
+ 642: 
+ 643: function toSearchText(value: unknown, depth = 0): string {
+ 644:   if (value === null || value === undefined || depth > 6) return '';
+ 645:   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+ 646:   if (Array.isArray(value)) return value.map((item) => toSearchText(item, depth + 1)).join(' ');
+ 647:   if (typeof value === 'object') {
+ 648:     return Object.values(value as Record<string, unknown>)
+ 649:       .map((item) => toSearchText(item, depth + 1))
+ 650:       .join(' ');
+ 651:   }
+ 652:   return '';
+ 653: }
+ 654: 
+ 655: function OverviewView({
+ 656:   snapshot,
+ 657:   state,
+ 658:   onGoTasks,
+ 659: }: {
+ 660:   snapshot: AppSnapshot;
+ 661:   state: ProjectState | null;
+ 662:   onGoTasks: () => void;
+ 663: }) {
+ 664:   const reqCount = snapshot.requirements.length;
+ 665:   const planCount = snapshot.plans.length;
+ 666:   const runningPlan = snapshot.plans.find((plan) => !['completed'].includes(plan.status));
+ 667:   const doneTasks = snapshot.tasks.filter((task) => task.status === 'completed').length;
+ 668:   const totalTasks = snapshot.tasks.length;
+ 669: 
+ 670:   const phases = ['scan', 'generate-plan', 'execute-task', 'validate', 'completed'];
+ 671:   const currentPhase = state?.phase || 'idle';
+ 672:   const activeIndex = phases.indexOf(currentPhase);
+ 673:   const operation = snapshot.activeOperation || snapshot.lastOperation;
+ 674:   const operationActive = Boolean(snapshot.activeOperation);
+ 675:   const operationTime = operation?.startedAt ? `开始于 ${formatChinaTime(operation.startedAt)}` : '';
+ 676:   const operationExit =
+ 677:     operation && !operationActive && typeof operation.exitCode === 'number'
+ 678:       ? ` · 退出码 ${operation.exitCode}${operation.exitCode === 0 ? '（成功）' : '（失败）'}`
+ 679:       : '';
+ 680:   const operationHint = operation ? `${operationTime}${operationExit}` : '等待下一次执行';
+ 681:   const operationTitle = operation ? `${operationActive ? '执行日志' : '最近执行'} · ${operation.label}` : '执行日志';
+ 682: 
+ 683:   return (
+ 684:     <>
+ 685:       <div className="stat-grid">
+ 686:         <StatCard icon="requirement" value={String(reqCount)} label="需求" accent="brand" />
+ 687:         <StatCard
+ 688:           icon="plan"
+ 689:           value={String(planCount)}
+ 690:           label="计划"
+
+codex
+接下来查看流水线渲染片段，避免误动其它工作区区域。
+exec
+powershell.exe -Command "Write-Host '--- Composer focused'; "'$i=0; Get-Content -LiteralPath '"'src/renderer/components/Composer.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if ($i -ge 78 -and $i -le 116) { '"'{0,4}: {1}' -f "'$i, $_ } }; Write-Host '"'--- Workspace pipeline focused'; "'$i=0; Get-Content -LiteralPath '"'src/renderer/pages/WorkspacePage.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if ($i -ge 690 -and $i -le 780) { '"'{0,4}: {1}' -f "'$i, $_ } }; Write-Host '"'--- CSS pipeline focused'; "'$i=0; Get-Content -LiteralPath '"'src/styles.css' -Encoding UTF8 | ForEach-Object { "'$i++; if ($i -ge 328 -and $i -le 360) { '"'{0,4}: {1}' -f "'$i, $_ } }' in D:\project\GitHub\autoplan
+ succeeded in 251ms:
+--- Composer focused
+  78:       <div className="composer-bottom">
+  79:         <div className="composer-tools">
+  80:           <div
+  81:             className={`attachment-dropzone attachment-trigger${dragOver ? ' drag-over' : ''}`}
+  82:             onClick={() => fileInputRef.current?.click()}
+  83:             onKeyDown={(event) => {
+  84:               if (event.key === 'Enter' || event.key === ' ') {
+  85:                 event.preventDefault();
+  86:                 fileInputRef.current?.click();
+  87:               }
+  88:             }}
+  89:             role="button"
+  90:             tabIndex={0}
+  91:             title="添加附件"
+  92:           >
+  93:             <input
+  94:               multiple
+  95:               onChange={(event) => {
+  96:                 addFiles(event.target.files);
+  97:                 event.target.value = '';
+  98:               }}
+  99:               ref={fileInputRef}
+ 100:               type="file"
+ 101:             />
+ 102:             <span className="plus-icon">+</span>
+ 103:           </div>
+ 104:           <PendingAttachmentList
+ 105:             attachments={pendingAttachments}
+ 106:             onRemove={(index) => onRemoveAttachment(type, index)}
+ 107:           />
+ 108:         </div>
+ 109:         <div className="composer-actions">
+ 110:           <span>Enter 发送</span>
+ 111:           <button className="send-button" type="submit" aria-label={submitLabel}>
+ 112:             →
+ 113:           </button>
+ 114:         </div>
+ 115:       </div>
+ 116:     </form>
+--- Workspace pipeline focused
+ 690:           label="计划"
+ 691:           sub={runningPlan ? `${runningPlan.completed_tasks}/${runningPlan.total_tasks} 任务` : '无进行中'}
+ 692:           accent="info"
+ 693:         />
+ 694:         <StatCard icon="tasks" value={`${doneTasks}/${totalTasks}`} label="任务进度" accent="success" />
+ 695:         <StatCard icon="refresh" value={`${state?.interval_seconds || 5}s`} label="循环间隔" accent="warning" />
+ 696:       </div>
+ 697: 
+ 698:       <div className="overview-grid">
+ 699:         <div className="overview-main-column">
+ 700:           <section className="card live-log-card">
+ 701:             <div className="card-head log-card-head">
+ 702:               <div className="log-title-line">
+ 703:                 <h2>
+ 704:                   <span className={`live-dot${operationActive ? '' : ' idle'}`} /> {operationTitle}
+ 705:                 </h2>
+ 706:                 <span className="hint">{operationHint}</span>
+ 707:                 <span className={`log-phase-chip ${state?.running ? 'running' : 'stopped'}`}>
+ 708:                   {state?.running ? '循环运行中' : '循环已停止'} · {currentPhase}
+ 709:                 </span>
+ 710:               </div>
+ 711:               <div className="log-summary">
+ 712:                 <span>
+ 713:                   计划草稿 <b>{snapshot.planDrafts.length}</b>
+ 714:                 </span>
+ 715:                 <span>
+ 716:                   待确认草稿 <b>{snapshot.planDrafts.filter((draft) => draft.status !== 'accepted').length}</b>
+ 717:                 </span>
+ 718:                 <span>
+ 719:                   反馈 <b>{snapshot.feedback.length}</b>
+ 720:                 </span>
+ 721:               </div>
+ 722:             </div>
+ 723:             <CodexLog log={operation?.logTail || ''} activity={operation?.activity || []} />
+ 724:           </section>
+ 725:         </div>
+ 726: 
+ 727:         <div className="overview-side-column">
+ 728:           <section className="card">
+ 729:             <div className="card-head">
+ 730:               <h2>循环阶段流水线</h2>
+ 731:             </div>
+ 732:             <div className="card-body">
+ 733:               <div className="pipeline">
+ 734:                 {phases.map((phase, index) => {
+ 735:                   const done = activeIndex > index;
+ 736:                   const active = activeIndex === index;
+ 737:                   return (
+ 738:                     <div className={`pipe-step ${done ? 'done' : ''} ${active ? 'active' : ''}`} key={phase}>
+ 739:                       <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
+ 740:                       <div className="pipe-label">{phaseLabel(phase)}</div>
+ 741:                     </div>
+ 742:                   );
+ 743:                 })}
+ 744:               </div>
+ 745:             </div>
+ 746:           </section>
+ 747: 
+ 748:           <section className="card">
+ 749:             <div className="card-head">
+ 750:               <h2>近期事件</h2>
+ 751:               <span className="spacer">
+ 752:                 <button type="button" className="btn-link" onClick={onGoTasks}>
+ 753:                   查看任务 →
+ 754:                 </button>
+ 755:               </span>
+ 756:             </div>
+ 757:             <div className="card-body">
+ 758:               <EventList events={snapshot.events.slice(0, 8)} />
+ 759:             </div>
+ 760:           </section>
+ 761:         </div>
+ 762:       </div>
+ 763:     </>
+ 764:   );
+ 765: }
+ 766: 
+ 767: function StatCard({
+ 768:   icon,
+ 769:   value,
+ 770:   label,
+ 771:   sub,
+ 772:   accent,
+ 773: }: {
+ 774:   icon: IconName;
+ 775:   value: string;
+ 776:   label: string;
+ 777:   sub?: string;
+ 778:   accent: 'brand' | 'info' | 'success' | 'warning';
+ 779: }) {
+ 780:   return (
+--- CSS pipeline focused
+ 328: .loop-card .lc-led { width: 12px; height: 12px; border-radius: 50%; background: #b6f5cf; box-shadow: 0 0 0 4px rgba(182,245,207,0.25); }
+ 329: .loop-card .lc-led.running { animation: led-pulse 1.6s ease-in-out infinite; }
+ 330: .loop-card .lc-led.stopped { background: #cfd6e6; box-shadow: 0 0 0 4px rgba(207,214,230,0.25); }
+ 331: 
+ 332: .pipeline { display: flex; align-items: flex-start; gap: 0; overflow-x: auto; }
+ 333: .pipe-step { flex: 1 1 0; min-width: 0; text-align: center; position: relative; }
+ 334: .pipe-node { width: 40px; height: 40px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--bg-elevated); border: 2px solid var(--line); color: var(--text-3); font-weight: 700; font-size: 14px; position: relative; z-index: 1; }
+ 335: .pipe-step.done .pipe-node { background: var(--success); border-color: var(--success); color: #fff; }
+ 336: .pipe-step.active .pipe-node { background: var(--brand-600); border-color: var(--brand-600); color: #fff; box-shadow: 0 0 0 5px var(--brand-50); }
+ 337: .pipe-step::before { content: ""; position: absolute; top: 20px; left: -50%; right: 50%; height: 2px; background: var(--line); z-index: 0; }
+ 338: .pipe-step:first-child::before { display: none; }
+ 339: .pipe-step.done::before, .pipe-step.active::before { background: var(--success); }
+ 340: .pipe-label { font-size: 12px; font-weight: 600; margin-top: 10px; color: var(--text-2); }
+ 341: .pipe-step.active .pipe-label { color: var(--brand-600); }
+ 342: 
+ 343: /* 实时执行日志（对话格式） */
+ 344: .live-log-card { display: flex; flex-direction: column; min-height: 0; }
+ 345: .live-log-card .card-head h2 { display: flex; align-items: center; gap: 8px; }
+ 346: .overview-main-column > .live-log-card { height: 440px; }
+ 347: .overview-main-column > .live-log-card .codex-log { flex: 1 1 auto; min-height: 0; max-height: none; }
+ 348: .log-card-head { align-items: stretch; flex-direction: column; gap: 8px; padding: 12px 18px; }
+ 349: .log-title-line { display: flex; align-items: center; gap: 12px; min-width: 0; }
+ 350: .log-title-line h2 { flex: 0 0 auto; }
+ 351: .log-title-line .hint { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ 352: .log-phase-chip { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px; padding: 4px 9px; background: var(--bg-soft); color: var(--text-2); font-size: 12px; font-weight: 700; white-space: nowrap; }
+ 353: .log-phase-chip.running { color: var(--success); background: var(--success-bg); border-color: transparent; }
+ 354: .log-summary { display: flex; align-items: center; gap: 18px; color: var(--text-3); font-size: 12px; }
+ 355: .log-summary b { color: var(--text-1); margin-left: 4px; }
+ 356: .live-dot {
+ 357:   width: 8px; height: 8px; border-radius: 50%; background: var(--success);
+ 358:   box-shadow: 0 0 0 3px var(--success-bg);
+ 359:   animation: led-pulse 1.4s ease-in-out infinite;
+ 360: }
+
+codex
+输入区会改用已有 paperclip、send、file SVG；流水线用 complete/run SVG。
+exec
+powershell.exe -Command '$i=0; Get-Content -LiteralPath '"'src/renderer/components/icons.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if ($i -ge 221 -and $i -le 270) { '"'{0,4}: {1}' -f "'$i, $_ } }' in D:\project\GitHub\autoplan
+ succeeded in 182ms:
+ 221: export function Icon({
+ 222:   name,
+ 223:   size = 20,
+ 224:   title,
+ 225:   className,
+ 226:   style,
+ 227:   role,
+ 228:   'aria-hidden': ariaHidden,
+ 229:   'aria-label': ariaLabel,
+ 230:   ...svgProps
+ 231: }: IconProps) {
+ 232:   const titleId = React.useId();
+ 233:   const hasAccessibleName = Boolean(title || ariaLabel);
+ 234:   const shouldHide = ariaHidden === undefined ? !hasAccessibleName : isAriaHidden(ariaHidden);
+ 235:   const labelledBy = title && !shouldHide ? titleId : undefined;
+ 236:   const iconStyle = {
+ 237:     '--icon-size': formatIconSize(size),
+ 238:     ...style,
+ 239:   } as React.CSSProperties;
+ 240: 
+ 241:   return (
+ 242:     <svg
+ 243:       viewBox="0 0 24 24"
+ 244:       fill="none"
+ 245:       stroke="currentColor"
+ 246:       strokeWidth={1.8}
+ 247:       strokeLinecap="round"
+ 248:       strokeLinejoin="round"
+ 249:       focusable="false"
+ 250:       {...svgProps}
+ 251:       className={['app-icon', className].filter(Boolean).join(' ')}
+ 252:       style={iconStyle}
+ 253:       aria-hidden={shouldHide ? true : undefined}
+ 254:       aria-labelledby={labelledBy}
+ 255:       aria-label={labelledBy ? undefined : ariaLabel}
+ 256:       role={role ?? (!shouldHide && hasAccessibleName ? 'img' : undefined)}
+ 257:     >
+ 258:       {labelledBy ? <title id={labelledBy}>{title}</title> : null}
+ 259:       {ICONS[name]}
+ 260:     </svg>
+ 261:   );
+ 262: }
+
+codex
+我先确认是否已有屏幕阅读器隐藏样式，避免新增重复 CSS。
+exec
+powershell.exe -Command 'rg -n "sr-only|visually-hidden|screen-reader" src/styles.css src/renderer/pages/WorkspacePage.tsx src/renderer/components/Composer.tsx' in D:\project\GitHub\autoplan
+2026-06-24T20:57:04.479876Z ERROR codex_core::tools::router: error={"output":"","metadata":{"exit_code":1,"duration_seconds":0.1}}
+ exited 1 in 145ms:
+**Evaluating code imports**
+
+I shouldn't add "maybe" since the Icon hides itself by default. The state shown through visual classes is good, and the label text is visible. I need to import Icon in Composer, which already has the necessary types. If I'm using React 17 with automatic JSX, I should just add `import { Icon } from './icons';` since it's in the same directory. I’m considering line endings too, perhaps applying a patch is the way to go.
+codex
+准备做最小补丁：只替换 P004 范围内的字符图标和对应样式。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\Composer.tsx
+diff --git a/src/renderer/components/Composer.tsx b/src/renderer/components/Composer.tsx
+index 81f0c075e5113a0805da7dec2a26b9f40ab94a78..f9f31cf74f37e2e7ef766f325d8b5939fd44d145
+--- a/src/renderer/components/Composer.tsx
++++ b/src/renderer/components/Composer.tsx
+@@ -1,5 +1,6 @@
+ import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+ import type { IntakeType, PendingAttachment } from '../types';
++import { Icon } from './icons';
+ import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+ 
+ interface ComposerProps {
+@@ -88,6 +89,7 @@
+             }}
+             role="button"
+             tabIndex={0}
++            aria-label="添加附件"
+             title="添加附件"
+           >
+             <input
+@@ -99,7 +101,7 @@
+               ref={fileInputRef}
+               type="file"
+             />
+-            <span className="plus-icon">+</span>
++            <Icon name="attachment" size={20} className="attachment-trigger-icon" aria-hidden="true" />
+           </div>
+           <PendingAttachmentList
+             attachments={pendingAttachments}
+@@ -109,7 +111,7 @@
+         <div className="composer-actions">
+           <span>Enter 发送</span>
+           <button className="send-button" type="submit" aria-label={submitLabel}>
+-            →
++            <Icon name="send" size={20} aria-hidden="true" />
+           </button>
+         </div>
+       </div>
+@@ -142,7 +144,11 @@
+ 
+ function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+   if (!attachment.type.startsWith('image/')) {
+-    return <span className="pending-file-icon">文件</span>;
++    return (
++      <span className="pending-file-icon" aria-hidden="true">
++        <Icon name="file" size={22} />
++      </span>
++    );
+   }
+   return (
+     <img
+
+diff --git a/src/renderer/components/Composer.tsx b/src/renderer/components/Composer.tsx
+index 81f0c075e5113a0805da7dec2a26b9f40ab94a78..f9f31cf74f37e2e7ef766f325d8b5939fd44d145
+--- a/src/renderer/components/Composer.tsx
++++ b/src/renderer/components/Composer.tsx
+@@ -1,5 +1,6 @@
+ import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+ import type { IntakeType, PendingAttachment } from '../types';
++import { Icon } from './icons';
+ import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+ 
+ interface ComposerProps {
+@@ -88,6 +89,7 @@
+             }}
+             role="button"
+             tabIndex={0}
++            aria-label="添加附件"
+             title="添加附件"
+           >
+             <input
+@@ -99,7 +101,7 @@
+               ref={fileInputRef}
+               type="file"
+             />
+-            <span className="plus-icon">+</span>
++            <Icon name="attachment" size={20} className="attachment-trigger-icon" aria-hidden="true" />
+           </div>
+           <PendingAttachmentList
+             attachments={pendingAttachments}
+@@ -109,7 +111,7 @@
+         <div className="composer-actions">
+           <span>Enter 发送</span>
+           <button className="send-button" type="submit" aria-label={submitLabel}>
+-            →
++            <Icon name="send" size={20} aria-hidden="true" />
+           </button>
+         </div>
+       </div>
+@@ -142,7 +144,11 @@
+ 
+ function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+   if (!attachment.type.startsWith('image/')) {
+-    return <span className="pending-file-icon">文件</span>;
++    return (
++      <span className="pending-file-icon" aria-hidden="true">
++        <Icon name="file" size={22} />
++      </span>
++    );
+   }
+   return (
+     <img
+
+codex
+输入区已替换；现在处理流水线完成态和运行态。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx
+diff --git a/src/renderer/components/Composer.tsx b/src/renderer/components/Composer.tsx
+index 81f0c075e5113a0805da7dec2a26b9f40ab94a78..f9f31cf74f37e2e7ef766f325d8b5939fd44d145
+--- a/src/renderer/components/Composer.tsx
++++ b/src/renderer/components/Composer.tsx
+@@ -1,5 +1,6 @@
+ import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+ import type { IntakeType, PendingAttachment } from '../types';
++import { Icon } from './icons';
+ import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+ 
+ interface ComposerProps {
+@@ -88,6 +89,7 @@
+             }}
+             role="button"
+             tabIndex={0}
++            aria-label="添加附件"
+             title="添加附件"
+           >
+             <input
+@@ -99,7 +101,7 @@
+               ref={fileInputRef}
+               type="file"
+             />
+-            <span className="plus-icon">+</span>
++            <Icon name="attachment" size={20} className="attachment-trigger-icon" aria-hidden="true" />
+           </div>
+           <PendingAttachmentList
+             attachments={pendingAttachments}
+@@ -109,7 +111,7 @@
+         <div className="composer-actions">
+           <span>Enter 发送</span>
+           <button className="send-button" type="submit" aria-label={submitLabel}>
+-            →
++            <Icon name="send" size={20} aria-hidden="true" />
+           </button>
+         </div>
+       </div>
+@@ -142,7 +144,11 @@
+ 
+ function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+   if (!attachment.type.startsWith('image/')) {
+-    return <span className="pending-file-icon">文件</span>;
++    return (
++      <span className="pending-file-icon" aria-hidden="true">
++        <Icon name="file" size={22} />
++      </span>
++    );
+   }
+   return (
+     <img
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 428804e88719d2a652843004a21d7815f2be0bcc..ba8c45a7afe7afaf4ef218b1ad6a6aaae23c32bf
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -736,7 +736,15 @@
+                   const active = activeIndex === index;
+                   return (
+                     <div className={`pipe-step ${done ? 'done' : ''} ${active ? 'active' : ''}`} key={phase}>
+-                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
++                      <div className="pipe-node">
++                        {done ? (
++                          <Icon name="complete" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : active ? (
++                          <Icon name="run" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : (
++                          index + 1
++                        )}
++                      </div>
+                       <div className="pipe-label">{phaseLabel(phase)}</div>
+                     </div>
+                   );
+
+diff --git a/src/renderer/components/Composer.tsx b/src/renderer/components/Composer.tsx
+index 81f0c075e5113a0805da7dec2a26b9f40ab94a78..f9f31cf74f37e2e7ef766f325d8b5939fd44d145
+--- a/src/renderer/components/Composer.tsx
++++ b/src/renderer/components/Composer.tsx
+@@ -1,5 +1,6 @@
+ import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+ import type { IntakeType, PendingAttachment } from '../types';
++import { Icon } from './icons';
+ import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+ 
+ interface ComposerProps {
+@@ -88,6 +89,7 @@
+             }}
+             role="button"
+             tabIndex={0}
++            aria-label="添加附件"
+             title="添加附件"
+           >
+             <input
+@@ -99,7 +101,7 @@
+               ref={fileInputRef}
+               type="file"
+             />
+-            <span className="plus-icon">+</span>
++            <Icon name="attachment" size={20} className="attachment-trigger-icon" aria-hidden="true" />
+           </div>
+           <PendingAttachmentList
+             attachments={pendingAttachments}
+@@ -109,7 +111,7 @@
+         <div className="composer-actions">
+           <span>Enter 发送</span>
+           <button className="send-button" type="submit" aria-label={submitLabel}>
+-            →
++            <Icon name="send" size={20} aria-hidden="true" />
+           </button>
+         </div>
+       </div>
+@@ -142,7 +144,11 @@
+ 
+ function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+   if (!attachment.type.startsWith('image/')) {
+-    return <span className="pending-file-icon">文件</span>;
++    return (
++      <span className="pending-file-icon" aria-hidden="true">
++        <Icon name="file" size={22} />
++      </span>
++    );
+   }
+   return (
+     <img
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 428804e88719d2a652843004a21d7815f2be0bcc..ba8c45a7afe7afaf4ef218b1ad6a6aaae23c32bf
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -736,7 +736,15 @@
+                   const active = activeIndex === index;
+                   return (
+                     <div className={`pipe-step ${done ? 'done' : ''} ${active ? 'active' : ''}`} key={phase}>
+-                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
++                      <div className="pipe-node">
++                        {done ? (
++                          <Icon name="complete" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : active ? (
++                          <Icon name="run" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : (
++                          index + 1
++                        )}
++                      </div>
+                       <div className="pipe-label">{phaseLabel(phase)}</div>
+                     </div>
+                   );
+
+**Updating CSS Styles**
+
+I need to make some updates to styles.css, specifically replacing the .plus-icon with .attachment-trigger-icon and adding a pipe status icon. I'm considering whether to remove the font-size from pending files and maybe add some color instead. 
+
+I'll inspect the current snippets after these patches to ensure everything works. I might not need a specific class for the pipeline icon because the size could be set inline. I'll need to update the .attachment-trigger-icon to set its color as well.
+**Revising CSS for Icons**
+
+I’m looking at the .pipe-status-icon; it might already use the app-icon styling. The .pending-file-icon currently uses a grid display and manages item placement, color, and font-size. I'm considering whether to remove the font-size since it's not critical, but keeping it doesn't hurt either. To ensure the icon displays correctly, I think I'll update .pending-file-icon to have a grid display with centered items and the specified color. I definitely need to patch the CSS for this.
+codex
+字符替换完成，接着同步样式类名和 SVG 对齐规则。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\styles.css
+diff --git a/src/renderer/components/Composer.tsx b/src/renderer/components/Composer.tsx
+index 81f0c075e5113a0805da7dec2a26b9f40ab94a78..f9f31cf74f37e2e7ef766f325d8b5939fd44d145
+--- a/src/renderer/components/Composer.tsx
++++ b/src/renderer/components/Composer.tsx
+@@ -1,5 +1,6 @@
+ import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+ import type { IntakeType, PendingAttachment } from '../types';
++import { Icon } from './icons';
+ import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+ 
+ interface ComposerProps {
+@@ -88,6 +89,7 @@
+             }}
+             role="button"
+             tabIndex={0}
++            aria-label="添加附件"
+             title="添加附件"
+           >
+             <input
+@@ -99,7 +101,7 @@
+               ref={fileInputRef}
+               type="file"
+             />
+-            <span className="plus-icon">+</span>
++            <Icon name="attachment" size={20} className="attachment-trigger-icon" aria-hidden="true" />
+           </div>
+           <PendingAttachmentList
+             attachments={pendingAttachments}
+@@ -109,7 +111,7 @@
+         <div className="composer-actions">
+           <span>Enter 发送</span>
+           <button className="send-button" type="submit" aria-label={submitLabel}>
+-            →
++            <Icon name="send" size={20} aria-hidden="true" />
+           </button>
+         </div>
+       </div>
+@@ -142,7 +144,11 @@
+ 
+ function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+   if (!attachment.type.startsWith('image/')) {
+-    return <span className="pending-file-icon">文件</span>;
++    return (
++      <span className="pending-file-icon" aria-hidden="true">
++        <Icon name="file" size={22} />
++      </span>
++    );
+   }
+   return (
+     <img
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 428804e88719d2a652843004a21d7815f2be0bcc..ba8c45a7afe7afaf4ef218b1ad6a6aaae23c32bf
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -736,7 +736,15 @@
+                   const active = activeIndex === index;
+                   return (
+                     <div className={`pipe-step ${done ? 'done' : ''} ${active ? 'active' : ''}`} key={phase}>
+-                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
++                      <div className="pipe-node">
++                        {done ? (
++                          <Icon name="complete" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : active ? (
++                          <Icon name="run" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : (
++                          index + 1
++                        )}
++                      </div>
+                       <div className="pipe-label">{phaseLabel(phase)}</div>
+                     </div>
+                   );
+diff --git a/src/styles.css b/src/styles.css
+index 5d8798b4f5cc869eb323461167f8e34d7846285f..05d3b8afc8e1ded594276813baed7b76acc236ea
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -334,6 +334,7 @@
+ .pipe-node { width: 40px; height: 40px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--bg-elevated); border: 2px solid var(--line); color: var(--text-3); font-weight: 700; font-size: 14px; position: relative; z-index: 1; }
+ .pipe-step.done .pipe-node { background: var(--success); border-color: var(--success); color: #fff; }
+ .pipe-step.active .pipe-node { background: var(--brand-600); border-color: var(--brand-600); color: #fff; box-shadow: 0 0 0 5px var(--brand-50); }
++.pipe-status-icon { --icon-size: 18px; }
+ .pipe-step::before { content: ""; position: absolute; top: 20px; left: -50%; right: 50%; height: 2px; background: var(--line); z-index: 0; }
+ .pipe-step:first-child::before { display: none; }
+ .pipe-step.done::before, .pipe-step.active::before { background: var(--success); }
+@@ -415,7 +416,7 @@
+ .attachment-trigger { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; }
+ .attachment-trigger:hover, .attachment-trigger.drag-over { background: var(--bg-hover); }
+ .attachment-trigger input { display: none; }
+-.plus-icon { display: block; color: var(--text-3); font-size: 28px; font-weight: 300; line-height: 1; }
++.attachment-trigger-icon { color: var(--text-3); }
+ .composer-actions { display: flex; align-items: center; justify-content: end; gap: 10px; margin-left: auto; }
+ .composer-actions span { color: var(--text-3); font-size: 12px; }
+ .send-button { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border: 0; border-radius: 50%; padding: 0; background: var(--brand-grad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 6px 14px rgba(77,110,255,0.4); }
+@@ -424,7 +425,7 @@
+ .pending-attachment { display: grid; grid-template-columns: 42px 1fr auto auto; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); }
+ .pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+ .pending-thumb { object-fit: cover; }
+-.pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
++.pending-file-icon { display: grid; place-items: center; color: var(--text-3); }
+ .pending-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ .pending-attachment small { color: var(--text-3); }
+ .pending-attachment button { padding: 5px 8px; font-size: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); }
+
+diff --git a/src/renderer/components/Composer.tsx b/src/renderer/components/Composer.tsx
+index 81f0c075e5113a0805da7dec2a26b9f40ab94a78..f9f31cf74f37e2e7ef766f325d8b5939fd44d145
+--- a/src/renderer/components/Composer.tsx
++++ b/src/renderer/components/Composer.tsx
+@@ -1,5 +1,6 @@
+ import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+ import type { IntakeType, PendingAttachment } from '../types';
++import { Icon } from './icons';
+ import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+ 
+ interface ComposerProps {
+@@ -88,6 +89,7 @@
+             }}
+             role="button"
+             tabIndex={0}
++            aria-label="添加附件"
+             title="添加附件"
+           >
+             <input
+@@ -99,7 +101,7 @@
+               ref={fileInputRef}
+               type="file"
+             />
+-            <span className="plus-icon">+</span>
++            <Icon name="attachment" size={20} className="attachment-trigger-icon" aria-hidden="true" />
+           </div>
+           <PendingAttachmentList
+             attachments={pendingAttachments}
+@@ -109,7 +111,7 @@
+         <div className="composer-actions">
+           <span>Enter 发送</span>
+           <button className="send-button" type="submit" aria-label={submitLabel}>
+-            →
++            <Icon name="send" size={20} aria-hidden="true" />
+           </button>
+         </div>
+       </div>
+@@ -142,7 +144,11 @@
+ 
+ function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+   if (!attachment.type.startsWith('image/')) {
+-    return <span className="pending-file-icon">文件</span>;
++    return (
++      <span className="pending-file-icon" aria-hidden="true">
++        <Icon name="file" size={22} />
++      </span>
++    );
+   }
+   return (
+     <img
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 428804e88719d2a652843004a21d7815f2be0bcc..ba8c45a7afe7afaf4ef218b1ad6a6aaae23c32bf
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -736,7 +736,15 @@
+                   const active = activeIndex === index;
+                   return (
+                     <div className={`pipe-step ${done ? 'done' : ''} ${active ? 'active' : ''}`} key={phase}>
+-                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
++                      <div className="pipe-node">
++                        {done ? (
++                          <Icon name="complete" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : active ? (
++                          <Icon name="run" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : (
++                          index + 1
++                        )}
++                      </div>
+                       <div className="pipe-label">{phaseLabel(phase)}</div>
+                     </div>
+                   );
+diff --git a/src/styles.css b/src/styles.css
+index 5d8798b4f5cc869eb323461167f8e34d7846285f..05d3b8afc8e1ded594276813baed7b76acc236ea
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -334,6 +334,7 @@
+ .pipe-node { width: 40px; height: 40px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--bg-elevated); border: 2px solid var(--line); color: var(--text-3); font-weight: 700; font-size: 14px; position: relative; z-index: 1; }
+ .pipe-step.done .pipe-node { background: var(--success); border-color: var(--success); color: #fff; }
+ .pipe-step.active .pipe-node { background: var(--brand-600); border-color: var(--brand-600); color: #fff; box-shadow: 0 0 0 5px var(--brand-50); }
++.pipe-status-icon { --icon-size: 18px; }
+ .pipe-step::before { content: ""; position: absolute; top: 20px; left: -50%; right: 50%; height: 2px; background: var(--line); z-index: 0; }
+ .pipe-step:first-child::before { display: none; }
+ .pipe-step.done::before, .pipe-step.active::before { background: var(--success); }
+@@ -415,7 +416,7 @@
+ .attachment-trigger { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; }
+ .attachment-trigger:hover, .attachment-trigger.drag-over { background: var(--bg-hover); }
+ .attachment-trigger input { display: none; }
+-.plus-icon { display: block; color: var(--text-3); font-size: 28px; font-weight: 300; line-height: 1; }
++.attachment-trigger-icon { color: var(--text-3); }
+ .composer-actions { display: flex; align-items: center; justify-content: end; gap: 10px; margin-left: auto; }
+ .composer-actions span { color: var(--text-3); font-size: 12px; }
+ .send-button { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border: 0; border-radius: 50%; padding: 0; background: var(--brand-grad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 6px 14px rgba(77,110,255,0.4); }
+@@ -424,7 +425,7 @@
+ .pending-attachment { display: grid; grid-template-columns: 42px 1fr auto auto; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); }
+ .pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+ .pending-thumb { object-fit: cover; }
+-.pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
++.pending-file-icon { display: grid; place-items: center; color: var(--text-3); }
+ .pending-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ .pending-attachment small { color: var(--text-3); }
+ .pending-attachment button { padding: 5px 8px; font-size: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); }
+
+codex
+补丁已应用；现在做范围内残留字符和类型引用的最小检查。
+  ✓ 读取 P004 上下文
+  ✓ 定位现有图标实现
+  ✓ 替换目标图标样式
+  → 做最小静态检查
+diff --git a/src/renderer/components/Composer.tsx b/src/renderer/components/Composer.tsx
+index 81f0c075e5113a0805da7dec2a26b9f40ab94a78..f9f31cf74f37e2e7ef766f325d8b5939fd44d145
+--- a/src/renderer/components/Composer.tsx
++++ b/src/renderer/components/Composer.tsx
+@@ -1,5 +1,6 @@
+ import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+ import type { IntakeType, PendingAttachment } from '../types';
++import { Icon } from './icons';
+ import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+ 
+ interface ComposerProps {
+@@ -88,6 +89,7 @@
+             }}
+             role="button"
+             tabIndex={0}
++            aria-label="添加附件"
+             title="添加附件"
+           >
+             <input
+@@ -99,7 +101,7 @@
+               ref={fileInputRef}
+               type="file"
+             />
+-            <span className="plus-icon">+</span>
++            <Icon name="attachment" size={20} className="attachment-trigger-icon" aria-hidden="true" />
+           </div>
+           <PendingAttachmentList
+             attachments={pendingAttachments}
+@@ -109,7 +111,7 @@
+         <div className="composer-actions">
+           <span>Enter 发送</span>
+           <button className="send-button" type="submit" aria-label={submitLabel}>
+-            →
++            <Icon name="send" size={20} aria-hidden="true" />
+           </button>
+         </div>
+       </div>
+@@ -142,7 +144,11 @@
+ 
+ function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+   if (!attachment.type.startsWith('image/')) {
+-    return <span className="pending-file-icon">文件</span>;
++    return (
++      <span className="pending-file-icon" aria-hidden="true">
++        <Icon name="file" size={22} />
++      </span>
++    );
+   }
+   return (
+     <img
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 428804e88719d2a652843004a21d7815f2be0bcc..ba8c45a7afe7afaf4ef218b1ad6a6aaae23c32bf
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -736,7 +736,15 @@
+                   const active = activeIndex === index;
+                   return (
+                     <div className={`pipe-step ${done ? 'done' : ''} ${active ? 'active' : ''}`} key={phase}>
+-                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
++                      <div className="pipe-node">
++                        {done ? (
++                          <Icon name="complete" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : active ? (
++                          <Icon name="run" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : (
++                          index + 1
++                        )}
++                      </div>
+                       <div className="pipe-label">{phaseLabel(phase)}</div>
+                     </div>
+                   );
+diff --git a/src/styles.css b/src/styles.css
+index 5d8798b4f5cc869eb323461167f8e34d7846285f..05d3b8afc8e1ded594276813baed7b76acc236ea
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -334,6 +334,7 @@
+ .pipe-node { width: 40px; height: 40px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--bg-elevated); border: 2px solid var(--line); color: var(--text-3); font-weight: 700; font-size: 14px; position: relative; z-index: 1; }
+ .pipe-step.done .pipe-node { background: var(--success); border-color: var(--success); color: #fff; }
+ .pipe-step.active .pipe-node { background: var(--brand-600); border-color: var(--brand-600); color: #fff; box-shadow: 0 0 0 5px var(--brand-50); }
++.pipe-status-icon { --icon-size: 18px; }
+ .pipe-step::before { content: ""; position: absolute; top: 20px; left: -50%; right: 50%; height: 2px; background: var(--line); z-index: 0; }
+ .pipe-step:first-child::before { display: none; }
+ .pipe-step.done::before, .pipe-step.active::before { background: var(--success); }
+@@ -415,7 +416,7 @@
+ .attachment-trigger { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; }
+ .attachment-trigger:hover, .attachment-trigger.drag-over { background: var(--bg-hover); }
+ .attachment-trigger input { display: none; }
+-.plus-icon { display: block; color: var(--text-3); font-size: 28px; font-weight: 300; line-height: 1; }
++.attachment-trigger-icon { color: var(--text-3); }
+ .composer-actions { display: flex; align-items: center; justify-content: end; gap: 10px; margin-left: auto; }
+ .composer-actions span { color: var(--text-3); font-size: 12px; }
+ .send-button { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border: 0; border-radius: 50%; padding: 0; background: var(--brand-grad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 6px 14px rgba(77,110,255,0.4); }
+@@ -424,7 +425,7 @@
+ .pending-attachment { display: grid; grid-template-columns: 42px 1fr auto auto; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); }
+ .pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+ .pending-thumb { object-fit: cover; }
+-.pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
++.pending-file-icon { display: grid; place-items: center; color: var(--text-3); }
+ .pending-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ .pending-attachment small { color: var(--text-3); }
+ .pending-attachment button { padding: 5px 8px; font-size: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); }
+
+exec
+powershell.exe -Command "Write-Host '--- target character scan'; rg -n \"plus-icon|pending-file-icon\">"'$null; if ($LASTEXITCODE -eq 0) { rg -n "plus-icon|pending-file-icon" src/renderer/pages/WorkspacePage.tsx src/renderer/components/Composer.tsx src/styles.css } else { }; rg -n "[✓▶+]|>→<|文件</span>" src/renderer/pages/WorkspacePage.tsx src/renderer/components/Composer.tsx src/styles.css; Write-Host '"'--- changed files'; git diff --name-only -- src/renderer/pages/WorkspacePage.tsx src/renderer/components/Composer.tsx src/styles.css" in D:\project\GitHub\autoplan
+ succeeded in 9274ms:
+--- target character scan
+src/renderer/components/Composer.tsx:148:      <span className="pending-file-icon" aria-hidden="true">
+src/styles.css:426:.pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+src/styles.css:428:.pending-file-icon { display: grid; place-items: center; color: var(--text-3); }
+src/styles.css:180:/* 需求/反馈卡片：进度 + 操作脚 + 追加任务 */
+src/styles.css:237:.ctx-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 60; min-width: 150px; padding: 5px; background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; gap: 2px; }
+src/styles.css:279:.workspace-search + .topbar-actions { margin-left: 0; }
+src/styles.css:467:  .workspace-search + .topbar-actions { margin-left: auto; }
+src/renderer/pages/WorkspacePage.tsx:345:              placeholder="输入需求，Enter 发送，Shift+Enter 换行"
+src/renderer/pages/WorkspacePage.tsx:369:              placeholder="输入反馈，Enter 发送，Shift+Enter 换行"
+src/renderer/pages/WorkspacePage.tsx:613:  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+src/renderer/pages/WorkspacePage.tsx:618:    snapshot.requirements.length +
+src/renderer/pages/WorkspacePage.tsx:619:    snapshot.feedback.length +
+src/renderer/pages/WorkspacePage.tsx:620:    snapshot.planDrafts.length +
+src/renderer/pages/WorkspacePage.tsx:621:    snapshot.plans.length +
+src/renderer/pages/WorkspacePage.tsx:622:    snapshot.tasks.length +
+src/renderer/pages/WorkspacePage.tsx:638:    (count, group) => count + group.filter((item) => normalizeSearchQuery(toSearchText(item)).includes(normalizedQuery)).length,
+src/renderer/pages/WorkspacePage.tsx:646:  if (Array.isArray(value)) return value.map((item) => toSearchText(item, depth + 1)).join(' ');
+src/renderer/pages/WorkspacePage.tsx:649:      .map((item) => toSearchText(item, depth + 1))
+src/renderer/pages/WorkspacePage.tsx:745:                          index + 1
+--- changed files
+src/renderer/components/Composer.tsx
+src/renderer/pages/WorkspacePage.tsx
+src/styles.css
+warning: in the working copy of 'src/renderer/components/Composer.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/pages/WorkspacePage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/styles.css', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/components/Composer.tsx b/src/renderer/components/Composer.tsx
+index 81f0c075e5113a0805da7dec2a26b9f40ab94a78..f9f31cf74f37e2e7ef766f325d8b5939fd44d145
+--- a/src/renderer/components/Composer.tsx
++++ b/src/renderer/components/Composer.tsx
+@@ -1,5 +1,6 @@
+ import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+ import type { IntakeType, PendingAttachment } from '../types';
++import { Icon } from './icons';
+ import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+ 
+ interface ComposerProps {
+@@ -88,6 +89,7 @@
+             }}
+             role="button"
+             tabIndex={0}
++            aria-label="添加附件"
+             title="添加附件"
+           >
+             <input
+@@ -99,7 +101,7 @@
+               ref={fileInputRef}
+               type="file"
+             />
+-            <span className="plus-icon">+</span>
++            <Icon name="attachment" size={20} className="attachment-trigger-icon" aria-hidden="true" />
+           </div>
+           <PendingAttachmentList
+             attachments={pendingAttachments}
+@@ -109,7 +111,7 @@
+         <div className="composer-actions">
+           <span>Enter 发送</span>
+           <button className="send-button" type="submit" aria-label={submitLabel}>
+-            →
++            <Icon name="send" size={20} aria-hidden="true" />
+           </button>
+         </div>
+       </div>
+@@ -142,7 +144,11 @@
+ 
+ function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+   if (!attachment.type.startsWith('image/')) {
+-    return <span className="pending-file-icon">文件</span>;
++    return (
++      <span className="pending-file-icon" aria-hidden="true">
++        <Icon name="file" size={22} />
++      </span>
++    );
+   }
+   return (
+     <img
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 428804e88719d2a652843004a21d7815f2be0bcc..ba8c45a7afe7afaf4ef218b1ad6a6aaae23c32bf
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -736,7 +736,15 @@
+                   const active = activeIndex === index;
+                   return (
+                     <div className={`pipe-step ${done ? 'done' : ''} ${active ? 'active' : ''}`} key={phase}>
+-                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
++                      <div className="pipe-node">
++                        {done ? (
++                          <Icon name="complete" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : active ? (
++                          <Icon name="run" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : (
++                          index + 1
++                        )}
++                      </div>
+                       <div className="pipe-label">{phaseLabel(phase)}</div>
+                     </div>
+                   );
+diff --git a/src/styles.css b/src/styles.css
+index 5d8798b4f5cc869eb323461167f8e34d7846285f..05d3b8afc8e1ded594276813baed7b76acc236ea
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -334,6 +334,7 @@
+ .pipe-node { width: 40px; height: 40px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--bg-elevated); border: 2px solid var(--line); color: var(--text-3); font-weight: 700; font-size: 14px; position: relative; z-index: 1; }
+ .pipe-step.done .pipe-node { background: var(--success); border-color: var(--success); color: #fff; }
+ .pipe-step.active .pipe-node { background: var(--brand-600); border-color: var(--brand-600); color: #fff; box-shadow: 0 0 0 5px var(--brand-50); }
++.pipe-status-icon { --icon-size: 18px; }
+ .pipe-step::before { content: ""; position: absolute; top: 20px; left: -50%; right: 50%; height: 2px; background: var(--line); z-index: 0; }
+ .pipe-step:first-child::before { display: none; }
+ .pipe-step.done::before, .pipe-step.active::before { background: var(--success); }
+@@ -415,7 +416,7 @@
+ .attachment-trigger { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; }
+ .attachment-trigger:hover, .attachment-trigger.drag-over { background: var(--bg-hover); }
+ .attachment-trigger input { display: none; }
+-.plus-icon { display: block; color: var(--text-3); font-size: 28px; font-weight: 300; line-height: 1; }
++.attachment-trigger-icon { color: var(--text-3); }
+ .composer-actions { display: flex; align-items: center; justify-content: end; gap: 10px; margin-left: auto; }
+ .composer-actions span { color: var(--text-3); font-size: 12px; }
+ .send-button { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border: 0; border-radius: 50%; padding: 0; background: var(--brand-grad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 6px 14px rgba(77,110,255,0.4); }
+@@ -424,7 +425,7 @@
+ .pending-attachment { display: grid; grid-template-columns: 42px 1fr auto auto; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); }
+ .pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+ .pending-thumb { object-fit: cover; }
+-.pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
++.pending-file-icon { display: grid; place-items: center; color: var(--text-3); }
+ .pending-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ .pending-attachment small { color: var(--text-3); }
+ .pending-attachment button { padding: 5px 8px; font-size: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); }
+
+codex
+残留扫描只剩业务文本和序号逻辑；再做补丁格式检查。
+exec
+powershell.exe -Command "Write-Host '--- icon glyph residues'; rg -n \"✓|▶|plus-icon|>\\s*→\\s*<|文件</span>\" src/renderer/pages/WorkspacePage.tsx src/renderer/components/Composer.tsx src/styles.css; Write-Host '--- diff check'; git diff --check -- src/renderer/pages/WorkspacePage.tsx src/renderer/components/Composer.tsx src/styles.css" in D:\project\GitHub\autoplan
+ succeeded in 221ms:
+--- icon glyph residues
+--- diff check
+warning: in the working copy of 'src/renderer/components/Composer.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/pages/WorkspacePage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/styles.css', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/components/Composer.tsx b/src/renderer/components/Composer.tsx
+index 81f0c075e5113a0805da7dec2a26b9f40ab94a78..f9f31cf74f37e2e7ef766f325d8b5939fd44d145
+--- a/src/renderer/components/Composer.tsx
++++ b/src/renderer/components/Composer.tsx
+@@ -1,5 +1,6 @@
+ import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+ import type { IntakeType, PendingAttachment } from '../types';
++import { Icon } from './icons';
+ import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+ 
+ interface ComposerProps {
+@@ -88,6 +89,7 @@
+             }}
+             role="button"
+             tabIndex={0}
++            aria-label="添加附件"
+             title="添加附件"
+           >
+             <input
+@@ -99,7 +101,7 @@
+               ref={fileInputRef}
+               type="file"
+             />
+-            <span className="plus-icon">+</span>
++            <Icon name="attachment" size={20} className="attachment-trigger-icon" aria-hidden="true" />
+           </div>
+           <PendingAttachmentList
+             attachments={pendingAttachments}
+@@ -109,7 +111,7 @@
+         <div className="composer-actions">
+           <span>Enter 发送</span>
+           <button className="send-button" type="submit" aria-label={submitLabel}>
+-            →
++            <Icon name="send" size={20} aria-hidden="true" />
+           </button>
+         </div>
+       </div>
+@@ -142,7 +144,11 @@
+ 
+ function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+   if (!attachment.type.startsWith('image/')) {
+-    return <span className="pending-file-icon">文件</span>;
++    return (
++      <span className="pending-file-icon" aria-hidden="true">
++        <Icon name="file" size={22} />
++      </span>
++    );
+   }
+   return (
+     <img
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 428804e88719d2a652843004a21d7815f2be0bcc..ba8c45a7afe7afaf4ef218b1ad6a6aaae23c32bf
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -736,7 +736,15 @@
+                   const active = activeIndex === index;
+                   return (
+                     <div className={`pipe-step ${done ? 'done' : ''} ${active ? 'active' : ''}`} key={phase}>
+-                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
++                      <div className="pipe-node">
++                        {done ? (
++                          <Icon name="complete" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : active ? (
++                          <Icon name="run" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : (
++                          index + 1
++                        )}
++                      </div>
+                       <div className="pipe-label">{phaseLabel(phase)}</div>
+                     </div>
+                   );
+diff --git a/src/styles.css b/src/styles.css
+index 5d8798b4f5cc869eb323461167f8e34d7846285f..05d3b8afc8e1ded594276813baed7b76acc236ea
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -334,6 +334,7 @@
+ .pipe-node { width: 40px; height: 40px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--bg-elevated); border: 2px solid var(--line); color: var(--text-3); font-weight: 700; font-size: 14px; position: relative; z-index: 1; }
+ .pipe-step.done .pipe-node { background: var(--success); border-color: var(--success); color: #fff; }
+ .pipe-step.active .pipe-node { background: var(--brand-600); border-color: var(--brand-600); color: #fff; box-shadow: 0 0 0 5px var(--brand-50); }
++.pipe-status-icon { --icon-size: 18px; }
+ .pipe-step::before { content: ""; position: absolute; top: 20px; left: -50%; right: 50%; height: 2px; background: var(--line); z-index: 0; }
+ .pipe-step:first-child::before { display: none; }
+ .pipe-step.done::before, .pipe-step.active::before { background: var(--success); }
+@@ -415,7 +416,7 @@
+ .attachment-trigger { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; }
+ .attachment-trigger:hover, .attachment-trigger.drag-over { background: var(--bg-hover); }
+ .attachment-trigger input { display: none; }
+-.plus-icon { display: block; color: var(--text-3); font-size: 28px; font-weight: 300; line-height: 1; }
++.attachment-trigger-icon { color: var(--text-3); }
+ .composer-actions { display: flex; align-items: center; justify-content: end; gap: 10px; margin-left: auto; }
+ .composer-actions span { color: var(--text-3); font-size: 12px; }
+ .send-button { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border: 0; border-radius: 50%; padding: 0; background: var(--brand-grad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 6px 14px rgba(77,110,255,0.4); }
+@@ -424,7 +425,7 @@
+ .pending-attachment { display: grid; grid-template-columns: 42px 1fr auto auto; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); }
+ .pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+ .pending-thumb { object-fit: cover; }
+-.pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
++.pending-file-icon { display: grid; place-items: center; color: var(--text-3); }
+ .pending-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ .pending-attachment small { color: var(--text-3); }
+ .pending-attachment button { padding: 5px 8px; font-size: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); }
+
+codex
+格式检查通过；我再确认没有遗漏适用的 AGENTS 指令和非 scope 修改。
+exec
+powershell.exe -Command "Write-Host '--- AGENTS'; rg --files -g AGENTS.md; Write-Host '--- scoped diff stat'; git diff --stat -- src/renderer/pages/WorkspacePage.tsx src/renderer/components/Composer.tsx src/styles.css; Write-Host '--- plan diff'; git diff --name-only -- docs/plan/plan_requirement_6_20260625-032502.md" in D:\project\GitHub\autoplan
+ succeeded in 255ms:
+--- AGENTS
+--- scoped diff stat
+ src/renderer/components/Composer.tsx |  12 ++-
+ src/renderer/pages/WorkspacePage.tsx | 155 +++++++++++++++++++++++++++++++----
+ src/styles.css                       | 121 +++++++++++++++++++++++----
+ 3 files changed, 254 insertions(+), 34 deletions(-)
+--- plan diff
+warning: in the working copy of 'src/renderer/components/Composer.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/pages/WorkspacePage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/styles.css', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/components/Composer.tsx b/src/renderer/components/Composer.tsx
+index 81f0c075e5113a0805da7dec2a26b9f40ab94a78..f9f31cf74f37e2e7ef766f325d8b5939fd44d145
+--- a/src/renderer/components/Composer.tsx
++++ b/src/renderer/components/Composer.tsx
+@@ -1,5 +1,6 @@
+ import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+ import type { IntakeType, PendingAttachment } from '../types';
++import { Icon } from './icons';
+ import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+ 
+ interface ComposerProps {
+@@ -88,6 +89,7 @@
+             }}
+             role="button"
+             tabIndex={0}
++            aria-label="添加附件"
+             title="添加附件"
+           >
+             <input
+@@ -99,7 +101,7 @@
+               ref={fileInputRef}
+               type="file"
+             />
+-            <span className="plus-icon">+</span>
++            <Icon name="attachment" size={20} className="attachment-trigger-icon" aria-hidden="true" />
+           </div>
+           <PendingAttachmentList
+             attachments={pendingAttachments}
+@@ -109,7 +111,7 @@
+         <div className="composer-actions">
+           <span>Enter 发送</span>
+           <button className="send-button" type="submit" aria-label={submitLabel}>
+-            →
++            <Icon name="send" size={20} aria-hidden="true" />
+           </button>
+         </div>
+       </div>
+@@ -142,7 +144,11 @@
+ 
+ function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+   if (!attachment.type.startsWith('image/')) {
+-    return <span className="pending-file-icon">文件</span>;
++    return (
++      <span className="pending-file-icon" aria-hidden="true">
++        <Icon name="file" size={22} />
++      </span>
++    );
+   }
+   return (
+     <img
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 428804e88719d2a652843004a21d7815f2be0bcc..ba8c45a7afe7afaf4ef218b1ad6a6aaae23c32bf
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -736,7 +736,15 @@
+                   const active = activeIndex === index;
+                   return (
+                     <div className={`pipe-step ${done ? 'done' : ''} ${active ? 'active' : ''}`} key={phase}>
+-                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
++                      <div className="pipe-node">
++                        {done ? (
++                          <Icon name="complete" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : active ? (
++                          <Icon name="run" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : (
++                          index + 1
++                        )}
++                      </div>
+                       <div className="pipe-label">{phaseLabel(phase)}</div>
+                     </div>
+                   );
+diff --git a/src/styles.css b/src/styles.css
+index 5d8798b4f5cc869eb323461167f8e34d7846285f..05d3b8afc8e1ded594276813baed7b76acc236ea
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -334,6 +334,7 @@
+ .pipe-node { width: 40px; height: 40px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--bg-elevated); border: 2px solid var(--line); color: var(--text-3); font-weight: 700; font-size: 14px; position: relative; z-index: 1; }
+ .pipe-step.done .pipe-node { background: var(--success); border-color: var(--success); color: #fff; }
+ .pipe-step.active .pipe-node { background: var(--brand-600); border-color: var(--brand-600); color: #fff; box-shadow: 0 0 0 5px var(--brand-50); }
++.pipe-status-icon { --icon-size: 18px; }
+ .pipe-step::before { content: ""; position: absolute; top: 20px; left: -50%; right: 50%; height: 2px; background: var(--line); z-index: 0; }
+ .pipe-step:first-child::before { display: none; }
+ .pipe-step.done::before, .pipe-step.active::before { background: var(--success); }
+@@ -415,7 +416,7 @@
+ .attachment-trigger { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; }
+ .attachment-trigger:hover, .attachment-trigger.drag-over { background: var(--bg-hover); }
+ .attachment-trigger input { display: none; }
+-.plus-icon { display: block; color: var(--text-3); font-size: 28px; font-weight: 300; line-height: 1; }
++.attachment-trigger-icon { color: var(--text-3); }
+ .composer-actions { display: flex; align-items: center; justify-content: end; gap: 10px; margin-left: auto; }
+ .composer-actions span { color: var(--text-3); font-size: 12px; }
+ .send-button { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border: 0; border-radius: 50%; padding: 0; background: var(--brand-grad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 6px 14px rgba(77,110,255,0.4); }
+@@ -424,7 +425,7 @@
+ .pending-attachment { display: grid; grid-template-columns: 42px 1fr auto auto; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); }
+ .pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+ .pending-thumb { object-fit: cover; }
+-.pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
++.pending-file-icon { display: grid; place-items: center; color: var(--text-3); }
+ .pending-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ .pending-attachment small { color: var(--text-3); }
+ .pending-attachment button { padding: 5px 8px; font-size: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); }
+
+**Evaluating line endings in Git**
+
+I'm examining this unexpected, huge diff of 155,121 lines that might be due to line ending changes. It seems like `apply_patch` has converted whole files to LF. I want to avoid modifying areas just because of these line endings. The warnings indicate that LF will be replaced by CRLF on the next Git interaction, which probably means existing files are in CRLF. I need to check with `git diff --numstat` or `git diff --ignore-space-at-eol` to find the best path forward.
+**Clarifying the diff stat**
+
+I’m considering that the diff stat with 155 lines might not represent the whole file, but rather the changes due to line endings within a specific hunk. To get a clearer understanding, I need to check `git diff --ignore-space-at-eol --stat`. That should help me to identify if the majority of the changes are related to the line endings instead of actual content modifications. Let’s see what that reveals!
+codex
+发现补丁导致行尾显示异常，我会先把三个 scope 文件恢复为仓库行尾风格。
+exec
+powershell.exe -Command "Write-Host '--- normal stat'; git diff --stat -- src/renderer/pages/WorkspacePage.tsx src/renderer/components/Composer.tsx src/styles.css; Write-Host '--- ignore eol stat'; git diff --ignore-space-at-eol --stat -- src/renderer/pages/WorkspacePage.tsx src/renderer/components/Composer.tsx src/styles.css; Write-Host '--- core.autocrlf'; git config --get core.autocrlf" in D:\project\GitHub\autoplan
+ succeeded in 267ms:
+--- normal stat
+ src/renderer/components/Composer.tsx |  12 ++-
+ src/renderer/pages/WorkspacePage.tsx | 155 +++++++++++++++++++++++++++++++----
+ src/styles.css                       | 121 +++++++++++++++++++++++----
+ 3 files changed, 254 insertions(+), 34 deletions(-)
+--- ignore eol stat
+ src/renderer/components/Composer.tsx |  12 ++-
+ src/renderer/pages/WorkspacePage.tsx | 155 +++++++++++++++++++++++++++++++----
+ src/styles.css                       | 121 +++++++++++++++++++++++----
+ 3 files changed, 254 insertions(+), 34 deletions(-)
+--- core.autocrlf
+true
+warning: in the working copy of 'src/renderer/components/Composer.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/pages/WorkspacePage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/styles.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/components/Composer.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/pages/WorkspacePage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/styles.css', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/components/Composer.tsx b/src/renderer/components/Composer.tsx
+index 81f0c075e5113a0805da7dec2a26b9f40ab94a78..f9f31cf74f37e2e7ef766f325d8b5939fd44d145
+--- a/src/renderer/components/Composer.tsx
++++ b/src/renderer/components/Composer.tsx
+@@ -1,5 +1,6 @@
+ import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+ import type { IntakeType, PendingAttachment } from '../types';
++import { Icon } from './icons';
+ import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+ 
+ interface ComposerProps {
+@@ -88,6 +89,7 @@
+             }}
+             role="button"
+             tabIndex={0}
++            aria-label="添加附件"
+             title="添加附件"
+           >
+             <input
+@@ -99,7 +101,7 @@
+               ref={fileInputRef}
+               type="file"
+             />
+-            <span className="plus-icon">+</span>
++            <Icon name="attachment" size={20} className="attachment-trigger-icon" aria-hidden="true" />
+           </div>
+           <PendingAttachmentList
+             attachments={pendingAttachments}
+@@ -109,7 +111,7 @@
+         <div className="composer-actions">
+           <span>Enter 发送</span>
+           <button className="send-button" type="submit" aria-label={submitLabel}>
+-            →
++            <Icon name="send" size={20} aria-hidden="true" />
+           </button>
+         </div>
+       </div>
+@@ -142,7 +144,11 @@
+ 
+ function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+   if (!attachment.type.startsWith('image/')) {
+-    return <span className="pending-file-icon">文件</span>;
++    return (
++      <span className="pending-file-icon" aria-hidden="true">
++        <Icon name="file" size={22} />
++      </span>
++    );
+   }
+   return (
+     <img
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 428804e88719d2a652843004a21d7815f2be0bcc..ba8c45a7afe7afaf4ef218b1ad6a6aaae23c32bf
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -736,7 +736,15 @@
+                   const active = activeIndex === index;
+                   return (
+                     <div className={`pipe-step ${done ? 'done' : ''} ${active ? 'active' : ''}`} key={phase}>
+-                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
++                      <div className="pipe-node">
++                        {done ? (
++                          <Icon name="complete" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : active ? (
++                          <Icon name="run" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : (
++                          index + 1
++                        )}
++                      </div>
+                       <div className="pipe-label">{phaseLabel(phase)}</div>
+                     </div>
+                   );
+diff --git a/src/styles.css b/src/styles.css
+index 5d8798b4f5cc869eb323461167f8e34d7846285f..05d3b8afc8e1ded594276813baed7b76acc236ea
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -334,6 +334,7 @@
+ .pipe-node { width: 40px; height: 40px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--bg-elevated); border: 2px solid var(--line); color: var(--text-3); font-weight: 700; font-size: 14px; position: relative; z-index: 1; }
+ .pipe-step.done .pipe-node { background: var(--success); border-color: var(--success); color: #fff; }
+ .pipe-step.active .pipe-node { background: var(--brand-600); border-color: var(--brand-600); color: #fff; box-shadow: 0 0 0 5px var(--brand-50); }
++.pipe-status-icon { --icon-size: 18px; }
+ .pipe-step::before { content: ""; position: absolute; top: 20px; left: -50%; right: 50%; height: 2px; background: var(--line); z-index: 0; }
+ .pipe-step:first-child::before { display: none; }
+ .pipe-step.done::before, .pipe-step.active::before { background: var(--success); }
+@@ -415,7 +416,7 @@
+ .attachment-trigger { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; }
+ .attachment-trigger:hover, .attachment-trigger.drag-over { background: var(--bg-hover); }
+ .attachment-trigger input { display: none; }
+-.plus-icon { display: block; color: var(--text-3); font-size: 28px; font-weight: 300; line-height: 1; }
++.attachment-trigger-icon { color: var(--text-3); }
+ .composer-actions { display: flex; align-items: center; justify-content: end; gap: 10px; margin-left: auto; }
+ .composer-actions span { color: var(--text-3); font-size: 12px; }
+ .send-button { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border: 0; border-radius: 50%; padding: 0; background: var(--brand-grad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 6px 14px rgba(77,110,255,0.4); }
+@@ -424,7 +425,7 @@
+ .pending-attachment { display: grid; grid-template-columns: 42px 1fr auto auto; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); }
+ .pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+ .pending-thumb { object-fit: cover; }
+-.pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
++.pending-file-icon { display: grid; place-items: center; color: var(--text-3); }
+ .pending-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ .pending-attachment small { color: var(--text-3); }
+ .pending-attachment button { padding: 5px 8px; font-size: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); }
+
+**Inspecting Git modifications**
+
+I'm digging into the situation with Git. It seems like there are a lot of changes because of some previous uncommitted modifications. I should check the `git status` to see if any files are already modified. Perhaps P003 is done in the working tree, but I need to be careful not to overstep. I plan to inspect the diff around the workspace without going too deep. The workspace shows 155 changes, possibly due to line wrapping adjustments. Let's take a closer look at the relevant diff.
+codex
+行尾不是唯一原因；我会查看紧凑 diff 片段，确认是否碰到既有未提交改动。
+exec
+powershell.exe -Command 'git diff --unified=3 -- src/renderer/pages/WorkspacePage.tsx src/styles.css src/renderer/components/Composer.tsx | Select-Object -First 260' in D:\project\GitHub\autoplan
+2026-06-24T20:58:52.955377Z ERROR codex_core::tools::router: error={"output":"Total output lines: 263\n\ndiff --git a/src/renderer/components/Composer.tsx b/src/renderer/components/Composer.tsx\r\nindex 81f0c07..f9f31cf 100644\r\n--- a/src/renderer/components/Composer.tsx\r\n+++ b/src/renderer/components/Composer.tsx\r\n@@ -1,5 +1,6 @@\r\n import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';\r\n import type { IntakeType, PendingAttachment } from '../types';\r\n+import { Icon } from './icons';\r\n import { autoGrowTextarea, formatBytes, getFilePath } from './shared';\r\n \r\n interface ComposerProps {\r\n@@ -88,6 +89,7 @@ export function Composer({\r\n             }}\r\n             role=\"button\"\r\n             tabIndex={0}\r\n+            aria-label=\"添加附件\"\r\n             title=\"添加附件\"\r\n           >\r\n             <input\r\n@@ -99,7 +101,7 @@ export function Composer({\r\n               ref={fileInputRef}\r\n               type=\"file\"\r\n             />\r\n-            <span className=\"plus-icon\">+</span>\r\n+            <Icon name=\"attachment\" size={20} className=\"attachment-trigger-icon\" aria-hidden=\"true\" />\r\n           </div>\r\n           <PendingAttachmentList\r\n             attachments={pendingAttachments}\r\n@@ -109,7 +111,7 @@ export function Composer({\r\n         <div className=\"composer-actions\">\r\n           <span>Enter 发送</span>\r\n           <button className=\"send-button\" type=\"submit\" aria-label={submitLabel}>\r\n-            →\r\n+            <Icon name=\"send\" size={20} aria-hidden=\"true\" />\r\n           </button>\r\n         </div>\r\n       </div>\r\n@@ -142,7 +144,11 @@ function PendingAttachmentList({\r\n \r\n function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {\r\n   if (!attachment.type.startsWith('image/')) {\r\n-    return <span className=\"pending-file-icon\">文件</span>;\r\n+    return (\r\n+      <span className=\"pending-file-icon\" aria-hidden=\"true\">\r\n+        <Icon name=\"file\" size={22} />\r\n+      </span>\r\n+    );\r\n   }\r\n   return (\r\n     <img\r\ndiff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx\r\nindex a34a3b4..ba8c45a 100644\r\n--- a/src/renderer/pages/WorkspacePage.tsx\r\n+++ b/src/renderer/pages/WorkspacePage.tsx\r\n@@ -1,4 +1,4 @@\r\n-import { FormEvent, useCallback, useEffect, useState } from 'react';\r\n+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';\r\n import { useNavigate, useParams } from 'react-router-dom';\r\n import type {\r\n   AppSnapshot,\r\n@@ -12,6 +12,7 @@ import { useSnapshot } from '../hooks/useSnapshot';\r\n import { IntakePanel } from '../components/IntakePanel';\r\n import { EventList, PlanList, TaskList } from '../components/PlanLists';\r\n import { CodexLog } from '../components/CodexLog';\r\n+import { Icon, type IconName } from '../components/icons';\r\n import { getFilePath } from '../components/shared';\r\n import { formatChinaTime } from '../utils/time';\r\n \r\n@@ -20,12 +21,12 @@ const emptyPendingAttachments: Record<IntakeType, PendingAttachment[]> = {\r\n   feedback: [],\r\n };\r\n \r\n-const tabs: Array<{ id: WorkspaceTab; label: string; icon: string }> = [\r\n-  { id: 'overview', label: '概览', icon: '◑' },\r\n-  { id: 'requirement', label: '需求', icon: '◎' },\r\n-  { id: 'feedback', label: '反馈', icon: '✎' },\r\n-  { id: 'tasks', label: '任务与计划', icon: '☑' },\r\n-  { id: 'events', label: '事件流', icon: '≡' },\r\n+const tabs: Array<{ id: WorkspaceTab; label: string; icon: IconName }> = [\r\n+  { id: 'overview', label: '概览', icon: 'overview' },\r\n+  { id: 'requirement', label: '需求', icon: 'requirement' },\r\n+  { id: 'feedback', label: '反馈', icon: 'feedback' },\r\n+  { id: 'tasks', label: '任务与计划', icon: 'tasks' },\r\n+  { id: 'events', label: '事件流', icon: 'events' },\r\n ];\r\n \r\n export function WorkspacePage() {\r\n@@ -37,10 +38,17 @@ export function WorkspacePage() {\r\n   const [pendingAttachments, setPendingAttachments] =\r\n     useState<Record<IntakeType, PendingAttachment[]>>(emptyPendingAttachments);\r\n   const [loopForm, setLoopForm] = useState({ workspacePath: '', intervalSeconds: '5', validationCommand: '' });\r\n+  const [searchQuery, setSearchQuery] = useState('');\r\n \r\n   const project = snapshot?.activeProject || null;\r\n   const state = snapshot?.state || null;\r\n   const projects = snapshot?.projects || [];\r\n+  const normalizedSearchQuery = useMemo(() => normalizeSearchQuery(searchQuery), [searchQuery]);\r\n+  const searchableItemCount = useMemo(() => (snapshot ? countSearchableItems(snapshot) : 0), [snapshot]);\r\n+  const searchHitCount = useMemo(\r\n+    () => (snapshot && normalizedSearchQuery ? countWorkspaceSearchMatches(snapshot, normalizedSearchQuery) : 0),\r\n+    [snapshot, normalizedSearchQuery],\r\n+  );\r\n \r\n   const showError = useCallback((e: unknown) => {\r\n     const msg = e instanceof Error ? e.message : String(e);\r\n@@ -57,6 +65,10 @@ export function WorkspacePage() {\r\n     });\r\n   }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state]);\r\n \r\n+  useEffect(() => {\r\n+    setSearchQuery('');\r\n+  }, [projectId]);\r\n+\r\n   const addPendi…587 chars truncated…chableItemCount}\r\n+          />\r\n           <div className=\"topbar-actions\">\r\n             <span className=\"pill\">\r\n               <span className={`led ${state?.running ? 'running' : 'stopped'}`} />\r\n@@ -428,7 +446,7 @@ export function WorkspacePage() {\r\n                     <div className=\"card-head\">\r\n                       <h2>Plan</h2>\r\n                     </div>\r\n-                    <PlanList plans={snapshot.plans} />\r\n+                    <PlanList plans={snapshot.plans} tasks={snapshot.tasks} />\r\n                   </section>\r\n                   <section className=\"card\">\r\n                     <div className=\"card-head\">\r\n@@ -519,7 +537,10 @@ function WorkspaceSidebar({\r\n           type=\"button\"\r\n           onClick={() => onTab(tab.id)}\r\n         >\r\n-          <span className=\"nav-ico\">{tab.icon}</span> {tab.label}\r\n+          <span className=\"nav-ico\">\r\n+            <Icon name={tab.icon} size={18} aria-hidden=\"true\" />\r\n+          </span>\r\n+          <span>{tab.label}</span>\r\n         </button>\r\n       ))}\r\n \r\n@@ -539,6 +560,98 @@ function WorkspaceSidebar({\r\n   );\r\n }\r\n \r\n+function WorkspaceSearchBox({\r\n+  hitCount,\r\n+  onQueryChange,\r\n+  query,\r\n+  totalCount,\r\n+}: {\r\n+  hitCount: number;\r\n+  onQueryChange: (query: string) => void;\r\n+  query: string;\r\n+  totalCount: number;\r\n+}) {\r\n+  const hasQuery = Boolean(normalizeSearchQuery(query));\r\n+  const resultLabel = hasQuery ? `命中 ${hitCount} 条` : `可搜索 ${totalCount} 条`;\r\n+\r\n+  return (\r\n+    <div className=\"workspace-search\" role=\"search\" aria-label=\"工作区搜索\">\r\n+      <div className=\"workspace-search-field\">\r\n+        <Icon name=\"search\" size={16} className=\"workspace-search-icon\" aria-hidden=\"true\" />\r\n+        <input\r\n+          aria-label=\"搜索当前工作区\"\r\n+          className=\"workspace-search-input search-input\"\r\n+          onChange={(event) => onQueryChange(event.target.value)}\r\n+          onKeyDown={(event) => {\r\n+            if (event.key === 'Escape' && query) {\r\n+              event.preventDefault();\r\n+              onQueryChange('');\r\n+            }\r\n+          }}\r\n+          placeholder=\"搜索需求、反馈、任务、Plan 或事件\"\r\n+          value={query}\r\n+        />\r\n+        {query ? (\r\n+          <button\r\n+            type=\"button\"\r\n+            className=\"workspace-search-clear\"\r\n+            onClick={() => onQueryChange('')}\r\n+            aria-label=\"清空工作区搜索关键字\"\r\n+          >\r\n+            <Icon name=\"close\" size={15} aria-hidden=\"true\" />\r\n+          </button>\r\n+        ) : null}\r\n+      </div>\r\n+      <span className={`workspace-search-count${hasQuery && hitCount === 0 ? ' is-empty' : ''}`} aria-live=\"polite\">\r\n+        {resultLabel}\r\n+      </span>\r\n+    </div>\r\n+  );\r\n+}\r\n+\r\n+function normalizeSearchQuery(value: string) {\r\n+  return value.trim().toLowerCase().replace(/\\s+/g, ' ');\r\n+}\r\n+\r\n+function countSearchableItems(snapshot: AppSnapshot) {\r\n+  return (\r\n+    snapshot.requirements.length +\r\n+    snapshot.feedback.length +\r\n+    snapshot.planDrafts.length +\r\n+    snapshot.plans.length +\r\n+    snapshot.tasks.length +\r\n+    snapshot.events.length\r\n+  );\r\n+}\r\n+\r\n+function countWorkspaceSearchMatches(snapshot: AppSnapshot, normalizedQuery: string) {\r\n+  const groups: unknown[][] = [\r\n+    snapshot.requirements,\r\n+    snapshot.feedback,\r\n+    snapshot.planDrafts,\r\n+    snapshot.plans,\r\n+    snapshot.tasks,\r\n+    snapshot.events,\r\n+  ];\r\n+\r\n+  return groups.reduce(\r\n+    (count, group) => count + group.filter((item) => normalizeSearchQuery(toSearchText(item)).includes(normalizedQuery)).length,\r\n+    0,\r\n+  );\r\n+}\r\n+\r\n+function toSearchText(value: unknown, depth = 0): string {\r\n+  if (value === null || value === undefined || depth > 6) return '';\r\n+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);\r\n+  if (Array.isArray(value)) return value.map((item) => toSearchText(item, depth + 1)).join(' ');\r\n+  if (typeof value === 'object') {\r\n+    return Object.values(value as Record<string, unknown>)\r\n+      .map((item) => toSearchText(item, depth + 1))\r\n+      .join(' ');\r\n+  }\r\n+  return '';\r\n+}\r\n+\r\n function OverviewView({\r\n   snapshot,\r\n   state,\r\n@@ -570,16 +683,16 @@ function OverviewView({\r\n   return (\r\n     <>\r\n       <div className=\"stat-grid\">\r\n-        <StatCard icon=\"◎\" value={String(reqCount)} label=\"需求\" accent=\"brand\" />\r\n+        <StatCard icon=\"requirement\" value={String(reqCount)} label=\"需求\" accent=\"brand\" />\r\n         <StatCard\r\n-          icon=\"▤\"\r\n+          icon=\"plan\"\r\n           value={String(planCount)}\r\n           label=\"计划\"\r\nwarning: in the working copy of 'src/renderer/components/Composer.tsx', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/renderer/pages/WorkspacePage.tsx', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/styles.css', LF will be replaced by CRLF the next time Git touches it\n","metadata":{"exit_code":1,"duration_seconds":0.2}}
+ exited 1 in 216ms:
+diff --git a/src/renderer/components/Composer.tsx b/src/renderer/components/Composer.tsx
+index 81f0c07..f9f31cf 100644
+--- a/src/renderer/components/Composer.tsx
++++ b/src/renderer/components/Composer.tsx
+@@ -1,5 +1,6 @@
+ import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+ import type { IntakeType, PendingAttachment } from '../types';
++import { Icon } from './icons';
+ import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+ 
+ interface ComposerProps {
+@@ -88,6 +89,7 @@ export function Composer({
+             }}
+             role="button"
+             tabIndex={0}
++            aria-label="添加附件"
+             title="添加附件"
+           >
+             <input
+@@ -99,7 +101,7 @@ export function Composer({
+               ref={fileInputRef}
+               type="file"
+             />
+-            <span className="plus-icon">+</span>
++            <Icon name="attachment" size={20} className="attachment-trigger-icon" aria-hidden="true" />
+           </div>
+           <PendingAttachmentList
+             attachments={pendingAttachments}
+@@ -109,7 +111,7 @@ export function Composer({
+         <div className="composer-actions">
+           <span>Enter 发送</span>
+           <button className="send-button" type="submit" aria-label={submitLabel}>
+-            →
++            <Icon name="send" size={20} aria-hidden="true" />
+           </button>
+         </div>
+       </div>
+@@ -142,7 +144,11 @@ function PendingAttachmentList({
+ 
+ function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+   if (!attachment.type.startsWith('image/')) {
+-    return <span className="pending-file-icon">文件</span>;
++    return (
++      <span className="pending-file-icon" aria-hidden="true">
++        <Icon name="file" size={22} />
++      </span>
++    );
+   }
+   return (
+     <img
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index a34a3b4..ba8c45a 100644
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -1,4 +1,4 @@
+-import { FormEvent, useCallback, useEffect, useState } from 'react';
++import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+ import { useNavigate, useParams } from 'react-router-dom';
+ import type {
+   AppSnapshot,
+@@ -12,6 +12,7 @@ import { useSnapshot } from '../hooks/useSnapshot';
+ import { IntakePanel } from '../components/IntakePanel';
+ import { EventList, PlanList, TaskList } from '../components/PlanLists';
+ import { CodexLog } from '../components/CodexLog';
++import { Icon, type IconName } from '../components/icons';
+ import { getFilePath } from '../components/shared';
+ import { formatChinaTime } from '../utils/time';
+ 
+@@ -20,12 +21,12 @@ const emptyPendingAttachments: Record<IntakeType, PendingAttachment[]> = {
+   feedback: [],
+ };
+ 
+-const tabs: Array<{ id: WorkspaceTab; label: string; icon: string }> = [
+-  { id: 'overview', label: '概览', icon: '◑' },
+-  { id: 'requirement', label: '需求', icon: '◎' },
+-  { id: 'feedback', label: '反馈', icon: '✎' },
+-  { id: 'tasks', label: '任务与计划', icon: '☑' },
+-  { id: 'events', label: '事件流', icon: '≡' },
++const tabs: Array<{ id: WorkspaceTab; label: string; icon: IconName }> = [
++  { id: 'overview', label: '概览', icon: 'overview' },
++  { id: 'requirement', label: '需求', icon: 'requirement' },
++  { id: 'feedback', label: '反馈', icon: 'feedback' },
++  { id: 'tasks', label: '任务与计划', icon: 'tasks' },
++  { id: 'events', label: '事件流', icon: 'events' },
+ ];
+ 
+ export function WorkspacePage() {
+@@ -37,10 +38,17 @@ export function WorkspacePage() {
+   const [pendingAttachments, setPendingAttachments] =
+     useState<Record<IntakeType, PendingAttachment[]>>(emptyPendingAttachments);
+   const [loopForm, setLoopForm] = useState({ workspacePath: '', intervalSeconds: '5', validationCommand: '' });
++  const [searchQuery, setSearchQuery] = useState('');
+ 
+   const project = snapshot?.activeProject || null;
+   const state = snapshot?.state || null;
+   const projects = snapshot?.projects || [];
++  const normalizedSearchQuery = useMemo(() => normalizeSearchQuery(searchQuery), [searchQuery]);
++  const searchableItemCount = useMemo(() => (snapshot ? countSearchableItems(snapshot) : 0), [snapshot]);
++  const searchHitCount = useMemo(
++    () => (snapshot && normalizedSearchQuery ? countWorkspaceSearchMatches(snapshot, normalizedSearchQuery) : 0),
++    [snapshot, normalizedSearchQuery],
++  );
+ 
+   const showError = useCallback((e: unknown) => {
+     const msg = e instanceof Error ? e.message : String(e);
+@@ -57,6 +65,10 @@ export function WorkspacePage() {
+     });
+   }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state]);
+ 
++  useEffect(() => {
++    setSearchQuery('');
++  }, [projectId]);
++
+   const addPendingFiles = useCallback((type: IntakeType, files: FileList | File[] | null) => {
+     const selected = Array.from(files || [])
+       .map((file) => ({ path: getFilePath(file), name: file.name, size: file.size, type: file.type }))
+@@ -291,6 +303,12 @@ export function WorkspacePage() {
+             <h1>{tabTitle(activeTab)}</h1>
+             <p>{tabSubtitle(activeTab, project)}</p>
+           </div>
++          <WorkspaceSearchBox
++            hitCount={searchHitCount}
++            onQueryChange={setSearchQuery}
++            query={searchQuery}
++            totalCount={searchableItemCount}
++          />
+           <div className="topbar-actions">
+             <span className="pill">
+               <span className={`led ${state?.running ? 'running' : 'stopped'}`} />
+@@ -428,7 +446,7 @@ export function WorkspacePage() {
+                     <div className="card-head">
+                       <h2>Plan</h2>
+                     </div>
+-                    <PlanList plans={snapshot.plans} />
++                    <PlanList plans={snapshot.plans} tasks={snapshot.tasks} />
+                   </section>
+                   <section className="card">
+                     <div className="card-head">
+@@ -519,7 +537,10 @@ function WorkspaceSidebar({
+           type="button"
+           onClick={() => onTab(tab.id)}
+         >
+-          <span className="nav-ico">{tab.icon}</span> {tab.label}
++          <span className="nav-ico">
++            <Icon name={tab.icon} size={18} aria-hidden="true" />
++          </span>
++          <span>{tab.label}</span>
+         </button>
+       ))}
+ 
+@@ -539,6 +560,98 @@ function WorkspaceSidebar({
+   );
+ }
+ 
++function WorkspaceSearchBox({
++  hitCount,
++  onQueryChange,
++  query,
++  totalCount,
++}: {
++  hitCount: number;
++  onQueryChange: (query: string) => void;
++  query: string;
++  totalCount: number;
++}) {
++  const hasQuery = Boolean(normalizeSearchQuery(query));
++  const resultLabel = hasQuery ? `命中 ${hitCount} 条` : `可搜索 ${totalCount} 条`;
++
++  return (
++    <div className="workspace-search" role="search" aria-label="工作区搜索">
++      <div className="workspace-search-field">
++        <Icon name="search" size={16} className="workspace-search-icon" aria-hidden="true" />
++        <input
++          aria-label="搜索当前工作区"
++          className="workspace-search-input search-input"
++          onChange={(event) => onQueryChange(event.target.value)}
++          onKeyDown={(event) => {
++            if (event.key === 'Escape' && query) {
++              event.preventDefault();
++              onQueryChange('');
++            }
++          }}
++          placeholder="搜索需求、反馈、任务、Plan 或事件"
++          value={query}
++        />
++        {query ? (
++          <button
++            type="button"
++            className="workspace-search-clear"
++            onClick={() => onQueryChange('')}
++            aria-label="清空工作区搜索关键字"
++          >
++            <Icon name="close" size={15} aria-hidden="true" />
++          </button>
++        ) : null}
++      </div>
++      <span className={`workspace-search-count${hasQuery && hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
++        {resultLabel}
++      </span>
++    </div>
++  );
++}
++
++function normalizeSearchQuery(value: string) {
++  return value.trim().toLowerCase().replace(/\s+/g, ' ');
++}
++
++function countSearchableItems(snapshot: AppSnapshot) {
++  return (
++    snapshot.requirements.length +
++    snapshot.feedback.length +
++    snapshot.planDrafts.length +
++    snapshot.plans.length +
++    snapshot.tasks.length +
++    snapshot.events.length
++  );
++}
++
++function countWorkspaceSearchMatches(snapshot: AppSnapshot, normalizedQuery: string) {
++  const groups: unknown[][] = [
++    snapshot.requirements,
++    snapshot.feedback,
++    snapshot.planDrafts,
++    snapshot.plans,
++    snapshot.tasks,
++    snapshot.events,
++  ];
++
++  return groups.reduce(
++    (count, group) => count + group.filter((item) => normalizeSearchQuery(toSearchText(item)).includes(normalizedQuery)).length,
++    0,
++  );
++}
++
++function toSearchText(value: unknown, depth = 0): string {
++  if (value === null || value === undefined || depth > 6) return '';
++  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
++  if (Array.isArray(value)) return value.map((item) => toSearchText(item, depth + 1)).join(' ');
++  if (typeof value === 'object') {
++    return Object.values(value as Record<string, unknown>)
++      .map((item) => toSearchText(item, depth + 1))
++      .join(' ');
++  }
++  return '';
++}
++
+ function OverviewView({
+   snapshot,
+   state,
+@@ -570,16 +683,16 @@ function OverviewView({
+   return (
+     <>
+       <div className="stat-grid">
+-        <StatCard icon="◎" value={String(reqCount)} label="需求" accent="brand" />
++        <StatCard icon="requirement" value={String(reqCount)} label="需求" accent="brand" />
+         <StatCard
+-          icon="▤"
++          icon="plan"
+           value={String(planCount)}
+           label="计划"
+warning: in the working copy of 'src/renderer/components/Composer.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/pages/WorkspacePage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/styles.css', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/components/Composer.tsx b/src/renderer/components/Composer.tsx
+index 81f0c075e5113a0805da7dec2a26b9f40ab94a78..f9f31cf74f37e2e7ef766f325d8b5939fd44d145
+--- a/src/renderer/components/Composer.tsx
++++ b/src/renderer/components/Composer.tsx
+@@ -1,5 +1,6 @@
+ import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+ import type { IntakeType, PendingAttachment } from '../types';
++import { Icon } from './icons';
+ import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+ 
+ interface ComposerProps {
+@@ -88,6 +89,7 @@
+             }}
+             role="button"
+             tabIndex={0}
++            aria-label="添加附件"
+             title="添加附件"
+           >
+             <input
+@@ -99,7 +101,7 @@
+               ref={fileInputRef}
+               type="file"
+             />
+-            <span className="plus-icon">+</span>
++            <Icon name="attachment" size={20} className="attachment-trigger-icon" aria-hidden="true" />
+           </div>
+           <PendingAttachmentList
+             attachments={pendingAttachments}
+@@ -109,7 +111,7 @@
+         <div className="composer-actions">
+           <span>Enter 发送</span>
+           <button className="send-button" type="submit" aria-label={submitLabel}>
+-            →
++            <Icon name="send" size={20} aria-hidden="true" />
+           </button>
+         </div>
+       </div>
+@@ -142,7 +144,11 @@
+ 
+ function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+   if (!attachment.type.startsWith('image/')) {
+-    return <span className="pending-file-icon">文件</span>;
++    return (
++      <span className="pending-file-icon" aria-hidden="true">
++        <Icon name="file" size={22} />
++      </span>
++    );
+   }
+   return (
+     <img
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 428804e88719d2a652843004a21d7815f2be0bcc..ba8c45a7afe7afaf4ef218b1ad6a6aaae23c32bf
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -736,7 +736,15 @@
+                   const active = activeIndex === index;
+                   return (
+                     <div className={`pipe-step ${done ? 'done' : ''} ${active ? 'active' : ''}`} key={phase}>
+-                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
++                      <div className="pipe-node">
++                        {done ? (
++                          <Icon name="complete" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : active ? (
++                          <Icon name="run" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : (
++                          index + 1
++                        )}
++                      </div>
+                       <div className="pipe-label">{phaseLabel(phase)}</div>
+                     </div>
+                   );
+diff --git a/src/styles.css b/src/styles.css
+index 5d8798b4f5cc869eb323461167f8e34d7846285f..05d3b8afc8e1ded594276813baed7b76acc236ea
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -334,6 +334,7 @@
+ .pipe-node { width: 40px; height: 40px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--bg-elevated); border: 2px solid var(--line); color: var(--text-3); font-weight: 700; font-size: 14px; position: relative; z-index: 1; }
+ .pipe-step.done .pipe-node { background: var(--success); border-color: var(--success); color: #fff; }
+ .pipe-step.active .pipe-node { background: var(--brand-600); border-color: var(--brand-600); color: #fff; box-shadow: 0 0 0 5px var(--brand-50); }
++.pipe-status-icon { --icon-size: 18px; }
+ .pipe-step::before { content: ""; position: absolute; top: 20px; left: -50%; right: 50%; height: 2px; background: var(--line); z-index: 0; }
+ .pipe-step:first-child::before { display: none; }
+ .pipe-step.done::before, .pipe-step.active::before { background: var(--success); }
+@@ -415,7 +416,7 @@
+ .attachment-trigger { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; }
+ .attachment-trigger:hover, .attachment-trigger.drag-over { background: var(--bg-hover); }
+ .attachment-trigger input { display: none; }
+-.plus-icon { display: block; color: var(--text-3); font-size: 28px; font-weight: 300; line-height: 1; }
++.attachment-trigger-icon { color: var(--text-3); }
+ .composer-actions { display: flex; align-items: center; justify-content: end; gap: 10px; margin-left: auto; }
+ .composer-actions span { color: var(--text-3); font-size: 12px; }
+ .send-button { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border: 0; border-radius: 50%; padding: 0; background: var(--brand-grad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 6px 14px rgba(77,110,255,0.4); }
+@@ -424,7 +425,7 @@
+ .pending-attachment { display: grid; grid-template-columns: 42px 1fr auto auto; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); }
+ .pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+ .pending-thumb { object-fit: cover; }
+-.pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
++.pending-file-icon { display: grid; place-items: center; color: var(--text-3); }
+ .pending-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ .pending-attachment small { color: var(--text-3); }
+ .pending-attachment button { padding: 5px 8px; font-size: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); }
+
+**Evaluating git changes**
+
+I'm looking at the differences involving P003 changes, particularly around navigation and search. The plan indicates P003 is complete, but there are still uncommitted changes. The user is interested only in P004, so I shouldn't revert P003. I need to identify what changes I made versus previous modifications. Since AutoPlan follows sequential tasks, I'm considering that P003 changes might still be in the working tree. I must ensure I didn't unintentionally alter P003, particularly due to line endings. For the final output, it’s best if I only mention P004 and the specific changed files.
+**Checking git differences**
+
+I need to check `git diff --unified=3` to focus on the pipeline and CSS changes after the first 260 lines. It also includes uncommitted changes, and I should ensure the line endings aren't an issue—though they might not be. I suspect any LF warnings could have been there from earlier P003 changes. The applied patch might not be the cause. I want to use `git status --short` to identify any additional uncommitted changes. That could help clarify things for me.
+codex
+diff 中包含先前任务未提交内容；我不会回退它们，只验证本次 P004 位置。
+exec
+powershell.exe -Command "git status --short -- src/renderer/pages/WorkspacePage.tsx src/renderer/components/Composer.tsx src/styles.css docs/plan/plan_requirement_6_20260625-032502.md; Write-Host '--- P004 snippets'; "'$i=0; Get-Content -LiteralPath '"'src/renderer/pages/WorkspacePage.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if ($i -ge 734 -and $i -le 750) { '"'{0,4}: {1}' -f "'$i, $_ } }; $i=0; Get-Content -LiteralPath '"'src/renderer/components/Composer.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if (($i -ge 88 -and $i -le 114) -or ($i -ge 143 -and $i -le 153)) { '"'{0,4}: {1}' -f "'$i, $_ } }; $i=0; Get-Content -LiteralPath '"'src/styles.css' -Encoding UTF8 | ForEach-Object { "'$i++; if (($i -ge 334 -and $i -le 340) -or ($i -ge 415 -and $i -le 429)) { '"'{0,4}: {1}' -f "'$i, $_ } }' in D:\project\GitHub\autoplan
+ succeeded in 274ms:
+ M src/renderer/components/Composer.tsx
+ M src/renderer/pages/WorkspacePage.tsx
+ M src/styles.css
+?? docs/plan/plan_requirement_6_20260625-032502.md
+--- P004 snippets
+ 734:                 {phases.map((phase, index) => {
+ 735:                   const done = activeIndex > index;
+ 736:                   const active = activeIndex === index;
+ 737:                   return (
+ 738:                     <div className={`pipe-step ${done ? 'done' : ''} ${active ? 'active' : ''}`} key={phase}>
+ 739:                       <div className="pipe-node">
+ 740:                         {done ? (
+ 741:                           <Icon name="complete" size={18} className="pipe-status-icon" aria-hidden="true" />
+ 742:                         ) : active ? (
+ 743:                           <Icon name="run" size={18} className="pipe-status-icon" aria-hidden="true" />
+ 744:                         ) : (
+ 745:                           index + 1
+ 746:                         )}
+ 747:                       </div>
+ 748:                       <div className="pipe-label">{phaseLabel(phase)}</div>
+ 749:                     </div>
+ 750:                   );
+  88:               }
+  89:             }}
+  90:             role="button"
+  91:             tabIndex={0}
+  92:             aria-label="添加附件"
+  93:             title="添加附件"
+  94:           >
+  95:             <input
+  96:               multiple
+  97:               onChange={(event) => {
+  98:                 addFiles(event.target.files);
+  99:                 event.target.value = '';
+ 100:               }}
+ 101:               ref={fileInputRef}
+ 102:               type="file"
+ 103:             />
+ 104:             <Icon name="attachment" size={20} className="attachment-trigger-icon" aria-hidden="true" />
+ 105:           </div>
+ 106:           <PendingAttachmentList
+ 107:             attachments={pendingAttachments}
+ 108:             onRemove={(index) => onRemoveAttachment(type, index)}
+ 109:           />
+ 110:         </div>
+ 111:         <div className="composer-actions">
+ 112:           <span>Enter 发送</span>
+ 113:           <button className="send-button" type="submit" aria-label={submitLabel}>
+ 114:             <Icon name="send" size={20} aria-hidden="true" />
+ 143: }
+ 144: 
+ 145: function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+ 146:   if (!attachment.type.startsWith('image/')) {
+ 147:     return (
+ 148:       <span className="pending-file-icon" aria-hidden="true">
+ 149:         <Icon name="file" size={22} />
+ 150:       </span>
+ 151:     );
+ 152:   }
+ 153:   return (
+ 334: .pipe-node { width: 40px; height: 40px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--bg-elevated); border: 2px solid var(--line); color: var(--text-3); font-weight: 700; font-size: 14px; position: relative; z-index: 1; }
+ 335: .pipe-step.done .pipe-node { background: var(--success); border-color: var(--success); color: #fff; }
+ 336: .pipe-step.active .pipe-node { background: var(--brand-600); border-color: var(--brand-600); color: #fff; box-shadow: 0 0 0 5px var(--brand-50); }
+ 337: .pipe-status-icon { --icon-size: 18px; }
+ 338: .pipe-step::before { content: ""; position: absolute; top: 20px; left: -50%; right: 50%; height: 2px; background: var(--line); z-index: 0; }
+ 339: .pipe-step:first-child::before { display: none; }
+ 340: .pipe-step.done::before, .pipe-step.active::before { background: var(--success); }
+ 415: .composer-tools { display: flex; align-items: center; gap: 10px; min-width: 0; }
+ 416: .attachment-trigger { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; }
+ 417: .attachment-trigger:hover, .attachment-trigger.drag-over { background: var(--bg-hover); }
+ 418: .attachment-trigger input { display: none; }
+ 419: .attachment-trigger-icon { color: var(--text-3); }
+ 420: .composer-actions { display: flex; align-items: center; justify-content: end; gap: 10px; margin-left: auto; }
+ 421: .composer-actions span { color: var(--text-3); font-size: 12px; }
+ 422: .send-button { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border: 0; border-radius: 50%; padding: 0; background: var(--brand-grad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 6px 14px rgba(77,110,255,0.4); }
+ 423: .send-button:hover { filter: brightness(1.05); }
+ 424: .attachment-list.pending { display: flex; align-items: center; min-width: 0; max-width: min(520px,54vw); gap: 8px; overflow-x: auto; }
+ 425: .pending-attachment { display: grid; grid-template-columns: 42px 1fr auto auto; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); }
+ 426: .pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+ 427: .pending-thumb { object-fit: cover; }
+ 428: .pending-file-icon { display: grid; place-items: center; color: var(--text-3); }
+ 429: .pending-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+diff --git a/src/renderer/components/Composer.tsx b/src/renderer/components/Composer.tsx
+index 81f0c075e5113a0805da7dec2a26b9f40ab94a78..f9f31cf74f37e2e7ef766f325d8b5939fd44d145
+--- a/src/renderer/components/Composer.tsx
++++ b/src/renderer/components/Composer.tsx
+@@ -1,5 +1,6 @@
+ import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+ import type { IntakeType, PendingAttachment } from '../types';
++import { Icon } from './icons';
+ import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+ 
+ interface ComposerProps {
+@@ -88,6 +89,7 @@
+             }}
+             role="button"
+             tabIndex={0}
++            aria-label="添加附件"
+             title="添加附件"
+           >
+             <input
+@@ -99,7 +101,7 @@
+               ref={fileInputRef}
+               type="file"
+             />
+-            <span className="plus-icon">+</span>
++            <Icon name="attachment" size={20} className="attachment-trigger-icon" aria-hidden="true" />
+           </div>
+           <PendingAttachmentList
+             attachments={pendingAttachments}
+@@ -109,7 +111,7 @@
+         <div className="composer-actions">
+           <span>Enter 发送</span>
+           <button className="send-button" type="submit" aria-label={submitLabel}>
+-            →
++            <Icon name="send" size={20} aria-hidden="true" />
+           </button>
+         </div>
+       </div>
+@@ -142,7 +144,11 @@
+ 
+ function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+   if (!attachment.type.startsWith('image/')) {
+-    return <span className="pending-file-icon">文件</span>;
++    return (
++      <span className="pending-file-icon" aria-hidden="true">
++        <Icon name="file" size={22} />
++      </span>
++    );
+   }
+   return (
+     <img
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 428804e88719d2a652843004a21d7815f2be0bcc..ba8c45a7afe7afaf4ef218b1ad6a6aaae23c32bf
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -736,7 +736,15 @@
+                   const active = activeIndex === index;
+                   return (
+                     <div className={`pipe-step ${done ? 'done' : ''} ${active ? 'active' : ''}`} key={phase}>
+-                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
++                      <div className="pipe-node">
++                        {done ? (
++                          <Icon name="complete" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : active ? (
++                          <Icon name="run" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : (
++                          index + 1
++                        )}
++                      </div>
+                       <div className="pipe-label">{phaseLabel(phase)}</div>
+                     </div>
+                   );
+diff --git a/src/styles.css b/src/styles.css
+index 5d8798b4f5cc869eb323461167f8e34d7846285f..05d3b8afc8e1ded594276813baed7b76acc236ea
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -334,6 +334,7 @@
+ .pipe-node { width: 40px; height: 40px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--bg-elevated); border: 2px solid var(--line); color: var(--text-3); font-weight: 700; font-size: 14px; position: relative; z-index: 1; }
+ .pipe-step.done .pipe-node { background: var(--success); border-color: var(--success); color: #fff; }
+ .pipe-step.active .pipe-node { background: var(--brand-600); border-color: var(--brand-600); color: #fff; box-shadow: 0 0 0 5px var(--brand-50); }
++.pipe-status-icon { --icon-size: 18px; }
+ .pipe-step::before { content: ""; position: absolute; top: 20px; left: -50%; right: 50%; height: 2px; background: var(--line); z-index: 0; }
+ .pipe-step:first-child::before { display: none; }
+ .pipe-step.done::before, .pipe-step.active::before { background: var(--success); }
+@@ -415,7 +416,7 @@
+ .attachment-trigger { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; }
+ .attachment-trigger:hover, .attachment-trigger.drag-over { background: var(--bg-hover); }
+ .attachment-trigger input { display: none; }
+-.plus-icon { display: block; color: var(--text-3); font-size: 28px; font-weight: 300; line-height: 1; }
++.attachment-trigger-icon { color: var(--text-3); }
+ .composer-actions { display: flex; align-items: center; justify-content: end; gap: 10px; margin-left: auto; }
+ .composer-actions span { color: var(--text-3); font-size: 12px; }
+ .send-button { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border: 0; border-radius: 50%; padding: 0; background: var(--brand-grad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 6px 14px rgba(77,110,255,0.4); }
+@@ -424,7 +425,7 @@
+ .pending-attachment { display: grid; grid-template-columns: 42px 1fr auto auto; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); }
+ .pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+ .pending-thumb { object-fit: cover; }
+-.pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
++.pending-file-icon { display: grid; place-items: center; color: var(--text-3); }
+ .pending-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ .pending-attachment small { color: var(--text-3); }
+ .pending-attachment button { padding: 5px 8px; font-size: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); }
+
+**Considering attachment functionality**
+
+I need to consider the "添加附件" trigger. It's actually a div with a role of button, not a direct button. The acceptance says to add "按钮" as an aria-label, which is good. I also wonder if I should update the `send-button` to not be disabled. It seems like it can submit even when it's empty, so I’ll check if the submit handler handles that correctly. This is a little detail that could make a difference!
+**Considering CSS modifications**
+
+I’m thinking about the CSS and whether there’s a disabled state for the button. Maybe it’s not applicable right now, especially if the parent isn’t set to disabled. I’m wondering if I should also add `.send-button:disabled`, but I'm not sure it's necessary. I also think it might be good to scan for emoji or character symbols in the Composer. Overall, I need to come up with a more complete plan moving forward.
+codex
+P004 相关片段确认无旧符号残留；我会收尾计划状态。
+  ✓ 读取 P004 上下文
+  ✓ 定位现有图标实现
+  ✓ 替换目标图标样式
+  ✓ 做最小静态检查
+diff --git a/src/renderer/components/Composer.tsx b/src/renderer/components/Composer.tsx
+index 81f0c075e5113a0805da7dec2a26b9f40ab94a78..f9f31cf74f37e2e7ef766f325d8b5939fd44d145
+--- a/src/renderer/components/Composer.tsx
++++ b/src/renderer/components/Composer.tsx
+@@ -1,5 +1,6 @@
+ import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+ import type { IntakeType, PendingAttachment } from '../types';
++import { Icon } from './icons';
+ import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+ 
+ interface ComposerProps {
+@@ -88,6 +89,7 @@
+             }}
+             role="button"
+             tabIndex={0}
++            aria-label="添加附件"
+             title="添加附件"
+           >
+             <input
+@@ -99,7 +101,7 @@
+               ref={fileInputRef}
+               type="file"
+             />
+-            <span className="plus-icon">+</span>
++            <Icon name="attachment" size={20} className="attachment-trigger-icon" aria-hidden="true" />
+           </div>
+           <PendingAttachmentList
+             attachments={pendingAttachments}
+@@ -109,7 +111,7 @@
+         <div className="composer-actions">
+           <span>Enter 发送</span>
+           <button className="send-button" type="submit" aria-label={submitLabel}>
+-            →
++            <Icon name="send" size={20} aria-hidden="true" />
+           </button>
+         </div>
+       </div>
+@@ -142,7 +144,11 @@
+ 
+ function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+   if (!attachment.type.startsWith('image/')) {
+-    return <span className="pending-file-icon">文件</span>;
++    return (
++      <span className="pending-file-icon" aria-hidden="true">
++        <Icon name="file" size={22} />
++      </span>
++    );
+   }
+   return (
+     <img
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 428804e88719d2a652843004a21d7815f2be0bcc..ba8c45a7afe7afaf4ef218b1ad6a6aaae23c32bf
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -736,7 +736,15 @@
+                   const active = activeIndex === index;
+                   return (
+                     <div className={`pipe-step ${done ? 'done' : ''} ${active ? 'active' : ''}`} key={phase}>
+-                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
++                      <div className="pipe-node">
++                        {done ? (
++                          <Icon name="complete" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : active ? (
++                          <Icon name="run" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : (
++                          index + 1
++                        )}
++                      </div>
+                       <div className="pipe-label">{phaseLabel(phase)}</div>
+                     </div>
+                   );
+diff --git a/src/styles.css b/src/styles.css
+index 5d8798b4f5cc869eb323461167f8e34d7846285f..05d3b8afc8e1ded594276813baed7b76acc236ea
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -334,6 +334,7 @@
+ .pipe-node { width: 40px; height: 40px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--bg-elevated); border: 2px solid var(--line); color: var(--text-3); font-weight: 700; font-size: 14px; position: relative; z-index: 1; }
+ .pipe-step.done .pipe-node { background: var(--success); border-color: var(--success); color: #fff; }
+ .pipe-step.active .pipe-node { background: var(--brand-600); border-color: var(--brand-600); color: #fff; box-shadow: 0 0 0 5px var(--brand-50); }
++.pipe-status-icon { --icon-size: 18px; }
+ .pipe-step::before { content: ""; position: absolute; top: 20px; left: -50%; right: 50%; height: 2px; background: var(--line); z-index: 0; }
+ .pipe-step:first-child::before { display: none; }
+ .pipe-step.done::before, .pipe-step.active::before { background: var(--success); }
+@@ -415,7 +416,7 @@
+ .attachment-trigger { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; }
+ .attachment-trigger:hover, .attachment-trigger.drag-over { background: var(--bg-hover); }
+ .attachment-trigger input { display: none; }
+-.plus-icon { display: block; color: var(--text-3); font-size: 28px; font-weight: 300; line-height: 1; }
++.attachment-trigger-icon { color: var(--text-3); }
+ .composer-actions { display: flex; align-items: center; justify-content: end; gap: 10px; margin-left: auto; }
+ .composer-actions span { color: var(--text-3); font-size: 12px; }
+ .send-button { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border: 0; border-radius: 50%; padding: 0; background: var(--brand-grad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 6px 14px rgba(77,110,255,0.4); }
+@@ -424,7 +425,7 @@
+ .pending-attachment { display: grid; grid-template-columns: 42px 1fr auto auto; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); }
+ .pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+ .pending-thumb { object-fit: cover; }
+-.pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
++.pending-file-icon { display: grid; place-items: center; color: var(--text-3); }
+ .pending-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ .pending-attachment small { color: var(--text-3); }
+ .pending-attachment button { padding: 5px 8px; font-size: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); }
+
+codex
+已完成 P004，仅处理指定 scope 内的图标替换。
+
+- 流水线完成态/运行态改为 `Icon` SVG，未开始步骤仍显示序号：`src/renderer/pages/WorkspacePage.tsx:739`
+- 输入区添加附件、发送按钮、非图片附件占位均改为 `Icon`：`src/renderer/components/Composer.tsx:92`
+- 补充对应 SVG 图标样式，移除 `plus-icon` 字符样式依赖：`src/styles.css:337`
+- 保留文件选择、拖拽上传、键盘触发和提交行为；添加附件入口补充 `aria-label`
+- 已做最小检查：目标旧符号残留扫描通过，`git diff --check` 通过
+- 未修改 plan 文件，未勾选 checkbox，未更新进度区；未运行全量验证（P006 范围）
+diff --git a/src/renderer/components/Composer.tsx b/src/renderer/components/Composer.tsx
+index 81f0c075e5113a0805da7dec2a26b9f40ab94a78..f9f31cf74f37e2e7ef766f325d8b5939fd44d145
+--- a/src/renderer/components/Composer.tsx
++++ b/src/renderer/components/Composer.tsx
+@@ -1,5 +1,6 @@
+ import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+ import type { IntakeType, PendingAttachment } from '../types';
++import { Icon } from './icons';
+ import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+ 
+ interface ComposerProps {
+@@ -88,6 +89,7 @@
+             }}
+             role="button"
+             tabIndex={0}
++            aria-label="添加附件"
+             title="添加附件"
+           >
+             <input
+@@ -99,7 +101,7 @@
+               ref={fileInputRef}
+               type="file"
+             />
+-            <span className="plus-icon">+</span>
++            <Icon name="attachment" size={20} className="attachment-trigger-icon" aria-hidden="true" />
+           </div>
+           <PendingAttachmentList
+             attachments={pendingAttachments}
+@@ -109,7 +111,7 @@
+         <div className="composer-actions">
+           <span>Enter 发送</span>
+           <button className="send-button" type="submit" aria-label={submitLabel}>
+-            →
++            <Icon name="send" size={20} aria-hidden="true" />
+           </button>
+         </div>
+       </div>
+@@ -142,7 +144,11 @@
+ 
+ function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachment }) {
+   if (!attachment.type.startsWith('image/')) {
+-    return <span className="pending-file-icon">文件</span>;
++    return (
++      <span className="pending-file-icon" aria-hidden="true">
++        <Icon name="file" size={22} />
++      </span>
++    );
+   }
+   return (
+     <img
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 428804e88719d2a652843004a21d7815f2be0bcc..ba8c45a7afe7afaf4ef218b1ad6a6aaae23c32bf
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -736,7 +736,15 @@
+                   const active = activeIndex === index;
+                   return (
+                     <div className={`pipe-step ${done ? 'done' : ''} ${active ? 'active' : ''}`} key={phase}>
+-                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
++                      <div className="pipe-node">
++                        {done ? (
++                          <Icon name="complete" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : active ? (
++                          <Icon name="run" size={18} className="pipe-status-icon" aria-hidden="true" />
++                        ) : (
++                          index + 1
++                        )}
++                      </div>
+                       <div className="pipe-label">{phaseLabel(phase)}</div>
+                     </div>
+                   );
+diff --git a/src/styles.css b/src/styles.css
+index 5d8798b4f5cc869eb323461167f8e34d7846285f..05d3b8afc8e1ded594276813baed7b76acc236ea
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -334,6 +334,7 @@
+ .pipe-node { width: 40px; height: 40px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--bg-elevated); border: 2px solid var(--line); color: var(--text-3); font-weight: 700; font-size: 14px; position: relative; z-index: 1; }
+ .pipe-step.done .pipe-node { background: var(--success); border-color: var(--success); color: #fff; }
+ .pipe-step.active .pipe-node { background: var(--brand-600); border-color: var(--brand-600); color: #fff; box-shadow: 0 0 0 5px var(--brand-50); }
++.pipe-status-icon { --icon-size: 18px; }
+ .pipe-step::before { content: ""; position: absolute; top: 20px; left: -50%; right: 50%; height: 2px; background: var(--line); z-index: 0; }
+ .pipe-step:first-child::before { display: none; }
+ .pipe-step.done::before, .pipe-step.active::before { background: var(--success); }
+@@ -415,7 +416,7 @@
+ .attachment-trigger { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; }
+ .attachment-trigger:hover, .attachment-trigger.drag-over { background: var(--bg-hover); }
+ .attachment-trigger input { display: none; }
+-.plus-icon { display: block; color: var(--text-3); font-size: 28px; font-weight: 300; line-height: 1; }
++.attachment-trigger-icon { color: var(--text-3); }
+ .composer-actions { display: flex; align-items: center; justify-content: end; gap: 10px; margin-left: auto; }
+ .composer-actions span { color: var(--text-3); font-size: 12px; }
+ .send-button { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border: 0; border-radius: 50%; padding: 0; background: var(--brand-grad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 6px 14px rgba(77,110,255,0.4); }
+@@ -424,7 +425,7 @@
+ .pending-attachment { display: grid; grid-template-columns: 42px 1fr auto auto; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); }
+ .pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+ .pending-thumb { object-fit: cover; }
+-.pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
++.pending-file-icon { display: grid; place-items: center; color: var(--text-3); }
+ .pending-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ .pending-attachment small { color: var(--text-3); }
+ .pending-attachment button { padding: 5px 8px; font-size: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); }
+
+tokens used
+86,971
+已完成 P004，仅处理指定 scope 内的图标替换。
+
+- 流水线完成态/运行态改为 `Icon` SVG，未开始步骤仍显示序号：`src/renderer/pages/WorkspacePage.tsx:739`
+- 输入区添加附件、发送按钮、非图片附件占位均改为 `Icon`：`src/renderer/components/Composer.tsx:92`
+- 补充对应 SVG 图标样式，移除 `plus-icon` 字符样式依赖：`src/styles.css:337`
+- 保留文件选择、拖拽上传、键盘触发和提交行为；添加附件入口补充 `aria-label`
+- 已做最小检查：目标旧符号残留扫描通过，`git diff --check` 通过
+- 未修改 plan 文件，未勾选 checkbox，未更新进度区；未运行全量验证（P006 范围）

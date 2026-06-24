@@ -1,0 +1,11 @@
+完成 P002，本次业务改动仅在 `src/loopService.js`。
+
+- 新增任务计时入口/出口：`started_at`、`finished_at`、`duration_ms` 累计逻辑在 `src/loopService.js:432` 和 `src/loopService.js:445`。
+- 覆盖手动执行、循环执行、并发执行的 running 记录：`src/loopService.js:370`、`src/loopService.js:840`。
+- 覆盖完成、失败回退、停止/中断耗时结算：`src/loopService.js:266`、`src/loopService.js:876`、`src/loopService.js:898`。
+- 事件元信息增加 `durationMs` / `runDurationMs`，供 `task.executed`、`task.failed`、停止相关事件审计：`src/loopService.js:1370`。
+- 未修改 plan 文件，未勾选 checkbox，未运行全量 smoke。
+
+验证：
+- `node --check src/loopService.js`
+- 临时数据库 `node -` 断言：开始、失败回退累计、重试后完成累计均通过。

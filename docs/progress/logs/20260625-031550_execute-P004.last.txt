@@ -1,0 +1,10 @@
+已完成 P004，仅修改当前任务 scope 内相关文件，未修改 plan 文件或 checkbox。
+
+**变更**
+- 在 `src/renderer/components/PlanLists.tsx:12` 增加任务事件 meta 解析与中文动态文案生成。
+- 在 `src/renderer/components/PlanLists.tsx:300` 统一 `EventList` 展示，近期事件和事件流共用同一文案逻辑。
+- 在 `src/styles.css:121` 增加任务事件状态徽标、左侧状态色和长标题防溢出样式。
+
+**验证**
+- 已运行 `git diff --check -- src/renderer/components/PlanLists.tsx src/styles.css`。
+- 结果通过；仅出现 Git 的 LF/CRLF 换行提示，未跑全量测试以遵守 P004 并发约束。

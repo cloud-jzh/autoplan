@@ -1,0 +1,6 @@
+P006 验证已完成，未修改 plan 文件、未勾选 checkbox，也未编辑业务文件。
+
+- `npm run check`：通过，包含 TypeScript 与 Node 语法检查
+- `npm run smoke`：通过，输出包含 `duration stats` 与 `multi-loop`
+- 按 P006 验收点仅运行了相关最小命令，未额外执行其它任务或全量无关测试
+- 注意：工作区存在既有未提交/未跟踪变更；我未处理这些变更，也未输出长文件列表

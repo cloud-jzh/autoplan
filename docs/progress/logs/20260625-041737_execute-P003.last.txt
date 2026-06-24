@@ -1,0 +1,7 @@
+已完成 P003，未修改 plan 文件、未勾选 checkbox。
+
+- `src/loopService.js:1316` 将 `snapshot().tasks` 查询结果映射为任务快照行，保持原排序不变。
+- `src/loopService.js:1428` 新增快照任务字段规范化：`started_at`、`finished_at`、`duration_ms`，运行中额外暴露 `run_duration_ms`。
+- `src/renderer/types.ts:197` 同步 `PlanTask` 类型，新增可选 `run_duration_ms`。
+- 已验证：`node --check src\loopService.js`
+- 已验证：`npx tsc --noEmit --pretty false`

@@ -1,0 +1,8 @@
+完成 P001，仅修改任务 scope 内文件，未改 plan/checkbox/进度区。
+
+- 新增统一 SVG 图标映射与 `Icon` 组件：`src/renderer/components/icons.tsx:168`
+- 支持 `size`、`className`、`title`、默认装饰图标 `aria-hidden` 语义：`src/renderer/components/icons.tsx:207`
+- 覆盖概览、需求、反馈、任务、事件、计划、运行、完成、编辑、删除、警告、刷新、附件、发送等基础图标：`src/renderer/components/icons.tsx:221`
+- 补充图标基础样式、颜色状态和圆形承载样式：`src/styles.css:108`、`src/styles.css:116`
+
+最小校验已通过：`npx --no-install tsc --ignoreConfig --noEmit --jsx react-jsx --moduleResolution bundler --module esnext --target es2020 --lib DOM,ES2020 --skipLibCheck src/renderer/components/icons.tsx`。

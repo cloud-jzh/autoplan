@@ -1,0 +1,11 @@
+**完成**
+- `src/renderer/pages/ProjectsPage.tsx:101` 将创建按钮字符图标替换为 `Icon`。
+- `src/renderer/pages/ProjectsPage.tsx:150` 将更多菜单入口替换为 SVG 图标，不再使用 `⋯`。
+- `src/renderer/pages/ProjectsPage.tsx:167`、`src/renderer/pages/ProjectsPage.tsx:171`、`src/renderer/pages/ProjectsPage.tsx:175` 将进入工作区、编辑、删除改为 SVG `Icon`，文字和点击行为保持不变。
+- `src/renderer/pages/ProjectsPage.tsx:203`、`src/renderer/pages/ProjectsPage.tsx:250` 将关闭和删除警告视觉改为统一图标。
+- `src/styles.css:236`、`src/styles.css:238`、`src/styles.css:456` 调整图标尺寸、菜单对齐和删除弹窗圆形危险背景。
+
+**验证**
+- 已做范围内字符扫描，`＋⋯▶✎🗑⚠×` 在 `ProjectsPage.tsx` 和 `styles.css` 中无残留。
+- `git diff --check -- src/renderer/pages/ProjectsPage.tsx src/styles.css` 通过；未运行全量 `npm run check/build`，避免越过 P002。
+- 未修改 plan 文件、checkbox 或进度区。

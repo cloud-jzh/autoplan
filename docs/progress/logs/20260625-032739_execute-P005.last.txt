@@ -1,0 +1,15 @@
+已完成 P005，仅修改了指定 scope 内文件，未改 plan 文件。
+
+**变更**
+- `ui/projects.html:55` 增加本地 SVG icon 基础样式，`ui/projects.html:246` 增加内联 SVG sprite。
+- `ui/projects.html:270`、`ui/projects.html:361`、`ui/projects.html:401` 将项目页导航、操作、警告、空态等字符图标替换为 SVG。
+- `ui/workspace.html:59`、`ui/workspace.html:390` 增加工作区 SVG icon 样式和 sprite。
+- `ui/workspace.html:483`、`ui/workspace.html:532`、`ui/workspace.html:564`、`ui/workspace.html:596` 替换导航、统计、流水线、附件、发送/控制按钮图标。
+- `ui/README.md:39` 补充“界面图标使用 icon，不使用 emoji/字符图形”的设计约束。
+
+**验证**
+- 已检查两页 SVG `<use>` 引用均能解析到本地 `<symbol>`。
+- 已扫描确认旧 emoji/字符图标未残留，仅保留业务文案里的箭头说明。
+- 已验证两个 HTML 内联脚本可被 Node 解析。
+- `git diff --check -- ui/projects.html ui/workspace.html ui/README.md` 通过；Git 仅提示 Windows 行尾归一化 warning。
+- in-app Browser 工具因当前 `node_repl` 路径元数据报 `sandboxCwd must use the file URI scheme` 未能执行，因此未做浏览器截图验证。

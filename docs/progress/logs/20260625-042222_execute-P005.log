@@ -1,0 +1,3398 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019efb4c-5255-78d0-8cc4-fe073264a20b
+--------
+user
+你是开发执行者。
+请只执行指定任务 P005，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_4_20260625-030248.md
+指定任务：
+- [ ] P005: 补充耗时统计回归测试 <!-- scope: scripts/smoke-test.js -->
+任务 scope：scripts/smoke-test.js
+
+完成后必须：
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 如需测试，只运行与当前任务直接相关的最小测试集，不要运行全量测试或与本任务无关的测试
+- 只有当前任务本身明确要求全量验证时，才允许运行全量测试
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Considering file exploration tools**
+
+I’m thinking about listing files, especially AGENTS, and wondering if I should start with codegraph first for any questions. It could be a good idea to call codegraph_explore for scripts/smoke-test.js, but what if that file isn't there? I might need to read the plan file, even though it’s read-only, so I’ll use shell commands like Get-Content. Can I use codegraph_explore and shell together? Well, tools seem to work better one at a time. I'll begin with a plan update first!
+codex
+我会只查看计划上下文和 `scripts/smoke-test.js`，确认 P005 的预期范围。
+  → 读取任务上下文
+  • 定位耗时统计逻辑
+  • 补充回归测试
+  • 运行最小验证
+codex
+先用索引快速定位脚本结构，再读取必要的只读上下文。
+mcp: codegraph/codegraph_explore started
+mcp: codegraph/codegraph_explore (failed)
+codex
+索引需要显式项目路径；我会带路径重试并读取计划片段。
+mcp: codegraph/codegraph_explore started
+mcp: codegraph/codegraph_explore (failed)
+**Inspecting code options**
+
+I'm thinking about how to address the unavailability of Codegraph. I'll need to switch to using shell instead. It sounds like I should make a plan before diving in and inspect AGENTS. Powershell might be my go-to here, and it seems like I need to ensure I don't use any sandbox permissions. I want to make sure everything is set up correctly before moving forward!
+codex
+没有可用代码索引，我改用本地只读命令检查相关文件。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); Get-ChildItem -Force | Select-Object Name,Mode; if (Test-Path AGENTS.md) { '"'--- AGENTS.md ---'; Get-Content -Raw -Encoding UTF8 AGENTS.md }; '--- PLAN P005 LINES ---'; Select-String -Path 'D:\\project\\GitHub\\autoplan\\docs\\plan\\plan_requirement_4_20260625-030248.md' -Pattern 'P005|耗时|smoke-test' -Context 3,5; '--- SMOKE HEAD ---'; Get-Content -Path 'scripts\\smoke-test.js' -Encoding UTF8 -TotalCount 240" in D:\project\GitHub\autoplan
+ succeeded in 366ms:
+
+Name                                    Mode  
+----                                    ----  
+.git                                    d--h--
+assets                                  d-----
+dist                                    d-----
+docs                                    d-----
+node_modules                            d-----
+release                                 d-----
+release-test                            d-----
+scripts                                 d-----
+src                                     d-----
+ui                                      d-----
+.codex-autoplan-overview-final.png      -a----
+.codex-autoplan-overview-left-log.png   -a----
+.codex-autoplan-overview-merged-log.png -a----
+.codex-autoplan-overview.png            -a----
+.codex-dev-20260624-225246.log          -a----
+.codex-dev-20260624-225652.log          -a----
+.codex-dev-20260624-225837.log          -a----
+.codex-dev-20260624-230150.log          -a----
+.codex-dev.log                          -a----
+.gitattributes                          -a----
+.gitignore                              -a----
+index.html                              -a----
+package-lock.json                       -a----
+package.json                            -a----
+System.Drawing.Drawing2D.GraphicsPath   -a----
+tsconfig.json                           -a----
+vite.config.ts                          -a----
+--- PLAN P005 LINES ---
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+                                              
+--- SMOKE HEAD ---
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { saveAttachments } = require('../src/attachments');
+const { AppDatabase, nowIso } = require('../src/database');
+const { LoopService } = require('../src/loopService');
+const { acceptPlanDraft, createPlanDraft, updatePlanDraft } = require('../src/planDrafts');
+
+async function main() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-smoke-'));
+  const dbPath = path.join(tempRoot, 'data', 'autoplan.sqlite');
+  const workspace = path.join(tempRoot, 'workspace');
+  const otherWorkspace = path.join(tempRoot, 'other-workspace');
+
+  try {
+    const db = new AppDatabase(dbPath);
+    await db.init();
+    const defaultState = db.get('SELECT project_id FROM project_states ORDER BY project_id ASC LIMIT 1');
+    db.run('UPDATE project_states SET running = 1, phase = ?, updated_at = ? WHERE project_id = ?', [
+      'execute-task',
+      nowIso(),
+      defaultState.project_id,
+    ]);
+    const loop = new LoopService(db);
+    const projectId = loop.defaultProjectId();
+    const otherProjectId = insertProject(db, loop, 'Other Project', otherWorkspace);
+
+    assert.ok(projectId, '启动后应存在默认项目');
+    assert.equal(loop.snapshot(projectId).state.running, 0, '重启后不应继承旧的 running 状态');
+    assert.equal(loop.snapshot(projectId).state.phase, 'stopped', '重启后执行中阶段应复位为 stopped');
+    db.run('UPDATE project_states SET running = 1, phase = ?, updated_at = ? WHERE project_id = ?', [
+      'execute-task',
+      nowIso(),
+      projectId,
+    ]);
+    assert.equal(loop.snapshot(projectId).state.running, 0, '快照不应盲信 SQLite 残留 running 状态');
+    assert.equal(loop.snapshot(projectId).state.phase, 'stopped', '空闲时快照不应显示残留执行阶段');
+    assert.equal(loop.snapshot().activeProjectId, null, '未选择项目时快照应停留在项目列表');
+    assert.ok(loop.snapshot().projects.length >= 2, '项目列表应包含默认项目和新增项目');
+
+    const requirementId = insertRequirement(db, projectId);
+    insertFeedback(db, projectId);
+    insertRequirement(db, otherProjectId);
+
+    const imageFile = path.join(tempRoot, 'smoke.png');
+    fs.writeFileSync(
+      imageFile,
+      Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lZl0WQAAAABJRU5ErkJggg==', 'base64'),
+    );
+    const attachments = saveAttachments(db, path.join(tempRoot, 'attachments'), 'requirement', requirementId, [
+      { path: imageFile, name: 'smoke.png', type: 'image/png' },
+    ], projectId);
+
+    const draftId = createPlanDraft(db, {
+      projectId,
+      sourceType: 'requirement',
+      sourceId: requirementId,
+      body: '目标：\n普通文本验收\n允许拖拽图片附件',
+      attachments,
+    });
+    updatePlanDraft(db, draftId, `${loop.snapshot(projectId).planDrafts[0].markdown}\n<!-- smoke adjusted -->\n`);
+
+    let snapshot = loop.snapshot(projectId);
+    assert.equal(snapshot.requirements.length, 1, '当前项目只应显示自己的需求');
+    assert.equal(loop.snapshot(otherProjectId).requirements.length, 1, '另一个项目应保留独立需求');
+    assert.equal(snapshot.feedback.length, 1, '反馈模块应按项目读取列表');
+    assert.match(snapshot.requirements[0].body, /普通文本验收/, '需求正文应保留普通文本内容');
+    assert.equal(snapshot.attachments.length, 1, '附件应写入 SQLite 并绑定项目');
+    assert.equal(snapshot.attachments[0].project_id, projectId, '附件应记录 project_id');
+    assert.equal(snapshot.attachments[0].mime_type, 'image/png', '图片附件应保留 MIME 类型');
+    assert.ok(fs.existsSync(snapshot.attachments[0].stored_path), '附件文件应复制到持久化目录');
+    assert.equal(snapshot.planDrafts.length, 1, '发送后应生成计划草稿');
+    assert.match(snapshot.planDrafts[0].markdown, /smoke\.png.+file:\/\//, '计划草稿应通过链接引用图片附件');
+
+    loop.configure(projectId, {
+      workspacePath: workspace,
+      intervalSeconds: 5,
+      validationCommand: 'node -e "process.exit(0)"',
+    });
+    snapshot = loop.snapshot(projectId);
+    assert.equal(snapshot.state.workspace_path, workspace, '项目应能保存工作区路径');
+    assert.equal(snapshot.state.interval_seconds, 5, '项目应能保存循环间隔');
+
+    loop.ensureWorkspaceDirs(workspace);
+    const issueFile = path.join(workspace, 'docs', 'issues', 'smoke.md');
+    fs.writeFileSync(issueFile, '# Smoke 需求\n\n- [ ] 支持普通文本输入和附件\n', 'utf8');
+    const issueScan = loop.scanDirectory(path.join(workspace, 'docs', 'issues'), workspace, ['.md']);
+    loop.saveScan(projectId, 'issue', issueScan);
+    assert.equal(issueScan.files.length, 1, '扫描模块应发现 docs/issues 文件');
+    assert.equal(loop.snapshot(projectId).scans.length, 1, '扫描记录应按项目写入 SQLite');
+    assert.equal(loop.snapshot(otherProjectId).scans.length, 0, '其它项目不应看到当前项目扫描记录');
+
+    const planId = acceptPlanDraft(db, loop, workspace, draftId);
+    snapshot = loop.snapshot(projectId);
+    assert.equal(snapshot.planDrafts[0].status, 'accepted', '确认后计划草稿应标记 accepted');
+    assert.equal(snapshot.plans.length, 1, '确认后应加入当前项目任务系统');
+    assert.equal(snapshot.plans[0].project_id, projectId, 'plan 应绑定项目');
+    assert.equal(snapshot.tasks.length, 5, '任务模块应同步草稿中的 checkbox 为任务列表');
+    assert.equal(snapshot.plans[0].total_tasks, 5, 'plan 应记录总任务数');
+    assert.ok(
+      snapshot.tasks.every((task) => task.raw_line.includes('scope:')),
+      '入库任务应保留固定格式 scope 注释',
+    );
+    assert.ok(
+      snapshot.tasks.every((task) => task.scope === 'unknown'),
+      '无法判断 scope 的默认草稿任务应标记为 unknown',
+    );
+    assert.deepEqual(
+      loop.parallelTaskBatch([
+        { task_key: 'P001', title: 'A', raw_line: '- [ ] P001: A <!-- scope: lib/a.dart -->' },
+        { task_key: 'P002', title: 'B', raw_line: '- [ ] P002: B <!-- scope: lib/b.dart -->' },
+        { task_key: 'P003', title: 'C', raw_line: '- [ ] P003: C <!-- scope: lib/a.dart -->' },
+      ]).map((task) => task.task_key),
+      ['P001', 'P002'],
+      '互不重叠 scope 的任务应允许进入同一并发批次',
+    );
+    assert.deepEqual(
+      loop.parallelTaskBatch([
+        { task_key: 'P001', title: 'A', raw_line: '- [ ] P001: A <!-- scope: unknown -->' },
+        { task_key: 'P002', title: 'B', raw_line: '- [ ] P002: B <!-- scope: lib/b.dart -->' },
+      ]).map((task) => task.task_key),
+      ['P001'],
+      'unknown scope 任务应保持串行',
+    );
+    assert.deepEqual(
+      loop.parallelTaskBatch([
+        { task_key: 'P009', title: '补充自动化回归测试', raw_line: '- [ ] P009: 补充自动化回归测试 <!-- scope: test/a.dart -->' },
+        { task_key: 'P010', title: '执行回归验证', raw_line: '- [ ] P010: 执行回归验证 <!-- scope: test/b.dart -->' },
+      ]).map((task) => task.task_key),
+      ['P009'],
+      '测试/验证类任务应保持串行',
+    );
+
+    const plan = db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+    const planFile = path.join(workspace, plan.file_path);
+    const executableTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P001']);
+    const fakeLogFile = path.join(workspace, 'docs', 'progress', 'logs', 'fake-execute.log');
+    fs.writeFileSync(fakeLogFile, 'fake ok', 'utf8');
+    const originalRunCodex = loop.runCodex.bind(loop);
+    const originalPlanText = fs.readFileSync(planFile, 'utf8');
+    loop.runCodex = async (_workspace, prompt) => {
+      assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
+      assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
+      fs.writeFileSync(planFile, originalPlanText.replace('P002', 'P999'), 'utf8');
+      return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-last.txt') };
+    };
+    const executeResult = await loop.executeTask(workspace, plan, executableTask);
+    loop.runCodex = originalRunCodex;
+    assert.equal(executeResult.exitCode, 0, '模拟执行应成功');
+    loop.completeTask(workspace, plan, executableTask, executeResult);
+    const guardedPlanText = fs.readFileSync(planFile, 'utf8');
+    assert.match(guardedPlanText, /- \[x\] P001:/, '系统应在任务成功后勾选 checkbox');
+    assert.match(guardedPlanText, /P001 AutoPlan 完成/, '系统应在进度区写入完成记录');
+    assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
+    assert.equal(
+      db.get('SELECT status FROM plan_tasks WHERE id = ?', [executableTask.id]).status,
+      'completed',
+      '系统应更新任务入库状态',
+    );
+    assert.equal(
+      db.get('SELECT completed_tasks FROM plans WHERE id = ?', [planId]).completed_tasks,
+      1,
+      '系统应更新 plan 完成计数',
+    );
+
+    fs.writeFileSync(planFile, fs.readFileSync(planFile, 'utf8').replaceAll('- [ ]', '- [x]'), 'utf8');
+    loop.syncPlanTasks(planId, planFile);
+    await loop.validatePlan(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+    snapshot = loop.snapshot(projectId);
+    assert.equal(snapshot.plans[0].status, 'completed', '验收通过后 plan 应标记 completed');
+    assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+
+    const multiWorkspaceA = path.join(tempRoot, 'multi-a');
+    const multiWorkspaceB = path.join(tempRoot, 'multi-b');
+    const multiProjectA = insertProject(db, loop, 'Multi Project A', multiWorkspaceA);
+    const multiProjectB = insertProject(db, loop, 'Multi Project B', multiWorkspaceB);
+    const sameWorkspaceProject = insertProject(db, loop, 'Same Workspace Project', multiWorkspaceB);
+    loop.configure(multiProjectA, { workspacePath: multiWorkspaceA, intervalSeconds: 60, validationCommand: '' });
+    loop.configure(multiProjectB, { workspacePath: multiWorkspaceB, intervalSeconds: 60, validationCommand: '' });
+    loop.configure(sameWorkspaceProject, { workspacePath: multiWorkspaceB, intervalSeconds: 60, validationCommand: '' });
+
+    loop.start(multiProjectA);
+    loop.start(multiProjectB);
+    assert.equal(loop.snapshot(multiProjectA).state.running, 1, '项目 A 循环应保持运行中');
+    assert.equal(loop.snapshot(multiProjectB).state.running, 1, '项目 B 循环应保持运行中');
+    assert.ok(
+      loop.snapshot().projects.filter((project) => project.running).length >= 2,
+      '项目列表应能显示多个运行中项目',
+    );
+    assert.throws(
+      () => loop.start(sameWorkspaceProject),
+      /工作区正在被项目/,
+      '同一工作区不应被两个项目循环同时占用',
+    );
+    loop.stop(multiProjectA);
+    assert.equal(loop.snapshot(multiProjectA).state.running, 0, '停止项目 A 后 A 应停止');
+    assert.equal(loop.snapshot(multiProjectB).state.running, 1, '停止项目 A 不应影响项目 B');
+    loop.stop(multiProjectB);
+    assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
+
+    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, multi-loop');
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+function insertProject(db, loop, name, workspacePath) {
+  const now = nowIso();
+  const id = db.insert(
+    `INSERT INTO projects (name, workspace_path, description, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [name, workspacePath, '', now, now],
+  );
+  loop.ensureProjectState(id);
+  return id;
+}
+
+function insertRequirement(db, projectId) {
+  const now = nowIso();
+  return db.insert(
+    `INSERT INTO requirements (project_id, title, body, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [projectId, '普通文本需求', '目标：\n普通文本验收\n允许拖拽图片附件', 'open', now, now],
+  );
+}
+
+function insertFeedback(db, projectId) {
+  const now = nowIso();
+  db.insert(
+    `INSERT INTO feedback (project_id, requirement_id, title, body, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [projectId, null, '普通文本反馈', '列表展示\n重点内容\n可附加图片', 'open', now, now],
+  );
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+
+
+**Investigating file issues**
+
+I'm noticing that the output was truncated — I need to check the entire file because it had around 300 lines. It might have been cut off due to size limits. I'll look at the relevant lines using Select-String, but it might be an encoding issue. I should also check for missing AGENTS and inspect the package.json scripts file fully. Since I'm focusing on a single file, maybe using PowerShell with numbered chunks could help.
+codex
+输出被截断了；我会按行号分段读取脚本和任务描述。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); '"'--- plan matches ---'; rg -n --encoding utf-8 \"P005|耗时|duration|elapsed|smoke-test\" \"docs/plan/plan_requirement_4_20260625-030248.md\"; '--- package scripts ---'; Get-Content -Raw -Encoding UTF8 package.json; '--- smoke line count ---'; (Get-Content -Encoding UTF8 scripts/smoke-test.js).Count; '--- smoke 1-220 ---'; "'$i=0; Get-Content -Encoding UTF8 scripts/smoke-test.js | ForEach-Object { $i++; if($i -le 220){ '"'{0,4}: {1}' -f "'$i, $_ } }; '"'--- smoke 221-440 ---'; "'$i=0; Get-Content -Encoding UTF8 scripts/smoke-test.js | ForEach-Object { $i++; if($i -ge 221 -and $i -le 440){ '"'{0,4}: {1}' -f "'$i, $_ } }' in D:\project\GitHub\autoplan
+ succeeded in 326ms:
+--- plan matches ---
+1:# 需求 #4 开发计划：任务系统增加耗时统计
+5:当前任务系统已支持 Plan 解析、任务状态流转、并发执行、手动执行/停止、任务列表展示和 smoke 回归。需求 #4 要求在任务系统中增加耗时统计，核心目标是让每个任务从开始执行到结束/停止/失败的耗时可被记录、查询和展示，并在不影响既有任务执行流程的前提下兼容历史数据。
+9:- [x] P001: 扩展任务耗时数据模型 <!-- scope: src/database.js,src/renderer/types.ts -->
+10:  - 验收要点：`plan_tasks` 表新增任务开始时间、结束时间、累计耗时毫秒等字段，并通过现有迁移机制兼容旧数据库。
+12:  - 验收要点：前端 `PlanTask` 类型同步新增耗时字段，TypeScript 编译不出现类型缺口。
+14:- [x] P002: 在任务生命周期记录耗时 <!-- scope: src/loopService.js -->
+16:  - 验收要点：任务完成、失败回退、手动停止时计算本次耗时并累加到任务耗时字段，同时写入 `finished_at` 和 `updated_at`。
+17:  - 验收要点：任务重试时不丢失历史累计耗时，运行中实时耗时可通过 `started_at` 推导，状态流转保持原有语义。
+18:  - 验收要点：`task.executed`、`task.failed` 或停止相关事件的元信息包含耗时，便于后续审计和日志排查。
+20:- [x] P003: 在快照数据中暴露耗时信息 <!-- scope: src/loopService.js,src/renderer/types.ts -->
+21:  - 验收要点：`snapshot().tasks` 返回每个任务的开始时间、结束时间、累计耗时毫秒和运行中状态所需字段。
+22:  - 验收要点：运行中任务的耗时展示不依赖额外 IPC 接口，现有定时 `emitUpdate` 可驱动刷新。
+25:- [x] P004: 展示任务耗时与计划汇总 <!-- scope: src/renderer/utils/time.ts,src/renderer/components/PlanLists.tsx,src/renderer/pages/WorkspacePage.tsx,src/styles.css -->
+26:  - 验收要点：任务列表展示每个任务的耗时，未开始显示“未开始”，运行中显示“已运行 xx”，已完成/失败/停止显示累计耗时。
+27:  - 验收要点：新增耗时格式化函数，支持毫秒输入并输出秒、分、小时级中文短格式，空值和异常值有兜底显示。
+28:  - 验收要点：任务与计划区域展示当前 Plan 的总耗时/已完成任务耗时汇总，页面在窄屏和长任务标题下不溢出。
+29:  - 验收要点：运行中任务耗时能随现有快照刷新更新，不需要用户手动刷新页面。
+31:- [ ] P005: 补充耗时统计回归测试 <!-- scope: scripts/smoke-test.js -->
+32:  - 验收要点：smoke 测试覆盖任务开始后写入 `started_at`，完成后写入 `finished_at` 和正数 `duration_ms`。
+33:  - 验收要点：smoke 测试覆盖失败或停止回退到 `pending` 时耗时仍被累计，后续重试继续累加。
+34:  - 验收要点：smoke 测试覆盖 `snapshot().tasks` 中耗时字段存在且类型符合前端预期。
+37:- [ ] P006: 执行构建与回归验证 <!-- scope: package.json,scripts/smoke-test.js,src/database.js,src/loopService.js,src/renderer/types.ts,src/renderer/components/PlanLists.tsx,src/renderer/pages/WorkspacePage.tsx,src/renderer/utils/time.ts,src/styles.css -->
+39:  - 验收要点：`npm run smoke` 通过，确认数据库迁移、任务执行、耗时统计和原有任务系统行为无回归。
+40:  - 验收要点：如验证失败，仅修复与耗时统计直接相关的问题，不扩大修改范围。
+44:- 数据可靠：任务耗时以毫秒为基础存储，开始、完成、失败、停止和重试场景均能得到可解释的累计耗时。
+45:- 兼容安全：旧数据库自动补齐新增字段，历史任务不因空耗时字段导致页面或任务流程异常。
+46:- 展示清晰：任务列表能直观看到每个任务的耗时状态，Plan 区域能看到汇总耗时，运行中耗时会自动刷新。
+--- package scripts ---
+{
+  "name": "autoplan",
+  "version": "0.1.4",
+  "description": "Electron app for issue-driven autonomous planning and development loops.",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "node scripts/dev.js",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/planDrafts.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "build": {
+    "appId": "com.autoplan.desktop",
+    "productName": "AutoPlan",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "assets/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.0",
+    "remark-gfm": "^4.0.1",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^33.3.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}
+
+--- smoke line count ---
+240
+--- smoke 1-220 ---
+   1: const assert = require('node:assert/strict');
+   2: const fs = require('node:fs');
+   3: const os = require('node:os');
+   4: const path = require('node:path');
+   5: const { saveAttachments } = require('../src/attachments');
+   6: const { AppDatabase, nowIso } = require('../src/database');
+   7: const { LoopService } = require('../src/loopService');
+   8: const { acceptPlanDraft, createPlanDraft, updatePlanDraft } = require('../src/planDrafts');
+   9: 
+  10: async function main() {
+  11:   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-smoke-'));
+  12:   const dbPath = path.join(tempRoot, 'data', 'autoplan.sqlite');
+  13:   const workspace = path.join(tempRoot, 'workspace');
+  14:   const otherWorkspace = path.join(tempRoot, 'other-workspace');
+  15: 
+  16:   try {
+  17:     const db = new AppDatabase(dbPath);
+  18:     await db.init();
+  19:     const defaultState = db.get('SELECT project_id FROM project_states ORDER BY project_id ASC LIMIT 1');
+  20:     db.run('UPDATE project_states SET running = 1, phase = ?, updated_at = ? WHERE project_id = ?', [
+  21:       'execute-task',
+  22:       nowIso(),
+  23:       defaultState.project_id,
+  24:     ]);
+  25:     const loop = new LoopService(db);
+  26:     const projectId = loop.defaultProjectId();
+  27:     const otherProjectId = insertProject(db, loop, 'Other Project', otherWorkspace);
+  28: 
+  29:     assert.ok(projectId, '启动后应存在默认项目');
+  30:     assert.equal(loop.snapshot(projectId).state.running, 0, '重启后不应继承旧的 running 状态');
+  31:     assert.equal(loop.snapshot(projectId).state.phase, 'stopped', '重启后执行中阶段应复位为 stopped');
+  32:     db.run('UPDATE project_states SET running = 1, phase = ?, updated_at = ? WHERE project_id = ?', [
+  33:       'execute-task',
+  34:       nowIso(),
+  35:       projectId,
+  36:     ]);
+  37:     assert.equal(loop.snapshot(projectId).state.running, 0, '快照不应盲信 SQLite 残留 running 状态');
+  38:     assert.equal(loop.snapshot(projectId).state.phase, 'stopped', '空闲时快照不应显示残留执行阶段');
+  39:     assert.equal(loop.snapshot().activeProjectId, null, '未选择项目时快照应停留在项目列表');
+  40:     assert.ok(loop.snapshot().projects.length >= 2, '项目列表应包含默认项目和新增项目');
+  41: 
+  42:     const requirementId = insertRequirement(db, projectId);
+  43:     insertFeedback(db, projectId);
+  44:     insertRequirement(db, otherProjectId);
+  45: 
+  46:     const imageFile = path.join(tempRoot, 'smoke.png');
+  47:     fs.writeFileSync(
+  48:       imageFile,
+  49:       Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lZl0WQAAAABJRU5ErkJggg==', 'base64'),
+  50:     );
+  51:     const attachments = saveAttachments(db, path.join(tempRoot, 'attachments'), 'requirement', requirementId, [
+  52:       { path: imageFile, name: 'smoke.png', type: 'image/png' },
+  53:     ], projectId);
+  54: 
+  55:     const draftId = createPlanDraft(db, {
+  56:       projectId,
+  57:       sourceType: 'requirement',
+  58:       sourceId: requirementId,
+  59:       body: '目标：\n普通文本验收\n允许拖拽图片附件',
+  60:       attachments,
+  61:     });
+  62:     updatePlanDraft(db, draftId, `${loop.snapshot(projectId).planDrafts[0].markdown}\n<!-- smoke adjusted -->\n`);
+  63: 
+  64:     let snapshot = loop.snapshot(projectId);
+  65:     assert.equal(snapshot.requirements.length, 1, '当前项目只应显示自己的需求');
+  66:     assert.equal(loop.snapshot(otherProjectId).requirements.length, 1, '另一个项目应保留独立需求');
+  67:     assert.equal(snapshot.feedback.length, 1, '反馈模块应按项目读取列表');
+  68:     assert.match(snapshot.requirements[0].body, /普通文本验收/, '需求正文应保留普通文本内容');
+  69:     assert.equal(snapshot.attachments.length, 1, '附件应写入 SQLite 并绑定项目');
+  70:     assert.equal(snapshot.attachments[0].project_id, projectId, '附件应记录 project_id');
+  71:     assert.equal(snapshot.attachments[0].mime_type, 'image/png', '图片附件应保留 MIME 类型');
+  72:     assert.ok(fs.existsSync(snapshot.attachments[0].stored_path), '附件文件应复制到持久化目录');
+  73:     assert.equal(snapshot.planDrafts.length, 1, '发送后应生成计划草稿');
+  74:     assert.match(snapshot.planDrafts[0].markdown, /smoke\.png.+file:\/\//, '计划草稿应通过链接引用图片附件');
+  75: 
+  76:     loop.configure(projectId, {
+  77:       workspacePath: workspace,
+  78:       intervalSeconds: 5,
+  79:       validationCommand: 'node -e "process.exit(0)"',
+  80:     });
+  81:     snapshot = loop.snapshot(projectId);
+  82:     assert.equal(snapshot.state.workspace_path, workspace, '项目应能保存工作区路径');
+  83:     assert.equal(snapshot.state.interval_seconds, 5, '项目应能保存循环间隔');
+  84: 
+  85:     loop.ensureWorkspaceDirs(workspace);
+  86:     const issueFile = path.join(workspace, 'docs', 'issues', 'smoke.md');
+  87:     fs.writeFileSync(issueFile, '# Smoke 需求\n\n- [ ] 支持普通文本输入和附件\n', 'utf8');
+  88:     const issueScan = loop.scanDirectory(path.join(workspace, 'docs', 'issues'), workspace, ['.md']);
+  89:     loop.saveScan(projectId, 'issue', issueScan);
+  90:     assert.equal(issueScan.files.length, 1, '扫描模块应发现 docs/issues 文件');
+  91:     assert.equal(loop.snapshot(projectId).scans.length, 1, '扫描记录应按项目写入 SQLite');
+  92:     assert.equal(loop.snapshot(otherProjectId).scans.length, 0, '其它项目不应看到当前项目扫描记录');
+  93: 
+  94:     const planId = acceptPlanDraft(db, loop, workspace, draftId);
+  95:     snapshot = loop.snapshot(projectId);
+  96:     assert.equal(snapshot.planDrafts[0].status, 'accepted', '确认后计划草稿应标记 accepted');
+  97:     assert.equal(snapshot.plans.length, 1, '确认后应加入当前项目任务系统');
+  98:     assert.equal(snapshot.plans[0].project_id, projectId, 'plan 应绑定项目');
+  99:     assert.equal(snapshot.tasks.length, 5, '任务模块应同步草稿中的 checkbox 为任务列表');
+ 100:     assert.equal(snapshot.plans[0].total_tasks, 5, 'plan 应记录总任务数');
+ 101:     assert.ok(
+ 102:       snapshot.tasks.every((task) => task.raw_line.includes('scope:')),
+ 103:       '入库任务应保留固定格式 scope 注释',
+ 104:     );
+ 105:     assert.ok(
+ 106:       snapshot.tasks.every((task) => task.scope === 'unknown'),
+ 107:       '无法判断 scope 的默认草稿任务应标记为 unknown',
+ 108:     );
+ 109:     assert.deepEqual(
+ 110:       loop.parallelTaskBatch([
+ 111:         { task_key: 'P001', title: 'A', raw_line: '- [ ] P001: A <!-- scope: lib/a.dart -->' },
+ 112:         { task_key: 'P002', title: 'B', raw_line: '- [ ] P002: B <!-- scope: lib/b.dart -->' },
+ 113:         { task_key: 'P003', title: 'C', raw_line: '- [ ] P003: C <!-- scope: lib/a.dart -->' },
+ 114:       ]).map((task) => task.task_key),
+ 115:       ['P001', 'P002'],
+ 116:       '互不重叠 scope 的任务应允许进入同一并发批次',
+ 117:     );
+ 118:     assert.deepEqual(
+ 119:       loop.parallelTaskBatch([
+ 120:         { task_key: 'P001', title: 'A', raw_line: '- [ ] P001: A <!-- scope: unknown -->' },
+ 121:         { task_key: 'P002', title: 'B', raw_line: '- [ ] P002: B <!-- scope: lib/b.dart -->' },
+ 122:       ]).map((task) => task.task_key),
+ 123:       ['P001'],
+ 124:       'unknown scope 任务应保持串行',
+ 125:     );
+ 126:     assert.deepEqual(
+ 127:       loop.parallelTaskBatch([
+ 128:         { task_key: 'P009', title: '补充自动化回归测试', raw_line: '- [ ] P009: 补充自动化回归测试 <!-- scope: test/a.dart -->' },
+ 129:         { task_key: 'P010', title: '执行回归验证', raw_line: '- [ ] P010: 执行回归验证 <!-- scope: test/b.dart -->' },
+ 130:       ]).map((task) => task.task_key),
+ 131:       ['P009'],
+ 132:       '测试/验证类任务应保持串行',
+ 133:     );
+ 134: 
+ 135:     const plan = db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+ 136:     const planFile = path.join(workspace, plan.file_path);
+ 137:     const executableTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P001']);
+ 138:     const fakeLogFile = path.join(workspace, 'docs', 'progress', 'logs', 'fake-execute.log');
+ 139:     fs.writeFileSync(fakeLogFile, 'fake ok', 'utf8');
+ 140:     const originalRunCodex = loop.runCodex.bind(loop);
+ 141:     const originalPlanText = fs.readFileSync(planFile, 'utf8');
+ 142:     loop.runCodex = async (_workspace, prompt) => {
+ 143:       assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
+ 144:       assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
+ 145:       fs.writeFileSync(planFile, originalPlanText.replace('P002', 'P999'), 'utf8');
+ 146:       return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-last.txt') };
+ 147:     };
+ 148:     const executeResult = await loop.executeTask(workspace, plan, executableTask);
+ 149:     loop.runCodex = originalRunCodex;
+ 150:     assert.equal(executeResult.exitCode, 0, '模拟执行应成功');
+ 151:     loop.completeTask(workspace, plan, executableTask, executeResult);
+ 152:     const guardedPlanText = fs.readFileSync(planFile, 'utf8');
+ 153:     assert.match(guardedPlanText, /- \[x\] P001:/, '系统应在任务成功后勾选 checkbox');
+ 154:     assert.match(guardedPlanText, /P001 AutoPlan 完成/, '系统应在进度区写入完成记录');
+ 155:     assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
+ 156:     assert.equal(
+ 157:       db.get('SELECT status FROM plan_tasks WHERE id = ?', [executableTask.id]).status,
+ 158:       'completed',
+ 159:       '系统应更新任务入库状态',
+ 160:     );
+ 161:     assert.equal(
+ 162:       db.get('SELECT completed_tasks FROM plans WHERE id = ?', [planId]).completed_tasks,
+ 163:       1,
+ 164:       '系统应更新 plan 完成计数',
+ 165:     );
+ 166: 
+ 167:     fs.writeFileSync(planFile, fs.readFileSync(planFile, 'utf8').replaceAll('- [ ]', '- [x]'), 'utf8');
+ 168:     loop.syncPlanTasks(planId, planFile);
+ 169:     await loop.validatePlan(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+ 170:     snapshot = loop.snapshot(projectId);
+ 171:     assert.equal(snapshot.plans[0].status, 'completed', '验收通过后 plan 应标记 completed');
+ 172:     assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+ 173: 
+ 174:     const multiWorkspaceA = path.join(tempRoot, 'multi-a');
+ 175:     const multiWorkspaceB = path.join(tempRoot, 'multi-b');
+ 176:     const multiProjectA = insertProject(db, loop, 'Multi Project A', multiWorkspaceA);
+ 177:     const multiProjectB = insertProject(db, loop, 'Multi Project B', multiWorkspaceB);
+ 178:     const sameWorkspaceProject = insertProject(db, loop, 'Same Workspace Project', multiWorkspaceB);
+ 179:     loop.configure(multiProjectA, { workspacePath: multiWorkspaceA, intervalSeconds: 60, validationCommand: '' });
+ 180:     loop.configure(multiProjectB, { workspacePath: multiWorkspaceB, intervalSeconds: 60, validationCommand: '' });
+ 181:     loop.configure(sameWorkspaceProject, { workspacePath: multiWorkspaceB, intervalSeconds: 60, validationCommand: '' });
+ 182: 
+ 183:     loop.start(multiProjectA);
+ 184:     loop.start(multiProjectB);
+ 185:     assert.equal(loop.snapshot(multiProjectA).state.running, 1, '项目 A 循环应保持运行中');
+ 186:     assert.equal(loop.snapshot(multiProjectB).state.running, 1, '项目 B 循环应保持运行中');
+ 187:     assert.ok(
+ 188:       loop.snapshot().projects.filter((project) => project.running).length >= 2,
+ 189:       '项目列表应能显示多个运行中项目',
+ 190:     );
+ 191:     assert.throws(
+ 192:       () => loop.start(sameWorkspaceProject),
+ 193:       /工作区正在被项目/,
+ 194:       '同一工作区不应被两个项目循环同时占用',
+ 195:     );
+ 196:     loop.stop(multiProjectA);
+ 197:     assert.equal(loop.snapshot(multiProjectA).state.running, 0, '停止项目 A 后 A 应停止');
+ 198:     assert.equal(loop.snapshot(multiProjectB).state.running, 1, '停止项目 A 不应影响项目 B');
+ 199:     loop.stop(multiProjectB);
+ 200:     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
+ 201: 
+ 202:     console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, multi-loop');
+ 203:   } finally {
+ 204:     fs.rmSync(tempRoot, { recursive: true, force: true });
+ 205:   }
+ 206: }
+ 207: 
+ 208: function insertProject(db, loop, name, workspacePath) {
+ 209:   const now = nowIso();
+ 210:   const id = db.insert(
+ 211:     `INSERT INTO projects (name, workspace_path, description, created_at, updated_at)
+ 212:      VALUES (?, ?, ?, ?, ?)`,
+ 213:     [name, workspacePath, '', now, now],
+ 214:   );
+ 215:   loop.ensureProjectState(id);
+ 216:   return id;
+ 217: }
+ 218: 
+ 219: function insertRequirement(db, projectId) {
+ 220:   const now = nowIso();
+--- smoke 221-440 ---
+ 221:   return db.insert(
+ 222:     `INSERT INTO requirements (project_id, title, body, status, created_at, updated_at)
+ 223:      VALUES (?, ?, ?, ?, ?, ?)`,
+ 224:     [projectId, '普通文本需求', '目标：\n普通文本验收\n允许拖拽图片附件', 'open', now, now],
+ 225:   );
+ 226: }
+ 227: 
+ 228: function insertFeedback(db, projectId) {
+ 229:   const now = nowIso();
+ 230:   db.insert(
+ 231:     `INSERT INTO feedback (project_id, requirement_id, title, body, status, created_at, updated_at)
+ 232:      VALUES (?, ?, ?, ?, ?, ?, ?)`,
+ 233:     [projectId, null, '普通文本反馈', '列表展示\n重点内容\n可附加图片', 'open', now, now],
+ 234:   );
+ 235: }
+ 236: 
+ 237: main().catch((error) => {
+ 238:   console.error(error);
+ 239:   process.exitCode = 1;
+ 240: });
+
+codex
+已确认验收点；接下来只看 smoke 脚本相关段落。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); $lines=Get-Content -Encoding UTF8 scripts/smoke-test.js; '"'--- smoke 1-120 ---'; for("'$i=0;$i -lt [Math]::Min(120,$lines.Count);$i++){ '"'{0,4}: {1}' -f ("'$i+1), $lines[$i] }; '"'--- smoke 121-240 ---'; for("'$i=120;$i -lt [Math]::Min(240,$lines.Count);$i++){ '"'{0,4}: {1}' -f ("'$i+1), $lines[$i] }' in D:\project\GitHub\autoplan
+ succeeded in 261ms:
+--- smoke 1-120 ---
+   1: const assert = require('node:assert/strict');
+   2: const fs = require('node:fs');
+   3: const os = require('node:os');
+   4: const path = require('node:path');
+   5: const { saveAttachments } = require('../src/attachments');
+   6: const { AppDatabase, nowIso } = require('../src/database');
+   7: const { LoopService } = require('../src/loopService');
+   8: const { acceptPlanDraft, createPlanDraft, updatePlanDraft } = require('../src/planDrafts');
+   9: 
+  10: async function main() {
+  11:   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-smoke-'));
+  12:   const dbPath = path.join(tempRoot, 'data', 'autoplan.sqlite');
+  13:   const workspace = path.join(tempRoot, 'workspace');
+  14:   const otherWorkspace = path.join(tempRoot, 'other-workspace');
+  15: 
+  16:   try {
+  17:     const db = new AppDatabase(dbPath);
+  18:     await db.init();
+  19:     const defaultState = db.get('SELECT project_id FROM project_states ORDER BY project_id ASC LIMIT 1');
+  20:     db.run('UPDATE project_states SET running = 1, phase = ?, updated_at = ? WHERE project_id = ?', [
+  21:       'execute-task',
+  22:       nowIso(),
+  23:       defaultState.project_id,
+  24:     ]);
+  25:     const loop = new LoopService(db);
+  26:     const projectId = loop.defaultProjectId();
+  27:     const otherProjectId = insertProject(db, loop, 'Other Project', otherWorkspace);
+  28: 
+  29:     assert.ok(projectId, '启动后应存在默认项目');
+  30:     assert.equal(loop.snapshot(projectId).state.running, 0, '重启后不应继承旧的 running 状态');
+  31:     assert.equal(loop.snapshot(projectId).state.phase, 'stopped', '重启后执行中阶段应复位为 stopped');
+  32:     db.run('UPDATE project_states SET running = 1, phase = ?, updated_at = ? WHERE project_id = ?', [
+  33:       'execute-task',
+  34:       nowIso(),
+  35:       projectId,
+  36:     ]);
+  37:     assert.equal(loop.snapshot(projectId).state.running, 0, '快照不应盲信 SQLite 残留 running 状态');
+  38:     assert.equal(loop.snapshot(projectId).state.phase, 'stopped', '空闲时快照不应显示残留执行阶段');
+  39:     assert.equal(loop.snapshot().activeProjectId, null, '未选择项目时快照应停留在项目列表');
+  40:     assert.ok(loop.snapshot().projects.length >= 2, '项目列表应包含默认项目和新增项目');
+  41: 
+  42:     const requirementId = insertRequirement(db, projectId);
+  43:     insertFeedback(db, projectId);
+  44:     insertRequirement(db, otherProjectId);
+  45: 
+  46:     const imageFile = path.join(tempRoot, 'smoke.png');
+  47:     fs.writeFileSync(
+  48:       imageFile,
+  49:       Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lZl0WQAAAABJRU5ErkJggg==', 'base64'),
+  50:     );
+  51:     const attachments = saveAttachments(db, path.join(tempRoot, 'attachments'), 'requirement', requirementId, [
+  52:       { path: imageFile, name: 'smoke.png', type: 'image/png' },
+  53:     ], projectId);
+  54: 
+  55:     const draftId = createPlanDraft(db, {
+  56:       projectId,
+  57:       sourceType: 'requirement',
+  58:       sourceId: requirementId,
+  59:       body: '目标：\n普通文本验收\n允许拖拽图片附件',
+  60:       attachments,
+  61:     });
+  62:     updatePlanDraft(db, draftId, `${loop.snapshot(projectId).planDrafts[0].markdown}\n<!-- smoke adjusted -->\n`);
+  63: 
+  64:     let snapshot = loop.snapshot(projectId);
+  65:     assert.equal(snapshot.requirements.length, 1, '当前项目只应显示自己的需求');
+  66:     assert.equal(loop.snapshot(otherProjectId).requirements.length, 1, '另一个项目应保留独立需求');
+  67:     assert.equal(snapshot.feedback.length, 1, '反馈模块应按项目读取列表');
+  68:     assert.match(snapshot.requirements[0].body, /普通文本验收/, '需求正文应保留普通文本内容');
+  69:     assert.equal(snapshot.attachments.length, 1, '附件应写入 SQLite 并绑定项目');
+  70:     assert.equal(snapshot.attachments[0].project_id, projectId, '附件应记录 project_id');
+  71:     assert.equal(snapshot.attachments[0].mime_type, 'image/png', '图片附件应保留 MIME 类型');
+  72:     assert.ok(fs.existsSync(snapshot.attachments[0].stored_path), '附件文件应复制到持久化目录');
+  73:     assert.equal(snapshot.planDrafts.length, 1, '发送后应生成计划草稿');
+  74:     assert.match(snapshot.planDrafts[0].markdown, /smoke\.png.+file:\/\//, '计划草稿应通过链接引用图片附件');
+  75: 
+  76:     loop.configure(projectId, {
+  77:       workspacePath: workspace,
+  78:       intervalSeconds: 5,
+  79:       validationCommand: 'node -e "process.exit(0)"',
+  80:     });
+  81:     snapshot = loop.snapshot(projectId);
+  82:     assert.equal(snapshot.state.workspace_path, workspace, '项目应能保存工作区路径');
+  83:     assert.equal(snapshot.state.interval_seconds, 5, '项目应能保存循环间隔');
+  84: 
+  85:     loop.ensureWorkspaceDirs(workspace);
+  86:     const issueFile = path.join(workspace, 'docs', 'issues', 'smoke.md');
+  87:     fs.writeFileSync(issueFile, '# Smoke 需求\n\n- [ ] 支持普通文本输入和附件\n', 'utf8');
+  88:     const issueScan = loop.scanDirectory(path.join(workspace, 'docs', 'issues'), workspace, ['.md']);
+  89:     loop.saveScan(projectId, 'issue', issueScan);
+  90:     assert.equal(issueScan.files.length, 1, '扫描模块应发现 docs/issues 文件');
+  91:     assert.equal(loop.snapshot(projectId).scans.length, 1, '扫描记录应按项目写入 SQLite');
+  92:     assert.equal(loop.snapshot(otherProjectId).scans.length, 0, '其它项目不应看到当前项目扫描记录');
+  93: 
+  94:     const planId = acceptPlanDraft(db, loop, workspace, draftId);
+  95:     snapshot = loop.snapshot(projectId);
+  96:     assert.equal(snapshot.planDrafts[0].status, 'accepted', '确认后计划草稿应标记 accepted');
+  97:     assert.equal(snapshot.plans.length, 1, '确认后应加入当前项目任务系统');
+  98:     assert.equal(snapshot.plans[0].project_id, projectId, 'plan 应绑定项目');
+  99:     assert.equal(snapshot.tasks.length, 5, '任务模块应同步草稿中的 checkbox 为任务列表');
+ 100:     assert.equal(snapshot.plans[0].total_tasks, 5, 'plan 应记录总任务数');
+ 101:     assert.ok(
+ 102:       snapshot.tasks.every((task) => task.raw_line.includes('scope:')),
+ 103:       '入库任务应保留固定格式 scope 注释',
+ 104:     );
+ 105:     assert.ok(
+ 106:       snapshot.tasks.every((task) => task.scope === 'unknown'),
+ 107:       '无法判断 scope 的默认草稿任务应标记为 unknown',
+ 108:     );
+ 109:     assert.deepEqual(
+ 110:       loop.parallelTaskBatch([
+ 111:         { task_key: 'P001', title: 'A', raw_line: '- [ ] P001: A <!-- scope: lib/a.dart -->' },
+ 112:         { task_key: 'P002', title: 'B', raw_line: '- [ ] P002: B <!-- scope: lib/b.dart -->' },
+ 113:         { task_key: 'P003', title: 'C', raw_line: '- [ ] P003: C <!-- scope: lib/a.dart -->' },
+ 114:       ]).map((task) => task.task_key),
+ 115:       ['P001', 'P002'],
+ 116:       '互不重叠 scope 的任务应允许进入同一并发批次',
+ 117:     );
+ 118:     assert.deepEqual(
+ 119:       loop.parallelTaskBatch([
+ 120:         { task_key: 'P001', title: 'A', raw_line: '- [ ] P001: A <!-- scope: unknown -->' },
+--- smoke 121-240 ---
+ 121:         { task_key: 'P002', title: 'B', raw_line: '- [ ] P002: B <!-- scope: lib/b.dart -->' },
+ 122:       ]).map((task) => task.task_key),
+ 123:       ['P001'],
+ 124:       'unknown scope 任务应保持串行',
+ 125:     );
+ 126:     assert.deepEqual(
+ 127:       loop.parallelTaskBatch([
+ 128:         { task_key: 'P009', title: '补充自动化回归测试', raw_line: '- [ ] P009: 补充自动化回归测试 <!-- scope: test/a.dart -->' },
+ 129:         { task_key: 'P010', title: '执行回归验证', raw_line: '- [ ] P010: 执行回归验证 <!-- scope: test/b.dart -->' },
+ 130:       ]).map((task) => task.task_key),
+ 131:       ['P009'],
+ 132:       '测试/验证类任务应保持串行',
+ 133:     );
+ 134: 
+ 135:     const plan = db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+ 136:     const planFile = path.join(workspace, plan.file_path);
+ 137:     const executableTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P001']);
+ 138:     const fakeLogFile = path.join(workspace, 'docs', 'progress', 'logs', 'fake-execute.log');
+ 139:     fs.writeFileSync(fakeLogFile, 'fake ok', 'utf8');
+ 140:     const originalRunCodex = loop.runCodex.bind(loop);
+ 141:     const originalPlanText = fs.readFileSync(planFile, 'utf8');
+ 142:     loop.runCodex = async (_workspace, prompt) => {
+ 143:       assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
+ 144:       assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
+ 145:       fs.writeFileSync(planFile, originalPlanText.replace('P002', 'P999'), 'utf8');
+ 146:       return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-last.txt') };
+ 147:     };
+ 148:     const executeResult = await loop.executeTask(workspace, plan, executableTask);
+ 149:     loop.runCodex = originalRunCodex;
+ 150:     assert.equal(executeResult.exitCode, 0, '模拟执行应成功');
+ 151:     loop.completeTask(workspace, plan, executableTask, executeResult);
+ 152:     const guardedPlanText = fs.readFileSync(planFile, 'utf8');
+ 153:     assert.match(guardedPlanText, /- \[x\] P001:/, '系统应在任务成功后勾选 checkbox');
+ 154:     assert.match(guardedPlanText, /P001 AutoPlan 完成/, '系统应在进度区写入完成记录');
+ 155:     assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
+ 156:     assert.equal(
+ 157:       db.get('SELECT status FROM plan_tasks WHERE id = ?', [executableTask.id]).status,
+ 158:       'completed',
+ 159:       '系统应更新任务入库状态',
+ 160:     );
+ 161:     assert.equal(
+ 162:       db.get('SELECT completed_tasks FROM plans WHERE id = ?', [planId]).completed_tasks,
+ 163:       1,
+ 164:       '系统应更新 plan 完成计数',
+ 165:     );
+ 166: 
+ 167:     fs.writeFileSync(planFile, fs.readFileSync(planFile, 'utf8').replaceAll('- [ ]', '- [x]'), 'utf8');
+ 168:     loop.syncPlanTasks(planId, planFile);
+ 169:     await loop.validatePlan(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+ 170:     snapshot = loop.snapshot(projectId);
+ 171:     assert.equal(snapshot.plans[0].status, 'completed', '验收通过后 plan 应标记 completed');
+ 172:     assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+ 173: 
+ 174:     const multiWorkspaceA = path.join(tempRoot, 'multi-a');
+ 175:     const multiWorkspaceB = path.join(tempRoot, 'multi-b');
+ 176:     const multiProjectA = insertProject(db, loop, 'Multi Project A', multiWorkspaceA);
+ 177:     const multiProjectB = insertProject(db, loop, 'Multi Project B', multiWorkspaceB);
+ 178:     const sameWorkspaceProject = insertProject(db, loop, 'Same Workspace Project', multiWorkspaceB);
+ 179:     loop.configure(multiProjectA, { workspacePath: multiWorkspaceA, intervalSeconds: 60, validationCommand: '' });
+ 180:     loop.configure(multiProjectB, { workspacePath: multiWorkspaceB, intervalSeconds: 60, validationCommand: '' });
+ 181:     loop.configure(sameWorkspaceProject, { workspacePath: multiWorkspaceB, intervalSeconds: 60, validationCommand: '' });
+ 182: 
+ 183:     loop.start(multiProjectA);
+ 184:     loop.start(multiProjectB);
+ 185:     assert.equal(loop.snapshot(multiProjectA).state.running, 1, '项目 A 循环应保持运行中');
+ 186:     assert.equal(loop.snapshot(multiProjectB).state.running, 1, '项目 B 循环应保持运行中');
+ 187:     assert.ok(
+ 188:       loop.snapshot().projects.filter((project) => project.running).length >= 2,
+ 189:       '项目列表应能显示多个运行中项目',
+ 190:     );
+ 191:     assert.throws(
+ 192:       () => loop.start(sameWorkspaceProject),
+ 193:       /工作区正在被项目/,
+ 194:       '同一工作区不应被两个项目循环同时占用',
+ 195:     );
+ 196:     loop.stop(multiProjectA);
+ 197:     assert.equal(loop.snapshot(multiProjectA).state.running, 0, '停止项目 A 后 A 应停止');
+ 198:     assert.equal(loop.snapshot(multiProjectB).state.running, 1, '停止项目 A 不应影响项目 B');
+ 199:     loop.stop(multiProjectB);
+ 200:     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
+ 201: 
+ 202:     console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, multi-loop');
+ 203:   } finally {
+ 204:     fs.rmSync(tempRoot, { recursive: true, force: true });
+ 205:   }
+ 206: }
+ 207: 
+ 208: function insertProject(db, loop, name, workspacePath) {
+ 209:   const now = nowIso();
+ 210:   const id = db.insert(
+ 211:     `INSERT INTO projects (name, workspace_path, description, created_at, updated_at)
+ 212:      VALUES (?, ?, ?, ?, ?)`,
+ 213:     [name, workspacePath, '', now, now],
+ 214:   );
+ 215:   loop.ensureProjectState(id);
+ 216:   return id;
+ 217: }
+ 218: 
+ 219: function insertRequirement(db, projectId) {
+ 220:   const now = nowIso();
+ 221:   return db.insert(
+ 222:     `INSERT INTO requirements (project_id, title, body, status, created_at, updated_at)
+ 223:      VALUES (?, ?, ?, ?, ?, ?)`,
+ 224:     [projectId, '普通文本需求', '目标：\n普通文本验收\n允许拖拽图片附件', 'open', now, now],
+ 225:   );
+ 226: }
+ 227: 
+ 228: function insertFeedback(db, projectId) {
+ 229:   const now = nowIso();
+ 230:   db.insert(
+ 231:     `INSERT INTO feedback (project_id, requirement_id, title, body, status, created_at, updated_at)
+ 232:      VALUES (?, ?, ?, ?, ?, ?, ?)`,
+ 233:     [projectId, null, '普通文本反馈', '列表展示\n重点内容\n可附加图片', 'open', now, now],
+ 234:   );
+ 235: }
+ 236: 
+ 237: main().catch((error) => {
+ 238:   console.error(error);
+ 239:   process.exitCode = 1;
+ 240: });
+
+codex
+还缺中段执行流程，我会单独读取 80–170 行。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); $lines=Get-Content -Encoding UTF8 scripts/smoke-test.js; for($i=79;$i -lt [Math]::Min(170,$lines.Count);$i++){ '"'{0,4}: {1}' -f ("'$i+1), $lines[$i] }' in D:\project\GitHub\autoplan
+ succeeded in 288ms:
+  80:     });
+  81:     snapshot = loop.snapshot(projectId);
+  82:     assert.equal(snapshot.state.workspace_path, workspace, '项目应能保存工作区路径');
+  83:     assert.equal(snapshot.state.interval_seconds, 5, '项目应能保存循环间隔');
+  84: 
+  85:     loop.ensureWorkspaceDirs(workspace);
+  86:     const issueFile = path.join(workspace, 'docs', 'issues', 'smoke.md');
+  87:     fs.writeFileSync(issueFile, '# Smoke 需求\n\n- [ ] 支持普通文本输入和附件\n', 'utf8');
+  88:     const issueScan = loop.scanDirectory(path.join(workspace, 'docs', 'issues'), workspace, ['.md']);
+  89:     loop.saveScan(projectId, 'issue', issueScan);
+  90:     assert.equal(issueScan.files.length, 1, '扫描模块应发现 docs/issues 文件');
+  91:     assert.equal(loop.snapshot(projectId).scans.length, 1, '扫描记录应按项目写入 SQLite');
+  92:     assert.equal(loop.snapshot(otherProjectId).scans.length, 0, '其它项目不应看到当前项目扫描记录');
+  93: 
+  94:     const planId = acceptPlanDraft(db, loop, workspace, draftId);
+  95:     snapshot = loop.snapshot(projectId);
+  96:     assert.equal(snapshot.planDrafts[0].status, 'accepted', '确认后计划草稿应标记 accepted');
+  97:     assert.equal(snapshot.plans.length, 1, '确认后应加入当前项目任务系统');
+  98:     assert.equal(snapshot.plans[0].project_id, projectId, 'plan 应绑定项目');
+  99:     assert.equal(snapshot.tasks.length, 5, '任务模块应同步草稿中的 checkbox 为任务列表');
+ 100:     assert.equal(snapshot.plans[0].total_tasks, 5, 'plan 应记录总任务数');
+ 101:     assert.ok(
+ 102:       snapshot.tasks.every((task) => task.raw_line.includes('scope:')),
+ 103:       '入库任务应保留固定格式 scope 注释',
+ 104:     );
+ 105:     assert.ok(
+ 106:       snapshot.tasks.every((task) => task.scope === 'unknown'),
+ 107:       '无法判断 scope 的默认草稿任务应标记为 unknown',
+ 108:     );
+ 109:     assert.deepEqual(
+ 110:       loop.parallelTaskBatch([
+ 111:         { task_key: 'P001', title: 'A', raw_line: '- [ ] P001: A <!-- scope: lib/a.dart -->' },
+ 112:         { task_key: 'P002', title: 'B', raw_line: '- [ ] P002: B <!-- scope: lib/b.dart -->' },
+ 113:         { task_key: 'P003', title: 'C', raw_line: '- [ ] P003: C <!-- scope: lib/a.dart -->' },
+ 114:       ]).map((task) => task.task_key),
+ 115:       ['P001', 'P002'],
+ 116:       '互不重叠 scope 的任务应允许进入同一并发批次',
+ 117:     );
+ 118:     assert.deepEqual(
+ 119:       loop.parallelTaskBatch([
+ 120:         { task_key: 'P001', title: 'A', raw_line: '- [ ] P001: A <!-- scope: unknown -->' },
+ 121:         { task_key: 'P002', title: 'B', raw_line: '- [ ] P002: B <!-- scope: lib/b.dart -->' },
+ 122:       ]).map((task) => task.task_key),
+ 123:       ['P001'],
+ 124:       'unknown scope 任务应保持串行',
+ 125:     );
+ 126:     assert.deepEqual(
+ 127:       loop.parallelTaskBatch([
+ 128:         { task_key: 'P009', title: '补充自动化回归测试', raw_line: '- [ ] P009: 补充自动化回归测试 <!-- scope: test/a.dart -->' },
+ 129:         { task_key: 'P010', title: '执行回归验证', raw_line: '- [ ] P010: 执行回归验证 <!-- scope: test/b.dart -->' },
+ 130:       ]).map((task) => task.task_key),
+ 131:       ['P009'],
+ 132:       '测试/验证类任务应保持串行',
+ 133:     );
+ 134: 
+ 135:     const plan = db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+ 136:     const planFile = path.join(workspace, plan.file_path);
+ 137:     const executableTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P001']);
+ 138:     const fakeLogFile = path.join(workspace, 'docs', 'progress', 'logs', 'fake-execute.log');
+ 139:     fs.writeFileSync(fakeLogFile, 'fake ok', 'utf8');
+ 140:     const originalRunCodex = loop.runCodex.bind(loop);
+ 141:     const originalPlanText = fs.readFileSync(planFile, 'utf8');
+ 142:     loop.runCodex = async (_workspace, prompt) => {
+ 143:       assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
+ 144:       assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
+ 145:       fs.writeFileSync(planFile, originalPlanText.replace('P002', 'P999'), 'utf8');
+ 146:       return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-last.txt') };
+ 147:     };
+ 148:     const executeResult = await loop.executeTask(workspace, plan, executableTask);
+ 149:     loop.runCodex = originalRunCodex;
+ 150:     assert.equal(executeResult.exitCode, 0, '模拟执行应成功');
+ 151:     loop.completeTask(workspace, plan, executableTask, executeResult);
+ 152:     const guardedPlanText = fs.readFileSync(planFile, 'utf8');
+ 153:     assert.match(guardedPlanText, /- \[x\] P001:/, '系统应在任务成功后勾选 checkbox');
+ 154:     assert.match(guardedPlanText, /P001 AutoPlan 完成/, '系统应在进度区写入完成记录');
+ 155:     assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
+ 156:     assert.equal(
+ 157:       db.get('SELECT status FROM plan_tasks WHERE id = ?', [executableTask.id]).status,
+ 158:       'completed',
+ 159:       '系统应更新任务入库状态',
+ 160:     );
+ 161:     assert.equal(
+ 162:       db.get('SELECT completed_tasks FROM plans WHERE id = ?', [planId]).completed_tasks,
+ 163:       1,
+ 164:       '系统应更新 plan 完成计数',
+ 165:     );
+ 166: 
+ 167:     fs.writeFileSync(planFile, fs.readFileSync(planFile, 'utf8').replaceAll('- [ ]', '- [x]'), 'utf8');
+ 168:     loop.syncPlanTasks(planId, planFile);
+ 169:     await loop.validatePlan(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+ 170:     snapshot = loop.snapshot(projectId);
+
+**Investigating duration implementation**
+
+I need to understand the current duration implementation to design appropriate tests. For now, my focus is on the smoke-test.js file, but I’ll also check the related source code. I'll inspect the duration functions in loopService.js, looking specifically for references to started_at and duration to gather relevant information. It’s important to ensure I'm fully aware of how it all works before proceeding. Let's explore this further!
+codex
+现在定位耗时字段的现有实现，避免测试写错语义。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); rg -n --encoding utf-8 "started_at|finished_at|duration_ms|duration|executeTask|completeTask|stop" src/loopService.js src/database.js src/renderer/types.ts' in D:\project\GitHub\autoplan
+ succeeded in 199ms:
+src/database.js:140:        started_at TEXT,
+src/database.js:141:        finished_at TEXT,
+src/database.js:142:        duration_ms INTEGER NOT NULL DEFAULT 0,
+src/database.js:182:    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+src/database.js:183:    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+src/database.js:184:    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+src/renderer/types.ts:197:  started_at: string | null;
+src/renderer/types.ts:198:  finished_at: string | null;
+src/renderer/types.ts:199:  duration_ms: number;
+src/renderer/types.ts:200:  run_duration_ms?: number;
+src/renderer/types.ts:211:  STOP_REQUESTED: 'task.stop.requested',
+src/renderer/types.ts:212:  STOPPED: 'task.stopped',
+src/renderer/types.ts:218:  STOPPING: 'task.stopping',
+src/renderer/types.ts:226:  STOPPING: 'stopping',
+src/renderer/types.ts:227:  STOPPED: 'stopped',
+src/renderer/types.ts:401:  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+src/renderer/types.ts:405:  stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+src/loopService.js:23:  STOP_REQUESTED: 'task.stop.requested',
+src/loopService.js:24:  STOPPED: 'task.stopped',
+src/loopService.js:30:  STOPPING: 'task.stopping',
+src/loopService.js:38:  STOPPING: 'stopping',
+src/loopService.js:39:  STOPPED: 'stopped',
+src/loopService.js:96:      phase = 'stopped';
+src/loopService.js:131:           phase = CASE WHEN phase IN ${ACTIVE_RUNTIME_PHASE_SQL} THEN 'stopped' ELSE phase END,
+src/loopService.js:139:           phase = CASE WHEN phase IN ${ACTIVE_RUNTIME_PHASE_SQL} THEN 'stopped' ELSE phase END,
+src/loopService.js:163:      normalized.phase = 'stopped';
+src/loopService.js:247:  stop(projectId = null) {
+src/loopService.js:249:      for (const id of Array.from(this.runtimes.keys())) this.stop(id);
+src/loopService.js:265:        const stoppedTask = activeTaskId
+src/loopService.js:270:          activeTaskId ? LEGACY_TASK_EVENT_TYPES.STOPPING : 'operation.stopping',
+src/loopService.js:272:          stoppedTask || activeTask
+src/loopService.js:273:            ? taskEventMeta(stoppedTask || activeTask, { status: TASK_EVENT_STATUS.STOPPED, finishedAt })
+src/loopService.js:280:      ['stopped', nowIso(), projectId],
+src/loopService.js:282:    this.addEvent(projectId, 'loop.stopped', '循环已停止');
+src/loopService.js:335:        if (runtime.running || this.db.get('SELECT phase FROM project_states WHERE project_id = ?', [projectId])?.phase !== 'stopped') {
+src/loopService.js:344:      } else if (this.db.get('SELECT phase FROM project_states WHERE project_id = ?', [projectId])?.phase !== 'stopped') {
+src/loopService.js:372:      const result = await this.executeTask(workspace, plan, task);
+src/loopService.js:374:        this.completeTask(workspace, plan, task, result);
+src/loopService.js:378:      } else if (this.db.get('SELECT phase FROM project_states WHERE project_id = ?', [projectId])?.phase !== 'stopped') {
+src/loopService.js:387:  stopTask(projectId, taskId) {
+src/loopService.js:396:      const stoppedTask = runtime?.running
+src/loopService.js:404:          taskEventMeta(stoppedTask, { status: TASK_EVENT_STATUS.STOPPED, finishedAt }),
+src/loopService.js:409:      const stoppedTask = this.finishTaskRun(taskId, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true }) || task;
+src/loopService.js:414:        taskEventMeta(stoppedTask, { status: TASK_EVENT_STATUS.STOPPING, finishedAt }),
+src/loopService.js:418:    if (runtime?.running) this.stop(projectId);
+src/loopService.js:419:    else this.setPhase(projectId, 'stopped');
+src/loopService.js:436:           started_at = CASE WHEN status = ? AND started_at IS NOT NULL THEN started_at ELSE ? END,
+src/loopService.js:437:           finished_at = NULL,
+src/loopService.js:451:    const runDurationMs = isRunning ? taskRunDurationMs(task.started_at, finishedAt) : undefined;
+src/loopService.js:452:    const durationMs = normalizeDurationMs(task.duration_ms) + (runDurationMs || 0);
+src/loopService.js:455:       SET status = ?, duration_ms = ?, finished_at = ?, updated_at = ?
+src/loopService.js:457:      [status, durationMs, finishedAt, finishedAt, taskId],
+src/loopService.js:463:        duration_ms: durationMs,
+src/loopService.js:464:        finished_at: finishedAt,
+src/loopService.js:767:        await this.executeTaskBatch(workspace, plan, batch);
+src/loopService.js:770:        const result = await this.executeTask(workspace, plan, task);
+src/loopService.js:772:          this.completeTask(workspace, plan, task, result);
+src/loopService.js:797:  async executeTaskBatch(workspace, plan, tasks) {
+src/loopService.js:810:            result: await this.executeTask(workspace, plan, task, { parallel: true }),
+src/loopService.js:833:        this.completeTask(workspace, plan, task, result);
+src/loopService.js:838:  async executeTask(workspace, plan, task, options = {}) {
+src/loopService.js:894:  completeTask(workspace, plan, task, result) {
+src/loopService.js:1370:      startedAt: task?.started_at,
+src/loopService.js:1371:      finishedAt: task?.finished_at,
+src/loopService.js:1372:      durationMs: task?.duration_ms,
+src/loopService.js:1373:      runDurationMs: task?.run_duration_ms,
+src/loopService.js:1384:  meta.durationMs = normalizeOptionalNumber(meta.durationMs);
+src/loopService.js:1423:    duration_ms: normalizeDurationMs(task.duration_ms),
+src/loopService.js:1424:    ...(runDurationMs !== undefined ? { run_duration_ms: normalizeDurationMs(runDurationMs) } : {}),
+src/loopService.js:1430:  const startedAt = normalizeOptionalString(task.started_at) || null;
+src/loopService.js:1431:  const finishedAt = normalizeOptionalString(task.finished_at) || null;
+src/loopService.js:1436:    started_at: startedAt,
+src/loopService.js:1437:    finished_at: finishedAt,
+src/loopService.js:1438:    duration_ms: normalizeDurationMs(task.duration_ms),
+src/loopService.js:1439:    ...(runDurationMs !== undefined ? { run_duration_ms: normalizeDurationMs(runDurationMs) } : {}),
+
+codex
+找到了生命周期函数；我会读取这些小段来确定断言点。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); $lines=Get-Content -Encoding UTF8 src/loopService.js; foreach($range in @(@(420,470),@(830,920),@(1360,1445),@(245,420))){ '"'--- loopService {0}-{1} ---' -f "'$range[0], $range[1]; for($i=$range[0]-1;$i -lt [Math]::Min($range[1],$lines.Count);$i++){ '"'{0,4}: {1}' -f ("'$i+1), $lines[$i] } }' in D:\project\GitHub\autoplan
+ succeeded in 248ms:
+--- loopService 420-470 ---
+ 420:   }
+ 421: 
+ 422:   taskForProject(projectId, taskId) {
+ 423:     if (!taskId) return null;
+ 424:     return this.db.get(
+ 425:       `SELECT plan_tasks.*
+ 426:        FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
+ 427:        WHERE plan_tasks.id = ? AND plans.project_id = ?`,
+ 428:       [taskId, projectId],
+ 429:     );
+ 430:   }
+ 431: 
+ 432:   startTaskRun(taskId, startedAt = nowIso()) {
+ 433:     this.db.run(
+ 434:       `UPDATE plan_tasks
+ 435:        SET status = ?,
+ 436:            started_at = CASE WHEN status = ? AND started_at IS NOT NULL THEN started_at ELSE ? END,
+ 437:            finished_at = NULL,
+ 438:            updated_at = ?
+ 439:        WHERE id = ?`,
+ 440:       [TASK_EVENT_STATUS.RUNNING, TASK_EVENT_STATUS.RUNNING, startedAt, startedAt, taskId],
+ 441:     );
+ 442:     return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+ 443:   }
+ 444: 
+ 445:   finishTaskRun(taskId, status, finishedAt = nowIso(), options = {}) {
+ 446:     const task = this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+ 447:     if (!task) return null;
+ 448:     const isRunning = task.status === TASK_EVENT_STATUS.RUNNING;
+ 449:     if (options.onlyIfRunning && !isRunning) return withTaskDurationMeta(task);
+ 450: 
+ 451:     const runDurationMs = isRunning ? taskRunDurationMs(task.started_at, finishedAt) : undefined;
+ 452:     const durationMs = normalizeDurationMs(task.duration_ms) + (runDurationMs || 0);
+ 453:     this.db.run(
+ 454:       `UPDATE plan_tasks
+ 455:        SET status = ?, duration_ms = ?, finished_at = ?, updated_at = ?
+ 456:        WHERE id = ?`,
+ 457:       [status, durationMs, finishedAt, finishedAt, taskId],
+ 458:     );
+ 459:     return withTaskDurationMeta(
+ 460:       {
+ 461:         ...task,
+ 462:         status,
+ 463:         duration_ms: durationMs,
+ 464:         finished_at: finishedAt,
+ 465:         updated_at: finishedAt,
+ 466:       },
+ 467:       runDurationMs,
+ 468:     );
+ 469:   }
+ 470: 
+--- loopService 830-920 ---
+ 830:     );
+ 831:     for (const { task, result } of results) {
+ 832:       if (result.exitCode === 0) {
+ 833:         this.completeTask(workspace, plan, task, result);
+ 834:       }
+ 835:     }
+ 836:   }
+ 837: 
+ 838:   async executeTask(workspace, plan, task, options = {}) {
+ 839:     this.setPhase(plan.project_id, 'execute-task');
+ 840:     this.startTaskRun(task.id);
+ 841:     this.emitUpdate(plan.project_id);
+ 842:     const planFile = path.join(workspace, plan.file_path);
+ 843:     const completionRules = [
+ 844:       '- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区',
+ 845:       '- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区',
+ 846:       '- 只修改当前任务 scope 直接相关的业务文件',
+ 847:       '- 如需测试，只运行与当前任务直接相关的最小测试集，不要运行全量测试或与本任务无关的测试',
+ 848:       '- 只有当前任务本身明确要求全量验证时，才允许运行全量测试',
+ 849:       '- 不输出完整 diff、源码全文或长文件列表',
+ 850:       '- 中文文件读写使用 UTF-8',
+ 851:     ];
+ 852:     if (options.parallel) {
+ 853:       completionRules.unshift('- 当前为并发执行模式，不要读写其它任务的 scope');
+ 854:     }
+ 855:     const prompt = [
+ 856:       '你是开发执行者。',
+ 857:       `请只执行指定任务 ${task.task_key}，不要提前执行其它任务，也不要顺手处理其它 checkbox。`,
+ 858:       '',
+ 859:       `plan 文件（只读）：${planFile}`,
+ 860:       `指定任务：${task.raw_line}`,
+ 861:       `任务 scope：${task.scope || taskScopeText(task) || 'unknown'}`,
+ 862:       '',
+ 863:       '完成后必须：',
+ 864:       ...completionRules,
+ 865:     ].join('\n');
+ 866:     const result = await this.runCodexWithPlanGuard(workspace, prompt, `execute-${task.task_key}`, {
+ 867:       projectId: plan.project_id,
+ 868:       planId: plan.id,
+ 869:       taskId: task.id,
+ 870:       parallel: Boolean(options.parallel),
+ 871:     }, planFile);
+ 872:     const finishedAt = nowIso();
+ 873:     result.finishedAt = finishedAt;
+ 874:     const succeeded = result.exitCode === 0;
+ 875:     if (!succeeded) {
+ 876:       const failedTask = this.finishTaskRun(task.id, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true }) || task;
+ 877:       this.emitUpdate(plan.project_id);
+ 878:       this.addEvent(
+ 879:         plan.project_id,
+ 880:         TASK_EVENT_TYPES.FAILED,
+ 881:         task.title,
+ 882:         taskEventMeta(failedTask, {
+ 883:           planId: plan.id,
+ 884:           status: TASK_EVENT_STATUS.FAILED,
+ 885:           finishedAt,
+ 886:           exitCode: result.exitCode,
+ 887:           log: result.logFile,
+ 888:         }),
+ 889:       );
+ 890:     }
+ 891:     return result;
+ 892:   }
+ 893: 
+ 894:   completeTask(workspace, plan, task, result) {
+ 895:     const planFile = path.join(workspace, plan.file_path);
+ 896:     const finishedAt = result?.finishedAt || nowIso();
+ 897:     this.markTaskCompletedInPlan(workspace, planFile, task, result);
+ 898:     const completedTask = this.finishTaskRun(task.id, TASK_EVENT_STATUS.COMPLETED, finishedAt) || task;
+ 899:     this.addEvent(
+ 900:       plan.project_id,
+ 901:       LEGACY_TASK_EVENT_TYPES.EXECUTED,
+ 902:       task.title,
+ 903:       taskEventMeta(completedTask, {
+ 904:         planId: plan.id,
+ 905:         status: TASK_EVENT_STATUS.COMPLETED,
+ 906:         finishedAt,
+ 907:         exitCode: result?.exitCode,
+ 908:         log: result?.logFile,
+ 909:       }),
+ 910:     );
+ 911:     this.refreshPlanProgress(plan.id, planFile);
+ 912:     this.emitUpdate(plan.project_id);
+ 913:   }
+ 914: 
+ 915:   refreshPlanProgress(planId, planFile) {
+ 916:     const totals = this.db.get(
+ 917:       `SELECT COUNT(*) AS total,
+ 918:               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed
+ 919:        FROM plan_tasks
+ 920:        WHERE plan_id = ?`,
+--- loopService 1360-1445 ---
+1360: }
+1361: 
+1362: function taskEventMeta(task, overrides = {}) {
+1363:   const meta = {
+1364:     ...compactEventMeta({
+1365:       taskId: task?.id,
+1366:       taskKey: task?.task_key,
+1367:       taskTitle: task?.title,
+1368:       planId: task?.plan_id,
+1369:       status: task?.status,
+1370:       startedAt: task?.started_at,
+1371:       finishedAt: task?.finished_at,
+1372:       durationMs: task?.duration_ms,
+1373:       runDurationMs: task?.run_duration_ms,
+1374:     }),
+1375:     ...compactEventMeta(overrides),
+1376:   };
+1377:   meta.taskId = normalizeOptionalNumber(meta.taskId);
+1378:   meta.planId = normalizeOptionalNumber(meta.planId);
+1379:   meta.taskKey = normalizeOptionalString(meta.taskKey);
+1380:   meta.taskTitle = normalizeOptionalString(meta.taskTitle);
+1381:   meta.status = normalizeOptionalString(meta.status);
+1382:   meta.startedAt = normalizeOptionalString(meta.startedAt);
+1383:   meta.finishedAt = normalizeOptionalString(meta.finishedAt);
+1384:   meta.durationMs = normalizeOptionalNumber(meta.durationMs);
+1385:   meta.runDurationMs = normalizeOptionalNumber(meta.runDurationMs);
+1386:   const compacted = compactEventMeta(meta);
+1387:   return Object.keys(compacted).length ? compacted : null;
+1388: }
+1389: 
+1390: function syncedTaskStatus(parsedStatus, existingStatus) {
+1391:   const next = normalizeOptionalString(parsedStatus) || TASK_EVENT_STATUS.PENDING;
+1392:   const current = normalizeOptionalString(existingStatus);
+1393:   if (!current) return next;
+1394:   if (next === TASK_EVENT_STATUS.COMPLETED || current === TASK_EVENT_STATUS.COMPLETED) return TASK_EVENT_STATUS.COMPLETED;
+1395:   if (current === TASK_EVENT_STATUS.RUNNING || current === 'blocked') return current;
+1396:   return next;
+1397: }
+1398: 
+1399: function compactEventMeta(meta) {
+1400:   const result = {};
+1401:   for (const [key, value] of Object.entries(meta || {})) {
+1402:     if (value !== undefined && value !== null && value !== '') result[key] = value;
+1403:   }
+1404:   return result;
+1405: }
+1406: 
+1407: function normalizeOptionalNumber(value) {
+1408:   if (value === undefined || value === null || value === '') return undefined;
+1409:   const number = Number(value);
+1410:   return Number.isFinite(number) ? number : undefined;
+1411: }
+1412: 
+1413: function normalizeOptionalString(value) {
+1414:   if (value === undefined || value === null) return undefined;
+1415:   const text = String(value).trim();
+1416:   return text || undefined;
+1417: }
+1418: 
+1419: function withTaskDurationMeta(task, runDurationMs) {
+1420:   if (!task) return null;
+1421:   return {
+1422:     ...task,
+1423:     duration_ms: normalizeDurationMs(task.duration_ms),
+1424:     ...(runDurationMs !== undefined ? { run_duration_ms: normalizeDurationMs(runDurationMs) } : {}),
+1425:   };
+1426: }
+1427: 
+1428: function taskSnapshotRow(task) {
+1429:   if (!task) return task;
+1430:   const startedAt = normalizeOptionalString(task.started_at) || null;
+1431:   const finishedAt = normalizeOptionalString(task.finished_at) || null;
+1432:   const isRunning = task.status === TASK_EVENT_STATUS.RUNNING;
+1433:   const runDurationMs = isRunning ? taskRunDurationMs(startedAt, nowIso()) : undefined;
+1434:   return {
+1435:     ...task,
+1436:     started_at: startedAt,
+1437:     finished_at: finishedAt,
+1438:     duration_ms: normalizeDurationMs(task.duration_ms),
+1439:     ...(runDurationMs !== undefined ? { run_duration_ms: normalizeDurationMs(runDurationMs) } : {}),
+1440:   };
+1441: }
+1442: 
+1443: function normalizeDurationMs(value) {
+1444:   const number = Number(value);
+1445:   if (!Number.isFinite(number) || number <= 0) return 0;
+--- loopService 245-420 ---
+ 245:   }
+ 246: 
+ 247:   stop(projectId = null) {
+ 248:     if (!projectId) {
+ 249:       for (const id of Array.from(this.runtimes.keys())) this.stop(id);
+ 250:       return;
+ 251:     }
+ 252:     const runtime = this.runtime(projectId);
+ 253:     if (runtime?.timer) clearInterval(runtime.timer);
+ 254:     if (runtime) {
+ 255:       runtime.timer = null;
+ 256:       runtime.running = false;
+ 257:     }
+ 258:     if (runtime?.activeOperations?.size) {
+ 259:       for (const [operationKey, operation] of Array.from(runtime.activeOperations.entries())) {
+ 260:         const child = runtime.activeChildren.get(operationKey);
+ 261:         const activeTaskId = operation?.taskId || null;
+ 262:         const finishedAt = nowIso();
+ 263:         killChildProcess(child);
+ 264:         const activeTask = activeTaskId ? this.taskForProject(projectId, activeTaskId) : null;
+ 265:         const stoppedTask = activeTaskId
+ 266:           ? this.finishTaskRun(activeTaskId, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true })
+ 267:           : null;
+ 268:         this.addEvent(
+ 269:           projectId,
+ 270:           activeTaskId ? LEGACY_TASK_EVENT_TYPES.STOPPING : 'operation.stopping',
+ 271:           operation?.label || '',
+ 272:           stoppedTask || activeTask
+ 273:             ? taskEventMeta(stoppedTask || activeTask, { status: TASK_EVENT_STATUS.STOPPED, finishedAt })
+ 274:             : null,
+ 275:         );
+ 276:       }
+ 277:     }
+ 278:     this.db.run(
+ 279:       'UPDATE project_states SET running = 0, phase = ?, updated_at = ? WHERE project_id = ?',
+ 280:       ['stopped', nowIso(), projectId],
+ 281:     );
+ 282:     this.addEvent(projectId, 'loop.stopped', '循环已停止');
+ 283:     this.emitUpdate(projectId);
+ 284:   }
+ 285: 
+ 286:   async runOnce(projectId = this.defaultProjectId()) {
+ 287:     if (!projectId) return;
+ 288:     const runtime = this.runtime(projectId);
+ 289:     if (!runtime || runtime.busy) return;
+ 290:     runtime.busy = true;
+ 291:     try {
+ 292:       const project = this.project(projectId);
+ 293:       const workspace = project?.workspace_path;
+ 294:       if (!workspace) return;
+ 295:       this.setPhase(projectId, 'scan');
+ 296:       this.ensureWorkspaceDirs(workspace);
+ 297: 
+ 298:       // 扫描未完成、未中断、尚未生成计划的需求和反馈
+ 299:       const pendingRequirements = this.db
+ 300:         .all(
+ 301:           `SELECT * FROM requirements
+ 302:            WHERE project_id = ? AND linked_plan_id IS NULL
+ 303:              AND status NOT IN ('completed', 'closed')
+ 304:            ORDER BY created_at ASC`,
+ 305:           [projectId],
+ 306:         )
+ 307:         .map((row) => ({ ...row, __type: 'requirement' }));
+ 308:       const pendingFeedback = this.db
+ 309:         .all(
+ 310:           `SELECT * FROM feedback
+ 311:            WHERE project_id = ? AND linked_plan_id IS NULL
+ 312:              AND status NOT IN ('completed', 'closed')
+ 313:            ORDER BY created_at ASC`,
+ 314:           [projectId],
+ 315:         )
+ 316:         .map((row) => ({ ...row, __type: 'feedback' }));
+ 317:       const pendingIntakes = [...pendingRequirements, ...pendingFeedback];
+ 318:       this.addEvent(projectId, 'scan.done', `待处理需求/反馈=${pendingIntakes.length}`);
+ 319: 
+ 320:       // 一次只生成一个计划（保持串行，避免 codex 并发），剩余等下一轮 timer
+ 321:       let generatedPlanId = null;
+ 322:       if (pendingIntakes.length > 0) {
+ 323:         generatedPlanId = await this.generatePlanForIntake(projectId, workspace, pendingIntakes[0]);
+ 324:       }
+ 325: 
+ 326:       // 同步 docs/plan 目录下的 plan 文件（兼容文件式需求）
+ 327:       const planScan = this.scanDirectory(path.join(workspace, 'docs', 'plan'), workspace, ['.md']);
+ 328:       this.saveScan(projectId, 'plan', planScan);
+ 329: 
+ 330:       // 执行队列里可运行的 plan
+ 331:       const nextPlan = generatedPlanId
+ 332:         ? this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [generatedPlanId, projectId])
+ 333:         : this.nextRunnablePlan(projectId);
+ 334:       if (!nextPlan) {
+ 335:         if (runtime.running || this.db.get('SELECT phase FROM project_states WHERE project_id = ?', [projectId])?.phase !== 'stopped') {
+ 336:           this.setPhase(projectId, pendingIntakes.length > 0 && runtime.running ? 'waiting' : 'idle');
+ 337:         }
+ 338:         return;
+ 339:       }
+ 340: 
+ 341:       await this.processPlan(workspace, nextPlan);
+ 342:       if (runtime.running) {
+ 343:         this.setPhase(projectId, 'waiting');
+ 344:       } else if (this.db.get('SELECT phase FROM project_states WHERE project_id = ?', [projectId])?.phase !== 'stopped') {
+ 345:         this.setPhase(projectId, 'idle');
+ 346:       }
+ 347:     } finally {
+ 348:       runtime.busy = false;
+ 349:       this.emitUpdate(projectId);
+ 350:     }
+ 351:   }
+ 352: 
+ 353:   async runTask(projectId, taskId) {
+ 354:     const runtime = this.runtime(projectId);
+ 355:     if (!runtime) return;
+ 356:     if (runtime.busy) throw new Error('该项目已有任务正在执行，请稍后再试');
+ 357:     const project = this.project(projectId);
+ 358:     const task = this.taskForProject(projectId, taskId);
+ 359:     const plan = task ? this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [task.plan_id, projectId]) : null;
+ 360:     const workspace = project?.workspace_path;
+ 361:     if (!project || !task || !plan) throw new Error('任务不存在');
+ 362:     if (!workspace) throw new Error('请先设置项目工作区路径');
+ 363:     const workspaceOwner = this.activeProjectForWorkspace(workspace, projectId);
+ 364:     if (workspaceOwner) {
+ 365:       throw new Error(`工作区正在被项目「${workspaceOwner.name}」使用，请先停止对应循环`);
+ 366:     }
+ 367: 
+ 368:     runtime.busy = true;
+ 369:     try {
+ 370:       this.startTaskRun(taskId);
+ 371:       this.emitUpdate(projectId);
+ 372:       const result = await this.executeTask(workspace, plan, task);
+ 373:       if (result.exitCode === 0) {
+ 374:         this.completeTask(workspace, plan, task, result);
+ 375:       }
+ 376:       if (runtime.running) {
+ 377:         this.setPhase(projectId, 'waiting');
+ 378:       } else if (this.db.get('SELECT phase FROM project_states WHERE project_id = ?', [projectId])?.phase !== 'stopped') {
+ 379:         this.setPhase(projectId, 'idle');
+ 380:       }
+ 381:     } finally {
+ 382:       runtime.busy = false;
+ 383:       this.emitUpdate(projectId);
+ 384:     }
+ 385:   }
+ 386: 
+ 387:   stopTask(projectId, taskId) {
+ 388:     const task = this.taskForProject(projectId, taskId);
+ 389:     if (!task) throw new Error('任务不存在');
+ 390:     const runtime = this.runtime(projectId);
+ 391: 
+ 392:     const activeEntry = findRuntimeOperation(runtime, (operation) => Number(operation?.taskId) === Number(taskId));
+ 393:     if (activeEntry) {
+ 394:       killChildProcess(activeEntry.child);
+ 395:       const finishedAt = nowIso();
+ 396:       const stoppedTask = runtime?.running
+ 397:         ? task
+ 398:         : this.finishTaskRun(taskId, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true }) || task;
+ 399:       if (!runtime.running) {
+ 400:         this.addEvent(
+ 401:           projectId,
+ 402:           LEGACY_TASK_EVENT_TYPES.STOPPING,
+ 403:           task.title,
+ 404:           taskEventMeta(stoppedTask, { status: TASK_EVENT_STATUS.STOPPED, finishedAt }),
+ 405:         );
+ 406:       }
+ 407:     } else {
+ 408:       const finishedAt = nowIso();
+ 409:       const stoppedTask = this.finishTaskRun(taskId, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true }) || task;
+ 410:       this.addEvent(
+ 411:         projectId,
+ 412:         TASK_EVENT_TYPES.STOP_REQUESTED,
+ 413:         task.title,
+ 414:         taskEventMeta(stoppedTask, { status: TASK_EVENT_STATUS.STOPPING, finishedAt }),
+ 415:       );
+ 416:     }
+ 417: 
+ 418:     if (runtime?.running) this.stop(projectId);
+ 419:     else this.setPhase(projectId, 'stopped');
+ 420:   }
+
+codex
+生命周期实现较长，我会聚焦读取执行完成和快照构造段。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); $lines=Get-Content -Encoding UTF8 src/loopService.js; foreach($range in @(@(838,920),@(920,980),@(1410,1445),@(1365,1390),@(245,285),@(387,420))){ '"'--- loopService {0}-{1} ---' -f "'$range[0], $range[1]; for($i=$range[0]-1;$i -lt [Math]::Min($range[1],$lines.Count);$i++){ '"'{0,4}: {1}' -f ("'$i+1), $lines[$i] } }' in D:\project\GitHub\autoplan
+ succeeded in 300ms:
+--- loopService 838-920 ---
+ 838:   async executeTask(workspace, plan, task, options = {}) {
+ 839:     this.setPhase(plan.project_id, 'execute-task');
+ 840:     this.startTaskRun(task.id);
+ 841:     this.emitUpdate(plan.project_id);
+ 842:     const planFile = path.join(workspace, plan.file_path);
+ 843:     const completionRules = [
+ 844:       '- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区',
+ 845:       '- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区',
+ 846:       '- 只修改当前任务 scope 直接相关的业务文件',
+ 847:       '- 如需测试，只运行与当前任务直接相关的最小测试集，不要运行全量测试或与本任务无关的测试',
+ 848:       '- 只有当前任务本身明确要求全量验证时，才允许运行全量测试',
+ 849:       '- 不输出完整 diff、源码全文或长文件列表',
+ 850:       '- 中文文件读写使用 UTF-8',
+ 851:     ];
+ 852:     if (options.parallel) {
+ 853:       completionRules.unshift('- 当前为并发执行模式，不要读写其它任务的 scope');
+ 854:     }
+ 855:     const prompt = [
+ 856:       '你是开发执行者。',
+ 857:       `请只执行指定任务 ${task.task_key}，不要提前执行其它任务，也不要顺手处理其它 checkbox。`,
+ 858:       '',
+ 859:       `plan 文件（只读）：${planFile}`,
+ 860:       `指定任务：${task.raw_line}`,
+ 861:       `任务 scope：${task.scope || taskScopeText(task) || 'unknown'}`,
+ 862:       '',
+ 863:       '完成后必须：',
+ 864:       ...completionRules,
+ 865:     ].join('\n');
+ 866:     const result = await this.runCodexWithPlanGuard(workspace, prompt, `execute-${task.task_key}`, {
+ 867:       projectId: plan.project_id,
+ 868:       planId: plan.id,
+ 869:       taskId: task.id,
+ 870:       parallel: Boolean(options.parallel),
+ 871:     }, planFile);
+ 872:     const finishedAt = nowIso();
+ 873:     result.finishedAt = finishedAt;
+ 874:     const succeeded = result.exitCode === 0;
+ 875:     if (!succeeded) {
+ 876:       const failedTask = this.finishTaskRun(task.id, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true }) || task;
+ 877:       this.emitUpdate(plan.project_id);
+ 878:       this.addEvent(
+ 879:         plan.project_id,
+ 880:         TASK_EVENT_TYPES.FAILED,
+ 881:         task.title,
+ 882:         taskEventMeta(failedTask, {
+ 883:           planId: plan.id,
+ 884:           status: TASK_EVENT_STATUS.FAILED,
+ 885:           finishedAt,
+ 886:           exitCode: result.exitCode,
+ 887:           log: result.logFile,
+ 888:         }),
+ 889:       );
+ 890:     }
+ 891:     return result;
+ 892:   }
+ 893: 
+ 894:   completeTask(workspace, plan, task, result) {
+ 895:     const planFile = path.join(workspace, plan.file_path);
+ 896:     const finishedAt = result?.finishedAt || nowIso();
+ 897:     this.markTaskCompletedInPlan(workspace, planFile, task, result);
+ 898:     const completedTask = this.finishTaskRun(task.id, TASK_EVENT_STATUS.COMPLETED, finishedAt) || task;
+ 899:     this.addEvent(
+ 900:       plan.project_id,
+ 901:       LEGACY_TASK_EVENT_TYPES.EXECUTED,
+ 902:       task.title,
+ 903:       taskEventMeta(completedTask, {
+ 904:         planId: plan.id,
+ 905:         status: TASK_EVENT_STATUS.COMPLETED,
+ 906:         finishedAt,
+ 907:         exitCode: result?.exitCode,
+ 908:         log: result?.logFile,
+ 909:       }),
+ 910:     );
+ 911:     this.refreshPlanProgress(plan.id, planFile);
+ 912:     this.emitUpdate(plan.project_id);
+ 913:   }
+ 914: 
+ 915:   refreshPlanProgress(planId, planFile) {
+ 916:     const totals = this.db.get(
+ 917:       `SELECT COUNT(*) AS total,
+ 918:               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed
+ 919:        FROM plan_tasks
+ 920:        WHERE plan_id = ?`,
+--- loopService 920-980 ---
+ 920:        WHERE plan_id = ?`,
+ 921:       [planId],
+ 922:     ) || { total: 0, completed: 0 };
+ 923:     const total = Number(totals.total || 0);
+ 924:     const completed = Number(totals.completed || 0);
+ 925:     const status = total > 0 && completed === total ? 'ready_for_validation' : 'running';
+ 926:     const hash = fs.existsSync(planFile) ? hashFile(planFile) : '';
+ 927:     this.db.run(
+ 928:       'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
+ 929:       [hash, status, total, completed, nowIso(), planId],
+ 930:     );
+ 931:   }
+ 932: 
+ 933:   markTaskCompletedInPlan(workspace, planFile, task, result) {
+ 934:     if (!fs.existsSync(planFile)) return;
+ 935:     const relativeLog = result?.logFile ? normalizeRelative(workspace, result.logFile) : '';
+ 936:     const key = escapeRegExp(String(task.task_key || ''));
+ 937:     const checkboxRe = new RegExp(`(^\\s*[-*]\\s+\\[)([ xX])(\\]\\s+${key}(?:\\b|[:：\\s-]))`, 'm');
+ 938:     let content = fs.readFileSync(planFile, 'utf8');
+ 939:     if (checkboxRe.test(content)) {
+ 940:       content = content.replace(checkboxRe, '$1x$3');
+ 941:     }
+ 942: 
+ 943:     const note = `- ${task.task_key} AutoPlan 完成：${nowIso()}${relativeLog ? `；日志：${relativeLog}` : ''}`;
+ 944:     const noteRe = new RegExp(`^\\s*-\\s+${key}\\s+AutoPlan 完成：.*$`, 'm');
+ 945:     if (noteRe.test(content)) {
+ 946:       content = content.replace(noteRe, note);
+ 947:     } else if (/##\s*进度区/.test(content)) {
+ 948:       content = `${content.trimEnd()}\n${note}\n`;
+ 949:     } else {
+ 950:       content = `${content.trimEnd()}\n\n## 进度区\n${note}\n`;
+ 951:     }
+ 952:     fs.writeFileSync(planFile, content, 'utf8');
+ 953:   }
+ 954: 
+ 955:   async validatePlan(workspace, plan) {
+ 956:     this.setPhase(plan.project_id, 'validate');
+ 957:     const planFile = path.join(workspace, plan.file_path);
+ 958:     const command = String(this.status(plan.project_id)?.validation_command || '').trim();
+ 959:     if (!command) {
+ 960:       // 验收命令为空：跳过校验，直接标记完成。
+ 961:       this.db.run(
+ 962:         'UPDATE plans SET status = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
+ 963:         ['completed', nowIso(), plan.id],
+ 964:       );
+ 965:       this.addEvent(plan.project_id, 'plan.completed', '任务全部完成（验收命令为空，已跳过校验）');
+ 966:       return;
+ 967:     }
+ 968:     let validation = await this.runShell(workspace, command, `validate-${plan.id}`, { projectId: plan.project_id });
+ 969:     for (let attempt = 1; validation.exitCode !== 0 && attempt <= 2; attempt += 1) {
+ 970:       this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', [
+ 971:         'validation_failed',
+ 972:         nowIso(),
+ 973:         plan.id,
+ 974:       ]);
+ 975:       const prompt = [
+ 976:         'plan 已完成，但宿主项目验收失败。请只修复验证错误。',
+ 977:         `plan 文件（只读）：${planFile}`,
+ 978:         '不要修改 plan 文件、checkbox 或进度区。',
+ 979:         `失败命令：${command}`,
+ 980:         '失败输出摘要：',
+--- loopService 1410-1445 ---
+1410:   return Number.isFinite(number) ? number : undefined;
+1411: }
+1412: 
+1413: function normalizeOptionalString(value) {
+1414:   if (value === undefined || value === null) return undefined;
+1415:   const text = String(value).trim();
+1416:   return text || undefined;
+1417: }
+1418: 
+1419: function withTaskDurationMeta(task, runDurationMs) {
+1420:   if (!task) return null;
+1421:   return {
+1422:     ...task,
+1423:     duration_ms: normalizeDurationMs(task.duration_ms),
+1424:     ...(runDurationMs !== undefined ? { run_duration_ms: normalizeDurationMs(runDurationMs) } : {}),
+1425:   };
+1426: }
+1427: 
+1428: function taskSnapshotRow(task) {
+1429:   if (!task) return task;
+1430:   const startedAt = normalizeOptionalString(task.started_at) || null;
+1431:   const finishedAt = normalizeOptionalString(task.finished_at) || null;
+1432:   const isRunning = task.status === TASK_EVENT_STATUS.RUNNING;
+1433:   const runDurationMs = isRunning ? taskRunDurationMs(startedAt, nowIso()) : undefined;
+1434:   return {
+1435:     ...task,
+1436:     started_at: startedAt,
+1437:     finished_at: finishedAt,
+1438:     duration_ms: normalizeDurationMs(task.duration_ms),
+1439:     ...(runDurationMs !== undefined ? { run_duration_ms: normalizeDurationMs(runDurationMs) } : {}),
+1440:   };
+1441: }
+1442: 
+1443: function normalizeDurationMs(value) {
+1444:   const number = Number(value);
+1445:   if (!Number.isFinite(number) || number <= 0) return 0;
+--- loopService 1365-1390 ---
+1365:       taskId: task?.id,
+1366:       taskKey: task?.task_key,
+1367:       taskTitle: task?.title,
+1368:       planId: task?.plan_id,
+1369:       status: task?.status,
+1370:       startedAt: task?.started_at,
+1371:       finishedAt: task?.finished_at,
+1372:       durationMs: task?.duration_ms,
+1373:       runDurationMs: task?.run_duration_ms,
+1374:     }),
+1375:     ...compactEventMeta(overrides),
+1376:   };
+1377:   meta.taskId = normalizeOptionalNumber(meta.taskId);
+1378:   meta.planId = normalizeOptionalNumber(meta.planId);
+1379:   meta.taskKey = normalizeOptionalString(meta.taskKey);
+1380:   meta.taskTitle = normalizeOptionalString(meta.taskTitle);
+1381:   meta.status = normalizeOptionalString(meta.status);
+1382:   meta.startedAt = normalizeOptionalString(meta.startedAt);
+1383:   meta.finishedAt = normalizeOptionalString(meta.finishedAt);
+1384:   meta.durationMs = normalizeOptionalNumber(meta.durationMs);
+1385:   meta.runDurationMs = normalizeOptionalNumber(meta.runDurationMs);
+1386:   const compacted = compactEventMeta(meta);
+1387:   return Object.keys(compacted).length ? compacted : null;
+1388: }
+1389: 
+1390: function syncedTaskStatus(parsedStatus, existingStatus) {
+--- loopService 245-285 ---
+ 245:   }
+ 246: 
+ 247:   stop(projectId = null) {
+ 248:     if (!projectId) {
+ 249:       for (const id of Array.from(this.runtimes.keys())) this.stop(id);
+ 250:       return;
+ 251:     }
+ 252:     const runtime = this.runtime(projectId);
+ 253:     if (runtime?.timer) clearInterval(runtime.timer);
+ 254:     if (runtime) {
+ 255:       runtime.timer = null;
+ 256:       runtime.running = false;
+ 257:     }
+ 258:     if (runtime?.activeOperations?.size) {
+ 259:       for (const [operationKey, operation] of Array.from(runtime.activeOperations.entries())) {
+ 260:         const child = runtime.activeChildren.get(operationKey);
+ 261:         const activeTaskId = operation?.taskId || null;
+ 262:         const finishedAt = nowIso();
+ 263:         killChildProcess(child);
+ 264:         const activeTask = activeTaskId ? this.taskForProject(projectId, activeTaskId) : null;
+ 265:         const stoppedTask = activeTaskId
+ 266:           ? this.finishTaskRun(activeTaskId, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true })
+ 267:           : null;
+ 268:         this.addEvent(
+ 269:           projectId,
+ 270:           activeTaskId ? LEGACY_TASK_EVENT_TYPES.STOPPING : 'operation.stopping',
+ 271:           operation?.label || '',
+ 272:           stoppedTask || activeTask
+ 273:             ? taskEventMeta(stoppedTask || activeTask, { status: TASK_EVENT_STATUS.STOPPED, finishedAt })
+ 274:             : null,
+ 275:         );
+ 276:       }
+ 277:     }
+ 278:     this.db.run(
+ 279:       'UPDATE project_states SET running = 0, phase = ?, updated_at = ? WHERE project_id = ?',
+ 280:       ['stopped', nowIso(), projectId],
+ 281:     );
+ 282:     this.addEvent(projectId, 'loop.stopped', '循环已停止');
+ 283:     this.emitUpdate(projectId);
+ 284:   }
+ 285: 
+--- loopService 387-420 ---
+ 387:   stopTask(projectId, taskId) {
+ 388:     const task = this.taskForProject(projectId, taskId);
+ 389:     if (!task) throw new Error('任务不存在');
+ 390:     const runtime = this.runtime(projectId);
+ 391: 
+ 392:     const activeEntry = findRuntimeOperation(runtime, (operation) => Number(operation?.taskId) === Number(taskId));
+ 393:     if (activeEntry) {
+ 394:       killChildProcess(activeEntry.child);
+ 395:       const finishedAt = nowIso();
+ 396:       const stoppedTask = runtime?.running
+ 397:         ? task
+ 398:         : this.finishTaskRun(taskId, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true }) || task;
+ 399:       if (!runtime.running) {
+ 400:         this.addEvent(
+ 401:           projectId,
+ 402:           LEGACY_TASK_EVENT_TYPES.STOPPING,
+ 403:           task.title,
+ 404:           taskEventMeta(stoppedTask, { status: TASK_EVENT_STATUS.STOPPED, finishedAt }),
+ 405:         );
+ 406:       }
+ 407:     } else {
+ 408:       const finishedAt = nowIso();
+ 409:       const stoppedTask = this.finishTaskRun(taskId, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true }) || task;
+ 410:       this.addEvent(
+ 411:         projectId,
+ 412:         TASK_EVENT_TYPES.STOP_REQUESTED,
+ 413:         task.title,
+ 414:         taskEventMeta(stoppedTask, { status: TASK_EVENT_STATUS.STOPPING, finishedAt }),
+ 415:       );
+ 416:     }
+ 417: 
+ 418:     if (runtime?.running) this.stop(projectId);
+ 419:     else this.setPhase(projectId, 'stopped');
+ 420:   }
+
+codex
+还需快照任务查询字段，读取对应函数小段。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); rg -n --encoding utf-8 "SELECT '"\\* FROM plan_tasks|FROM plan_tasks|tasks =|plan_tasks\" src/loopService.js | Select-Object -First 80" in D:\project\GitHub\autoplan
+ succeeded in 327ms:
+144:    this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE status = ?', ['pending', now, 'running']);
+425:      `SELECT plan_tasks.*
+426:       FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
+427:       WHERE plan_tasks.id = ? AND plans.project_id = ?`,
+434:      `UPDATE plan_tasks
+442:    return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+446:    const task = this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+454:      `UPDATE plan_tasks
+502:      `UPDATE plan_tasks SET status = ?, updated_at = ?
+514:      `UPDATE plan_tasks SET status = ?, updated_at = ?
+538:    const existing = this.db.all('SELECT task_key FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order', [planId]);
+562:    const task = this.db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, taskKey]);
+760:      `SELECT * FROM plan_tasks WHERE plan_id = ? AND status = 'pending'
+919:       FROM plan_tasks
+928:      'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
+1008:    const tasks = [];
+1026:    const existingTasks = this.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+1041:          `UPDATE plan_tasks
+1056:          `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
+1065:        this.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
+1072:      'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
+1318:          `SELECT plan_tasks.*, plans.file_path
+1319:           FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
+1321:           ORDER BY plans.created_at DESC, plan_tasks.sort_order ASC`,
+
+codex
+快照字段在后段，我会读取 `snapshot` 任务映射附近。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); $lines=Get-Content -Encoding UTF8 src/loopService.js; foreach($range in @(@(1290,1335),@(1418,1448),@(1448,1475))){ '"'--- loopService {0}-{1} ---' -f "'$range[0], $range[1]; for($i=$range[0]-1;$i -lt [Math]::Min($range[1],$lines.Count);$i++){ '"'{0,4}: {1}' -f ("'$i+1), $lines[$i] } }' in D:\project\GitHub\autoplan
+ succeeded in 247ms:
+--- loopService 1290-1335 ---
+1290:       requirements: this.db.all(
+1291:         `SELECT requirements.*, plans.status AS plan_status,
+1292:                 plans.completed_tasks AS plan_completed, plans.total_tasks AS plan_total
+1293:          FROM requirements
+1294:          LEFT JOIN plans ON plans.id = requirements.linked_plan_id
+1295:          WHERE requirements.project_id = ?
+1296:          ORDER BY requirements.updated_at DESC`,
+1297:         [projectId],
+1298:       ),
+1299:       feedback: this.db.all(
+1300:         `SELECT feedback.*, plans.status AS plan_status,
+1301:                 plans.completed_tasks AS plan_completed, plans.total_tasks AS plan_total
+1302:          FROM feedback
+1303:          LEFT JOIN plans ON plans.id = feedback.linked_plan_id
+1304:          WHERE feedback.project_id = ?
+1305:          ORDER BY feedback.updated_at DESC`,
+1306:         [projectId],
+1307:       ),
+1308:       attachments: this.db.all(
+1309:         'SELECT * FROM attachments WHERE project_id = ? ORDER BY created_at DESC, id DESC',
+1310:         [projectId],
+1311:       ),
+1312:       planDrafts: this.db.all('SELECT * FROM plan_drafts WHERE project_id = ? ORDER BY updated_at DESC, id DESC', [
+1313:         projectId,
+1314:       ]),
+1315:       plans: this.db.all('SELECT * FROM plans WHERE project_id = ? ORDER BY created_at DESC', [projectId]),
+1316:       tasks: this.db
+1317:         .all(
+1318:           `SELECT plan_tasks.*, plans.file_path
+1319:            FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
+1320:            WHERE plans.project_id = ?
+1321:            ORDER BY plans.created_at DESC, plan_tasks.sort_order ASC`,
+1322:           [projectId],
+1323:         )
+1324:         .map((task) => taskSnapshotRow(task)),
+1325:       events: this.db.all('SELECT * FROM events WHERE project_id = ? ORDER BY id DESC LIMIT 80', [projectId]),
+1326:       scans: this.db.all(
+1327:         'SELECT * FROM scan_files WHERE project_id = ? ORDER BY scanned_at DESC, file_path ASC',
+1328:         [projectId],
+1329:       ),
+1330:       activeOperation: runtime?.activeOperation && Number(runtime.activeOperation.projectId) === Number(projectId)
+1331:         ? {
+1332:             label: runtime.activeOperation.label || '',
+1333:             projectId: runtime.activeOperation.projectId || null,
+1334:             planId: runtime.activeOperation.planId || null,
+1335:             taskId: runtime.activeOperation.taskId || null,
+--- loopService 1418-1448 ---
+1418: 
+1419: function withTaskDurationMeta(task, runDurationMs) {
+1420:   if (!task) return null;
+1421:   return {
+1422:     ...task,
+1423:     duration_ms: normalizeDurationMs(task.duration_ms),
+1424:     ...(runDurationMs !== undefined ? { run_duration_ms: normalizeDurationMs(runDurationMs) } : {}),
+1425:   };
+1426: }
+1427: 
+1428: function taskSnapshotRow(task) {
+1429:   if (!task) return task;
+1430:   const startedAt = normalizeOptionalString(task.started_at) || null;
+1431:   const finishedAt = normalizeOptionalString(task.finished_at) || null;
+1432:   const isRunning = task.status === TASK_EVENT_STATUS.RUNNING;
+1433:   const runDurationMs = isRunning ? taskRunDurationMs(startedAt, nowIso()) : undefined;
+1434:   return {
+1435:     ...task,
+1436:     started_at: startedAt,
+1437:     finished_at: finishedAt,
+1438:     duration_ms: normalizeDurationMs(task.duration_ms),
+1439:     ...(runDurationMs !== undefined ? { run_duration_ms: normalizeDurationMs(runDurationMs) } : {}),
+1440:   };
+1441: }
+1442: 
+1443: function normalizeDurationMs(value) {
+1444:   const number = Number(value);
+1445:   if (!Number.isFinite(number) || number <= 0) return 0;
+1446:   return Math.round(number);
+1447: }
+1448: 
+--- loopService 1448-1475 ---
+1448: 
+1449: function taskRunDurationMs(startedAt, finishedAt) {
+1450:   const started = Date.parse(startedAt || '');
+1451:   const finished = Date.parse(finishedAt || '');
+1452:   if (!Number.isFinite(started) || !Number.isFinite(finished) || finished <= started) return 0;
+1453:   return Math.round(finished - started);
+1454: }
+1455: 
+1456: function createProjectRuntime() {
+1457:   return {
+1458:     timer: null,
+1459:     running: false,
+1460:     busy: false,
+1461:     activeChild: null,
+1462:     activeOperation: null,
+1463:     activeChildren: new Map(),
+1464:     activeOperations: new Map(),
+1465:     lastOperation: null,
+1466:   };
+1467: }
+1468: 
+1469: function emptySnapshot(projects) {
+1470:   return {
+1471:     activeProjectId: null,
+1472:     activeProject: null,
+1473:     projects,
+1474:     state: null,
+1475:     requirements: [],
+
+**Planning regression tests**
+
+I need to process the plan for editing the smoke-test.js to include regression tests, focusing on the current smoke tests that handle tasks. I should add assertions for the execution start, completion, and handling failures or retries. Running a minimal test with either `npm run smoke` or `node scripts/smoke-test.js` seems right. P006 might be for full verification, while P005 may not require that. I'll ensure the modifications are robust, covering task timelines and creating accurate snapshots with necessary fields.
+**Implementing in smoke script**
+
+I need to make some adjustments in the smoke script for better control. It seems the `LoopService` is using the `nowIso` function imported from the database. This could cause issues, especially if the execution and finish occur within the same millisecond, resulting in a duration of zero. To avoid flakiness, I could either add a wait inside `fake runCodex` or use direct `startTaskRun` and `finishTaskRun` with crafted timestamps. The goal is to ensure that both `started_at` and `finished_at` are correctly recorded with positive durations. I might need to inspect `nowIso` further for precision.
+codex
+我会检查 `nowIso` 精度，确保耗时断言不偶发为 0。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); rg -n --encoding utf-8 "function nowIso|const nowIso|nowIso" src/database.js | Select-Object -First 20' in D:\project\GitHub\autoplan
+ succeeded in 269ms:
+199:    const now = nowIso();
+221:        legacyState.updated_at || nowIso(),
+321:function nowIso() {
+325:module.exports = { AppDatabase, nowIso };
+
+codex
+确认时间函数位置后，只读取它的定义。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); $lines=Get-Content -Encoding UTF8 src/database.js; for($i=316;$i -lt 326;$i++){ '"'{0,4}: {1}' -f ("'$i+1), $lines[$i] }' in D:\project\GitHub\autoplan
+ succeeded in 220ms:
+ 317:     return id;
+ 318:   }
+ 319: }
+ 320: 
+ 321: function nowIso() {
+ 322:   return new Date().toISOString();
+ 323: }
+ 324: 
+ 325: module.exports = { AppDatabase, nowIso };
+ 326: 
+
+**Considering run duration handling**
+
+I think I need to look into covering the running snapshot during the `run_duration_ms`. It could be useful to place the query for the snapshot inside the `loop.runCodex` callback, right after a delay while I'm waiting for the `executeTask`. Since `executeTask` begins the task run and then waits for `runCodex`, it makes sense to check the snapshot at that right moment. This way, I can ensure I’m capturing all relevant information.
+codex
+我将补充断言和小型等待工具，只改 `scripts/smoke-test.js`。
+  ✓ 读取任务上下文
+  ✓ 定位耗时统计逻辑
+  → 补充回归测试
+  • 运行最小验证
+codex
+开始打补丁：覆盖未开始、运行中、完成、失败重试的耗时字段。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\scripts\smoke-test.js
+diff --git a/scripts/smoke-test.js b/scripts/smoke-test.js
+index 0cd6a0f79912fb8d1b7111286726c5d8f984c752..34e099579fa9a9f9248456dda757a210b1f116ab
+--- a/scripts/smoke-test.js
++++ b/scripts/smoke-test.js
+@@ -97,6 +97,10 @@
+     assert.equal(snapshot.plans.length, 1, '确认后应加入当前项目任务系统');
+     assert.equal(snapshot.plans[0].project_id, projectId, 'plan 应绑定项目');
+     assert.equal(snapshot.tasks.length, 5, '任务模块应同步草稿中的 checkbox 为任务列表');
++    assert.ok(
++      snapshot.tasks.every((task) => hasTaskDurationShape(task)),
++      '任务快照应包含符合前端类型预期的耗时字段',
++    );
+     assert.equal(snapshot.plans[0].total_tasks, 5, 'plan 应记录总任务数');
+     assert.ok(
+       snapshot.tasks.every((task) => task.raw_line.includes('scope:')),
+@@ -142,6 +146,15 @@
+     loop.runCodex = async (_workspace, prompt) => {
+       assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
+       assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
++      await sleep(20);
++      const runningTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
++      assert.equal(runningTask.status, 'running', '任务开始后应写入 running 状态');
++      assertIsoString(runningTask.started_at, '任务开始后应写入 started_at');
++      assert.equal(runningTask.finished_at, null, '任务运行中不应写入 finished_at');
++      assert.equal(runningTask.duration_ms, 0, '首次运行中累计耗时应保持 0');
++      const runningSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
++      assertTaskDurationShape(runningSnapshotTask, '运行中任务快照');
++      assert.equal(typeof runningSnapshotTask.run_duration_ms, 'number', '运行中任务快照应包含实时耗时');
+       fs.writeFileSync(planFile, originalPlanText.replace('P002', 'P999'), 'utf8');
+       return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-last.txt') };
+     };
+@@ -153,17 +166,66 @@
+     assert.match(guardedPlanText, /- \[x\] P001:/, '系统应在任务成功后勾选 checkbox');
+     assert.match(guardedPlanText, /P001 AutoPlan 完成/, '系统应在进度区写入完成记录');
+     assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
++    const completedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+     assert.equal(
+-      db.get('SELECT status FROM plan_tasks WHERE id = ?', [executableTask.id]).status,
++      completedTask.status,
+       'completed',
+       '系统应更新任务入库状态',
+     );
++    assertIsoString(completedTask.started_at, '任务完成后应保留 started_at');
++    assertIsoString(completedTask.finished_at, '任务完成后应写入 finished_at');
++    assert.ok(completedTask.duration_ms > 0, '任务完成后应写入正数 duration_ms');
++    const completedSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
++    assertTaskDurationShape(completedSnapshotTask, '已完成任务快照');
++    assert.ok(completedSnapshotTask.duration_ms > 0, '已完成任务快照应包含累计耗时');
+     assert.equal(
+       db.get('SELECT completed_tasks FROM plans WHERE id = ?', [planId]).completed_tasks,
+       1,
+       '系统应更新 plan 完成计数',
+     );
+ 
++    const retryTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P002']);
++    loop.runCodex = async (_workspace, prompt) => {
++      assert.match(prompt, /只执行指定任务 P002/, '重试任务首次执行 prompt 应锁定指定任务');
++      await sleep(20);
++      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++      assert.equal(runningRetryTask.status, 'running', '失败前任务应处于 running 状态');
++      assertIsoString(runningRetryTask.started_at, '失败前任务应写入 started_at');
++      assert.equal(runningRetryTask.finished_at, null, '失败前任务运行中不应写入 finished_at');
++      assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '失败前任务快照');
++      return { exitCode: 1, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-failed.txt') };
++    };
++    const failedResult = await loop.executeTask(workspace, plan, retryTask);
++    loop.runCodex = originalRunCodex;
++    assert.equal(failedResult.exitCode, 1, '模拟失败应返回非 0 exitCode');
++    const failedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    assert.equal(failedTask.status, 'pending', '任务失败后应回退为 pending');
++    assertIsoString(failedTask.started_at, '任务失败后应保留 started_at');
++    assertIsoString(failedTask.finished_at, '任务失败后应写入 finished_at');
++    assert.ok(failedTask.duration_ms > 0, '任务失败后应累计正数 duration_ms');
++
++    const firstAttemptDurationMs = failedTask.duration_ms;
++    const retryAttemptTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    loop.runCodex = async (_workspace, prompt) => {
++      assert.match(prompt, /只执行指定任务 P002/, '重试任务再次执行 prompt 应锁定指定任务');
++      await sleep(20);
++      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++      assert.equal(runningRetryTask.status, 'running', '重试时任务应重新进入 running 状态');
++      assertIsoString(runningRetryTask.started_at, '重试时任务应刷新 started_at');
++      assert.equal(runningRetryTask.finished_at, null, '重试运行中应清空 finished_at');
++      assert.equal(runningRetryTask.duration_ms, firstAttemptDurationMs, '重试运行中不应丢失历史累计耗时');
++      return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-retry.txt') };
++    };
++    const retryResult = await loop.executeTask(workspace, plan, retryAttemptTask);
++    loop.runCodex = originalRunCodex;
++    assert.equal(retryResult.exitCode, 0, '模拟重试应成功');
++    loop.completeTask(workspace, plan, retryAttemptTask, retryResult);
++    const retriedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    assert.equal(retriedTask.status, 'completed', '重试成功后任务应完成');
++    assertIsoString(retriedTask.finished_at, '重试成功后应写入 finished_at');
++    assert.ok(retriedTask.duration_ms > firstAttemptDurationMs, '重试成功后应继续累加 duration_ms');
++    assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '重试完成任务快照');
++
+     fs.writeFileSync(planFile, fs.readFileSync(planFile, 'utf8').replaceAll('- [ ]', '- [x]'), 'utf8');
+     loop.syncPlanTasks(planId, planFile);
+     await loop.validatePlan(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+@@ -199,7 +261,7 @@
+     loop.stop(multiProjectB);
+     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
+ 
+-    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, multi-loop');
++    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, duration stats, multi-loop');
+   } finally {
+     fs.rmSync(tempRoot, { recursive: true, force: true });
+   }
+@@ -234,6 +296,35 @@
+   );
+ }
+ 
++function sleep(milliseconds) {
++  return new Promise((resolve) => setTimeout(resolve, milliseconds));
++}
++
++function taskByKey(snapshot, taskKey) {
++  return snapshot.tasks.find((task) => task.task_key === taskKey);
++}
++
++function hasTaskDurationShape(task) {
++  if (!task) return false;
++  const hasStartedAt = task.started_at === null || typeof task.started_at === 'string';
++  const hasFinishedAt = task.finished_at === null || typeof task.finished_at === 'string';
++  const hasDurationMs = typeof task.duration_ms === 'number' && Number.isFinite(task.duration_ms);
++  const hasRunDurationMs =
++    !Object.prototype.hasOwnProperty.call(task, 'run_duration_ms') ||
++    (typeof task.run_duration_ms === 'number' && Number.isFinite(task.run_duration_ms));
++  return hasStartedAt && hasFinishedAt && hasDurationMs && hasRunDurationMs;
++}
++
++function assertTaskDurationShape(task, label) {
++  assert.ok(task, `${label} 应存在`);
++  assert.ok(hasTaskDurationShape(task), `${label} 应包含符合前端类型预期的耗时字段`);
++}
++
++function assertIsoString(value, message) {
++  assert.equal(typeof value, 'string', message);
++  assert.ok(Number.isFinite(Date.parse(value)), message);
++}
++
+ main().catch((error) => {
+   console.error(error);
+   process.exitCode = 1;
+
+diff --git a/scripts/smoke-test.js b/scripts/smoke-test.js
+index 0cd6a0f79912fb8d1b7111286726c5d8f984c752..34e099579fa9a9f9248456dda757a210b1f116ab
+--- a/scripts/smoke-test.js
++++ b/scripts/smoke-test.js
+@@ -97,6 +97,10 @@
+     assert.equal(snapshot.plans.length, 1, '确认后应加入当前项目任务系统');
+     assert.equal(snapshot.plans[0].project_id, projectId, 'plan 应绑定项目');
+     assert.equal(snapshot.tasks.length, 5, '任务模块应同步草稿中的 checkbox 为任务列表');
++    assert.ok(
++      snapshot.tasks.every((task) => hasTaskDurationShape(task)),
++      '任务快照应包含符合前端类型预期的耗时字段',
++    );
+     assert.equal(snapshot.plans[0].total_tasks, 5, 'plan 应记录总任务数');
+     assert.ok(
+       snapshot.tasks.every((task) => task.raw_line.includes('scope:')),
+@@ -142,6 +146,15 @@
+     loop.runCodex = async (_workspace, prompt) => {
+       assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
+       assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
++      await sleep(20);
++      const runningTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
++      assert.equal(runningTask.status, 'running', '任务开始后应写入 running 状态');
++      assertIsoString(runningTask.started_at, '任务开始后应写入 started_at');
++      assert.equal(runningTask.finished_at, null, '任务运行中不应写入 finished_at');
++      assert.equal(runningTask.duration_ms, 0, '首次运行中累计耗时应保持 0');
++      const runningSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
++      assertTaskDurationShape(runningSnapshotTask, '运行中任务快照');
++      assert.equal(typeof runningSnapshotTask.run_duration_ms, 'number', '运行中任务快照应包含实时耗时');
+       fs.writeFileSync(planFile, originalPlanText.replace('P002', 'P999'), 'utf8');
+       return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-last.txt') };
+     };
+@@ -153,17 +166,66 @@
+     assert.match(guardedPlanText, /- \[x\] P001:/, '系统应在任务成功后勾选 checkbox');
+     assert.match(guardedPlanText, /P001 AutoPlan 完成/, '系统应在进度区写入完成记录');
+     assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
++    const completedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+     assert.equal(
+-      db.get('SELECT status FROM plan_tasks WHERE id = ?', [executableTask.id]).status,
++      completedTask.status,
+       'completed',
+       '系统应更新任务入库状态',
+     );
++    assertIsoString(completedTask.started_at, '任务完成后应保留 started_at');
++    assertIsoString(completedTask.finished_at, '任务完成后应写入 finished_at');
++    assert.ok(completedTask.duration_ms > 0, '任务完成后应写入正数 duration_ms');
++    const completedSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
++    assertTaskDurationShape(completedSnapshotTask, '已完成任务快照');
++    assert.ok(completedSnapshotTask.duration_ms > 0, '已完成任务快照应包含累计耗时');
+     assert.equal(
+       db.get('SELECT completed_tasks FROM plans WHERE id = ?', [planId]).completed_tasks,
+       1,
+       '系统应更新 plan 完成计数',
+     );
+ 
++    const retryTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P002']);
++    loop.runCodex = async (_workspace, prompt) => {
++      assert.match(prompt, /只执行指定任务 P002/, '重试任务首次执行 prompt 应锁定指定任务');
++      await sleep(20);
++      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++      assert.equal(runningRetryTask.status, 'running', '失败前任务应处于 running 状态');
++      assertIsoString(runningRetryTask.started_at, '失败前任务应写入 started_at');
++      assert.equal(runningRetryTask.finished_at, null, '失败前任务运行中不应写入 finished_at');
++      assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '失败前任务快照');
++      return { exitCode: 1, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-failed.txt') };
++    };
++    const failedResult = await loop.executeTask(workspace, plan, retryTask);
++    loop.runCodex = originalRunCodex;
++    assert.equal(failedResult.exitCode, 1, '模拟失败应返回非 0 exitCode');
++    const failedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    assert.equal(failedTask.status, 'pending', '任务失败后应回退为 pending');
++    assertIsoString(failedTask.started_at, '任务失败后应保留 started_at');
++    assertIsoString(failedTask.finished_at, '任务失败后应写入 finished_at');
++    assert.ok(failedTask.duration_ms > 0, '任务失败后应累计正数 duration_ms');
++
++    const firstAttemptDurationMs = failedTask.duration_ms;
++    const retryAttemptTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    loop.runCodex = async (_workspace, prompt) => {
++      assert.match(prompt, /只执行指定任务 P002/, '重试任务再次执行 prompt 应锁定指定任务');
++      await sleep(20);
++      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++      assert.equal(runningRetryTask.status, 'running', '重试时任务应重新进入 running 状态');
++      assertIsoString(runningRetryTask.started_at, '重试时任务应刷新 started_at');
++      assert.equal(runningRetryTask.finished_at, null, '重试运行中应清空 finished_at');
++      assert.equal(runningRetryTask.duration_ms, firstAttemptDurationMs, '重试运行中不应丢失历史累计耗时');
++      return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-retry.txt') };
++    };
++    const retryResult = await loop.executeTask(workspace, plan, retryAttemptTask);
++    loop.runCodex = originalRunCodex;
++    assert.equal(retryResult.exitCode, 0, '模拟重试应成功');
++    loop.completeTask(workspace, plan, retryAttemptTask, retryResult);
++    const retriedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    assert.equal(retriedTask.status, 'completed', '重试成功后任务应完成');
++    assertIsoString(retriedTask.finished_at, '重试成功后应写入 finished_at');
++    assert.ok(retriedTask.duration_ms > firstAttemptDurationMs, '重试成功后应继续累加 duration_ms');
++    assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '重试完成任务快照');
++
+     fs.writeFileSync(planFile, fs.readFileSync(planFile, 'utf8').replaceAll('- [ ]', '- [x]'), 'utf8');
+     loop.syncPlanTasks(planId, planFile);
+     await loop.validatePlan(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+@@ -199,7 +261,7 @@
+     loop.stop(multiProjectB);
+     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
+ 
+-    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, multi-loop');
++    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, duration stats, multi-loop');
+   } finally {
+     fs.rmSync(tempRoot, { recursive: true, force: true });
+   }
+@@ -234,6 +296,35 @@
+   );
+ }
+ 
++function sleep(milliseconds) {
++  return new Promise((resolve) => setTimeout(resolve, milliseconds));
++}
++
++function taskByKey(snapshot, taskKey) {
++  return snapshot.tasks.find((task) => task.task_key === taskKey);
++}
++
++function hasTaskDurationShape(task) {
++  if (!task) return false;
++  const hasStartedAt = task.started_at === null || typeof task.started_at === 'string';
++  const hasFinishedAt = task.finished_at === null || typeof task.finished_at === 'string';
++  const hasDurationMs = typeof task.duration_ms === 'number' && Number.isFinite(task.duration_ms);
++  const hasRunDurationMs =
++    !Object.prototype.hasOwnProperty.call(task, 'run_duration_ms') ||
++    (typeof task.run_duration_ms === 'number' && Number.isFinite(task.run_duration_ms));
++  return hasStartedAt && hasFinishedAt && hasDurationMs && hasRunDurationMs;
++}
++
++function assertTaskDurationShape(task, label) {
++  assert.ok(task, `${label} 应存在`);
++  assert.ok(hasTaskDurationShape(task), `${label} 应包含符合前端类型预期的耗时字段`);
++}
++
++function assertIsoString(value, message) {
++  assert.equal(typeof value, 'string', message);
++  assert.ok(Number.isFinite(Date.parse(value)), message);
++}
++
+ main().catch((error) => {
+   console.error(error);
+   process.exitCode = 1;
+
+**Inspecting patch changes**
+
+I initially used the apply_patch command via shell as recommended, and while it warned me, it seemed successful. Now I need to check the target file for changes. The developer mentioned not to waste tokens by rereading files after applying the patch, but I might have to validate and run tests to ensure everything works correctly. If there’s a failure, I'll need to inspect things closely. It's good that I’m considering potential issues with the existing code as I move forward.
+**Identifying potential issues**
+
+I'm spotting some potential issues in the helper function hasTaskDurationShape. For a raw SQLite row, `started_at` might be undefined, leading to null snapshots. Also, the SQL `duration_ms` could return null for migrated data, but the schema defaults to 0, which is good. I'm concerned about whether a task can finish with a duration of 0, especially if `runCodex` sleeps for 20ms during fake runs. I have to ensure that `runCodexWithPlanGuard` doesn't unexpectedly override something important. Plus, there are implications for `completeTask` when counting completed tasks after a retry.
+**Updating task statuses**
+
+I need to replace all instances of `[ ]` with `[x]` in the plan file. P001 and P002 are already marked with `[x]`, so I’ll update P003 to P005 to reflect that they've been completed as well. I'm wondering about the syncPlanTasks status for the existing tasks—do I need to be cautious here? It’s important to ensure everything is accurately accounted for during the synchronization process. Let’s be careful as I move forward!
+codex
+补丁已写好；现在运行脚本语法检查和 smoke 最小验证。
+  ✓ 读取任务上下文
+  ✓ 定位耗时统计逻辑
+  ✓ 补充回归测试
+  → 运行最小验证
+diff --git a/scripts/smoke-test.js b/scripts/smoke-test.js
+index 0cd6a0f79912fb8d1b7111286726c5d8f984c752..34e099579fa9a9f9248456dda757a210b1f116ab
+--- a/scripts/smoke-test.js
++++ b/scripts/smoke-test.js
+@@ -97,6 +97,10 @@
+     assert.equal(snapshot.plans.length, 1, '确认后应加入当前项目任务系统');
+     assert.equal(snapshot.plans[0].project_id, projectId, 'plan 应绑定项目');
+     assert.equal(snapshot.tasks.length, 5, '任务模块应同步草稿中的 checkbox 为任务列表');
++    assert.ok(
++      snapshot.tasks.every((task) => hasTaskDurationShape(task)),
++      '任务快照应包含符合前端类型预期的耗时字段',
++    );
+     assert.equal(snapshot.plans[0].total_tasks, 5, 'plan 应记录总任务数');
+     assert.ok(
+       snapshot.tasks.every((task) => task.raw_line.includes('scope:')),
+@@ -142,6 +146,15 @@
+     loop.runCodex = async (_workspace, prompt) => {
+       assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
+       assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
++      await sleep(20);
++      const runningTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
++      assert.equal(runningTask.status, 'running', '任务开始后应写入 running 状态');
++      assertIsoString(runningTask.started_at, '任务开始后应写入 started_at');
++      assert.equal(runningTask.finished_at, null, '任务运行中不应写入 finished_at');
++      assert.equal(runningTask.duration_ms, 0, '首次运行中累计耗时应保持 0');
++      const runningSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
++      assertTaskDurationShape(runningSnapshotTask, '运行中任务快照');
++      assert.equal(typeof runningSnapshotTask.run_duration_ms, 'number', '运行中任务快照应包含实时耗时');
+       fs.writeFileSync(planFile, originalPlanText.replace('P002', 'P999'), 'utf8');
+       return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-last.txt') };
+     };
+@@ -153,17 +166,66 @@
+     assert.match(guardedPlanText, /- \[x\] P001:/, '系统应在任务成功后勾选 checkbox');
+     assert.match(guardedPlanText, /P001 AutoPlan 完成/, '系统应在进度区写入完成记录');
+     assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
++    const completedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+     assert.equal(
+-      db.get('SELECT status FROM plan_tasks WHERE id = ?', [executableTask.id]).status,
++      completedTask.status,
+       'completed',
+       '系统应更新任务入库状态',
+     );
++    assertIsoString(completedTask.started_at, '任务完成后应保留 started_at');
++    assertIsoString(completedTask.finished_at, '任务完成后应写入 finished_at');
++    assert.ok(completedTask.duration_ms > 0, '任务完成后应写入正数 duration_ms');
++    const completedSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
++    assertTaskDurationShape(completedSnapshotTask, '已完成任务快照');
++    assert.ok(completedSnapshotTask.duration_ms > 0, '已完成任务快照应包含累计耗时');
+     assert.equal(
+       db.get('SELECT completed_tasks FROM plans WHERE id = ?', [planId]).completed_tasks,
+       1,
+       '系统应更新 plan 完成计数',
+     );
+ 
++    const retryTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P002']);
++    loop.runCodex = async (_workspace, prompt) => {
++      assert.match(prompt, /只执行指定任务 P002/, '重试任务首次执行 prompt 应锁定指定任务');
++      await sleep(20);
++      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++      assert.equal(runningRetryTask.status, 'running', '失败前任务应处于 running 状态');
++      assertIsoString(runningRetryTask.started_at, '失败前任务应写入 started_at');
++      assert.equal(runningRetryTask.finished_at, null, '失败前任务运行中不应写入 finished_at');
++      assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '失败前任务快照');
++      return { exitCode: 1, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-failed.txt') };
++    };
++    const failedResult = await loop.executeTask(workspace, plan, retryTask);
++    loop.runCodex = originalRunCodex;
++    assert.equal(failedResult.exitCode, 1, '模拟失败应返回非 0 exitCode');
++    const failedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    assert.equal(failedTask.status, 'pending', '任务失败后应回退为 pending');
++    assertIsoString(failedTask.started_at, '任务失败后应保留 started_at');
++    assertIsoString(failedTask.finished_at, '任务失败后应写入 finished_at');
++    assert.ok(failedTask.duration_ms > 0, '任务失败后应累计正数 duration_ms');
++
++    const firstAttemptDurationMs = failedTask.duration_ms;
++    const retryAttemptTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    loop.runCodex = async (_workspace, prompt) => {
++      assert.match(prompt, /只执行指定任务 P002/, '重试任务再次执行 prompt 应锁定指定任务');
++      await sleep(20);
++      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++      assert.equal(runningRetryTask.status, 'running', '重试时任务应重新进入 running 状态');
++      assertIsoString(runningRetryTask.started_at, '重试时任务应刷新 started_at');
++      assert.equal(runningRetryTask.finished_at, null, '重试运行中应清空 finished_at');
++      assert.equal(runningRetryTask.duration_ms, firstAttemptDurationMs, '重试运行中不应丢失历史累计耗时');
++      return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-retry.txt') };
++    };
++    const retryResult = await loop.executeTask(workspace, plan, retryAttemptTask);
++    loop.runCodex = originalRunCodex;
++    assert.equal(retryResult.exitCode, 0, '模拟重试应成功');
++    loop.completeTask(workspace, plan, retryAttemptTask, retryResult);
++    const retriedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    assert.equal(retriedTask.status, 'completed', '重试成功后任务应完成');
++    assertIsoString(retriedTask.finished_at, '重试成功后应写入 finished_at');
++    assert.ok(retriedTask.duration_ms > firstAttemptDurationMs, '重试成功后应继续累加 duration_ms');
++    assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '重试完成任务快照');
++
+     fs.writeFileSync(planFile, fs.readFileSync(planFile, 'utf8').replaceAll('- [ ]', '- [x]'), 'utf8');
+     loop.syncPlanTasks(planId, planFile);
+     await loop.validatePlan(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+@@ -199,7 +261,7 @@
+     loop.stop(multiProjectB);
+     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
+ 
+-    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, multi-loop');
++    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, duration stats, multi-loop');
+   } finally {
+     fs.rmSync(tempRoot, { recursive: true, force: true });
+   }
+@@ -234,6 +296,35 @@
+   );
+ }
+ 
++function sleep(milliseconds) {
++  return new Promise((resolve) => setTimeout(resolve, milliseconds));
++}
++
++function taskByKey(snapshot, taskKey) {
++  return snapshot.tasks.find((task) => task.task_key === taskKey);
++}
++
++function hasTaskDurationShape(task) {
++  if (!task) return false;
++  const hasStartedAt = task.started_at === null || typeof task.started_at === 'string';
++  const hasFinishedAt = task.finished_at === null || typeof task.finished_at === 'string';
++  const hasDurationMs = typeof task.duration_ms === 'number' && Number.isFinite(task.duration_ms);
++  const hasRunDurationMs =
++    !Object.prototype.hasOwnProperty.call(task, 'run_duration_ms') ||
++    (typeof task.run_duration_ms === 'number' && Number.isFinite(task.run_duration_ms));
++  return hasStartedAt && hasFinishedAt && hasDurationMs && hasRunDurationMs;
++}
++
++function assertTaskDurationShape(task, label) {
++  assert.ok(task, `${label} 应存在`);
++  assert.ok(hasTaskDurationShape(task), `${label} 应包含符合前端类型预期的耗时字段`);
++}
++
++function assertIsoString(value, message) {
++  assert.equal(typeof value, 'string', message);
++  assert.ok(Number.isFinite(Date.parse(value)), message);
++}
++
+ main().catch((error) => {
+   console.error(error);
+   process.exitCode = 1;
+
+codex
+先做语法检查，再运行当前任务直接相关的 smoke。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); node --check scripts/smoke-test.js; if ($LASTEXITCODE -eq 0) { npm run smoke }' in D:\project\GitHub\autoplan
+ succeeded in 1586ms:
+
+> autoplan@0.1.4 smoke
+> node scripts/smoke-test.js
+
+smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, duration stats, multi-loop
+
+diff --git a/scripts/smoke-test.js b/scripts/smoke-test.js
+index 0cd6a0f79912fb8d1b7111286726c5d8f984c752..34e099579fa9a9f9248456dda757a210b1f116ab
+--- a/scripts/smoke-test.js
++++ b/scripts/smoke-test.js
+@@ -97,6 +97,10 @@
+     assert.equal(snapshot.plans.length, 1, '确认后应加入当前项目任务系统');
+     assert.equal(snapshot.plans[0].project_id, projectId, 'plan 应绑定项目');
+     assert.equal(snapshot.tasks.length, 5, '任务模块应同步草稿中的 checkbox 为任务列表');
++    assert.ok(
++      snapshot.tasks.every((task) => hasTaskDurationShape(task)),
++      '任务快照应包含符合前端类型预期的耗时字段',
++    );
+     assert.equal(snapshot.plans[0].total_tasks, 5, 'plan 应记录总任务数');
+     assert.ok(
+       snapshot.tasks.every((task) => task.raw_line.includes('scope:')),
+@@ -142,6 +146,15 @@
+     loop.runCodex = async (_workspace, prompt) => {
+       assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
+       assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
++      await sleep(20);
++      const runningTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
++      assert.equal(runningTask.status, 'running', '任务开始后应写入 running 状态');
++      assertIsoString(runningTask.started_at, '任务开始后应写入 started_at');
++      assert.equal(runningTask.finished_at, null, '任务运行中不应写入 finished_at');
++      assert.equal(runningTask.duration_ms, 0, '首次运行中累计耗时应保持 0');
++      const runningSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
++      assertTaskDurationShape(runningSnapshotTask, '运行中任务快照');
++      assert.equal(typeof runningSnapshotTask.run_duration_ms, 'number', '运行中任务快照应包含实时耗时');
+       fs.writeFileSync(planFile, originalPlanText.replace('P002', 'P999'), 'utf8');
+       return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-last.txt') };
+     };
+@@ -153,17 +166,66 @@
+     assert.match(guardedPlanText, /- \[x\] P001:/, '系统应在任务成功后勾选 checkbox');
+     assert.match(guardedPlanText, /P001 AutoPlan 完成/, '系统应在进度区写入完成记录');
+     assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
++    const completedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+     assert.equal(
+-      db.get('SELECT status FROM plan_tasks WHERE id = ?', [executableTask.id]).status,
++      completedTask.status,
+       'completed',
+       '系统应更新任务入库状态',
+     );
++    assertIsoString(completedTask.started_at, '任务完成后应保留 started_at');
++    assertIsoString(completedTask.finished_at, '任务完成后应写入 finished_at');
++    assert.ok(completedTask.duration_ms > 0, '任务完成后应写入正数 duration_ms');
++    const completedSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
++    assertTaskDurationShape(completedSnapshotTask, '已完成任务快照');
++    assert.ok(completedSnapshotTask.duration_ms > 0, '已完成任务快照应包含累计耗时');
+     assert.equal(
+       db.get('SELECT completed_tasks FROM plans WHERE id = ?', [planId]).completed_tasks,
+       1,
+       '系统应更新 plan 完成计数',
+     );
+ 
++    const retryTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P002']);
++    loop.runCodex = async (_workspace, prompt) => {
++      assert.match(prompt, /只执行指定任务 P002/, '重试任务首次执行 prompt 应锁定指定任务');
++      await sleep(20);
++      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++      assert.equal(runningRetryTask.status, 'running', '失败前任务应处于 running 状态');
++      assertIsoString(runningRetryTask.started_at, '失败前任务应写入 started_at');
++      assert.equal(runningRetryTask.finished_at, null, '失败前任务运行中不应写入 finished_at');
++      assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '失败前任务快照');
++      return { exitCode: 1, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-failed.txt') };
++    };
++    const failedResult = await loop.executeTask(workspace, plan, retryTask);
++    loop.runCodex = originalRunCodex;
++    assert.equal(failedResult.exitCode, 1, '模拟失败应返回非 0 exitCode');
++    const failedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    assert.equal(failedTask.status, 'pending', '任务失败后应回退为 pending');
++    assertIsoString(failedTask.started_at, '任务失败后应保留 started_at');
++    assertIsoString(failedTask.finished_at, '任务失败后应写入 finished_at');
++    assert.ok(failedTask.duration_ms > 0, '任务失败后应累计正数 duration_ms');
++
++    const firstAttemptDurationMs = failedTask.duration_ms;
++    const retryAttemptTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    loop.runCodex = async (_workspace, prompt) => {
++      assert.match(prompt, /只执行指定任务 P002/, '重试任务再次执行 prompt 应锁定指定任务');
++      await sleep(20);
++      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++      assert.equal(runningRetryTask.status, 'running', '重试时任务应重新进入 running 状态');
++      assertIsoString(runningRetryTask.started_at, '重试时任务应刷新 started_at');
++      assert.equal(runningRetryTask.finished_at, null, '重试运行中应清空 finished_at');
++      assert.equal(runningRetryTask.duration_ms, firstAttemptDurationMs, '重试运行中不应丢失历史累计耗时');
++      return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-retry.txt') };
++    };
++    const retryResult = await loop.executeTask(workspace, plan, retryAttemptTask);
++    loop.runCodex = originalRunCodex;
++    assert.equal(retryResult.exitCode, 0, '模拟重试应成功');
++    loop.completeTask(workspace, plan, retryAttemptTask, retryResult);
++    const retriedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    assert.equal(retriedTask.status, 'completed', '重试成功后任务应完成');
++    assertIsoString(retriedTask.finished_at, '重试成功后应写入 finished_at');
++    assert.ok(retriedTask.duration_ms > firstAttemptDurationMs, '重试成功后应继续累加 duration_ms');
++    assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '重试完成任务快照');
++
+     fs.writeFileSync(planFile, fs.readFileSync(planFile, 'utf8').replaceAll('- [ ]', '- [x]'), 'utf8');
+     loop.syncPlanTasks(planId, planFile);
+     await loop.validatePlan(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+@@ -199,7 +261,7 @@
+     loop.stop(multiProjectB);
+     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
+ 
+-    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, multi-loop');
++    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, duration stats, multi-loop');
+   } finally {
+     fs.rmSync(tempRoot, { recursive: true, force: true });
+   }
+@@ -234,6 +296,35 @@
+   );
+ }
+ 
++function sleep(milliseconds) {
++  return new Promise((resolve) => setTimeout(resolve, milliseconds));
++}
++
++function taskByKey(snapshot, taskKey) {
++  return snapshot.tasks.find((task) => task.task_key === taskKey);
++}
++
++function hasTaskDurationShape(task) {
++  if (!task) return false;
++  const hasStartedAt = task.started_at === null || typeof task.started_at === 'string';
++  const hasFinishedAt = task.finished_at === null || typeof task.finished_at === 'string';
++  const hasDurationMs = typeof task.duration_ms === 'number' && Number.isFinite(task.duration_ms);
++  const hasRunDurationMs =
++    !Object.prototype.hasOwnProperty.call(task, 'run_duration_ms') ||
++    (typeof task.run_duration_ms === 'number' && Number.isFinite(task.run_duration_ms));
++  return hasStartedAt && hasFinishedAt && hasDurationMs && hasRunDurationMs;
++}
++
++function assertTaskDurationShape(task, label) {
++  assert.ok(task, `${label} 应存在`);
++  assert.ok(hasTaskDurationShape(task), `${label} 应包含符合前端类型预期的耗时字段`);
++}
++
++function assertIsoString(value, message) {
++  assert.equal(typeof value, 'string', message);
++  assert.ok(Number.isFinite(Date.parse(value)), message);
++}
++
+ main().catch((error) => {
+   console.error(error);
+   process.exitCode = 1;
+
+**Inspecting git changes**
+
+I'm thinking I need to inspect the git diff summary. I want to ensure that only the smoke file is modified, which seems relevant. I could use "git diff -- scripts/smoke-test.js" for a focused view and possibly check "git status" as well. I don't think I need the full diff—just the changes that matter to me.
+codex
+验证通过；最后确认只改了任务 scope 内文件。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); git status --short; git diff --stat -- scripts/smoke-test.js' in D:\project\GitHub\autoplan
+ succeeded in 1166ms:
+ M node_modules/.package-lock.json
+ M package-lock.json
+ M package.json
+ M release/builder-debug.yml
+ M release/win-unpacked/AutoPlan.exe
+ M release/win-unpacked/resources/app.asar
+ M scripts/smoke-test.js
+ M src/database.js
+ M src/loopService.js
+ M src/main.js
+ M src/planDrafts.js
+ M src/preload.js
+ M src/renderer/components/CodexLog.tsx
+ M src/renderer/components/PlanLists.tsx
+ M src/renderer/pages/WorkspacePage.tsx
+ M src/renderer/types.ts
+ M src/renderer/utils/time.ts
+ M src/styles.css
+ M ui/README.md
+ M ui/projects.html
+ M ui/workspace.html
+?? docs/
+?? node_modules/@types/estree-jsx/
+?? node_modules/@types/estree/
+?? node_modules/@types/hast/
+?? node_modules/@types/mdast/
+?? node_modules/@types/unist/
+?? node_modules/@ungap/
+?? node_modules/bail/
+?? node_modules/ccount/
+?? node_modules/character-entities-html4/
+?? node_modules/character-entities-legacy/
+?? node_modules/character-entities/
+?? node_modules/character-reference-invalid/
+?? node_modules/comma-separated-tokens/
+?? node_modules/decode-named-character-reference/
+?? node_modules/dequal/
+?? node_modules/devlop/
+?? node_modules/estree-util-is-identifier-name/
+?? node_modules/extend/
+?? node_modules/hast-util-to-jsx-runtime/
+?? node_modules/hast-util-whitespace/
+?? node_modules/html-url-attributes/
+?? node_modules/inline-style-parser/
+?? node_modules/is-alphabetical/
+?? node_modules/is-alphanumerical/
+?? node_modules/is-decimal/
+?? node_modules/is-hexadecimal/
+?? node_modules/is-plain-obj/
+?? node_modules/longest-streak/
+?? node_modules/markdown-table/
+?? node_modules/mdast-util-find-and-replace/
+?? node_modules/mdast-util-from-markdown/
+?? node_modules/mdast-util-gfm-autolink-literal/
+?? node_modules/mdast-util-gfm-footnote/
+?? node_modules/mdast-util-gfm-strikethrough/
+?? node_modules/mdast-util-gfm-table/
+?? node_modules/mdast-util-gfm-task-list-item/
+?? node_modules/mdast-util-gfm/
+?? node_modules/mdast-util-mdx-expression/
+?? node_modules/mdast-util-mdx-jsx/
+?? node_modules/mdast-util-mdxjs-esm/
+?? node_modules/mdast-util-phrasing/
+?? node_modules/mdast-util-to-hast/
+?? node_modules/mdast-util-to-markdown/
+?? node_modules/mdast-util-to-string/
+?? node_modules/micromark-core-commonmark/
+?? node_modules/micromark-extension-gfm-autolink-literal/
+?? node_modules/micromark-extension-gfm-footnote/
+?? node_modules/micromark-extension-gfm-strikethrough/
+?? node_modules/micromark-extension-gfm-table/
+?? node_modules/micromark-extension-gfm-tagfilter/
+?? node_modules/micromark-extension-gfm-task-list-item/
+?? node_modules/micromark-extension-gfm/
+?? node_modules/micromark-factory-destination/
+?? node_modules/micromark-factory-label/
+?? node_modules/micromark-factory-space/
+?? node_modules/micromark-factory-title/
+?? node_modules/micromark-factory-whitespace/
+?? node_modules/micromark-util-character/
+?? node_modules/micromark-util-chunked/
+?? node_modules/micromark-util-classify-character/
+?? node_modules/micromark-util-combine-extensions/
+?? node_modules/micromark-util-decode-numeric-character-reference/
+?? node_modules/micromark-util-decode-string/
+?? node_modules/micromark-util-encode/
+?? node_modules/micromark-util-html-tag-name/
+?? node_modules/micromark-util-normalize-identifier/
+?? node_modules/micromark-util-resolve-all/
+?? node_modules/micromark-util-sanitize-uri/
+?? node_modules/micromark-util-subtokenize/
+?? node_modules/micromark-util-symbol/
+?? node_modules/micromark-util-types/
+?? node_modules/micromark/
+?? node_modules/parse-entities/
+?? node_modules/property-information/
+?? node_modules/react-markdown/
+?? node_modules/remark-gfm/
+?? node_modules/remark-parse/
+?? node_modules/remark-rehype/
+?? node_modules/remark-stringify/
+?? node_modules/space-separated-tokens/
+?? node_modules/stringify-entities/
+?? node_modules/style-to-js/
+?? node_modules/style-to-object/
+?? node_modules/trim-lines/
+?? node_modules/trough/
+?? node_modules/unified/
+?? node_modules/unist-util-is/
+?? node_modules/unist-util-position/
+?? node_modules/unist-util-stringify-position/
+?? node_modules/unist-util-visit-parents/
+?? node_modules/unist-util-visit/
+?? node_modules/vfile-message/
+?? node_modules/vfile/
+?? node_modules/zwitch/
+?? src/renderer/components/MarkdownReader.tsx
+?? src/renderer/components/icons.tsx
+?? src/renderer/utils/search.ts
+ scripts/smoke-test.js | 156 +++++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 155 insertions(+), 1 deletion(-)
+warning: in the working copy of 'scripts/smoke-test.js', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/scripts/smoke-test.js b/scripts/smoke-test.js
+index 0cd6a0f79912fb8d1b7111286726c5d8f984c752..34e099579fa9a9f9248456dda757a210b1f116ab
+--- a/scripts/smoke-test.js
++++ b/scripts/smoke-test.js
+@@ -97,6 +97,10 @@
+     assert.equal(snapshot.plans.length, 1, '确认后应加入当前项目任务系统');
+     assert.equal(snapshot.plans[0].project_id, projectId, 'plan 应绑定项目');
+     assert.equal(snapshot.tasks.length, 5, '任务模块应同步草稿中的 checkbox 为任务列表');
++    assert.ok(
++      snapshot.tasks.every((task) => hasTaskDurationShape(task)),
++      '任务快照应包含符合前端类型预期的耗时字段',
++    );
+     assert.equal(snapshot.plans[0].total_tasks, 5, 'plan 应记录总任务数');
+     assert.ok(
+       snapshot.tasks.every((task) => task.raw_line.includes('scope:')),
+@@ -142,6 +146,15 @@
+     loop.runCodex = async (_workspace, prompt) => {
+       assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
+       assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
++      await sleep(20);
++      const runningTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
++      assert.equal(runningTask.status, 'running', '任务开始后应写入 running 状态');
++      assertIsoString(runningTask.started_at, '任务开始后应写入 started_at');
++      assert.equal(runningTask.finished_at, null, '任务运行中不应写入 finished_at');
++      assert.equal(runningTask.duration_ms, 0, '首次运行中累计耗时应保持 0');
++      const runningSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
++      assertTaskDurationShape(runningSnapshotTask, '运行中任务快照');
++      assert.equal(typeof runningSnapshotTask.run_duration_ms, 'number', '运行中任务快照应包含实时耗时');
+       fs.writeFileSync(planFile, originalPlanText.replace('P002', 'P999'), 'utf8');
+       return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-last.txt') };
+     };
+@@ -153,17 +166,66 @@
+     assert.match(guardedPlanText, /- \[x\] P001:/, '系统应在任务成功后勾选 checkbox');
+     assert.match(guardedPlanText, /P001 AutoPlan 完成/, '系统应在进度区写入完成记录');
+     assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
++    const completedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+     assert.equal(
+-      db.get('SELECT status FROM plan_tasks WHERE id = ?', [executableTask.id]).status,
++      completedTask.status,
+       'completed',
+       '系统应更新任务入库状态',
+     );
++    assertIsoString(completedTask.started_at, '任务完成后应保留 started_at');
++    assertIsoString(completedTask.finished_at, '任务完成后应写入 finished_at');
++    assert.ok(completedTask.duration_ms > 0, '任务完成后应写入正数 duration_ms');
++    const completedSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
++    assertTaskDurationShape(completedSnapshotTask, '已完成任务快照');
++    assert.ok(completedSnapshotTask.duration_ms > 0, '已完成任务快照应包含累计耗时');
+     assert.equal(
+       db.get('SELECT completed_tasks FROM plans WHERE id = ?', [planId]).completed_tasks,
+       1,
+       '系统应更新 plan 完成计数',
+     );
+ 
++    const retryTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P002']);
++    loop.runCodex = async (_workspace, prompt) => {
++      assert.match(prompt, /只执行指定任务 P002/, '重试任务首次执行 prompt 应锁定指定任务');
++      await sleep(20);
++      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++      assert.equal(runningRetryTask.status, 'running', '失败前任务应处于 running 状态');
++      assertIsoString(runningRetryTask.started_at, '失败前任务应写入 started_at');
++      assert.equal(runningRetryTask.finished_at, null, '失败前任务运行中不应写入 finished_at');
++      assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '失败前任务快照');
++      return { exitCode: 1, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-failed.txt') };
++    };
++    const failedResult = await loop.executeTask(workspace, plan, retryTask);
++    loop.runCodex = originalRunCodex;
++    assert.equal(failedResult.exitCode, 1, '模拟失败应返回非 0 exitCode');
++    const failedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    assert.equal(failedTask.status, 'pending', '任务失败后应回退为 pending');
++    assertIsoString(failedTask.started_at, '任务失败后应保留 started_at');
++    assertIsoString(failedTask.finished_at, '任务失败后应写入 finished_at');
++    assert.ok(failedTask.duration_ms > 0, '任务失败后应累计正数 duration_ms');
++
++    const firstAttemptDurationMs = failedTask.duration_ms;
++    const retryAttemptTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    loop.runCodex = async (_workspace, prompt) => {
++      assert.match(prompt, /只执行指定任务 P002/, '重试任务再次执行 prompt 应锁定指定任务');
++      await sleep(20);
++      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++      assert.equal(runningRetryTask.status, 'running', '重试时任务应重新进入 running 状态');
++      assertIsoString(runningRetryTask.started_at, '重试时任务应刷新 started_at');
++      assert.equal(runningRetryTask.finished_at, null, '重试运行中应清空 finished_at');
++      assert.equal(runningRetryTask.duration_ms, firstAttemptDurationMs, '重试运行中不应丢失历史累计耗时');
++      return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-retry.txt') };
++    };
++    const retryResult = await loop.executeTask(workspace, plan, retryAttemptTask);
++    loop.runCodex = originalRunCodex;
++    assert.equal(retryResult.exitCode, 0, '模拟重试应成功');
++    loop.completeTask(workspace, plan, retryAttemptTask, retryResult);
++    const retriedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    assert.equal(retriedTask.status, 'completed', '重试成功后任务应完成');
++    assertIsoString(retriedTask.finished_at, '重试成功后应写入 finished_at');
++    assert.ok(retriedTask.duration_ms > firstAttemptDurationMs, '重试成功后应继续累加 duration_ms');
++    assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '重试完成任务快照');
++
+     fs.writeFileSync(planFile, fs.readFileSync(planFile, 'utf8').replaceAll('- [ ]', '- [x]'), 'utf8');
+     loop.syncPlanTasks(planId, planFile);
+     await loop.validatePlan(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+@@ -199,7 +261,7 @@
+     loop.stop(multiProjectB);
+     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
+ 
+-    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, multi-loop');
++    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, duration stats, multi-loop');
+   } finally {
+     fs.rmSync(tempRoot, { recursive: true, force: true });
+   }
+@@ -234,6 +296,35 @@
+   );
+ }
+ 
++function sleep(milliseconds) {
++  return new Promise((resolve) => setTimeout(resolve, milliseconds));
++}
++
++function taskByKey(snapshot, taskKey) {
++  return snapshot.tasks.find((task) => task.task_key === taskKey);
++}
++
++function hasTaskDurationShape(task) {
++  if (!task) return false;
++  const hasStartedAt = task.started_at === null || typeof task.started_at === 'string';
++  const hasFinishedAt = task.finished_at === null || typeof task.finished_at === 'string';
++  const hasDurationMs = typeof task.duration_ms === 'number' && Number.isFinite(task.duration_ms);
++  const hasRunDurationMs =
++    !Object.prototype.hasOwnProperty.call(task, 'run_duration_ms') ||
++    (typeof task.run_duration_ms === 'number' && Number.isFinite(task.run_duration_ms));
++  return hasStartedAt && hasFinishedAt && hasDurationMs && hasRunDurationMs;
++}
++
++function assertTaskDurationShape(task, label) {
++  assert.ok(task, `${label} 应存在`);
++  assert.ok(hasTaskDurationShape(task), `${label} 应包含符合前端类型预期的耗时字段`);
++}
++
++function assertIsoString(value, message) {
++  assert.equal(typeof value, 'string', message);
++  assert.ok(Number.isFinite(Date.parse(value)), message);
++}
++
+ main().catch((error) => {
+   console.error(error);
+   process.exitCode = 1;
+
+**Inspecting modifications**
+
+I'm seeing that the git status shows a lot of pre-existing modifications, but I really only need to mention the touched scripts. The status includes many unrelated changes. I should verify the diff, which is pretty huge at 155 lines, and I need to inspect just the changes that matter instead of the full diff. It would help to get line numbers for the final changes and to identify inserted key sections using their names.
+codex
+仓库已有很多未关联变更；我只需要定位本次新增断言行号。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); rg -n --encoding utf-8 "任务快照应包含|运行中任务快照|任务完成后应写入正数|任务失败后应回退|重试成功后应继续|function hasTaskDurationShape|function assertIsoString|duration stats" scripts/smoke-test.js' in D:\project\GitHub\autoplan
+ succeeded in 283ms:
+102:      '任务快照应包含符合前端类型预期的耗时字段',
+156:      assertTaskDurationShape(runningSnapshotTask, '运行中任务快照');
+157:      assert.equal(typeof runningSnapshotTask.run_duration_ms, 'number', '运行中任务快照应包含实时耗时');
+177:    assert.ok(completedTask.duration_ms > 0, '任务完成后应写入正数 duration_ms');
+180:    assert.ok(completedSnapshotTask.duration_ms > 0, '已完成任务快照应包含累计耗时');
+202:    assert.equal(failedTask.status, 'pending', '任务失败后应回退为 pending');
+226:    assert.ok(retriedTask.duration_ms > firstAttemptDurationMs, '重试成功后应继续累加 duration_ms');
+264:    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, duration stats, multi-loop');
+307:function hasTaskDurationShape(task) {
+323:function assertIsoString(value, message) {
+
+diff --git a/scripts/smoke-test.js b/scripts/smoke-test.js
+index 0cd6a0f79912fb8d1b7111286726c5d8f984c752..34e099579fa9a9f9248456dda757a210b1f116ab
+--- a/scripts/smoke-test.js
++++ b/scripts/smoke-test.js
+@@ -97,6 +97,10 @@
+     assert.equal(snapshot.plans.length, 1, '确认后应加入当前项目任务系统');
+     assert.equal(snapshot.plans[0].project_id, projectId, 'plan 应绑定项目');
+     assert.equal(snapshot.tasks.length, 5, '任务模块应同步草稿中的 checkbox 为任务列表');
++    assert.ok(
++      snapshot.tasks.every((task) => hasTaskDurationShape(task)),
++      '任务快照应包含符合前端类型预期的耗时字段',
++    );
+     assert.equal(snapshot.plans[0].total_tasks, 5, 'plan 应记录总任务数');
+     assert.ok(
+       snapshot.tasks.every((task) => task.raw_line.includes('scope:')),
+@@ -142,6 +146,15 @@
+     loop.runCodex = async (_workspace, prompt) => {
+       assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
+       assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
++      await sleep(20);
++      const runningTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
++      assert.equal(runningTask.status, 'running', '任务开始后应写入 running 状态');
++      assertIsoString(runningTask.started_at, '任务开始后应写入 started_at');
++      assert.equal(runningTask.finished_at, null, '任务运行中不应写入 finished_at');
++      assert.equal(runningTask.duration_ms, 0, '首次运行中累计耗时应保持 0');
++      const runningSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
++      assertTaskDurationShape(runningSnapshotTask, '运行中任务快照');
++      assert.equal(typeof runningSnapshotTask.run_duration_ms, 'number', '运行中任务快照应包含实时耗时');
+       fs.writeFileSync(planFile, originalPlanText.replace('P002', 'P999'), 'utf8');
+       return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-last.txt') };
+     };
+@@ -153,17 +166,66 @@
+     assert.match(guardedPlanText, /- \[x\] P001:/, '系统应在任务成功后勾选 checkbox');
+     assert.match(guardedPlanText, /P001 AutoPlan 完成/, '系统应在进度区写入完成记录');
+     assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
++    const completedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+     assert.equal(
+-      db.get('SELECT status FROM plan_tasks WHERE id = ?', [executableTask.id]).status,
++      completedTask.status,
+       'completed',
+       '系统应更新任务入库状态',
+     );
++    assertIsoString(completedTask.started_at, '任务完成后应保留 started_at');
++    assertIsoString(completedTask.finished_at, '任务完成后应写入 finished_at');
++    assert.ok(completedTask.duration_ms > 0, '任务完成后应写入正数 duration_ms');
++    const completedSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
++    assertTaskDurationShape(completedSnapshotTask, '已完成任务快照');
++    assert.ok(completedSnapshotTask.duration_ms > 0, '已完成任务快照应包含累计耗时');
+     assert.equal(
+       db.get('SELECT completed_tasks FROM plans WHERE id = ?', [planId]).completed_tasks,
+       1,
+       '系统应更新 plan 完成计数',
+     );
+ 
++    const retryTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P002']);
++    loop.runCodex = async (_workspace, prompt) => {
++      assert.match(prompt, /只执行指定任务 P002/, '重试任务首次执行 prompt 应锁定指定任务');
++      await sleep(20);
++      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++      assert.equal(runningRetryTask.status, 'running', '失败前任务应处于 running 状态');
++      assertIsoString(runningRetryTask.started_at, '失败前任务应写入 started_at');
++      assert.equal(runningRetryTask.finished_at, null, '失败前任务运行中不应写入 finished_at');
++      assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '失败前任务快照');
++      return { exitCode: 1, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-failed.txt') };
++    };
++    const failedResult = await loop.executeTask(workspace, plan, retryTask);
++    loop.runCodex = originalRunCodex;
++    assert.equal(failedResult.exitCode, 1, '模拟失败应返回非 0 exitCode');
++    const failedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    assert.equal(failedTask.status, 'pending', '任务失败后应回退为 pending');
++    assertIsoString(failedTask.started_at, '任务失败后应保留 started_at');
++    assertIsoString(failedTask.finished_at, '任务失败后应写入 finished_at');
++    assert.ok(failedTask.duration_ms > 0, '任务失败后应累计正数 duration_ms');
++
++    const firstAttemptDurationMs = failedTask.duration_ms;
++    const retryAttemptTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    loop.runCodex = async (_workspace, prompt) => {
++      assert.match(prompt, /只执行指定任务 P002/, '重试任务再次执行 prompt 应锁定指定任务');
++      await sleep(20);
++      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++      assert.equal(runningRetryTask.status, 'running', '重试时任务应重新进入 running 状态');
++      assertIsoString(runningRetryTask.started_at, '重试时任务应刷新 started_at');
++      assert.equal(runningRetryTask.finished_at, null, '重试运行中应清空 finished_at');
++      assert.equal(runningRetryTask.duration_ms, firstAttemptDurationMs, '重试运行中不应丢失历史累计耗时');
++      return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-retry.txt') };
++    };
++    const retryResult = await loop.executeTask(workspace, plan, retryAttemptTask);
++    loop.runCodex = originalRunCodex;
++    assert.equal(retryResult.exitCode, 0, '模拟重试应成功');
++    loop.completeTask(workspace, plan, retryAttemptTask, retryResult);
++    const retriedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    assert.equal(retriedTask.status, 'completed', '重试成功后任务应完成');
++    assertIsoString(retriedTask.finished_at, '重试成功后应写入 finished_at');
++    assert.ok(retriedTask.duration_ms > firstAttemptDurationMs, '重试成功后应继续累加 duration_ms');
++    assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '重试完成任务快照');
++
+     fs.writeFileSync(planFile, fs.readFileSync(planFile, 'utf8').replaceAll('- [ ]', '- [x]'), 'utf8');
+     loop.syncPlanTasks(planId, planFile);
+     await loop.validatePlan(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+@@ -199,7 +261,7 @@
+     loop.stop(multiProjectB);
+     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
+ 
+-    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, multi-loop');
++    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, duration stats, multi-loop');
+   } finally {
+     fs.rmSync(tempRoot, { recursive: true, force: true });
+   }
+@@ -234,6 +296,35 @@
+   );
+ }
+ 
++function sleep(milliseconds) {
++  return new Promise((resolve) => setTimeout(resolve, milliseconds));
++}
++
++function taskByKey(snapshot, taskKey) {
++  return snapshot.tasks.find((task) => task.task_key === taskKey);
++}
++
++function hasTaskDurationShape(task) {
++  if (!task) return false;
++  const hasStartedAt = task.started_at === null || typeof task.started_at === 'string';
++  const hasFinishedAt = task.finished_at === null || typeof task.finished_at === 'string';
++  const hasDurationMs = typeof task.duration_ms === 'number' && Number.isFinite(task.duration_ms);
++  const hasRunDurationMs =
++    !Object.prototype.hasOwnProperty.call(task, 'run_duration_ms') ||
++    (typeof task.run_duration_ms === 'number' && Number.isFinite(task.run_duration_ms));
++  return hasStartedAt && hasFinishedAt && hasDurationMs && hasRunDurationMs;
++}
++
++function assertTaskDurationShape(task, label) {
++  assert.ok(task, `${label} 应存在`);
++  assert.ok(hasTaskDurationShape(task), `${label} 应包含符合前端类型预期的耗时字段`);
++}
++
++function assertIsoString(value, message) {
++  assert.equal(typeof value, 'string', message);
++  assert.ok(Number.isFinite(Date.parse(value)), message);
++}
++
+ main().catch((error) => {
+   console.error(error);
+   process.exitCode = 1;
+
+**Confirming modifications**
+
+I should mention that only `scripts/smoke-test.js` has been modified, but there are other pre-existing changes in the repo that we noticed when checking the status. The user asked for brevity and not to output long lists, so I can say, "注意：工作区存在其他未关联改动，我未处理。" I need to keep everything under 10 lines, so I'll organize a section for **完成情况** and **验证** to summarize effectively.
+codex
+P005 已完成并通过最小验证。
+  ✓ 读取任务上下文
+  ✓ 定位耗时统计逻辑
+  ✓ 补充回归测试
+  ✓ 运行最小验证
+diff --git a/scripts/smoke-test.js b/scripts/smoke-test.js
+index 0cd6a0f79912fb8d1b7111286726c5d8f984c752..34e099579fa9a9f9248456dda757a210b1f116ab
+--- a/scripts/smoke-test.js
++++ b/scripts/smoke-test.js
+@@ -97,6 +97,10 @@
+     assert.equal(snapshot.plans.length, 1, '确认后应加入当前项目任务系统');
+     assert.equal(snapshot.plans[0].project_id, projectId, 'plan 应绑定项目');
+     assert.equal(snapshot.tasks.length, 5, '任务模块应同步草稿中的 checkbox 为任务列表');
++    assert.ok(
++      snapshot.tasks.every((task) => hasTaskDurationShape(task)),
++      '任务快照应包含符合前端类型预期的耗时字段',
++    );
+     assert.equal(snapshot.plans[0].total_tasks, 5, 'plan 应记录总任务数');
+     assert.ok(
+       snapshot.tasks.every((task) => task.raw_line.includes('scope:')),
+@@ -142,6 +146,15 @@
+     loop.runCodex = async (_workspace, prompt) => {
+       assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
+       assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
++      await sleep(20);
++      const runningTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
++      assert.equal(runningTask.status, 'running', '任务开始后应写入 running 状态');
++      assertIsoString(runningTask.started_at, '任务开始后应写入 started_at');
++      assert.equal(runningTask.finished_at, null, '任务运行中不应写入 finished_at');
++      assert.equal(runningTask.duration_ms, 0, '首次运行中累计耗时应保持 0');
++      const runningSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
++      assertTaskDurationShape(runningSnapshotTask, '运行中任务快照');
++      assert.equal(typeof runningSnapshotTask.run_duration_ms, 'number', '运行中任务快照应包含实时耗时');
+       fs.writeFileSync(planFile, originalPlanText.replace('P002', 'P999'), 'utf8');
+       return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-last.txt') };
+     };
+@@ -153,17 +166,66 @@
+     assert.match(guardedPlanText, /- \[x\] P001:/, '系统应在任务成功后勾选 checkbox');
+     assert.match(guardedPlanText, /P001 AutoPlan 完成/, '系统应在进度区写入完成记录');
+     assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
++    const completedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+     assert.equal(
+-      db.get('SELECT status FROM plan_tasks WHERE id = ?', [executableTask.id]).status,
++      completedTask.status,
+       'completed',
+       '系统应更新任务入库状态',
+     );
++    assertIsoString(completedTask.started_at, '任务完成后应保留 started_at');
++    assertIsoString(completedTask.finished_at, '任务完成后应写入 finished_at');
++    assert.ok(completedTask.duration_ms > 0, '任务完成后应写入正数 duration_ms');
++    const completedSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
++    assertTaskDurationShape(completedSnapshotTask, '已完成任务快照');
++    assert.ok(completedSnapshotTask.duration_ms > 0, '已完成任务快照应包含累计耗时');
+     assert.equal(
+       db.get('SELECT completed_tasks FROM plans WHERE id = ?', [planId]).completed_tasks,
+       1,
+       '系统应更新 plan 完成计数',
+     );
+ 
++    const retryTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P002']);
++    loop.runCodex = async (_workspace, prompt) => {
++      assert.match(prompt, /只执行指定任务 P002/, '重试任务首次执行 prompt 应锁定指定任务');
++      await sleep(20);
++      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++      assert.equal(runningRetryTask.status, 'running', '失败前任务应处于 running 状态');
++      assertIsoString(runningRetryTask.started_at, '失败前任务应写入 started_at');
++      assert.equal(runningRetryTask.finished_at, null, '失败前任务运行中不应写入 finished_at');
++      assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '失败前任务快照');
++      return { exitCode: 1, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-failed.txt') };
++    };
++    const failedResult = await loop.executeTask(workspace, plan, retryTask);
++    loop.runCodex = originalRunCodex;
++    assert.equal(failedResult.exitCode, 1, '模拟失败应返回非 0 exitCode');
++    const failedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    assert.equal(failedTask.status, 'pending', '任务失败后应回退为 pending');
++    assertIsoString(failedTask.started_at, '任务失败后应保留 started_at');
++    assertIsoString(failedTask.finished_at, '任务失败后应写入 finished_at');
++    assert.ok(failedTask.duration_ms > 0, '任务失败后应累计正数 duration_ms');
++
++    const firstAttemptDurationMs = failedTask.duration_ms;
++    const retryAttemptTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    loop.runCodex = async (_workspace, prompt) => {
++      assert.match(prompt, /只执行指定任务 P002/, '重试任务再次执行 prompt 应锁定指定任务');
++      await sleep(20);
++      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++      assert.equal(runningRetryTask.status, 'running', '重试时任务应重新进入 running 状态');
++      assertIsoString(runningRetryTask.started_at, '重试时任务应刷新 started_at');
++      assert.equal(runningRetryTask.finished_at, null, '重试运行中应清空 finished_at');
++      assert.equal(runningRetryTask.duration_ms, firstAttemptDurationMs, '重试运行中不应丢失历史累计耗时');
++      return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-retry.txt') };
++    };
++    const retryResult = await loop.executeTask(workspace, plan, retryAttemptTask);
++    loop.runCodex = originalRunCodex;
++    assert.equal(retryResult.exitCode, 0, '模拟重试应成功');
++    loop.completeTask(workspace, plan, retryAttemptTask, retryResult);
++    const retriedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    assert.equal(retriedTask.status, 'completed', '重试成功后任务应完成');
++    assertIsoString(retriedTask.finished_at, '重试成功后应写入 finished_at');
++    assert.ok(retriedTask.duration_ms > firstAttemptDurationMs, '重试成功后应继续累加 duration_ms');
++    assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '重试完成任务快照');
++
+     fs.writeFileSync(planFile, fs.readFileSync(planFile, 'utf8').replaceAll('- [ ]', '- [x]'), 'utf8');
+     loop.syncPlanTasks(planId, planFile);
+     await loop.validatePlan(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+@@ -199,7 +261,7 @@
+     loop.stop(multiProjectB);
+     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
+ 
+-    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, multi-loop');
++    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, duration stats, multi-loop');
+   } finally {
+     fs.rmSync(tempRoot, { recursive: true, force: true });
+   }
+@@ -234,6 +296,35 @@
+   );
+ }
+ 
++function sleep(milliseconds) {
++  return new Promise((resolve) => setTimeout(resolve, milliseconds));
++}
++
++function taskByKey(snapshot, taskKey) {
++  return snapshot.tasks.find((task) => task.task_key === taskKey);
++}
++
++function hasTaskDurationShape(task) {
++  if (!task) return false;
++  const hasStartedAt = task.started_at === null || typeof task.started_at === 'string';
++  const hasFinishedAt = task.finished_at === null || typeof task.finished_at === 'string';
++  const hasDurationMs = typeof task.duration_ms === 'number' && Number.isFinite(task.duration_ms);
++  const hasRunDurationMs =
++    !Object.prototype.hasOwnProperty.call(task, 'run_duration_ms') ||
++    (typeof task.run_duration_ms === 'number' && Number.isFinite(task.run_duration_ms));
++  return hasStartedAt && hasFinishedAt && hasDurationMs && hasRunDurationMs;
++}
++
++function assertTaskDurationShape(task, label) {
++  assert.ok(task, `${label} 应存在`);
++  assert.ok(hasTaskDurationShape(task), `${label} 应包含符合前端类型预期的耗时字段`);
++}
++
++function assertIsoString(value, message) {
++  assert.equal(typeof value, 'string', message);
++  assert.ok(Number.isFinite(Date.parse(value)), message);
++}
++
+ main().catch((error) => {
+   console.error(error);
+   process.exitCode = 1;
+
+codex
+**完成情况**
+- 已在 `scripts/smoke-test.js:99` 补充 `snapshot().tasks` 耗时字段类型回归断言。
+- 已在 `scripts/smoke-test.js:142` 覆盖任务开始后 `started_at`、运行中快照 `run_duration_ms`。
+- 已在 `scripts/smoke-test.js:166` 覆盖任务完成后 `finished_at` 和正数 `duration_ms`。
+- 已在 `scripts/smoke-test.js:185` 覆盖失败回退 `pending` 后耗时累计、重试后继续累加。
+- 未修改 plan 文件，未勾选 checkbox；只改了 `scripts/smoke-test.js`。
+
+**验证**
+- 已运行 `node --check scripts/smoke-test.js`。
+- 已运行 `npm run smoke`，通过。
+- 注意：工作区已有多项无关未提交/未跟踪变更，我没有处理。
+diff --git a/scripts/smoke-test.js b/scripts/smoke-test.js
+index 0cd6a0f79912fb8d1b7111286726c5d8f984c752..34e099579fa9a9f9248456dda757a210b1f116ab
+--- a/scripts/smoke-test.js
++++ b/scripts/smoke-test.js
+@@ -97,6 +97,10 @@
+     assert.equal(snapshot.plans.length, 1, '确认后应加入当前项目任务系统');
+     assert.equal(snapshot.plans[0].project_id, projectId, 'plan 应绑定项目');
+     assert.equal(snapshot.tasks.length, 5, '任务模块应同步草稿中的 checkbox 为任务列表');
++    assert.ok(
++      snapshot.tasks.every((task) => hasTaskDurationShape(task)),
++      '任务快照应包含符合前端类型预期的耗时字段',
++    );
+     assert.equal(snapshot.plans[0].total_tasks, 5, 'plan 应记录总任务数');
+     assert.ok(
+       snapshot.tasks.every((task) => task.raw_line.includes('scope:')),
+@@ -142,6 +146,15 @@
+     loop.runCodex = async (_workspace, prompt) => {
+       assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
+       assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
++      await sleep(20);
++      const runningTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
++      assert.equal(runningTask.status, 'running', '任务开始后应写入 running 状态');
++      assertIsoString(runningTask.started_at, '任务开始后应写入 started_at');
++      assert.equal(runningTask.finished_at, null, '任务运行中不应写入 finished_at');
++      assert.equal(runningTask.duration_ms, 0, '首次运行中累计耗时应保持 0');
++      const runningSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
++      assertTaskDurationShape(runningSnapshotTask, '运行中任务快照');
++      assert.equal(typeof runningSnapshotTask.run_duration_ms, 'number', '运行中任务快照应包含实时耗时');
+       fs.writeFileSync(planFile, originalPlanText.replace('P002', 'P999'), 'utf8');
+       return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-last.txt') };
+     };
+@@ -153,17 +166,66 @@
+     assert.match(guardedPlanText, /- \[x\] P001:/, '系统应在任务成功后勾选 checkbox');
+     assert.match(guardedPlanText, /P001 AutoPlan 完成/, '系统应在进度区写入完成记录');
+     assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
++    const completedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+     assert.equal(
+-      db.get('SELECT status FROM plan_tasks WHERE id = ?', [executableTask.id]).status,
++      completedTask.status,
+       'completed',
+       '系统应更新任务入库状态',
+     );
++    assertIsoString(completedTask.started_at, '任务完成后应保留 started_at');
++    assertIsoString(completedTask.finished_at, '任务完成后应写入 finished_at');
++    assert.ok(completedTask.duration_ms > 0, '任务完成后应写入正数 duration_ms');
++    const completedSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
++    assertTaskDurationShape(completedSnapshotTask, '已完成任务快照');
++    assert.ok(completedSnapshotTask.duration_ms > 0, '已完成任务快照应包含累计耗时');
+     assert.equal(
+       db.get('SELECT completed_tasks FROM plans WHERE id = ?', [planId]).completed_tasks,
+       1,
+       '系统应更新 plan 完成计数',
+     );
+ 
++    const retryTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P002']);
++    loop.runCodex = async (_workspace, prompt) => {
++      assert.match(prompt, /只执行指定任务 P002/, '重试任务首次执行 prompt 应锁定指定任务');
++      await sleep(20);
++      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++      assert.equal(runningRetryTask.status, 'running', '失败前任务应处于 running 状态');
++      assertIsoString(runningRetryTask.started_at, '失败前任务应写入 started_at');
++      assert.equal(runningRetryTask.finished_at, null, '失败前任务运行中不应写入 finished_at');
++      assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '失败前任务快照');
++      return { exitCode: 1, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-failed.txt') };
++    };
++    const failedResult = await loop.executeTask(workspace, plan, retryTask);
++    loop.runCodex = originalRunCodex;
++    assert.equal(failedResult.exitCode, 1, '模拟失败应返回非 0 exitCode');
++    const failedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    assert.equal(failedTask.status, 'pending', '任务失败后应回退为 pending');
++    assertIsoString(failedTask.started_at, '任务失败后应保留 started_at');
++    assertIsoString(failedTask.finished_at, '任务失败后应写入 finished_at');
++    assert.ok(failedTask.duration_ms > 0, '任务失败后应累计正数 duration_ms');
++
++    const firstAttemptDurationMs = failedTask.duration_ms;
++    const retryAttemptTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    loop.runCodex = async (_workspace, prompt) => {
++      assert.match(prompt, /只执行指定任务 P002/, '重试任务再次执行 prompt 应锁定指定任务');
++      await sleep(20);
++      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++      assert.equal(runningRetryTask.status, 'running', '重试时任务应重新进入 running 状态');
++      assertIsoString(runningRetryTask.started_at, '重试时任务应刷新 started_at');
++      assert.equal(runningRetryTask.finished_at, null, '重试运行中应清空 finished_at');
++      assert.equal(runningRetryTask.duration_ms, firstAttemptDurationMs, '重试运行中不应丢失历史累计耗时');
++      return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-retry.txt') };
++    };
++    const retryResult = await loop.executeTask(workspace, plan, retryAttemptTask);
++    loop.runCodex = originalRunCodex;
++    assert.equal(retryResult.exitCode, 0, '模拟重试应成功');
++    loop.completeTask(workspace, plan, retryAttemptTask, retryResult);
++    const retriedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
++    assert.equal(retriedTask.status, 'completed', '重试成功后任务应完成');
++    assertIsoString(retriedTask.finished_at, '重试成功后应写入 finished_at');
++    assert.ok(retriedTask.duration_ms > firstAttemptDurationMs, '重试成功后应继续累加 duration_ms');
++    assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '重试完成任务快照');
++
+     fs.writeFileSync(planFile, fs.readFileSync(planFile, 'utf8').replaceAll('- [ ]', '- [x]'), 'utf8');
+     loop.syncPlanTasks(planId, planFile);
+     await loop.validatePlan(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+@@ -199,7 +261,7 @@
+     loop.stop(multiProjectB);
+     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
+ 
+-    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, multi-loop');
++    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, scan, validation, duration stats, multi-loop');
+   } finally {
+     fs.rmSync(tempRoot, { recursive: true, force: true });
+   }
+@@ -234,6 +296,35 @@
+   );
+ }
+ 
++function sleep(milliseconds) {
++  return new Promise((resolve) => setTimeout(resolve, milliseconds));
++}
++
++function taskByKey(snapshot, taskKey) {
++  return snapshot.tasks.find((task) => task.task_key === taskKey);
++}
++
++function hasTaskDurationShape(task) {
++  if (!task) return false;
++  const hasStartedAt = task.started_at === null || typeof task.started_at === 'string';
++  const hasFinishedAt = task.finished_at === null || typeof task.finished_at === 'string';
++  const hasDurationMs = typeof task.duration_ms === 'number' && Number.isFinite(task.duration_ms);
++  const hasRunDurationMs =
++    !Object.prototype.hasOwnProperty.call(task, 'run_duration_ms') ||
++    (typeof task.run_duration_ms === 'number' && Number.isFinite(task.run_duration_ms));
++  return hasStartedAt && hasFinishedAt && hasDurationMs && hasRunDurationMs;
++}
++
++function assertTaskDurationShape(task, label) {
++  assert.ok(task, `${label} 应存在`);
++  assert.ok(hasTaskDurationShape(task), `${label} 应包含符合前端类型预期的耗时字段`);
++}
++
++function assertIsoString(value, message) {
++  assert.equal(typeof value, 'string', message);
++  assert.ok(Number.isFinite(Date.parse(value)), message);
++}
++
+ main().catch((error) => {
+   console.error(error);
+   process.exitCode = 1;
+
+tokens used
+116,272
+**完成情况**
+- 已在 `scripts/smoke-test.js:99` 补充 `snapshot().tasks` 耗时字段类型回归断言。
+- 已在 `scripts/smoke-test.js:142` 覆盖任务开始后 `started_at`、运行中快照 `run_duration_ms`。
+- 已在 `scripts/smoke-test.js:166` 覆盖任务完成后 `finished_at` 和正数 `duration_ms`。
+- 已在 `scripts/smoke-test.js:185` 覆盖失败回退 `pending` 后耗时累计、重试后继续累加。
+- 未修改 plan 文件，未勾选 checkbox；只改了 `scripts/smoke-test.js`。
+
+**验证**
+- 已运行 `node --check scripts/smoke-test.js`。
+- 已运行 `npm run smoke`，通过。
+- 注意：工作区已有多项无关未提交/未跟踪变更，我没有处理。

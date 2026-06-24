@@ -1,0 +1,1317 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019efb28-623b-7a13-9a03-b488ef143e97
+--------
+user
+你是开发执行者。
+请只执行指定任务 P001，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_7_20260625-033918.md
+指定任务：
+- [ ] P001: 持久化任务上下文标识 <!-- scope: src/database.js,src/renderer/types.ts -->
+任务 scope：src/database.js, src/renderer/types.ts
+
+完成后必须：
+- 当前为并发执行模式，不要读写其它任务的 scope
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 如需测试，只运行与当前任务直接相关的最小测试集，不要运行全量测试或与本任务无关的测试
+- 只有当前任务本身明确要求全量验证时，才允许运行全量测试
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会先只读取只读计划与本任务 scope 文件，确认 P001 的具体要求。
+  → 读取 P001 上下文
+  • 修改限定 scope 文件
+  • 做最小验证
+exec
+powershell.exe -Command '$files = @('"'D:\\project\\GitHub\\autoplan\\docs\\plan\\plan_requirement_7_20260625-033918.md','D:\\project\\GitHub\\autoplan\\src\\database.js','D:\\project\\GitHub\\autoplan\\src\\renderer\\types.ts'); foreach ("'$f in $files) { Write-Output "--- $f"; Get-Content -LiteralPath $f -Encoding UTF8 }' in D:\project\GitHub\autoplan
+ succeeded in 228ms:
+--- D:\project\GitHub\autoplan\docs\plan\plan_requirement_7_20260625-033918.md
+# 需求 #7 开发计划：同一 Plan 任务持续使用同一上下文
+
+## 背景
+
+当前 AutoPlan 在执行 plan 任务时，每次调用 Codex 都会通过 `codex exec` 启动一个新的非交互式会话。对于同一个 plan 任务，如果因为失败、停止、重试或手动再次执行而需要继续推进，新的会话无法继承该任务上一次的理解、已做分析和执行上下文，容易造成重复探索、遗漏前序约束或与上一轮执行结论不一致。
+
+需求 #7 要求：同一个 plan 任务应该在同一个上下文内部持续执行。实现目标是以 `plan_id + task_key` 为任务上下文边界，首次执行创建 Codex 会话，后续同一任务继续执行时恢复该会话；不同任务仍保持隔离，避免上下文串扰。
+
+## 任务拆解
+
+- [ ] P001: 持久化任务上下文标识 <!-- scope: src/database.js,src/renderer/types.ts -->
+  - 验收要点：`plan_tasks` 表新增可空的 Codex 会话标识字段，能够记录同一任务首次执行产生的 session id。
+  - 验收要点：新增字段通过 `ensureColumn` 兼容历史 SQLite 数据库，旧任务缺失会话标识时不影响启动、快照和任务列表展示。
+  - 验收要点：前端 `PlanTask` 类型同步新增上下文字段，现有任务耗时、状态、scope、排序字段类型不回退。
+  - 验收要点：会话标识仅绑定到具体 `plan_tasks` 记录或 `plan_id + task_key`，不使用全局单例存储，避免跨 plan 或跨任务复用。
+
+- [ ] P002: 保留任务同步中的上下文 <!-- scope: src/loopService.js -->
+  - 验收要点：`syncPlanTasks` 在重新解析 plan 文件时保留同一 `plan_id + task_key` 已有任务的 Codex 会话标识、耗时字段和关键状态信息。
+  - 验收要点：任务标题、raw line、scope 或排序变化时仍能更新最新解析结果，但不会因为删除重建任务而丢失上下文。
+  - 验收要点：任务 key 被移除或改名时不把旧会话错误迁移到新任务；新增任务默认没有会话标识。
+  - 验收要点：已完成任务的 checkbox 与进度区由现有 AutoPlan 回写流程继续负责，上下文保留逻辑不扩大 plan 文件写入范围。
+
+- [ ] P003: 支持 Codex 会话恢复执行 <!-- scope: src/loopService.js -->
+  - 验收要点：`runCodex` 支持传入已有 session id；存在 session id 时使用 `codex exec resume <session_id> -` 继续会话，不再为同一任务创建全新上下文。
+  - 验收要点：没有 session id、session id 为空或恢复失败时能够回退为新建 `codex exec`，并记录可排查事件，不导致任务流程卡死。
+  - 验收要点：新建会话时继续保留当前 `--cd`、`--color never`、`--output-last-message`、沙箱和 stdin prompt 行为；恢复会话时不传入 Codex CLI 不支持的参数。
+  - 验收要点：从 Codex 输出中捕获真实 session id，写入运行结果，日志文件和 last message 文件路径仍按现有规则生成。
+
+- [ ] P004: 绑定任务执行与上下文生命周期 <!-- scope: src/loopService.js -->
+  - 验收要点：`executeTask` 执行前读取当前任务保存的 session id，并把它传给 Codex 调用；执行结束后把捕获到的 session id 写回对应任务。
+  - 验收要点：同一任务失败后回到 `pending`、被停止后再次执行、或用户手动点击运行时，都会复用该任务已有上下文。
+  - 验收要点：不同任务即使属于同一 plan，也不会复用彼此的 session id；并发任务各自维护独立上下文。
+  - 验收要点：任务成功完成后保留 session id 作为审计信息，但不会让后续其他任务自动继承该上下文。
+
+- [ ] P005: 暴露上下文状态与事件信息 <!-- scope: src/loopService.js,src/renderer/types.ts,src/renderer/pages/WorkspacePage.tsx,src/renderer/components/CodexLog.tsx -->
+  - 验收要点：`snapshot()` 的 `tasks`、`activeOperation`、`activeOperations` 和 `lastOperation` 能携带当前任务的 session id 或“新建/恢复”状态。
+  - 验收要点：事件流在任务开始、恢复、回退新建、失败和完成时包含可读的上下文信息，方便定位某次任务是否复用了上下文。
+  - 验收要点：工作区 Codex 日志区域能展示当前执行是新会话还是恢复会话，不影响原有 logTail 和 activity 展示。
+  - 验收要点：界面只显示必要的短标识或状态文案，避免长 UUID 造成布局溢出；无 session id 的历史任务显示为普通任务。
+
+- [ ] P006: 补充上下文复用回归测试 <!-- scope: scripts/smoke-test.js -->
+  - 验收要点：smoke 测试覆盖同一任务首次执行产生 session id，并在失败后再次执行时传入同一个 session id。
+  - 验收要点：smoke 测试覆盖同一 plan 的不同任务不会复用 session id，并发执行时每个任务拥有独立上下文。
+  - 验收要点：smoke 测试覆盖 `syncPlanTasks` 后同一 `task_key` 的上下文仍保留，新增或改名任务不会继承旧上下文。
+  - 验收要点：现有 plan guard、scope 并发选择、任务完成回写、验收完成和耗时统计断言继续通过。
+
+- [ ] P007: 执行构建与端到端验证 <!-- scope: package.json,scripts/smoke-test.js,src/database.js,src/loopService.js,src/renderer/types.ts,src/renderer/pages/WorkspacePage.tsx,src/renderer/components/CodexLog.tsx -->
+  - 验收要点：`npm run check` 通过，确认 TypeScript、Node 语法检查和脚本检查无错误。
+  - 验收要点：`npm run smoke` 通过，确认任务上下文复用、计划解析、执行、停止、完成和验收流程无回归。
+  - 验收要点：手动验证同一任务连续两次执行时日志显示恢复同一 session，不同任务显示不同 session 或新建上下文。
+  - 验收要点：如 Codex CLI 恢复会话不可用，系统能清晰记录回退事件并继续新建会话执行，不出现无限重试或 UI 卡住。
+
+## 总体验收标准
+
+- 上下文连续：同一个 plan 任务在失败、停止、重试或手动再次运行时，优先恢复该任务上一次的 Codex 会话继续执行。
+- 任务隔离：上下文以 `plan_id + task_key` 为边界，不同任务、不同 plan、不同项目之间不会共享会话。
+- 数据可靠：会话标识持久化到 SQLite，并在 plan 文件重新同步时保留；历史数据和无会话任务保持兼容。
+- 流程稳定：plan guard、任务状态流转、并发 scope 控制、日志输出、进度区回写和验收流程保持原有行为。
+- 可观测：事件流、活动日志或任务快照能够判断本次执行是新建上下文还是恢复上下文，并能定位关联 session。
+- 验证通过：完成实现后 `npm run check` 与 `npm run smoke` 均通过，必要时补充手动验证记录。
+
+## 进度区
+
+- 2026-06-25 AutoPlan 生成：需求 #7 开发计划已创建，待执行。
+--- D:\project\GitHub\autoplan\src\database.js
+const fs = require('node:fs');
+const path = require('node:path');
+const initSqlJs = require('sql.js');
+
+class AppDatabase {
+  constructor(dbPath) {
+    this.dbPath = dbPath;
+    this.db = null;
+  }
+
+  async init() {
+    fs.mkdirSync(path.dirname(this.dbPath), { recursive: true });
+    const SQL = await initSqlJs({
+      locateFile: (file) => path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', file),
+    });
+    const bytes = fs.existsSync(this.dbPath) ? fs.readFileSync(this.dbPath) : undefined;
+    this.db = new SQL.Database(bytes);
+    this.migrate();
+    this.persist();
+  }
+
+  migrate() {
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS projects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        workspace_path TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_projects_updated
+      ON projects (updated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS project_states (
+        project_id INTEGER PRIMARY KEY,
+        running INTEGER NOT NULL DEFAULT 0,
+        phase TEXT NOT NULL DEFAULT 'idle',
+        interval_seconds INTEGER NOT NULL DEFAULT 5,
+        validation_command TEXT NOT NULL DEFAULT 'flutter analyze',
+        last_issue_hash TEXT,
+        last_error TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS requirements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'open',
+        source_path TEXT,
+        source_hash TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        requirement_id INTEGER,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'open',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS attachments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        owner_type TEXT NOT NULL,
+        owner_id INTEGER NOT NULL,
+        original_name TEXT NOT NULL,
+        stored_path TEXT NOT NULL,
+        mime_type TEXT,
+        size INTEGER NOT NULL,
+        hash TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_attachments_owner
+      ON attachments (owner_type, owner_id);
+
+      CREATE TABLE IF NOT EXISTS plan_drafts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        source_type TEXT NOT NULL,
+        source_id INTEGER NOT NULL,
+        markdown TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft',
+        linked_plan_id INTEGER,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_plan_drafts_source
+      ON plan_drafts (source_type, source_id);
+
+      CREATE TABLE IF NOT EXISTS scan_files (
+        project_id INTEGER NOT NULL DEFAULT 1,
+        scan_type TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        modified_at TEXT NOT NULL,
+        scanned_at TEXT NOT NULL,
+        PRIMARY KEY (project_id, scan_type, file_path)
+      );
+
+      CREATE TABLE IF NOT EXISTS plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        issue_hash TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        total_tasks INTEGER NOT NULL DEFAULT 0,
+        completed_tasks INTEGER NOT NULL DEFAULT 0,
+        validation_passed INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS plan_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_id INTEGER NOT NULL,
+        task_key TEXT NOT NULL,
+        title TEXT NOT NULL,
+        raw_line TEXT NOT NULL,
+        scope TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'pending',
+        sort_order INTEGER NOT NULL,
+        started_at TEXT,
+        finished_at TEXT,
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        UNIQUE(plan_id, task_key)
+      );
+
+      CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        type TEXT NOT NULL,
+        message TEXT NOT NULL,
+        meta TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS loop_state (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        running INTEGER NOT NULL DEFAULT 0,
+        phase TEXT NOT NULL DEFAULT 'idle',
+        workspace_path TEXT NOT NULL DEFAULT '',
+        interval_seconds INTEGER NOT NULL DEFAULT 5,
+        validation_command TEXT NOT NULL DEFAULT 'flutter analyze',
+        last_issue_hash TEXT,
+        last_error TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      INSERT OR IGNORE INTO loop_state (
+        id, running, phase, workspace_path, interval_seconds, validation_command, updated_at
+      ) VALUES (1, 0, 'idle', '', 5, 'flutter analyze', datetime('now'));
+    `);
+
+    this.ensureColumn('requirements', 'project_id', 'INTEGER');
+    this.ensureColumn('requirements', 'linked_plan_id', 'INTEGER');
+    this.ensureColumn('feedback', 'project_id', 'INTEGER');
+    this.ensureColumn('feedback', 'linked_plan_id', 'INTEGER');
+    this.ensureColumn('attachments', 'project_id', 'INTEGER');
+    this.ensureColumn('plan_drafts', 'project_id', 'INTEGER');
+    this.ensureColumn('plans', 'project_id', 'INTEGER');
+    this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+    this.ensureColumn('events', 'project_id', 'INTEGER');
+
+    const defaultProjectId = this.ensureDefaultProject();
+    this.migrateScanFilesTable(defaultProjectId);
+    this.assignLegacyRows(defaultProjectId);
+    this.ensureProjectState(defaultProjectId);
+  }
+
+  ensureDefaultProject() {
+    const existing = this.get('SELECT id FROM projects ORDER BY id ASC LIMIT 1');
+    if (existing) return Number(existing.id);
+
+    const legacyState = this.get('SELECT * FROM loop_state WHERE id = 1') || {};
+    const now = nowIso();
+    this.db.run(
+      `INSERT INTO projects (name, workspace_path, description, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      ['默认项目', legacyState.workspace_path || '', '从旧版单项目数据自动迁移', now, now],
+    );
+    return Number(this.get('SELECT last_insert_rowid() AS id').id);
+  }
+
+  ensureProjectState(projectId) {
+    const legacyState = this.get('SELECT * FROM loop_state WHERE id = 1') || {};
+    this.db.run(
+      `INSERT OR IGNORE INTO project_states
+       (project_id, running, phase, interval_seconds, validation_command, last_issue_hash, last_error, updated_at)
+       VALUES (?, 0, ?, ?, ?, ?, ?, ?)`,
+      [
+        projectId,
+        legacyState.phase || 'idle',
+        Number(legacyState.interval_seconds || 5),
+        legacyState.validation_command || 'flutter analyze',
+        legacyState.last_issue_hash || null,
+        legacyState.last_error || null,
+        legacyState.updated_at || nowIso(),
+      ],
+    );
+  }
+
+  assignLegacyRows(projectId) {
+    for (const table of ['requirements', 'feedback', 'attachments', 'plan_drafts', 'plans', 'events', 'scan_files']) {
+      this.db.run(`UPDATE ${table} SET project_id = ? WHERE project_id IS NULL`, [projectId]);
+    }
+  }
+
+  ensureColumn(table, column, definition) {
+    const columns = this.all(`PRAGMA table_info(${table})`);
+    if (!columns.some((item) => item.name === column)) {
+      this.db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+  }
+
+  migrateScanFilesTable(defaultProjectId) {
+    const table = this.get("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'scan_files'");
+    if (String(table?.sql || '').includes('PRIMARY KEY (project_id, scan_type, file_path)')) return;
+
+    const hasProjectId = this.all('PRAGMA table_info(scan_files)').some((item) => item.name === 'project_id');
+    const fallbackProjectId = Number(defaultProjectId || 1);
+    this.db.run('ALTER TABLE scan_files RENAME TO scan_files_legacy');
+    this.db.run(`
+      CREATE TABLE scan_files (
+        project_id INTEGER NOT NULL DEFAULT ${fallbackProjectId},
+        scan_type TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        modified_at TEXT NOT NULL,
+        scanned_at TEXT NOT NULL,
+        PRIMARY KEY (project_id, scan_type, file_path)
+      );
+    `);
+
+    if (hasProjectId) {
+      this.db.run(`
+        INSERT OR REPLACE INTO scan_files
+        (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+        SELECT COALESCE(project_id, ${fallbackProjectId}), scan_type, file_path, hash, size, modified_at, scanned_at
+        FROM scan_files_legacy;
+      `);
+    } else {
+      this.db.run(`
+        INSERT OR REPLACE INTO scan_files
+        (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+        SELECT ${fallbackProjectId}, scan_type, file_path, hash, size, modified_at, scanned_at
+        FROM scan_files_legacy;
+      `);
+    }
+
+    this.db.run('DROP TABLE scan_files_legacy');
+  }
+
+  persist() {
+    const data = Buffer.from(this.db.export());
+    const tmp = `${this.dbPath}.tmp`;
+    const mirror = `${this.dbPath}.mirror`;
+    fs.writeFileSync(tmp, data);
+    fs.writeFileSync(mirror, data);
+    if (fs.existsSync(this.dbPath)) {
+      fs.copyFileSync(this.dbPath, `${this.dbPath}.bak`);
+      fs.unlinkSync(this.dbPath);
+    }
+    fs.renameSync(tmp, this.dbPath);
+  }
+
+  run(sql, params = []) {
+    this.db.run(sql, params);
+    this.persist();
+  }
+
+  get(sql, params = []) {
+    const rows = this.all(sql, params);
+    return rows[0] || null;
+  }
+
+  all(sql, params = []) {
+    const stmt = this.db.prepare(sql);
+    try {
+      stmt.bind(params);
+      const rows = [];
+      while (stmt.step()) rows.push(stmt.getAsObject());
+      return rows;
+    } finally {
+      stmt.free();
+    }
+  }
+
+  insert(sql, params = []) {
+    this.db.run(sql, params);
+    const id = this.get('SELECT last_insert_rowid() AS id').id;
+    this.persist();
+    return id;
+  }
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+module.exports = { AppDatabase, nowIso };
+--- D:\project\GitHub\autoplan\src\renderer\types.ts
+export type IntakeType = 'requirement' | 'feedback';
+export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'tasks' | 'events';
+
+export interface Project {
+  id: number;
+  name: string;
+  workspace_path: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+  running?: number;
+  phase?: string;
+  interval_seconds?: number;
+  validation_command?: string;
+}
+
+export interface ProjectState {
+  project_id: number;
+  running: number;
+  phase: string;
+  interval_seconds: number;
+  validation_command: string;
+  last_issue_hash?: string | null;
+  last_error?: string | null;
+  updated_at: string;
+  /** 由 snapshot 合并自 project.workspace_path */
+  workspace_path?: string;
+}
+
+export interface Requirement {
+  id: number;
+  project_id: number;
+  title: string;
+  body: string;
+  status: string;
+  source_path?: string | null;
+  source_hash?: string | null;
+  linked_plan_id?: number | null;
+  plan_status?: string | null;
+  plan_completed?: number | null;
+  plan_total?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Feedback {
+  id: number;
+  project_id: number;
+  requirement_id?: number | null;
+  title: string;
+  body: string;
+  status: string;
+  linked_plan_id?: number | null;
+  plan_status?: string | null;
+  plan_completed?: number | null;
+  plan_total?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Attachment {
+  id: number;
+  project_id: number;
+  owner_type: IntakeType;
+  owner_id: number;
+  original_name: string;
+  stored_path: string;
+  mime_type?: string | null;
+  size: number;
+  hash: string;
+  created_at: string;
+}
+
+export interface PlanDraft {
+  id: number;
+  project_id: number;
+  source_type: IntakeType;
+  source_id: number;
+  markdown: string;
+  status: string;
+  linked_plan_id?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Plan {
+  id: number;
+  project_id: number;
+  issue_hash: string;
+  file_path: string;
+  hash: string;
+  status: string;
+  total_tasks: number;
+  completed_tasks: number;
+  validation_passed: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlanTask {
+  id: number;
+  plan_id: number;
+  task_key: string;
+  title: string;
+  raw_line: string;
+  scope: string;
+  status: string;
+  sort_order: number;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number;
+  updated_at: string;
+  /** JOIN plans 得到 */
+  file_path: string;
+}
+
+export const TASK_EVENT_TYPES = {
+  STARTED: 'task.started',
+  SUCCEEDED: 'task.succeeded',
+  FAILED: 'task.failed',
+  STOP_REQUESTED: 'task.stop.requested',
+  STOPPED: 'task.stopped',
+  INTERRUPTED: 'task.interrupted',
+} as const;
+
+export const LEGACY_TASK_EVENT_TYPES = {
+  EXECUTED: 'task.executed',
+  STOPPING: 'task.stopping',
+} as const;
+
+export const TASK_EVENT_STATUS = {
+  PENDING: 'pending',
+  RUNNING: 'running',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+  STOPPING: 'stopping',
+  STOPPED: 'stopped',
+  INTERRUPTED: 'interrupted',
+} as const;
+
+export type TaskEventType = (typeof TASK_EVENT_TYPES)[keyof typeof TASK_EVENT_TYPES];
+export type LegacyTaskEventType = (typeof LEGACY_TASK_EVENT_TYPES)[keyof typeof LEGACY_TASK_EVENT_TYPES];
+export type TaskEventStatus = (typeof TASK_EVENT_STATUS)[keyof typeof TASK_EVENT_STATUS];
+
+export interface TaskEventSemantics {
+  status: TaskEventStatus;
+  label: string;
+}
+
+export const TASK_EVENT_SEMANTICS: Record<TaskEventType, TaskEventSemantics> = {
+  [TASK_EVENT_TYPES.STARTED]: { status: TASK_EVENT_STATUS.RUNNING, label: '开始了任务' },
+  [TASK_EVENT_TYPES.SUCCEEDED]: { status: TASK_EVENT_STATUS.COMPLETED, label: '结束了任务' },
+  [TASK_EVENT_TYPES.FAILED]: { status: TASK_EVENT_STATUS.FAILED, label: '任务失败' },
+  [TASK_EVENT_TYPES.STOP_REQUESTED]: { status: TASK_EVENT_STATUS.STOPPING, label: '请求停止任务' },
+  [TASK_EVENT_TYPES.STOPPED]: { status: TASK_EVENT_STATUS.STOPPED, label: '已停止任务' },
+  [TASK_EVENT_TYPES.INTERRUPTED]: { status: TASK_EVENT_STATUS.INTERRUPTED, label: '已中断任务' },
+};
+
+export const TASK_EVENT_COMPATIBILITY: Record<LegacyTaskEventType, TaskEventType> = {
+  [LEGACY_TASK_EVENT_TYPES.EXECUTED]: TASK_EVENT_TYPES.SUCCEEDED,
+  [LEGACY_TASK_EVENT_TYPES.STOPPING]: TASK_EVENT_TYPES.STOPPED,
+};
+
+export interface TaskEventMeta {
+  taskId?: number | null;
+  taskKey?: string | null;
+  taskTitle?: string | null;
+  planId?: number | null;
+  status?: TaskEventStatus | string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  exitCode?: number | null;
+  log?: string | null;
+  error?: string | null;
+  [key: string]: unknown;
+}
+
+export type AppEventStructuredMeta = TaskEventMeta | Record<string, unknown>;
+export type AppEventMeta = string | AppEventStructuredMeta;
+
+export interface AppEvent<TMeta extends AppEventMeta | null = string | null> {
+  id: number;
+  project_id: number;
+  type: string;
+  message: string;
+  meta?: TMeta;
+  created_at: string;
+}
+
+export interface ScanFile {
+  project_id: number;
+  scan_type: string;
+  file_path: string;
+  hash: string;
+  size: number;
+  modified_at: string;
+  scanned_at: string;
+}
+
+export interface AppSnapshot {
+  activeProjectId: number | null;
+  activeProject: Project | null;
+  projects: Project[];
+  state: ProjectState | null;
+  requirements: Requirement[];
+  feedback: Feedback[];
+  attachments: Attachment[];
+  planDrafts: PlanDraft[];
+  plans: Plan[];
+  tasks: PlanTask[];
+  events: AppEvent[];
+  scans: ScanFile[];
+  activeOperation: ActiveOperation | null;
+  activeOperations: ActiveOperation[];
+  lastOperation: ActiveOperation | null;
+}
+
+export interface ActivityLine {
+  role: string;
+  text: string;
+  at: string;
+}
+
+export interface ActiveOperation {
+  label: string;
+  projectId: number | null;
+  planId: number | null;
+  taskId: number | null;
+  startedAt: string | null;
+  finishedAt?: string | null;
+  exitCode?: number | null;
+  logTail: string;
+  activity: ActivityLine[];
+}
+
+export interface PendingAttachment {
+  path: string;
+  name: string;
+  size: number;
+  type: string;
+}
+
+export interface CreateIntakeInput {
+  projectId: number;
+  body: string;
+  attachments: PendingAttachment[];
+  title?: string;
+  status?: string;
+  autoRun?: boolean;
+  requirementId?: number | null;
+}
+
+export interface CreateProjectInput {
+  name: string;
+  workspacePath: string;
+  description?: string;
+}
+
+export interface UpdateProjectInput extends CreateProjectInput {
+  id: number;
+}
+
+export interface LoopConfigInput {
+  projectId: number;
+  workspacePath?: string;
+  intervalSeconds?: number;
+  validationCommand?: string;
+}
+
+export interface ProjectIdInput {
+  projectId: number;
+  manual?: boolean;
+}
+
+export interface RecordIdInput extends ProjectIdInput {
+  id: number;
+}
+
+export interface TaskIdInput extends ProjectIdInput {
+  taskId: number;
+}
+
+export interface IntakeActionInput extends ProjectIdInput {
+  type: IntakeType;
+  id: number;
+  title?: string;
+}
+
+export interface UpdateRequirementInput extends RecordIdInput {
+  title?: string;
+  body?: string;
+  status?: string;
+  attachments?: PendingAttachment[];
+}
+
+export interface UpdateFeedbackInput extends UpdateRequirementInput {
+  requirementId?: number | null;
+}
+
+export interface AutoplanApi {
+  snapshot: (projectId?: number | null) => Promise<AppSnapshot>;
+  createProject: (input: CreateProjectInput) => Promise<AppSnapshot>;
+  updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+  deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+  stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+  createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+  updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+  deleteRequirement: (input: RecordIdInput) => Promise<AppSnapshot>;
+  createFeedback: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+  updateFeedback: (input: UpdateFeedbackInput) => Promise<AppSnapshot>;
+  deleteFeedback: (input: RecordIdInput) => Promise<AppSnapshot>;
+  updatePlanDraft: (input: { id: number; markdown: string }) => Promise<AppSnapshot>;
+  interruptIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  resumeIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  appendIntakeTask: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  getDroppedFilePath: (file: File) => string;
+  toFileUrl: (filePath: string) => string;
+  onLoopUpdate: (handler: (snapshot: AppSnapshot) => void) => () => void;
+}
+
+declare global {
+  interface Window {
+    autoplan: AutoplanApi;
+  }
+}
+
+**Inspecting database files**
+
+I'm thinking about how to handle the output and database for my tasks. It sounds like I need specific files, but the tool has truncated the output, which might complicate things. Since we have P001, it seems like I can read only the necessary files separately or with Select-String. I want to focus on `database.js` and avoid long outputs. So, I'll use `rg` or `Select-String` specifically for `plan_tasks`.
+codex
+已确认 P001 验收点；现在只查看两处 scope 文件里任务表与类型定义。
+  ✓ 读取 P001 上下文
+  → 修改限定 scope 文件
+  • 做最小验证
+exec
+powershell.exe -Command "Write-Output '--- database plan_tasks refs'; Select-String -Path 'src/database.js' -Pattern 'plan_tasks|ensureColumn|PlanTask|task_key|duration|scope' -Context 3,5; Write-Output '--- types PlanTask refs'; Select-String -Path 'src/renderer/types.ts' -Pattern 'interface PlanTask|task_key|duration|scope|sort_order' -Context 3,8" in D:\project\GitHub\autoplan
+ succeeded in 208ms:
+--- database plan_tasks refs
+
+  src\database.js:128:        updated_at TEXT NOT NULL
+  src\database.js:129:      );
+  src\database.js:130:
+> src\database.js:131:      CREATE TABLE IF NOT EXISTS plan_tasks (
+  src\database.js:132:        id INTEGER PRIMARY KEY AUTOINCREMENT,
+  src\database.js:133:        plan_id INTEGER NOT NULL,
+> src\database.js:134:        task_key TEXT NOT NULL,
+  src\database.js:135:        title TEXT NOT NULL,
+  src\database.js:136:        raw_line TEXT NOT NULL,
+> src\database.js:137:        scope TEXT NOT NULL DEFAULT '',
+  src\database.js:138:        status TEXT NOT NULL DEFAULT 'pending',
+  src\database.js:139:        sort_order INTEGER NOT NULL,
+  src\database.js:140:        started_at TEXT,
+  src\database.js:141:        finished_at TEXT,
+> src\database.js:142:        duration_ms INTEGER NOT NULL DEFAULT 0,
+  src\database.js:143:        updated_at TEXT NOT NULL,
+> src\database.js:144:        UNIQUE(plan_id, task_key)
+  src\database.js:145:      );
+  src\database.js:146:
+  src\database.js:147:      CREATE TABLE IF NOT EXISTS events (
+  src\database.js:148:        id INTEGER PRIMARY KEY AUTOINCREMENT,
+  src\database.js:149:        project_id INTEGER,
+  src\database.js:170:      ) VALUES (1, 0, 'idle', '', 5, 'flutter analyze', datetime('now'));
+  src\database.js:171:    `);
+  src\database.js:172:
+> src\database.js:173:    this.ensureColumn('requirements', 'project_id', 'INTEGER');
+> src\database.js:174:    this.ensureColumn('requirements', 'linked_plan_id', 'INTEGER');
+> src\database.js:175:    this.ensureColumn('feedback', 'project_id', 'INTEGER');
+> src\database.js:176:    this.ensureColumn('feedback', 'linked_plan_id', 'INTEGER');
+> src\database.js:177:    this.ensureColumn('attachments', 'project_id', 'INTEGER');
+> src\database.js:178:    this.ensureColumn('plan_drafts', 'project_id', 'INTEGER');
+> src\database.js:179:    this.ensureColumn('plans', 'project_id', 'INTEGER');
+> src\database.js:180:    this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
+> src\database.js:181:    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+> src\database.js:182:    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+> src\database.js:183:    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+> src\database.js:184:    this.ensureColumn('events', 'project_id', 'INTEGER');
+  src\database.js:185:
+  src\database.js:186:    const defaultProjectId = this.ensureDefaultProject();
+  src\database.js:187:    this.migrateScanFilesTable(defaultProjectId);
+  src\database.js:188:    this.assignLegacyRows(defaultProjectId);
+  src\database.js:189:    this.ensureProjectState(defaultProjectId);
+  src\database.js:227:    }
+  src\database.js:228:  }
+  src\database.js:229:
+> src\database.js:230:  ensureColumn(table, column, definition) {
+  src\database.js:231:    const columns = this.all(`PRAGMA table_info(${table})`);
+  src\database.js:232:    if (!columns.some((item) => item.name === column)) {
+  src\database.js:233:      this.db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  src\database.js:234:    }
+  src\database.js:235:  }
+--- types PlanTask refs
+  src\renderer\types.ts:97:  updated_at: string;
+  src\renderer\types.ts:98:}
+  src\renderer\types.ts:99:
+> src\renderer\types.ts:100:export interface PlanTask {
+  src\renderer\types.ts:101:  id: number;
+  src\renderer\types.ts:102:  plan_id: number;
+> src\renderer\types.ts:103:  task_key: string;
+  src\renderer\types.ts:104:  title: string;
+  src\renderer\types.ts:105:  raw_line: string;
+> src\renderer\types.ts:106:  scope: string;
+  src\renderer\types.ts:107:  status: string;
+> src\renderer\types.ts:108:  sort_order: number;
+  src\renderer\types.ts:109:  started_at: string | null;
+  src\renderer\types.ts:110:  finished_at: string | null;
+> src\renderer\types.ts:111:  duration_ms: number;
+  src\renderer\types.ts:112:  updated_at: string;
+  src\renderer\types.ts:113:  /** JOIN plans 得到 */
+  src\renderer\types.ts:114:  file_path: string;
+  src\renderer\types.ts:115:}
+  src\renderer\types.ts:116:
+  src\renderer\types.ts:117:export const TASK_EVENT_TYPES = {
+  src\renderer\types.ts:118:  STARTED: 'task.started',
+  src\renderer\types.ts:119:  SUCCEEDED: 'task.succeeded',
+
+
+
+codex
+表结构位置找到了；接着检查同文件内任务读写 SQL 是否需要字段同步。
+exec
+powershell.exe -Command 'rg -n "plan_tasks|PlanTask|task_key|duration_ms|started_at|finished_at" src/database.js' in D:\project\GitHub\autoplan
+ succeeded in 195ms:
+131:      CREATE TABLE IF NOT EXISTS plan_tasks (
+134:        task_key TEXT NOT NULL,
+140:        started_at TEXT,
+141:        finished_at TEXT,
+142:        duration_ms INTEGER NOT NULL DEFAULT 0,
+144:        UNIQUE(plan_id, task_key)
+180:    this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
+181:    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+182:    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+183:    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+
+codex
+我会用可空 `codex_session_id` 字段实现持久化，并同步前端任务类型。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\database.js
+diff --git a/src/database.js b/src/database.js
+index 0d0d3b73955c3087ec250e5a61f249eed3697484..87f7e2fbce4f1408d5c6b66dd4311a3f0048e250
+--- a/src/database.js
++++ b/src/database.js
+@@ -140,6 +140,7 @@
+         started_at TEXT,
+         finished_at TEXT,
+         duration_ms INTEGER NOT NULL DEFAULT 0,
++        codex_session_id TEXT,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -181,6 +182,7 @@
+     this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+     this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+     this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
++    this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+
+diff --git a/src/database.js b/src/database.js
+index 0d0d3b73955c3087ec250e5a61f249eed3697484..87f7e2fbce4f1408d5c6b66dd4311a3f0048e250
+--- a/src/database.js
++++ b/src/database.js
+@@ -140,6 +140,7 @@
+         started_at TEXT,
+         finished_at TEXT,
+         duration_ms INTEGER NOT NULL DEFAULT 0,
++        codex_session_id TEXT,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -181,6 +182,7 @@
+     this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+     this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+     this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
++    this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+
+codex
+数据库字段已补上；现在同步 `PlanTask` 的可空类型。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\types.ts
+diff --git a/src/database.js b/src/database.js
+index 0d0d3b73955c3087ec250e5a61f249eed3697484..87f7e2fbce4f1408d5c6b66dd4311a3f0048e250
+--- a/src/database.js
++++ b/src/database.js
+@@ -140,6 +140,7 @@
+         started_at TEXT,
+         finished_at TEXT,
+         duration_ms INTEGER NOT NULL DEFAULT 0,
++        codex_session_id TEXT,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -181,6 +182,7 @@
+     this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+     this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+     this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
++    this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 43110ebe1ea211cb6a93f34c5f168558699b2e13..bfd4ac5845ae786a0e8cebd7510ab2ba3836793e
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -106,13 +106,14 @@
+   scope: string;
+   status: string;
+   sort_order: number;
+-  started_at: string | null;
+-  finished_at: string | null;
+-  duration_ms: number;
+-  updated_at: string;
+-  /** JOIN plans 得到 */
+-  file_path: string;
+-}
++  started_at: string | null;
++  finished_at: string | null;
++  duration_ms: number;
++  codex_session_id: string | null;
++  updated_at: string;
++  /** JOIN plans 得到 */
++  file_path: string;
++}
+ 
+ export const TASK_EVENT_TYPES = {
+   STARTED: 'task.started',
+
+diff --git a/src/database.js b/src/database.js
+index 0d0d3b73955c3087ec250e5a61f249eed3697484..87f7e2fbce4f1408d5c6b66dd4311a3f0048e250
+--- a/src/database.js
++++ b/src/database.js
+@@ -140,6 +140,7 @@
+         started_at TEXT,
+         finished_at TEXT,
+         duration_ms INTEGER NOT NULL DEFAULT 0,
++        codex_session_id TEXT,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -181,6 +182,7 @@
+     this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+     this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+     this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
++    this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 43110ebe1ea211cb6a93f34c5f168558699b2e13..bfd4ac5845ae786a0e8cebd7510ab2ba3836793e
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -106,13 +106,14 @@
+   scope: string;
+   status: string;
+   sort_order: number;
+-  started_at: string | null;
+-  finished_at: string | null;
+-  duration_ms: number;
+-  updated_at: string;
+-  /** JOIN plans 得到 */
+-  file_path: string;
+-}
++  started_at: string | null;
++  finished_at: string | null;
++  duration_ms: number;
++  codex_session_id: string | null;
++  updated_at: string;
++  /** JOIN plans 得到 */
++  file_path: string;
++}
+ 
+ export const TASK_EVENT_TYPES = {
+   STARTED: 'task.started',
+
+**Verifying update plans**
+
+I think I need to confirm the command for checking differences in files. I could use `git diff --check` for `src/database.js` and `src/renderer/types.ts`, and that seems okay. Also, running `node --check src/database.js` might be necessary. It feels like I should have an update plan step, but first, I really need to verify everything before proceeding. Let's ensure I get it right!
+codex
+变更很小；我只对这两个 scope 文件做空白与语法级最小验证。
+  ✓ 读取 P001 上下文
+  ✓ 修改限定 scope 文件
+  → 做最小验证
+diff --git a/src/database.js b/src/database.js
+index 0d0d3b73955c3087ec250e5a61f249eed3697484..87f7e2fbce4f1408d5c6b66dd4311a3f0048e250
+--- a/src/database.js
++++ b/src/database.js
+@@ -140,6 +140,7 @@
+         started_at TEXT,
+         finished_at TEXT,
+         duration_ms INTEGER NOT NULL DEFAULT 0,
++        codex_session_id TEXT,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -181,6 +182,7 @@
+     this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+     this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+     this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
++    this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 43110ebe1ea211cb6a93f34c5f168558699b2e13..bfd4ac5845ae786a0e8cebd7510ab2ba3836793e
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -106,13 +106,14 @@
+   scope: string;
+   status: string;
+   sort_order: number;
+-  started_at: string | null;
+-  finished_at: string | null;
+-  duration_ms: number;
+-  updated_at: string;
+-  /** JOIN plans 得到 */
+-  file_path: string;
+-}
++  started_at: string | null;
++  finished_at: string | null;
++  duration_ms: number;
++  codex_session_id: string | null;
++  updated_at: string;
++  /** JOIN plans 得到 */
++  file_path: string;
++}
+ 
+ export const TASK_EVENT_TYPES = {
+   STARTED: 'task.started',
+
+exec
+powershell.exe -Command "git diff --check -- src/database.js src/renderer/types.ts; node --check src/database.js; Select-String -Path 'src/database.js','src/renderer/types.ts' -Pattern 'codex_session_id' -Context 2,2" in D:\project\GitHub\autoplan
+ succeeded in 258ms:
+
+  src\database.js:141:        finished_at TEXT,
+  src\database.js:142:        duration_ms INTEGER NOT NULL DEFAULT 0,
+> src\database.js:143:        codex_session_id TEXT,
+  src\database.js:144:        updated_at TEXT NOT NULL,
+  src\database.js:145:        UNIQUE(plan_id, task_key)
+  src\database.js:183:    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+  src\database.js:184:    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+> src\database.js:185:    this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+  src\database.js:186:    this.ensureColumn('events', 'project_id', 'INTEGER');
+  src\database.js:187:
+  src\renderer\types.ts:110:  finished_at: string | null;
+  src\renderer\types.ts:111:  duration_ms: number;
+> src\renderer\types.ts:112:  codex_session_id: string | null;
+  src\renderer\types.ts:113:  updated_at: string;
+  src\renderer\types.ts:114:  /** JOIN plans 得到 */
+
+
+warning: in the working copy of 'src/database.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/types.ts', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/database.js b/src/database.js
+index 0d0d3b73955c3087ec250e5a61f249eed3697484..87f7e2fbce4f1408d5c6b66dd4311a3f0048e250
+--- a/src/database.js
++++ b/src/database.js
+@@ -140,6 +140,7 @@
+         started_at TEXT,
+         finished_at TEXT,
+         duration_ms INTEGER NOT NULL DEFAULT 0,
++        codex_session_id TEXT,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -181,6 +182,7 @@
+     this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+     this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+     this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
++    this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 43110ebe1ea211cb6a93f34c5f168558699b2e13..bfd4ac5845ae786a0e8cebd7510ab2ba3836793e
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -106,13 +106,14 @@
+   scope: string;
+   status: string;
+   sort_order: number;
+-  started_at: string | null;
+-  finished_at: string | null;
+-  duration_ms: number;
+-  updated_at: string;
+-  /** JOIN plans 得到 */
+-  file_path: string;
+-}
++  started_at: string | null;
++  finished_at: string | null;
++  duration_ms: number;
++  codex_session_id: string | null;
++  updated_at: string;
++  /** JOIN plans 得到 */
++  file_path: string;
++}
+ 
+ export const TASK_EVENT_TYPES = {
+   STARTED: 'task.started',
+
+codex
+最小验证通过；最后确认只触及本任务 scope 与计划未修改。
+exec
+powershell.exe -Command 'git status --short -- src/database.js src/renderer/types.ts docs/plan/plan_requirement_7_20260625-033918.md' in D:\project\GitHub\autoplan
+ succeeded in 166ms:
+ M src/database.js
+ M src/renderer/types.ts
+?? docs/plan/plan_requirement_7_20260625-033918.md
+
+diff --git a/src/database.js b/src/database.js
+index 0d0d3b73955c3087ec250e5a61f249eed3697484..87f7e2fbce4f1408d5c6b66dd4311a3f0048e250
+--- a/src/database.js
++++ b/src/database.js
+@@ -140,6 +140,7 @@
+         started_at TEXT,
+         finished_at TEXT,
+         duration_ms INTEGER NOT NULL DEFAULT 0,
++        codex_session_id TEXT,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -181,6 +182,7 @@
+     this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+     this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+     this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
++    this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 43110ebe1ea211cb6a93f34c5f168558699b2e13..bfd4ac5845ae786a0e8cebd7510ab2ba3836793e
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -106,13 +106,14 @@
+   scope: string;
+   status: string;
+   sort_order: number;
+-  started_at: string | null;
+-  finished_at: string | null;
+-  duration_ms: number;
+-  updated_at: string;
+-  /** JOIN plans 得到 */
+-  file_path: string;
+-}
++  started_at: string | null;
++  finished_at: string | null;
++  duration_ms: number;
++  codex_session_id: string | null;
++  updated_at: string;
++  /** JOIN plans 得到 */
++  file_path: string;
++}
+ 
+ export const TASK_EVENT_TYPES = {
+   STARTED: 'task.started',
+
+  ✓ 读取 P001 上下文
+  ✓ 修改限定 scope 文件
+  ✓ 做最小验证
+diff --git a/src/database.js b/src/database.js
+index 0d0d3b73955c3087ec250e5a61f249eed3697484..87f7e2fbce4f1408d5c6b66dd4311a3f0048e250
+--- a/src/database.js
++++ b/src/database.js
+@@ -140,6 +140,7 @@
+         started_at TEXT,
+         finished_at TEXT,
+         duration_ms INTEGER NOT NULL DEFAULT 0,
++        codex_session_id TEXT,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -181,6 +182,7 @@
+     this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+     this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+     this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
++    this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 43110ebe1ea211cb6a93f34c5f168558699b2e13..bfd4ac5845ae786a0e8cebd7510ab2ba3836793e
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -106,13 +106,14 @@
+   scope: string;
+   status: string;
+   sort_order: number;
+-  started_at: string | null;
+-  finished_at: string | null;
+-  duration_ms: number;
+-  updated_at: string;
+-  /** JOIN plans 得到 */
+-  file_path: string;
+-}
++  started_at: string | null;
++  finished_at: string | null;
++  duration_ms: number;
++  codex_session_id: string | null;
++  updated_at: string;
++  /** JOIN plans 得到 */
++  file_path: string;
++}
+ 
+ export const TASK_EVENT_TYPES = {
+   STARTED: 'task.started',
+
+codex
+已完成 P001，仅修改指定 scope 文件，未修改 plan/checkbox/进度区。
+
+**变更**
+- `src/database.js:143`：`plan_tasks` 新增可空字段 `codex_session_id TEXT`
+- `src/database.js:185`：通过 `ensureColumn` 兼容历史 SQLite 数据库
+- `src/renderer/types.ts:112`：`PlanTask` 新增 `codex_session_id: string | null`
+
+**验证**
+- 已运行 `git diff --check -- src/database.js src/renderer/types.ts`
+- 已运行 `node --check src/database.js`
+- 未运行全量测试；只做了与本任务直接相关的最小验证  
+- `git status` 显示 plan 文件为未跟踪状态，但本次未写入或修改该 plan 文件
+diff --git a/src/database.js b/src/database.js
+index 0d0d3b73955c3087ec250e5a61f249eed3697484..87f7e2fbce4f1408d5c6b66dd4311a3f0048e250
+--- a/src/database.js
++++ b/src/database.js
+@@ -140,6 +140,7 @@
+         started_at TEXT,
+         finished_at TEXT,
+         duration_ms INTEGER NOT NULL DEFAULT 0,
++        codex_session_id TEXT,
+         updated_at TEXT NOT NULL,
+         UNIQUE(plan_id, task_key)
+       );
+@@ -181,6 +182,7 @@
+     this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+     this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+     this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
++    this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+     this.ensureColumn('events', 'project_id', 'INTEGER');
+ 
+     const defaultProjectId = this.ensureDefaultProject();
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 43110ebe1ea211cb6a93f34c5f168558699b2e13..bfd4ac5845ae786a0e8cebd7510ab2ba3836793e
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -106,13 +106,14 @@
+   scope: string;
+   status: string;
+   sort_order: number;
+-  started_at: string | null;
+-  finished_at: string | null;
+-  duration_ms: number;
+-  updated_at: string;
+-  /** JOIN plans 得到 */
+-  file_path: string;
+-}
++  started_at: string | null;
++  finished_at: string | null;
++  duration_ms: number;
++  codex_session_id: string | null;
++  updated_at: string;
++  /** JOIN plans 得到 */
++  file_path: string;
++}
+ 
+ export const TASK_EVENT_TYPES = {
+   STARTED: 'task.started',
+
+tokens used
+19,314
+已完成 P001，仅修改指定 scope 文件，未修改 plan/checkbox/进度区。
+
+**变更**
+- `src/database.js:143`：`plan_tasks` 新增可空字段 `codex_session_id TEXT`
+- `src/database.js:185`：通过 `ensureColumn` 兼容历史 SQLite 数据库
+- `src/renderer/types.ts:112`：`PlanTask` 新增 `codex_session_id: string | null`
+
+**验证**
+- 已运行 `git diff --check -- src/database.js src/renderer/types.ts`
+- 已运行 `node --check src/database.js`
+- 未运行全量测试；只做了与本任务直接相关的最小验证  
+- `git status` 显示 plan 文件为未跟踪状态，但本次未写入或修改该 plan 文件

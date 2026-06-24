@@ -1,0 +1,13 @@
+已完成 P003，未修改 plan 文件、未勾选 checkbox。
+
+**变更**
+- `src/loopService.js:814` 并发任务成功后立即执行 `completeTask`，让每个任务结束事件即时写入并触发更新。
+- `src/loopService.js:1334` 保持 `ORDER BY id DESC LIMIT 80`，并将快照事件映射为可直接消费的事件行。
+- `src/loopService.js:1529` 安全解析 `events.meta`，JSON 对象变结构化元信息，旧空值/非 JSON 字符串保持兼容。
+- `src/renderer/types.ts:254` 补齐任务事件耗时元信息类型。
+- `src/renderer/types.ts:273`、`src/renderer/types.ts:303` 让快照事件类型支持结构化 `meta`。
+
+**验证**
+- 通过：`node --check src/loopService.js`
+- 通过：内存数据库脚本验证事件实时 `emitUpdate`、最新优先、`LIMIT 80`、`taskId/taskKey` 可读。
+- 通过：`npx tsc --noEmit --pretty false --skipLibCheck --ignoreConfig src/renderer/types.ts`

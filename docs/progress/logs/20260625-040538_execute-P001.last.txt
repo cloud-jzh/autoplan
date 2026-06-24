@@ -1,0 +1,13 @@
+已完成 P001，未修改 plan 文件、未勾选 checkbox，也未处理其它任务。
+
+**完成内容**
+- 在 `src/renderer/components/CodexLog.tsx:5` 添加 24px 底部容差常量。
+- 在 `src/renderer/components/CodexLog.tsx:17` 添加接近底部判定函数，兼容空日志和一屏内日志。
+- 在 `src/renderer/components/CodexLog.tsx:34` 添加组件内 `ref` 状态记录当前是否处于底部。
+- 在 `src/renderer/components/CodexLog.tsx:52` 和 `src/renderer/components/CodexLog.tsx:59` 绑定滚动事件，用户上滑/回到底部时更新判定状态。
+
+**验证**
+- 已运行最小相关校验：`npx tsc --noEmit --pretty false`
+- 结果：通过
+
+说明：按 P001 范围仅建立底部判定机制，未提前实现 P002 的“仅粘底时自动滚动”策略。

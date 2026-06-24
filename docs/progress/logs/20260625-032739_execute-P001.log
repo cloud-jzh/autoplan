@@ -1,0 +1,4073 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019efb1a-3848-7dc1-bed0-1386e5b41ba8
+--------
+user
+你是开发执行者。
+请只执行指定任务 P001，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_6_20260625-032502.md
+指定任务：
+- [ ] P001: 建立统一 SVG 图标体系 <!-- scope: src/renderer/components/icons.tsx,src/styles.css -->
+任务 scope：src/renderer/components/icons.tsx, src/styles.css
+
+完成后必须：
+- 当前为并发执行模式，不要读写其它任务的 scope
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 如需测试，只运行与当前任务直接相关的最小测试集，不要运行全量测试或与本任务无关的测试
+- 只有当前任务本身明确要求全量验证时，才允许运行全量测试
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会先只读取 plan 上下文和 P001 的两个 scope 文件，确认现状后再做最小改动。
+  → 读取 P001 相关上下文
+  • 实现统一图标组件
+  • 补充图标样式规则
+  • 做最小范围校验
+exec
+powershell.exe -Command "Get-Content -Raw -Encoding UTF8 'D:\\project\\GitHub\\autoplan\\docs\\plan\\plan_requirement_6_20260625-032502.md'; Write-Output \""'`n--- icons.tsx ---"; Get-Content -Raw -Encoding UTF8 '"'D:\\project\\GitHub\\autoplan\\src\\renderer\\components\\icons.tsx'; Write-Output \""'`n--- styles.css ---"; Get-Content -Raw -Encoding UTF8 '"'D:\\project\\GitHub\\autoplan\\src\\styles.css'" in D:\project\GitHub\autoplan
+ succeeded in 239ms:
+# 需求 #6 开发计划：系统界面图标统一使用 Icon
+
+## 背景
+
+当前界面中部分导航、统计卡片、操作按钮、状态节点和输入区按钮直接使用字符符号或 emoji 作为图标。需求 #6 要求系统界面的图标统一使用 icon，而不是使用 emoji，以保证视觉风格一致、跨平台渲染稳定、可访问性明确，并便于后续维护主题色、尺寸和悬浮态。
+
+## 任务拆解
+
+- [ ] P001: 建立统一 SVG 图标体系 <!-- scope: src/renderer/components/icons.tsx,src/styles.css -->
+  - 验收要点：新增本地图标组件或图标映射，默认使用 SVG icon，不新增非必要运行时依赖。
+  - 验收要点：图标组件支持统一的 `size`、`className`、`title` 或 `aria-hidden` 语义，装饰图标不被屏幕阅读器重复朗读。
+  - 验收要点：覆盖当前界面需要的概览、需求、反馈、任务、事件、计划、运行、完成、编辑、删除、警告、刷新、附件、发送等基础图标。
+  - 验收要点：图标颜色默认继承文本色或使用现有 CSS 变量，能够适配品牌色、成功、警告、危险和普通按钮状态。
+
+- [ ] P002: 替换项目页操作图标 <!-- scope: src/renderer/pages/ProjectsPage.tsx,src/styles.css -->
+  - 验收要点：项目卡片右键菜单或更多菜单中的进入工作区、编辑、删除操作均使用 SVG icon，按钮文字和点击行为保持不变。
+  - 验收要点：删除确认弹窗的警告视觉改为统一 Icon 组件，保留现有危险色、圆形背景和居中布局。
+  - 验收要点：项目页不再把 emoji 或字符符号作为操作图标来源，搜索、创建、编辑、删除流程无回归。
+  - 验收要点：图标与文字间距、对齐、悬浮态和危险态在窄屏及长项目名称下不挤压、不错位。
+
+- [ ] P003: 替换工作区导航与统计图标 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/styles.css -->
+  - 验收要点：工作区侧边导航的概览、需求、反馈、任务与计划、事件流图标改为统一 SVG icon，当前选中态样式保持一致。
+  - 验收要点：概览统计卡片中的需求数、计划数、任务进度、循环间隔图标改为 Icon 组件，`StatCard` 不再依赖字符串图标。
+  - 验收要点：图标替换后统计卡片的颜色、尺寸、圆形背景、文字层级和响应式布局与现有视觉保持一致或更稳定。
+  - 验收要点：工作区标题、返回项目列表、查看任务等文字入口不因图标替换丢失可点击区域或可访问标签。
+
+- [ ] P004: 替换流水线与输入区图标 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/Composer.tsx,src/styles.css -->
+  - 验收要点：循环阶段流水线中的完成态和运行态使用 SVG icon，未开始步骤仍可显示序号，阶段状态语义保持清晰。
+  - 验收要点：需求/反馈输入区的添加附件、发送按钮和非图片附件占位改为 Icon 组件，不再使用字符图形充当图标。
+  - 验收要点：按钮 `aria-label`、键盘触发、文件选择、拖拽上传和提交表单行为保持不变。
+  - 验收要点：输入区图标在禁用、悬浮、拖拽高亮和紧凑布局下尺寸统一，不影响文本区域高度自适应。
+
+- [ ] P005: 同步静态界面原型图标 <!-- scope: ui/projects.html,ui/workspace.html,ui/README.md -->
+  - 验收要点：静态项目页和工作区原型中用于导航、统计、操作、警告、附件和流水线状态的 emoji 或字符符号改为 inline SVG 或可复用 icon 片段。
+  - 验收要点：原型页面的视觉说明与实际 React 界面保持一致，`ui/README.md` 补充“界面图标使用 icon，不使用 emoji”的设计约束。
+  - 验收要点：原型中的示例业务文案、时间、状态、占位内容不被误删，仅替换承担图标职责的符号。
+  - 验收要点：浏览器直接打开静态 HTML 时图标可见，无需依赖外部 CDN 或网络资源。
+
+- [ ] P006: 执行图标替换回归验证 <!-- scope: package.json,src/renderer/components/icons.tsx,src/renderer/pages/ProjectsPage.tsx,src/renderer/pages/WorkspacePage.tsx,src/renderer/components/Composer.tsx,src/styles.css,ui/projects.html,ui/workspace.html -->
+  - 验收要点：`npm run check` 通过，确认 TypeScript、主进程脚本和现有检查无错误。
+  - 验收要点：`npm run build` 通过，确认新增或替换的 SVG icon 可被 Vite 正常构建。
+  - 验收要点：对 `src/renderer`、`src/styles.css` 和 `ui` 执行字符扫描，确认无承担图标职责的 emoji 或字符符号残留。
+  - 验收要点：手动核对项目页、工作区概览、任务与计划、事件流、需求/反馈输入区，确认图标展示清晰且主要交互无回归。
+
+## 总体验收标准
+
+- 图标统一：系统界面中所有承担图标职责的元素均使用 SVG icon 或统一 Icon 组件，不再使用 emoji 作为图标。
+- 视觉一致：图标尺寸、线宽、颜色、悬浮态、危险态和选中态遵循现有设计变量，页面整体风格统一。
+- 交互无回归：项目管理、工作区导航、输入提交、附件上传、任务查看、删除确认等核心交互保持原有行为。
+- 可访问性明确：装饰性图标正确隐藏，功能性按钮保留可读 `aria-label` 或文字说明，键盘操作不受影响。
+- 构建通过：完成实现后 `npm run check` 与 `npm run build` 均通过，静态原型无需外部资源即可正常显示图标。
+
+## 进度区
+
+- 2026-06-25 AutoPlan 生成：需求 #6 开发计划已创建，待执行。
+
+
+--- icons.tsx ---
+
+--- styles.css ---
+/* ============================================================
+   设计系统 · Design Tokens
+   ============================================================ */
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, "Courier New", monospace;
+
+  --brand-50: #eef4ff;
+  --brand-100: #dbe7ff;
+  --brand-500: #3b6ef5;
+  --brand-600: #255fbd;
+  --brand-700: #1d4a94;
+  --brand-grad: linear-gradient(135deg, #4f7bff 0%, #6d5dfc 100%);
+
+  --bg-app: #f4f6fb;
+  --bg-elevated: #ffffff;
+  --bg-soft: #f8fafd;
+  --bg-hover: #eef2f9;
+  --line: #e2e8f1;
+  --line-soft: #eef2f8;
+
+  --text-1: #172033;
+  --text-2: #475067;
+  --text-3: #7c879b;
+  --text-4: #a4adc0;
+
+  --success: #18a957;
+  --success-bg: #e7f7ee;
+  --warning: #e08600;
+  --warning-bg: #fdf3e3;
+  --danger: #e5484d;
+  --danger-bg: #fdecec;
+  --info: #2563eb;
+  --info-bg: #e8f0ff;
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --shadow-sm: 0 1px 2px rgba(23, 32, 51, 0.06);
+  --shadow-md: 0 6px 18px rgba(23, 32, 51, 0.08);
+  --shadow-lg: 0 18px 48px rgba(37, 62, 120, 0.14);
+
+  background: var(--bg-app);
+  color: var(--text-1);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { overflow: hidden; font-size: 14px; -webkit-font-smoothing: antialiased; }
+h1, h2, h3, p { margin: 0; }
+button { font: inherit; cursor: pointer; }
+a { color: var(--brand-600); text-decoration: none; }
+.mono { font-family: var(--font-mono); }
+#root { height: 100vh; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 16px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elevated); color: var(--text-1); font-size: 13px; font-weight: 600; transition: background 0.14s, border-color 0.14s, transform 0.06s; }
+.btn:hover { background: var(--bg-hover); }
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+.btn-primary:hover { background: var(--brand-700); }
+.btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+.btn-link { background: transparent; border: 0; color: var(--brand-600); font-size: 12px; font-weight: 600; padding: 4px 8px; }
+.btn-link:hover { text-decoration: underline; }
+
+.card { background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); }
+.card-head { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--line-soft); }
+.card-head h2 { font-size: 14.5px; font-weight: 700; }
+.card-head .hint { font-size: 12px; color: var(--text-3); }
+.card-head .spacer { margin-left: auto; }
+.card-body { padding: 16px 18px; }
+
+/* 表单型卡片（如循环控制）：head 之后给 body 留内边距 */
+.editor.card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.editor > .card-head { flex: 0 0 auto; }
+.editor > .field,
+.editor > .button-row,
+.editor > .control-row { padding: 0 18px; }
+.editor > .field:first-of-type { padding-top: 16px; }
+.editor > .button-row { padding: 4px 18px 18px; flex-wrap: wrap; }
+.editor .button-row button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 7px 14px; border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--bg-elevated); color: var(--text-1); font-size: 12.5px; font-weight: 600;
+  transition: background 0.14s, border-color 0.14s;
+}
+.editor .button-row button:hover { background: var(--bg-hover); }
+.editor .button-row button[type="submit"] { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+.editor .button-row button[type="submit"]:hover { background: var(--brand-700); }
+
+.chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; }
+.chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.chip-pending { color: var(--text-3); background: var(--bg-soft); }
+.chip-running { color: var(--info); background: var(--info-bg); }
+.chip-completed { color: var(--success); background: var(--success-bg); }
+.chip-failed { color: var(--danger); background: var(--danger-bg); }
+.chip-stopped { color: var(--warning); background: var(--warning-bg); }
+.chip-waiting { color: var(--warning); background: var(--warning-bg); }
+.chip-accepted { color: var(--success); background: var(--success-bg); }
+
+.empty { color: var(--text-3); padding: 28px 18px; text-align: center; font-size: 13px; }
+.error-banner { padding: 12px 16px; margin-bottom: 16px; border-radius: var(--r-md); background: var(--danger-bg); border: 1px solid #f3c2c4; color: var(--danger); font-size: 13px; }
+.req { color: var(--danger); }
+.danger-text { color: var(--danger); }
+
+.list { display: grid; gap: 10px; padding: 16px 18px; }
+.list.compact { max-height: none; overflow: auto; }
+.item { min-width: 0; border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 12px; background: var(--bg-soft); }
+.item-title { display: flex; justify-content: space-between; gap: 12px; min-width: 0; font-weight: 650; align-items: center; }
+.item-title > span:first-child { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-title-right { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; flex: 0 0 auto; }
+.item-actions { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px; }
+.item-actions .btn-link { padding: 3px 6px; font-size: 12px; white-space: nowrap; }
+.item-actions .danger-link { color: var(--danger); }
+.item-actions .btn-link:disabled { color: var(--text-4); cursor: not-allowed; text-decoration: none; }
+.item-body { margin-top: 10px; color: var(--text-2); overflow-wrap: anywhere; }
+.plain-text { line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.meta { margin-top: 6px; color: var(--text-3); font-size: 12px; word-break: break-all; overflow-wrap: anywhere; }
+.event-list { min-width: 0; }
+.event-item { display: grid; gap: 8px; border-left: 3px solid transparent; }
+.event-title { align-items: flex-start; }
+.event-title > span:first-child { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.45; }
+.event-badge { flex: 0 0 auto; display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.event-badge-start, .event-badge-updated { color: var(--info); background: var(--info-bg); }
+.event-badge-success { color: var(--success); background: var(--success-bg); }
+.event-badge-failed { color: var(--danger); background: var(--danger-bg); }
+.event-badge-stopped, .event-badge-stopping { color: var(--warning); background: var(--warning-bg); }
+.event-item-start { border-left-color: var(--info); }
+.event-item-success { border-left-color: var(--success); }
+.event-item-failed { border-left-color: var(--danger); }
+.event-item-stopped, .event-item-stopping { border-left-color: var(--warning); }
+.event-item-updated { border-left-color: var(--info); }
+.event-item .item-body, .event-meta { margin-top: 0; }
+.button-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+
+/* 需求/反馈卡片：进度 + 操作脚 + 追加任务 */
+.intake-progress { margin-top: 12px; }
+.intake-item .item-foot {
+  display: flex; align-items: center; gap: 12px; margin-top: 12px;
+  padding-top: 10px; border-top: 1px solid var(--line-soft);
+}
+.intake-item .item-foot .meta { margin-top: 0; margin-left: auto; }
+.intake-item .item-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.intake-item .danger-link { color: var(--danger); }
+.intake-item .danger-link:hover { text-decoration: underline; }
+.append-row {
+  display: flex; gap: 8px; margin-top: 12px;
+  padding: 10px; border-radius: var(--r-sm);
+  background: var(--bg-soft); border: 1px dashed var(--line);
+}
+.append-input { flex: 1 1 auto; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); font: inherit; font-size: 12.5px; }
+.append-input:focus { outline: none; border-color: var(--brand-500); box-shadow: 0 0 0 3px var(--brand-50); }
+.inline-editor { display: grid; gap: 10px; margin-top: 12px; }
+.inline-editor .field { margin-bottom: 0; }
+.inline-editor textarea { min-height: 140px; }
+.attachment-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.attachment-thumb, .attachment-file { display: grid; gap: 6px; width: 120px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); color: var(--text-1); }
+.attachment-thumb img { width: 100%; aspect-ratio: 1; border-radius: 4px; object-fit: cover; background: var(--brand-50); }
+.attachment-thumb span, .attachment-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.attachment-file small { color: var(--text-3); font-size: 12px; }
+
+.app-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 32px; background: var(--bg-elevated); border-bottom: 1px solid var(--line); }
+.app-header .brand { display: flex; align-items: center; gap: 12px; }
+.brand-mark { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--brand-grad); color: #fff; font-weight: 800; font-size: 18px; box-shadow: 0 8px 18px rgba(77, 110, 255, 0.35); }
+.app-header h1 { font-size: 17px; font-weight: 700; }
+.app-header p { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.header-actions { display: flex; align-items: center; gap: 10px; }
+.projects-main { height: calc(100vh - 77px); overflow: auto; padding: 28px 32px 48px; }
+.projects-hero { display: flex; align-items: flex-end; gap: 20px; flex-wrap: wrap; margin-bottom: 22px; }
+.projects-hero h2 { font-size: 24px; font-weight: 800; }
+.projects-hero p { font-size: 13px; color: var(--text-3); margin-top: 6px; }
+.hero-stats { margin-left: auto; display: flex; gap: 24px; }
+.hero-stat { text-align: right; }
+.hero-stat b { display: block; font-size: 22px; font-weight: 800; color: var(--text-1); }
+.hero-stat span { font-size: 11px; color: var(--text-3); }
+.projects-toolbar { margin-bottom: 20px; }
+.search-input { width: 100%; max-width: 400px; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elevated); font: inherit; font-size: 13px; }
+.search-input:focus { outline: none; border-color: var(--brand-500); box-shadow: 0 0 0 3px var(--brand-50); }
+.project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.project-card { position: relative; background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px; box-shadow: var(--shadow-sm); cursor: pointer; transition: transform 0.14s, box-shadow 0.14s, border-color 0.14s; }
+.project-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: #cdd8ea; }
+.project-card-top { display: flex; align-items: flex-start; gap: 12px; }
+.project-avatar { width: 44px; height: 44px; flex: 0 0 auto; border-radius: 12px; background: var(--brand-grad); color: #fff; font-weight: 700; font-size: 18px; display: grid; place-items: center; }
+.project-info { min-width: 0; flex: 1 1 auto; }
+.project-name { font-size: 15px; font-weight: 700; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-path { font-size: 11.5px; color: var(--text-3); margin-top: 3px; font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-card-menu { flex: 0 0 auto; }
+.ctx-details { position: relative; }
+.ctx-details > summary { list-style: none; width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--text-3); font-size: 18px; line-height: 1; cursor: pointer; }
+.ctx-details > summary::-webkit-details-marker { display: none; }
+.ctx-details > summary:hover { background: var(--bg-hover); color: var(--text-1); }
+.ctx-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 60; min-width: 150px; padding: 5px; background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; gap: 2px; }
+.ctx-menu button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); text-align: left; font-size: 12.5px; }
+.ctx-menu button:hover { background: var(--bg-hover); color: var(--text-1); }
+.ctx-menu .ctx-danger { color: var(--danger); }
+.ctx-menu .ctx-danger:hover { background: var(--danger-bg); }
+.project-desc { font-size: 12.5px; color: var(--text-2); line-height: 1.55; margin-top: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.project-loop-status { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--text-2); font-size: 12px; font-weight: 600; }
+.project-loop-status .led { width: 7px; height: 7px; box-shadow: 0 0 0 3px var(--success-bg); }
+.project-loop-status .led.stopped { box-shadow: 0 0 0 3px var(--line); }
+.project-loop-interval { margin-left: auto; color: var(--text-3); font-family: var(--font-mono); font-weight: 500; }
+.project-meta { font-size: 11px; color: var(--text-4); margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+
+.workspace-shell { display: grid; grid-template-columns: 248px 1fr; height: 100vh; }
+.workspace-main { display: flex; flex-direction: column; min-width: 0; height: 100vh; overflow: hidden; }
+.sidebar { display: flex; flex-direction: column; gap: 6px; padding: 22px 14px 18px; background: var(--bg-elevated); border-right: 1px solid var(--line); height: 100vh; overflow-y: auto; }
+.sidebar .brand { display: flex; align-items: center; gap: 12px; padding: 4px 10px 18px; }
+.sidebar .brand-name { font-size: 17px; font-weight: 700; }
+.sidebar .brand-sub { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.back-link { display: flex; align-items: center; gap: 8px; margin: 0 4px 10px; padding: 8px 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); font-size: 12.5px; font-weight: 600; width: calc(100% - 8px); }
+.back-link:hover { background: var(--bg-hover); color: var(--text-1); }
+.project-switcher { margin: 0 4px 10px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-soft); }
+.project-label { font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: var(--text-4); margin-bottom: 8px; }
+.project-select { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); font: inherit; font-size: 13px; font-weight: 600; color: var(--text-1); }
+.project-switcher .project-path { margin-top: 8px; font-size: 11px; }
+.nav-group-label { padding: 12px 12px 6px; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-4); font-weight: 700; }
+.nav-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: 0; border-radius: var(--r-md); background: transparent; color: var(--text-2); text-align: left; font-size: 13.5px; font-weight: 500; transition: background 0.14s, color 0.14s; }
+.nav-item:hover { background: var(--bg-hover); color: var(--text-1); }
+.nav-item.active { background: var(--brand-50); color: var(--brand-700); font-weight: 600; }
+.nav-ico { width: 20px; height: 20px; flex: 0 0 auto; color: var(--text-3); display: grid; place-items: center; }
+.nav-item.active .nav-ico { color: var(--brand-600); }
+.sidebar-footer { margin-top: auto; padding: 12px; border-radius: var(--r-md); background: var(--bg-soft); border: 1px solid var(--line-soft); }
+.loop-mini { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-2); }
+.loop-mini b { color: var(--text-1); }
+.loop-config { font-size: 11px; color: var(--text-3); margin-top: 6px; }
+
+.topbar { display: flex; align-items: center; gap: 16px; padding: 16px 28px; background: var(--bg-elevated); border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+.topbar-title h1 { font-size: 18px; font-weight: 700; }
+.topbar-title p { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--bg-soft); border: 1px solid var(--line); color: var(--text-2); }
+.led { width: 9px; height: 9px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 4px var(--success-bg); }
+.pill .led { width: 7px; height: 7px; box-shadow: 0 0 0 3px var(--success-bg); }
+.led.running { animation: led-pulse 1.6s ease-in-out infinite; }
+.led.stopped { background: var(--text-4); box-shadow: 0 0 0 4px var(--line); }
+@keyframes led-pulse { 0%,100% { box-shadow: 0 0 0 4px var(--success-bg); } 50% { box-shadow: 0 0 0 7px rgba(24,169,87,0.15); } }
+.view { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 24px 28px 32px; display: none; }
+.view.active { display: flex; flex-direction: column; }
+/* 概览等纯流式内容视图：恢复 block，内部自己滚动 */
+.view.active:has(.overview-grid),
+.view.active:has(.stat-grid),
+.view.active > section.card:only-child { display: block; }
+
+.stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 20px; margin-bottom: 24px; }
+.stat { position: relative; padding: 18px 20px; background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
+.stat::after { content: ""; position: absolute; right: -18px; top: -18px; width: 84px; height: 84px; border-radius: 50%; opacity: 0.5; }
+.stat-brand::after { background: var(--brand-50); }
+.stat-info::after { background: var(--info-bg); }
+.stat-success::after { background: var(--success-bg); }
+.stat-warning::after { background: var(--warning-bg); }
+.stat .stat-ico { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; margin-bottom: 12px; position: relative; z-index: 1; }
+.stat-brand .stat-ico { background: var(--brand-50); color: var(--brand-600); }
+.stat-info .stat-ico { background: var(--info-bg); color: var(--info); }
+.stat-success .stat-ico { background: var(--success-bg); color: var(--success); }
+.stat-warning .stat-ico { background: var(--warning-bg); color: var(--warning); }
+.stat .stat-value { font-size: 26px; font-weight: 800; line-height: 1; position: relative; z-index: 1; }
+.stat .stat-label { font-size: 12px; color: var(--text-3); margin-top: 6px; position: relative; z-index: 1; }
+.stat .stat-delta { font-size: 11px; margin-top: 8px; color: var(--success); font-weight: 600; position: relative; z-index: 1; }
+.overview-grid { display: grid; grid-template-columns: minmax(0,1.25fr) minmax(380px,1fr); align-items: stretch; gap: 24px; }
+.overview-main-column, .overview-side-column { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.overview-side-column .card-head h2 { white-space: nowrap; }
+.loop-card { background: var(--brand-grad); color: #fff; border-radius: var(--r-lg); padding: 22px 24px; position: relative; overflow: hidden; box-shadow: 0 18px 40px rgba(77,110,255,0.28); }
+.loop-card .lc-top { display: flex; align-items: center; gap: 12px; }
+.loop-card .lc-status { font-size: 13px; opacity: 0.9; }
+.loop-card .lc-phase { font-size: 22px; font-weight: 800; margin-top: 4px; }
+.loop-card .lc-meta { display: flex; gap: 22px; margin-top: 16px; font-size: 12px; opacity: 0.92; }
+.loop-card .lc-meta b { display: block; font-size: 15px; font-weight: 700; margin-top: 2px; }
+.loop-card .lc-led { width: 12px; height: 12px; border-radius: 50%; background: #b6f5cf; box-shadow: 0 0 0 4px rgba(182,245,207,0.25); }
+.loop-card .lc-led.running { animation: led-pulse 1.6s ease-in-out infinite; }
+.loop-card .lc-led.stopped { background: #cfd6e6; box-shadow: 0 0 0 4px rgba(207,214,230,0.25); }
+
+.pipeline { display: flex; align-items: flex-start; gap: 0; overflow-x: auto; }
+.pipe-step { flex: 1 1 0; min-width: 0; text-align: center; position: relative; }
+.pipe-node { width: 40px; height: 40px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--bg-elevated); border: 2px solid var(--line); color: var(--text-3); font-weight: 700; font-size: 14px; position: relative; z-index: 1; }
+.pipe-step.done .pipe-node { background: var(--success); border-color: var(--success); color: #fff; }
+.pipe-step.active .pipe-node { background: var(--brand-600); border-color: var(--brand-600); color: #fff; box-shadow: 0 0 0 5px var(--brand-50); }
+.pipe-step::before { content: ""; position: absolute; top: 20px; left: -50%; right: 50%; height: 2px; background: var(--line); z-index: 0; }
+.pipe-step:first-child::before { display: none; }
+.pipe-step.done::before, .pipe-step.active::before { background: var(--success); }
+.pipe-label { font-size: 12px; font-weight: 600; margin-top: 10px; color: var(--text-2); }
+.pipe-step.active .pipe-label { color: var(--brand-600); }
+
+/* 实时执行日志（对话格式） */
+.live-log-card { display: flex; flex-direction: column; min-height: 0; }
+.live-log-card .card-head h2 { display: flex; align-items: center; gap: 8px; }
+.overview-main-column > .live-log-card { height: 440px; }
+.overview-main-column > .live-log-card .codex-log { flex: 1 1 auto; min-height: 0; max-height: none; }
+.log-card-head { align-items: stretch; flex-direction: column; gap: 8px; padding: 12px 18px; }
+.log-title-line { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.log-title-line h2 { flex: 0 0 auto; }
+.log-title-line .hint { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-phase-chip { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px; padding: 4px 9px; background: var(--bg-soft); color: var(--text-2); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.log-phase-chip.running { color: var(--success); background: var(--success-bg); border-color: transparent; }
+.log-summary { display: flex; align-items: center; gap: 18px; color: var(--text-3); font-size: 12px; }
+.log-summary b { color: var(--text-1); margin-left: 4px; }
+.live-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--success);
+  box-shadow: 0 0 0 3px var(--success-bg);
+  animation: led-pulse 1.4s ease-in-out infinite;
+}
+.live-dot.idle { background: var(--text-4); box-shadow: 0 0 0 3px var(--line); animation: none; }
+.codex-log {
+  margin: 0; padding: 10px;
+  background: #1b2438; color: #d6e1f5;
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+  max-height: 380px; min-height: 120px; overflow: auto;
+  font-family: var(--font-mono); font-size: 12px; line-height: 1.6;
+}
+.codex-raw { margin: 0; white-space: pre-wrap; word-break: break-word; color: #8a96b0; padding: 8px; }
+
+/* 活动时间线行 */
+.act-line {
+  display: grid; grid-template-columns: 56px 52px 1fr; gap: 8px;
+  align-items: baseline; padding: 4px 8px; border-radius: 4px;
+}
+.act-line:hover { background: rgba(255,255,255,0.04); }
+.act-time { color: #5a6680; font-size: 11px; font-variant-numeric: tabular-nums; }
+.act-tag {
+  display: inline-block; font-size: 10px; font-weight: 700;
+  padding: 1px 7px; border-radius: 999px; text-align: center;
+  letter-spacing: 0.02em;
+}
+.act-text { color: #c8d3ec; word-break: break-word; white-space: pre-wrap; }
+
+.act-codex .act-tag { background: rgba(109,93,252,0.3); color: #c4b8ff; }
+.act-codex .act-text { color: #e0e6ff; }
+.act-exec .act-tag { background: rgba(24,169,87,0.3); color: #7fe0a8; }
+.act-exec .act-text { color: #9fd8b8; }
+.act-thinking .act-tag { background: rgba(224,134,0,0.3); color: #ffc878; }
+.act-thinking .act-text { color: #d8b878; font-style: italic; }
+.act-error .act-tag { background: rgba(229,72,77,0.35); color: #ff9498; }
+.act-error .act-text { color: #ff9498; }
+.act-system .act-tag { background: rgba(124,135,155,0.3); color: #a0aac0; }
+.act-system .act-text { color: #a0aac0; }
+.act-user .act-tag { background: rgba(59,110,245,0.3); color: #8ab0ff; }
+.act-user .act-text { color: #b8c8f0; }
+.act-info .act-tag { background: rgba(124,135,155,0.25); color: #8a96b0; }
+.act-info .act-text { color: #b0bbd6; }
+
+.intake-layout { display: grid; grid-template-rows: minmax(0,1fr) auto; gap: 16px; flex: 1 1 0; min-height: 0; max-width: 880px; margin: 0 auto; width: 100%; }
+.intake-layout > .composer { margin-bottom: 24px; }
+.intake-stream { display: grid; grid-template-rows: auto minmax(0,1fr); min-height: 0; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--bg-elevated); padding: 18px; }
+.section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.section-heading h2 { margin-bottom: 0; }
+.section-heading span { color: var(--text-3); font-size: 12px; }
+.intake-list { min-height: 0; overflow: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 10px; }
+
+.composer { background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-xl); padding: 14px 16px 12px; box-shadow: var(--shadow-lg); transition: border-color 0.16s, box-shadow 0.16s; }
+.composer:focus-within { border-color: var(--brand-500); box-shadow: 0 18px 48px rgba(37,62,120,0.2); }
+.composer.drag-over { border-color: var(--brand-500); background: var(--brand-50); }
+.composer textarea { width: 100%; border: 0; outline: none; resize: none; background: transparent; font: inherit; font-size: 14.5px; line-height: 1.5; color: var(--text-1); min-height: 58px; max-height: 180px; overflow: auto; }
+.composer textarea::placeholder { color: var(--text-4); }
+.composer-bottom { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.composer-tools { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.attachment-trigger { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; }
+.attachment-trigger:hover, .attachment-trigger.drag-over { background: var(--bg-hover); }
+.attachment-trigger input { display: none; }
+.plus-icon { display: block; color: var(--text-3); font-size: 28px; font-weight: 300; line-height: 1; }
+.composer-actions { display: flex; align-items: center; justify-content: end; gap: 10px; margin-left: auto; }
+.composer-actions span { color: var(--text-3); font-size: 12px; }
+.send-button { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border: 0; border-radius: 50%; padding: 0; background: var(--brand-grad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 6px 14px rgba(77,110,255,0.4); }
+.send-button:hover { filter: brightness(1.05); }
+.attachment-list.pending { display: flex; align-items: center; min-width: 0; max-width: min(520px,54vw); gap: 8px; overflow-x: auto; }
+.pending-attachment { display: grid; grid-template-columns: 42px 1fr auto auto; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); }
+.pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+.pending-thumb { object-fit: cover; }
+.pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
+.pending-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pending-attachment small { color: var(--text-3); }
+.pending-attachment button { padding: 5px 8px; font-size: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); }
+
+.task-layout { display: grid; grid-template-columns: 320px minmax(0,1fr); gap: 18px; flex: 1 1 0; min-height: 0; }
+.task-sidebar { display: grid; grid-template-rows: auto minmax(0,1fr); gap: 16px; min-height: 0; }
+.task-sidebar > form.editor { min-height: 0; }
+.task-main { display: grid; grid-template-rows: 1fr; gap: 16px; min-height: 0; }
+.task-status-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; min-height: 0; }
+.primary-section, .side-section, .task-status-grid .card { min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.side-section .list, .task-status-grid .list, .primary-section .list { overflow: auto; }
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; color: var(--text-3); font-size: 11.5px; font-weight: 600; }
+.field:last-child { margin-bottom: 0; }
+input, textarea, select { width: 100%; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 9px 11px; font: inherit; font-size: 13px; color: var(--text-1); background: var(--bg-elevated); font-weight: 400; }
+input:focus, textarea:focus, select:focus { outline: none; border-color: var(--brand-500); box-shadow: 0 0 0 3px var(--brand-50); }
+textarea { min-height: 80px; resize: vertical; }
+.plan-draft textarea { min-height: 240px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.5; margin-top: 12px; }
+.draft-note { color: var(--text-2); font-size: 13px; }
+
+.modal-mask { position: fixed; inset: 0; z-index: 100; background: rgba(23,32,51,0.42); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.modal { width: 100%; max-width: 480px; background: var(--bg-elevated); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: hidden; }
+.modal-confirm { max-width: 400px; text-align: center; padding: 28px 24px 0; }
+.modal-head { display: flex; align-items: center; gap: 12px; padding: 18px 22px; border-bottom: 1px solid var(--line-soft); }
+.modal-head h3 { font-size: 16px; font-weight: 700; }
+.modal-close { margin-left: auto; width: 30px; height: 30px; border-radius: 8px; border: 0; background: transparent; color: var(--text-3); font-size: 20px; }
+.modal-close:hover { background: var(--bg-hover); color: var(--text-1); }
+.modal-form { padding: 20px 22px; }
+.modal-confirm p { font-size: 13px; color: var(--text-2); line-height: 1.6; margin: 8px 0 4px; }
+.modal-danger-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--danger-bg); color: var(--danger); font-size: 24px; margin: 0 auto 14px; }
+.modal-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 22px; border-top: 1px solid var(--line-soft); background: var(--bg-soft); }
+
+@media (max-width: 1080px) {
+  body { overflow: auto; }
+  .workspace-shell { grid-template-columns: 1fr; height: auto; }
+  .sidebar { height: auto; }
+  .workspace-main { height: auto; min-height: 100vh; }
+  .task-layout { grid-template-columns: 1fr; }
+  .task-main { grid-template-rows: auto auto; }
+  .task-status-grid { grid-template-columns: 1fr; }
+  .overview-grid { grid-template-columns: 1fr; }
+  .overview-main-column > .live-log-card { height: 360px; }
+}
+
+@media (max-width: 640px) {
+  .view { padding: 18px 14px 24px; }
+  .stat-grid { grid-template-columns: 1fr; }
+  .card-head { flex-wrap: wrap; align-items: flex-start; }
+  .item-title { align-items: flex-start; flex-wrap: wrap; }
+  .item-title-right { width: 100%; justify-content: space-between; flex-wrap: wrap; }
+  .event-title { gap: 8px; }
+}
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb { background: #d4dce8; border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: #b9c5d8; background-clip: content-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+Get-Content : 找不到路径“D:\project\GitHub\autoplan\src\renderer\components\icons.tsx”，因为该路径不存在。
+所在位置 行:2 字符: 147
++ ... s.tsx ---"; Get-Content -Raw -Encoding UTF8 'D:\project\GitHub\autopl ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (D:\project\GitH...nents\icons.tsx:String) [Get-Content], ItemNotFoundEx 
+   ception
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetContentCommand
+ 
+
+**Understanding CSS for React Components**
+
+I need to get a better understanding of CSS, especially the full styles.css file and its rules, but I can read it in chunks. I don’t need to focus on other pages right now, but I do want to create icon components. It seems like I might be dealing with a React TypeScript framework and might need a tsconfig file, although it’s excluded from the scope. Also, I should confirm how to handle JSX runtime for React 17, especially with imports.
+**Evaluating React Type Imports**
+
+I’m considering whether I can import the React type, specifically using `import type { SVGProps } from 'react'`, which won't bring in the React runtime. With Vite, would that work without a tsconfig? In React 18, the automatic transform means I might not need to import React, but I'm wondering if it's still okay to do so. If I'm using the classic `jsx: react`, then I will need the React value in scope for JSX, especially since I'm creating a new file.
+codex
+`icons.tsx` 目前不存在；我接着只检查 `styles.css` 里的现有 icon 相关样式，避免改到其它区域。
+exec
+powershell.exe -Command "Select-String -Path 'D:\\project\\GitHub\\autoplan\\src\\styles.css' -Pattern 'icon|emoji|stat|nav|attachment|danger|warning|button|send|refresh|event|pipeline|step|status' -CaseSensitive:"'$false | ForEach-Object { '"'{0}:{1}: {2}' -f "'$_.Path, $_.LineNumber, $_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 198ms:
+D:\project\GitHub\autoplan\src\styles.css:30: --warning: #e08600;
+D:\project\GitHub\autoplan\src\styles.css:31: --warning-bg: #fdf3e3;
+D:\project\GitHub\autoplan\src\styles.css:32: --danger: #e5484d;
+D:\project\GitHub\autoplan\src\styles.css:33: --danger-bg: #fdecec;
+D:\project\GitHub\autoplan\src\styles.css:53: button { font: inherit; cursor: pointer; }
+D:\project\GitHub\autoplan\src\styles.css:63: .btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+D:\project\GitHub\autoplan\src\styles.css:79: .editor > .button-row,
+D:\project\GitHub\autoplan\src\styles.css:82: .editor > .button-row { padding: 4px 18px 18px; flex-wrap: wrap; }
+D:\project\GitHub\autoplan\src\styles.css:83: .editor .button-row button {
+D:\project\GitHub\autoplan\src\styles.css:89: .editor .button-row button:hover { background: var(--bg-hover); }
+D:\project\GitHub\autoplan\src\styles.css:90: .editor .button-row button[type="submit"] { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+D:\project\GitHub\autoplan\src\styles.css:91: .editor .button-row button[type="submit"]:hover { background: var(--brand-700); }
+D:\project\GitHub\autoplan\src\styles.css:98: .chip-failed { color: var(--danger); background: var(--danger-bg); }
+D:\project\GitHub\autoplan\src\styles.css:99: .chip-stopped { color: var(--warning); background: var(--warning-bg); }
+D:\project\GitHub\autoplan\src\styles.css:100: .chip-waiting { color: var(--warning); background: var(--warning-bg); }
+D:\project\GitHub\autoplan\src\styles.css:104: .error-banner { padding: 12px 16px; margin-bottom: 16px; border-radius: var(--r-md); background: var(--danger-bg); border: 1px solid #f3c2c4; color: var(--danger); font-size: 13px; }
+D:\project\GitHub\autoplan\src\styles.css:105: .req { color: var(--danger); }
+D:\project\GitHub\autoplan\src\styles.css:106: .danger-text { color: var(--danger); }
+D:\project\GitHub\autoplan\src\styles.css:116: .item-actions .danger-link { color: var(--danger); }
+D:\project\GitHub\autoplan\src\styles.css:121: .event-list { min-width: 0; }
+D:\project\GitHub\autoplan\src\styles.css:122: .event-item { display: grid; gap: 8px; border-left: 3px solid transparent; }
+D:\project\GitHub\autoplan\src\styles.css:123: .event-title { align-items: flex-start; }
+D:\project\GitHub\autoplan\src\styles.css:124: .event-title > span:first-child { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.45; }
+D:\project\GitHub\autoplan\src\styles.css:125: .event-badge { flex: 0 0 auto; display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+D:\project\GitHub\autoplan\src\styles.css:126: .event-badge-start, .event-badge-updated { color: var(--info); background: var(--info-bg); }
+D:\project\GitHub\autoplan\src\styles.css:127: .event-badge-success { color: var(--success); background: var(--success-bg); }
+D:\project\GitHub\autoplan\src\styles.css:128: .event-badge-failed { color: var(--danger); background: var(--danger-bg); }
+D:\project\GitHub\autoplan\src\styles.css:129: .event-badge-stopped, .event-badge-stopping { color: var(--warning); background: var(--warning-bg); }
+D:\project\GitHub\autoplan\src\styles.css:130: .event-item-start { border-left-color: var(--info); }
+D:\project\GitHub\autoplan\src\styles.css:131: .event-item-success { border-left-color: var(--success); }
+D:\project\GitHub\autoplan\src\styles.css:132: .event-item-failed { border-left-color: var(--danger); }
+D:\project\GitHub\autoplan\src\styles.css:133: .event-item-stopped, .event-item-stopping { border-left-color: var(--warning); }
+D:\project\GitHub\autoplan\src\styles.css:134: .event-item-updated { border-left-color: var(--info); }
+D:\project\GitHub\autoplan\src\styles.css:135: .event-item .item-body, .event-meta { margin-top: 0; }
+D:\project\GitHub\autoplan\src\styles.css:136: .button-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+D:\project\GitHub\autoplan\src\styles.css:146: .intake-item .danger-link { color: var(--danger); }
+D:\project\GitHub\autoplan\src\styles.css:147: .intake-item .danger-link:hover { text-decoration: underline; }
+D:\project\GitHub\autoplan\src\styles.css:158: .attachment-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+D:\project\GitHub\autoplan\src\styles.css:159: .attachment-thumb, .attachment-file { display: grid; gap: 6px; width: 120px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); color: var(--text-1); }
+D:\project\GitHub\autoplan\src\styles.css:160: .attachment-thumb img { width: 100%; aspect-ratio: 1; border-radius: 4px; object-fit: cover; background: var(--brand-50); }
+D:\project\GitHub\autoplan\src\styles.css:161: .attachment-thumb span, .attachment-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+D:\project\GitHub\autoplan\src\styles.css:162: .attachment-file small { color: var(--text-3); font-size: 12px; }
+D:\project\GitHub\autoplan\src\styles.css:174: .hero-stats { margin-left: auto; display: flex; gap: 24px; }
+D:\project\GitHub\autoplan\src\styles.css:175: .hero-stat { text-align: right; }
+D:\project\GitHub\autoplan\src\styles.css:176: .hero-stat b { display: block; font-size: 22px; font-weight: 800; color: var(--text-1); }
+D:\project\GitHub\autoplan\src\styles.css:177: .hero-stat span { font-size: 11px; color: var(--text-3); }
+D:\project\GitHub\autoplan\src\styles.css:195: .ctx-menu button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); text-align: left; font-size: 12.5px; }
+D:\project\GitHub\autoplan\src\styles.css:196: .ctx-menu button:hover { background: var(--bg-hover); color: var(--text-1); }
+D:\project\GitHub\autoplan\src\styles.css:197: .ctx-menu .ctx-danger { color: var(--danger); }
+D:\project\GitHub\autoplan\src\styles.css:198: .ctx-menu .ctx-danger:hover { background: var(--danger-bg); }
+D:\project\GitHub\autoplan\src\styles.css:200: .project-loop-status { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--text-2); font-size: 12px; font-weight: 600; }
+D:\project\GitHub\autoplan\src\styles.css:201: .project-loop-status .led { width: 7px; height: 7px; box-shadow: 0 0 0 3px var(--success-bg); }
+D:\project\GitHub\autoplan\src\styles.css:202: .project-loop-status .led.stopped { box-shadow: 0 0 0 3px var(--line); }
+D:\project\GitHub\autoplan\src\styles.css:218: .nav-group-label { padding: 12px 12px 6px; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-4); font-weight: 700; }
+D:\project\GitHub\autoplan\src\styles.css:219: .nav-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: 0; border-radius: var(--r-md); background: transparent; color: var(--text-2); text-align: left; font-size: 13.5px; font-weight: 500; transition: background 0.14s, color 0.14s; }
+D:\project\GitHub\autoplan\src\styles.css:220: .nav-item:hover { background: var(--bg-hover); color: var(--text-1); }
+D:\project\GitHub\autoplan\src\styles.css:221: .nav-item.active { background: var(--brand-50); color: var(--brand-700); font-weight: 600; }
+D:\project\GitHub\autoplan\src\styles.css:222: .nav-ico { width: 20px; height: 20px; flex: 0 0 auto; color: var(--text-3); display: grid; place-items: center; }
+D:\project\GitHub\autoplan\src\styles.css:223: .nav-item.active .nav-ico { color: var(--brand-600); }
+D:\project\GitHub\autoplan\src\styles.css:243: .view.active:has(.stat-grid),
+D:\project\GitHub\autoplan\src\styles.css:246: .stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 20px; margin-bottom: 24px; }
+D:\project\GitHub\autoplan\src\styles.css:247: .stat { position: relative; padding: 18px 20px; background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
+D:\project\GitHub\autoplan\src\styles.css:248: .stat::after { content: ""; position: absolute; right: -18px; top: -18px; width: 84px; height: 84px; border-radius: 50%; opacity: 0.5; }
+D:\project\GitHub\autoplan\src\styles.css:249: .stat-brand::after { background: var(--brand-50); }
+D:\project\GitHub\autoplan\src\styles.css:250: .stat-info::after { background: var(--info-bg); }
+D:\project\GitHub\autoplan\src\styles.css:251: .stat-success::after { background: var(--success-bg); }
+D:\project\GitHub\autoplan\src\styles.css:252: .stat-warning::after { background: var(--warning-bg); }
+D:\project\GitHub\autoplan\src\styles.css:253: .stat .stat-ico { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; margin-bottom: 12px; position: relative; z-index: 1; }
+D:\project\GitHub\autoplan\src\styles.css:254: .stat-brand .stat-ico { background: var(--brand-50); color: var(--brand-600); }
+D:\project\GitHub\autoplan\src\styles.css:255: .stat-info .stat-ico { background: var(--info-bg); color: var(--info); }
+D:\project\GitHub\autoplan\src\styles.css:256: .stat-success .stat-ico { background: var(--success-bg); color: var(--success); }
+D:\project\GitHub\autoplan\src\styles.css:257: .stat-warning .stat-ico { background: var(--warning-bg); color: var(--warning); }
+D:\project\GitHub\autoplan\src\styles.css:258: .stat .stat-value { font-size: 26px; font-weight: 800; line-height: 1; position: relative; z-index: 1; }
+D:\project\GitHub\autoplan\src\styles.css:259: .stat .stat-label { font-size: 12px; color: var(--text-3); margin-top: 6px; position: relative; z-index: 1; }
+D:\project\GitHub\autoplan\src\styles.css:260: .stat .stat-delta { font-size: 11px; margin-top: 8px; color: var(--success); font-weight: 600; position: relative; z-index: 1; }
+D:\project\GitHub\autoplan\src\styles.css:266: .loop-card .lc-status { font-size: 13px; opacity: 0.9; }
+D:\project\GitHub\autoplan\src\styles.css:274: .pipeline { display: flex; align-items: flex-start; gap: 0; overflow-x: auto; }
+D:\project\GitHub\autoplan\src\styles.css:275: .pipe-step { flex: 1 1 0; min-width: 0; text-align: center; position: relative; }
+D:\project\GitHub\autoplan\src\styles.css:277: .pipe-step.done .pipe-node { background: var(--success); border-color: var(--success); color: #fff; }
+D:\project\GitHub\autoplan\src\styles.css:278: .pipe-step.active .pipe-node { background: var(--brand-600); border-color: var(--brand-600); color: #fff; box-shadow: 0 0 0 5px var(--brand-50); }
+D:\project\GitHub\autoplan\src\styles.css:279: .pipe-step::before { content: ""; position: absolute; top: 20px; left: -50%; right: 50%; height: 2px; background: var(--line); z-index: 0; }
+D:\project\GitHub\autoplan\src\styles.css:280: .pipe-step:first-child::before { display: none; }
+D:\project\GitHub\autoplan\src\styles.css:281: .pipe-step.done::before, .pipe-step.active::before { background: var(--success); }
+D:\project\GitHub\autoplan\src\styles.css:283: .pipe-step.active .pipe-label { color: var(--brand-600); }
+D:\project\GitHub\autoplan\src\styles.css:357: .attachment-trigger { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; }
+D:\project\GitHub\autoplan\src\styles.css:358: .attachment-trigger:hover, .attachment-trigger.drag-over { background: var(--bg-hover); }
+D:\project\GitHub\autoplan\src\styles.css:359: .attachment-trigger input { display: none; }
+D:\project\GitHub\autoplan\src\styles.css:360: .plus-icon { display: block; color: var(--text-3); font-size: 28px; font-weight: 300; line-height: 1; }
+D:\project\GitHub\autoplan\src\styles.css:363: .send-button { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border: 0; border-radius: 50%; padding: 0; background: var(--brand-grad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 6px 14px rgba(77,110,255,0.4); }
+D:\project\GitHub\autoplan\src\styles.css:364: .send-button:hover { filter: brightness(1.05); }
+D:\project\GitHub\autoplan\src\styles.css:365: .attachment-list.pending { display: flex; align-items: center; min-width: 0; max-width: min(520px,54vw); gap: 8px; overflow-x: auto; }
+D:\project\GitHub\autoplan\src\styles.css:366: .pending-attachment { display: grid; grid-template-columns: 42px 1fr auto auto; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); }
+D:\project\GitHub\autoplan\src\styles.css:367: .pending-thumb, .pending-file-icon { width: 42px; height: 42px; border-radius: var(--r-sm); background: var(--brand-50); }
+D:\project\GitHub\autoplan\src\styles.css:369: .pending-file-icon { display: grid; place-items: center; color: var(--text-3); font-size: 12px; }
+D:\project\GitHub\autoplan\src\styles.css:370: .pending-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+D:\project\GitHub\autoplan\src\styles.css:371: .pending-attachment small { color: var(--text-3); }
+D:\project\GitHub\autoplan\src\styles.css:372: .pending-attachment button { padding: 5px 8px; font-size: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); }
+D:\project\GitHub\autoplan\src\styles.css:378: .task-status-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; min-height: 0; }
+D:\project\GitHub\autoplan\src\styles.css:379: .primary-section, .side-section, .task-status-grid .card { min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+D:\project\GitHub\autoplan\src\styles.css:380: .side-section .list, .task-status-grid .list, .primary-section .list { overflow: auto; }
+D:\project\GitHub\autoplan\src\styles.css:398: .modal-danger-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--danger-bg); color: var(--danger); font-size: 24px; margin: 0 auto 14px; }
+D:\project\GitHub\autoplan\src\styles.css:408: .task-status-grid { grid-template-columns: 1fr; }
+D:\project\GitHub\autoplan\src\styles.css:415: .stat-grid { grid-template-columns: 1fr; }
+D:\project\GitHub\autoplan\src\styles.css:419: .event-title { gap: 8px; }
+
+**Planning icon implementation**
+
+I need to think about truncating outputs while keeping enough detail. I might use Get-Content with specific line ranges for CSS ranges, like 1-80 and 220-285. If I’m implementing icons, I might create a unified SVG icon system that includes various categories like overview, tasks, events, and more, with specific names like OverviewIcon. I also have to consider accessibility features, ensuring proper use of aria attributes, while avoiding duplicate title IDs. It’s a lot to keep track of!
+**Defining icon properties**
+
+I’m considering future tasks, and maybe I should provide aliases like 'requirements' and 'tasks' while avoiding complexity. Using synonyms could be helpful. I think I need to define `IconProps`, which would include various properties like size, className, and title while supporting aria-hidden semantics. If no title is given, it defaults to decorative. If a title is present, I need to assign the role as img, ensuring proper accessibility handling for screen readers. I’m trying to get this just right!
+**Adjusting CSS styles**
+
+I'm considering the need to put `strokeWidth={strokeWidth}`. I’m thinking some parts are not included, and I might need to add `.icon-with-text`. I really want to maintain the CSS style in a compressed one-line format, like the existing styles. Maybe I should add this after the utility area, specifically right after `.danger-text`. I wonder if the linter is necessary. I’ll need to see the exact beginning of the CSS to make sure I insert correctly, possibly looking within the first 120 lines.
+codex
+已经确认只需要新增图标组件并补一组基础 CSS；现在看一下样式文件前段位置以便插入统一规则。
+exec
+powershell.exe -Command '$i=0; Get-Content -Encoding UTF8 '"'D:\\project\\GitHub\\autoplan\\src\\styles.css' | Select-Object -First 130 | ForEach-Object { "'$i++; '"'{0,4}: {1}' -f "'$i, $_ }' in D:\project\GitHub\autoplan
+ succeeded in 209ms:
+   1: /* ============================================================
+   2:    设计系统 · Design Tokens
+   3:    ============================================================ */
+   4: :root {
+   5:   color-scheme: light;
+   6:   font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+   7:   --font-mono: "Cascadia Code", Consolas, "Courier New", monospace;
+   8: 
+   9:   --brand-50: #eef4ff;
+  10:   --brand-100: #dbe7ff;
+  11:   --brand-500: #3b6ef5;
+  12:   --brand-600: #255fbd;
+  13:   --brand-700: #1d4a94;
+  14:   --brand-grad: linear-gradient(135deg, #4f7bff 0%, #6d5dfc 100%);
+  15: 
+  16:   --bg-app: #f4f6fb;
+  17:   --bg-elevated: #ffffff;
+  18:   --bg-soft: #f8fafd;
+  19:   --bg-hover: #eef2f9;
+  20:   --line: #e2e8f1;
+  21:   --line-soft: #eef2f8;
+  22: 
+  23:   --text-1: #172033;
+  24:   --text-2: #475067;
+  25:   --text-3: #7c879b;
+  26:   --text-4: #a4adc0;
+  27: 
+  28:   --success: #18a957;
+  29:   --success-bg: #e7f7ee;
+  30:   --warning: #e08600;
+  31:   --warning-bg: #fdf3e3;
+  32:   --danger: #e5484d;
+  33:   --danger-bg: #fdecec;
+  34:   --info: #2563eb;
+  35:   --info-bg: #e8f0ff;
+  36: 
+  37:   --r-sm: 6px;
+  38:   --r-md: 10px;
+  39:   --r-lg: 14px;
+  40:   --r-xl: 20px;
+  41:   --shadow-sm: 0 1px 2px rgba(23, 32, 51, 0.06);
+  42:   --shadow-md: 0 6px 18px rgba(23, 32, 51, 0.08);
+  43:   --shadow-lg: 0 18px 48px rgba(37, 62, 120, 0.14);
+  44: 
+  45:   background: var(--bg-app);
+  46:   color: var(--text-1);
+  47: }
+  48: 
+  49: * { box-sizing: border-box; }
+  50: html, body { height: 100%; margin: 0; }
+  51: body { overflow: hidden; font-size: 14px; -webkit-font-smoothing: antialiased; }
+  52: h1, h2, h3, p { margin: 0; }
+  53: button { font: inherit; cursor: pointer; }
+  54: a { color: var(--brand-600); text-decoration: none; }
+  55: .mono { font-family: var(--font-mono); }
+  56: #root { height: 100vh; }
+  57: 
+  58: .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 16px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elevated); color: var(--text-1); font-size: 13px; font-weight: 600; transition: background 0.14s, border-color 0.14s, transform 0.06s; }
+  59: .btn:hover { background: var(--bg-hover); }
+  60: .btn:active { transform: translateY(1px); }
+  61: .btn-primary { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+  62: .btn-primary:hover { background: var(--brand-700); }
+  63: .btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+  64: .btn-sm { padding: 6px 12px; font-size: 12px; }
+  65: .btn-link { background: transparent; border: 0; color: var(--brand-600); font-size: 12px; font-weight: 600; padding: 4px 8px; }
+  66: .btn-link:hover { text-decoration: underline; }
+  67: 
+  68: .card { background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); }
+  69: .card-head { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--line-soft); }
+  70: .card-head h2 { font-size: 14.5px; font-weight: 700; }
+  71: .card-head .hint { font-size: 12px; color: var(--text-3); }
+  72: .card-head .spacer { margin-left: auto; }
+  73: .card-body { padding: 16px 18px; }
+  74: 
+  75: /* 表单型卡片（如循环控制）：head 之后给 body 留内边距 */
+  76: .editor.card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  77: .editor > .card-head { flex: 0 0 auto; }
+  78: .editor > .field,
+  79: .editor > .button-row,
+  80: .editor > .control-row { padding: 0 18px; }
+  81: .editor > .field:first-of-type { padding-top: 16px; }
+  82: .editor > .button-row { padding: 4px 18px 18px; flex-wrap: wrap; }
+  83: .editor .button-row button {
+  84:   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  85:   padding: 7px 14px; border: 1px solid var(--line); border-radius: var(--r-sm);
+  86:   background: var(--bg-elevated); color: var(--text-1); font-size: 12.5px; font-weight: 600;
+  87:   transition: background 0.14s, border-color 0.14s;
+  88: }
+  89: .editor .button-row button:hover { background: var(--bg-hover); }
+  90: .editor .button-row button[type="submit"] { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+  91: .editor .button-row button[type="submit"]:hover { background: var(--brand-700); }
+  92: 
+  93: .chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; }
+  94: .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  95: .chip-pending { color: var(--text-3); background: var(--bg-soft); }
+  96: .chip-running { color: var(--info); background: var(--info-bg); }
+  97: .chip-completed { color: var(--success); background: var(--success-bg); }
+  98: .chip-failed { color: var(--danger); background: var(--danger-bg); }
+  99: .chip-stopped { color: var(--warning); background: var(--warning-bg); }
+ 100: .chip-waiting { color: var(--warning); background: var(--warning-bg); }
+ 101: .chip-accepted { color: var(--success); background: var(--success-bg); }
+ 102: 
+ 103: .empty { color: var(--text-3); padding: 28px 18px; text-align: center; font-size: 13px; }
+ 104: .error-banner { padding: 12px 16px; margin-bottom: 16px; border-radius: var(--r-md); background: var(--danger-bg); border: 1px solid #f3c2c4; color: var(--danger); font-size: 13px; }
+ 105: .req { color: var(--danger); }
+ 106: .danger-text { color: var(--danger); }
+ 107: 
+ 108: .list { display: grid; gap: 10px; padding: 16px 18px; }
+ 109: .list.compact { max-height: none; overflow: auto; }
+ 110: .item { min-width: 0; border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 12px; background: var(--bg-soft); }
+ 111: .item-title { display: flex; justify-content: space-between; gap: 12px; min-width: 0; font-weight: 650; align-items: center; }
+ 112: .item-title > span:first-child { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ 113: .item-title-right { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; flex: 0 0 auto; }
+ 114: .item-actions { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px; }
+ 115: .item-actions .btn-link { padding: 3px 6px; font-size: 12px; white-space: nowrap; }
+ 116: .item-actions .danger-link { color: var(--danger); }
+ 117: .item-actions .btn-link:disabled { color: var(--text-4); cursor: not-allowed; text-decoration: none; }
+ 118: .item-body { margin-top: 10px; color: var(--text-2); overflow-wrap: anywhere; }
+ 119: .plain-text { line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+ 120: .meta { margin-top: 6px; color: var(--text-3); font-size: 12px; word-break: break-all; overflow-wrap: anywhere; }
+ 121: .event-list { min-width: 0; }
+ 122: .event-item { display: grid; gap: 8px; border-left: 3px solid transparent; }
+ 123: .event-title { align-items: flex-start; }
+ 124: .event-title > span:first-child { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.45; }
+ 125: .event-badge { flex: 0 0 auto; display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+ 126: .event-badge-start, .event-badge-updated { color: var(--info); background: var(--info-bg); }
+ 127: .event-badge-success { color: var(--success); background: var(--success-bg); }
+ 128: .event-badge-failed { color: var(--danger); background: var(--danger-bg); }
+ 129: .event-badge-stopped, .event-badge-stopping { color: var(--warning); background: var(--warning-bg); }
+ 130: .event-item-start { border-left-color: var(--info); }
+
+**Implementing Icon File**
+
+I need to implement the icon file while ensuring there are no AGENTS. I wonder if it's alright not to check—root instructions say AGENTS should be included but maybe they aren’t necessary for this task. Perhaps I could use `Test-Path AGENTS.md`, but that might be outside the scope. I need to decide on the icon component code and begin drafting icons.tsx. There are some specific syntax concerns, especially regarding SVG properties. I'll make sure to structure that well!
+**Designing Icons and Aliaes**
+
+I think I’m on the right track with the warning triangle featuring an exclamation. For some icons, like the ones needing a stroke line cap, I'll ensure to check specifications around SVG details. The Run icon can be a play circle, with `run` as the name and `running` as an alias. For the complete icon, I'll use check circle with corresponding aliases. 
+
+I’ll also define icons for feedback, tasks, events, plans, attachments, sending, and more. Should we include "enter" based on P002? It seems useful for future expansion!
+**Implementing icon sizes**
+
+I'm working on implementing the function `toIconSizeValue(size)`. The `getIconSize` function determines whether the size is a number or a string. If the user provides a size through props which might be overridden by style, I think it's better to ensure the size prop has precedence. If size is undefined, I'll default to 20. I also wonder if setting a default size of '1em' would better fit the needs, given the requirements. I'll ensure a unified size through the prop.
+**Adding icon styles**
+
+I’m considering adding the CSS class `.app-icon` with properties like `display`, `flex-shrink`, `vertical-align`, and setting the `color` to `currentColor`. I think this would help in maintaining a consistent appearance for the icons across different components. It also allows the icon to blend with surrounding content by utilizing the current text color. This should enhance flexibility and alignment within layouts while ensuring a cohesive design. I'm excited to see how this will improve the overall look!
+**Evaluating component types**
+
+I think adding a new local icon component or icon mapping could enhance the file. The task seems to involve a map and some generic elements. That's potentially good! But I’m wondering if using `React.memo` for the component type is the right approach here. Actually, it seems like it might not be necessary, so I need to reconsider that. Let's explore what would work best for this task!
+codex
+现在新增统一 `Icon` 组件和基础样式，保持颜色继承并支持语义化标题/隐藏。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\icons.tsx
+diff --git a/src/renderer/components/icons.tsx b/src/renderer/components/icons.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d662e87f6f345d179213366cb56a61152566145
+--- /dev/null
++++ b/src/renderer/components/icons.tsx
+@@ -0,0 +1,262 @@
++import * as React from 'react';
++
++const overviewIcon = (
++  <>
++    <rect x="3.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="13.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="3.5" y="14" width="7" height="6" rx="1.6" />
++    <path d="M14 17h6" />
++    <path d="M17 14v6" />
++  </>
++);
++
++const requirementIcon = (
++  <>
++    <path d="M6.5 3.5h7.8L18 7.2v13.3H6.5z" />
++    <path d="M14 3.8v3.7h3.7" />
++    <path d="M9 11h6" />
++    <path d="M9 15h6" />
++    <path d="M9 18h3.5" />
++  </>
++);
++
++const feedbackIcon = (
++  <>
++    <path d="M5 5.5h14v9.2H9.7L6.2 18v-3.3H5z" />
++    <path d="M8.5 9.2h7" />
++    <path d="M8.5 12h4.8" />
++  </>
++);
++
++const taskIcon = (
++  <>
++    <path d="M8 6h12" />
++    <path d="M8 12h12" />
++    <path d="M8 18h12" />
++    <path d="m3.8 6 1.1 1.1L7 4.9" />
++    <path d="m3.8 12 1.1 1.1L7 10.9" />
++    <path d="m3.8 18 1.1 1.1L7 16.9" />
++  </>
++);
++
++const eventIcon = (
++  <>
++    <path d="M4 12h3l2-5 4 10 2-5h5" />
++    <circle cx="4" cy="12" r="1.4" />
++    <circle cx="20" cy="12" r="1.4" />
++  </>
++);
++
++const planIcon = (
++  <>
++    <rect x="4" y="5" width="16" height="15" rx="2" />
++    <path d="M8 3.5v3" />
++    <path d="M16 3.5v3" />
++    <path d="M4 9h16" />
++    <path d="M8 13h3" />
++    <path d="M13.5 13H16" />
++    <path d="M8 16.5h5" />
++  </>
++);
++
++const runIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m10.2 8.7 5.1 3.3-5.1 3.3z" />
++  </>
++);
++
++const completeIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m8.2 12.2 2.4 2.4 5.2-5.2" />
++  </>
++);
++
++const editIcon = (
++  <>
++    <path d="M4.5 19.5h4.2L19 9.2 14.8 5 4.5 15.3z" />
++    <path d="m13.6 6.2 4.2 4.2" />
++  </>
++);
++
++const deleteIcon = (
++  <>
++    <path d="M5 7h14" />
++    <path d="M9 7V5h6v2" />
++    <path d="M7 7.5 8 20h8l1-12.5" />
++    <path d="M10.2 11v5" />
++    <path d="M13.8 11v5" />
++  </>
++);
++
++const warningIcon = (
++  <>
++    <path d="M10.4 4.5 3.6 17.2A1.8 1.8 0 0 0 5.2 20h13.6a1.8 1.8 0 0 0 1.6-2.8L13.6 4.5a1.8 1.8 0 0 0-3.2 0z" />
++    <path d="M12 9v4.5" />
++    <path d="M12 17h.01" />
++  </>
++);
++
++const refreshIcon = (
++  <>
++    <path d="M20 6v5h-5" />
++    <path d="M4 18v-5h5" />
++    <path d="M18.2 10A6.5 6.5 0 0 0 7 6.4L4 9" />
++    <path d="M5.8 14A6.5 6.5 0 0 0 17 17.6l3-2.6" />
++  </>
++);
++
++const attachmentIcon = (
++  <>
++    <path d="m8.6 12.5 5.8-5.8a3 3 0 0 1 4.2 4.2l-7.2 7.2a4.2 4.2 0 0 1-6-6l7.1-7.1" />
++    <path d="m10.8 14.7 5.6-5.6" />
++  </>
++);
++
++const sendIcon = (
++  <>
++    <path d="M20 4 9.5 14.5" />
++    <path d="m20 4-5.6 16-4.9-5.5L4 12z" />
++  </>
++);
++
++const plusIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="M12 8v8" />
++    <path d="M8 12h8" />
++  </>
++);
++
++const closeIcon = (
++  <>
++    <path d="M7 7 17 17" />
++    <path d="M17 7 7 17" />
++  </>
++);
++
++const searchIcon = (
++  <>
++    <circle cx="10.5" cy="10.5" r="6" />
++    <path d="m15 15 4.5 4.5" />
++  </>
++);
++
++const enterIcon = (
++  <>
++    <path d="M4.5 12h10" />
++    <path d="m11 8 4 4-4 4" />
++    <path d="M14.5 5H19v14h-4.5" />
++  </>
++);
++
++const backIcon = (
++  <>
++    <path d="M19.5 12h-15" />
++    <path d="m9 7-5 5 5 5" />
++  </>
++);
++
++const fileIcon = (
++  <>
++    <path d="M6.5 3.5h8L18 7v13.5H6.5z" />
++    <path d="M14.2 3.8v3.5h3.5" />
++  </>
++);
++
++const ICONS = {
++  overview: overviewIcon,
++  requirement: requirementIcon,
++  requirements: requirementIcon,
++  feedback: feedbackIcon,
++  task: taskIcon,
++  tasks: taskIcon,
++  event: eventIcon,
++  events: eventIcon,
++  plan: planIcon,
++  plans: planIcon,
++  run: runIcon,
++  running: runIcon,
++  complete: completeIcon,
++  completed: completeIcon,
++  edit: editIcon,
++  delete: deleteIcon,
++  trash: deleteIcon,
++  warning: warningIcon,
++  alert: warningIcon,
++  refresh: refreshIcon,
++  attachment: attachmentIcon,
++  attachments: attachmentIcon,
++  send: sendIcon,
++  plus: plusIcon,
++  close: closeIcon,
++  search: searchIcon,
++  enter: enterIcon,
++  open: enterIcon,
++  back: backIcon,
++  file: fileIcon,
++} as const;
++
++export type IconName = keyof typeof ICONS;
++
++export const iconNames = Object.freeze(Object.keys(ICONS) as IconName[]);
++
++type IconSize = number | string;
++
++export interface IconProps extends Omit<React.SVGProps<SVGSVGElement>, 'children' | 'height' | 'viewBox' | 'width'> {
++  name: IconName;
++  size?: IconSize;
++  title?: string;
++}
++
++function isAriaHidden(value: IconProps['aria-hidden']) {
++  return value === true || value === 'true';
++}
++
++function formatIconSize(size: IconSize) {
++  return typeof size === 'number' ? `${size}px` : size;
++}
++
++export function Icon({
++  name,
++  size = 20,
++  title,
++  className,
++  style,
++  role,
++  'aria-hidden': ariaHidden,
++  'aria-label': ariaLabel,
++  ...svgProps
++}: IconProps) {
++  const titleId = React.useId();
++  const hasAccessibleName = Boolean(title || ariaLabel);
++  const shouldHide = ariaHidden === undefined ? !hasAccessibleName : isAriaHidden(ariaHidden);
++  const labelledBy = title && !shouldHide ? titleId : undefined;
++  const iconStyle = {
++    '--icon-size': formatIconSize(size),
++    ...style,
++  } as React.CSSProperties;
++
++  return (
++    <svg
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth={1.8}
++      strokeLinecap="round"
++      strokeLinejoin="round"
++      focusable="false"
++      {...svgProps}
++      className={['app-icon', className].filter(Boolean).join(' ')}
++      style={iconStyle}
++      aria-hidden={shouldHide ? true : undefined}
++      aria-labelledby={labelledBy}
++      aria-label={labelledBy ? undefined : ariaLabel}
++      role={role ?? (!shouldHide && hasAccessibleName ? 'img' : undefined)}
++    >
++      {labelledBy ? <title id={labelledBy}>{title}</title> : null}
++      {ICONS[name]}
++    </svg>
++  );
++}
+
+diff --git a/src/renderer/components/icons.tsx b/src/renderer/components/icons.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d662e87f6f345d179213366cb56a61152566145
+--- /dev/null
++++ b/src/renderer/components/icons.tsx
+@@ -0,0 +1,262 @@
++import * as React from 'react';
++
++const overviewIcon = (
++  <>
++    <rect x="3.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="13.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="3.5" y="14" width="7" height="6" rx="1.6" />
++    <path d="M14 17h6" />
++    <path d="M17 14v6" />
++  </>
++);
++
++const requirementIcon = (
++  <>
++    <path d="M6.5 3.5h7.8L18 7.2v13.3H6.5z" />
++    <path d="M14 3.8v3.7h3.7" />
++    <path d="M9 11h6" />
++    <path d="M9 15h6" />
++    <path d="M9 18h3.5" />
++  </>
++);
++
++const feedbackIcon = (
++  <>
++    <path d="M5 5.5h14v9.2H9.7L6.2 18v-3.3H5z" />
++    <path d="M8.5 9.2h7" />
++    <path d="M8.5 12h4.8" />
++  </>
++);
++
++const taskIcon = (
++  <>
++    <path d="M8 6h12" />
++    <path d="M8 12h12" />
++    <path d="M8 18h12" />
++    <path d="m3.8 6 1.1 1.1L7 4.9" />
++    <path d="m3.8 12 1.1 1.1L7 10.9" />
++    <path d="m3.8 18 1.1 1.1L7 16.9" />
++  </>
++);
++
++const eventIcon = (
++  <>
++    <path d="M4 12h3l2-5 4 10 2-5h5" />
++    <circle cx="4" cy="12" r="1.4" />
++    <circle cx="20" cy="12" r="1.4" />
++  </>
++);
++
++const planIcon = (
++  <>
++    <rect x="4" y="5" width="16" height="15" rx="2" />
++    <path d="M8 3.5v3" />
++    <path d="M16 3.5v3" />
++    <path d="M4 9h16" />
++    <path d="M8 13h3" />
++    <path d="M13.5 13H16" />
++    <path d="M8 16.5h5" />
++  </>
++);
++
++const runIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m10.2 8.7 5.1 3.3-5.1 3.3z" />
++  </>
++);
++
++const completeIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m8.2 12.2 2.4 2.4 5.2-5.2" />
++  </>
++);
++
++const editIcon = (
++  <>
++    <path d="M4.5 19.5h4.2L19 9.2 14.8 5 4.5 15.3z" />
++    <path d="m13.6 6.2 4.2 4.2" />
++  </>
++);
++
++const deleteIcon = (
++  <>
++    <path d="M5 7h14" />
++    <path d="M9 7V5h6v2" />
++    <path d="M7 7.5 8 20h8l1-12.5" />
++    <path d="M10.2 11v5" />
++    <path d="M13.8 11v5" />
++  </>
++);
++
++const warningIcon = (
++  <>
++    <path d="M10.4 4.5 3.6 17.2A1.8 1.8 0 0 0 5.2 20h13.6a1.8 1.8 0 0 0 1.6-2.8L13.6 4.5a1.8 1.8 0 0 0-3.2 0z" />
++    <path d="M12 9v4.5" />
++    <path d="M12 17h.01" />
++  </>
++);
++
++const refreshIcon = (
++  <>
++    <path d="M20 6v5h-5" />
++    <path d="M4 18v-5h5" />
++    <path d="M18.2 10A6.5 6.5 0 0 0 7 6.4L4 9" />
++    <path d="M5.8 14A6.5 6.5 0 0 0 17 17.6l3-2.6" />
++  </>
++);
++
++const attachmentIcon = (
++  <>
++    <path d="m8.6 12.5 5.8-5.8a3 3 0 0 1 4.2 4.2l-7.2 7.2a4.2 4.2 0 0 1-6-6l7.1-7.1" />
++    <path d="m10.8 14.7 5.6-5.6" />
++  </>
++);
++
++const sendIcon = (
++  <>
++    <path d="M20 4 9.5 14.5" />
++    <path d="m20 4-5.6 16-4.9-5.5L4 12z" />
++  </>
++);
++
++const plusIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="M12 8v8" />
++    <path d="M8 12h8" />
++  </>
++);
++
++const closeIcon = (
++  <>
++    <path d="M7 7 17 17" />
++    <path d="M17 7 7 17" />
++  </>
++);
++
++const searchIcon = (
++  <>
++    <circle cx="10.5" cy="10.5" r="6" />
++    <path d="m15 15 4.5 4.5" />
++  </>
++);
++
++const enterIcon = (
++  <>
++    <path d="M4.5 12h10" />
++    <path d="m11 8 4 4-4 4" />
++    <path d="M14.5 5H19v14h-4.5" />
++  </>
++);
++
++const backIcon = (
++  <>
++    <path d="M19.5 12h-15" />
++    <path d="m9 7-5 5 5 5" />
++  </>
++);
++
++const fileIcon = (
++  <>
++    <path d="M6.5 3.5h8L18 7v13.5H6.5z" />
++    <path d="M14.2 3.8v3.5h3.5" />
++  </>
++);
++
++const ICONS = {
++  overview: overviewIcon,
++  requirement: requirementIcon,
++  requirements: requirementIcon,
++  feedback: feedbackIcon,
++  task: taskIcon,
++  tasks: taskIcon,
++  event: eventIcon,
++  events: eventIcon,
++  plan: planIcon,
++  plans: planIcon,
++  run: runIcon,
++  running: runIcon,
++  complete: completeIcon,
++  completed: completeIcon,
++  edit: editIcon,
++  delete: deleteIcon,
++  trash: deleteIcon,
++  warning: warningIcon,
++  alert: warningIcon,
++  refresh: refreshIcon,
++  attachment: attachmentIcon,
++  attachments: attachmentIcon,
++  send: sendIcon,
++  plus: plusIcon,
++  close: closeIcon,
++  search: searchIcon,
++  enter: enterIcon,
++  open: enterIcon,
++  back: backIcon,
++  file: fileIcon,
++} as const;
++
++export type IconName = keyof typeof ICONS;
++
++export const iconNames = Object.freeze(Object.keys(ICONS) as IconName[]);
++
++type IconSize = number | string;
++
++export interface IconProps extends Omit<React.SVGProps<SVGSVGElement>, 'children' | 'height' | 'viewBox' | 'width'> {
++  name: IconName;
++  size?: IconSize;
++  title?: string;
++}
++
++function isAriaHidden(value: IconProps['aria-hidden']) {
++  return value === true || value === 'true';
++}
++
++function formatIconSize(size: IconSize) {
++  return typeof size === 'number' ? `${size}px` : size;
++}
++
++export function Icon({
++  name,
++  size = 20,
++  title,
++  className,
++  style,
++  role,
++  'aria-hidden': ariaHidden,
++  'aria-label': ariaLabel,
++  ...svgProps
++}: IconProps) {
++  const titleId = React.useId();
++  const hasAccessibleName = Boolean(title || ariaLabel);
++  const shouldHide = ariaHidden === undefined ? !hasAccessibleName : isAriaHidden(ariaHidden);
++  const labelledBy = title && !shouldHide ? titleId : undefined;
++  const iconStyle = {
++    '--icon-size': formatIconSize(size),
++    ...style,
++  } as React.CSSProperties;
++
++  return (
++    <svg
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth={1.8}
++      strokeLinecap="round"
++      strokeLinejoin="round"
++      focusable="false"
++      {...svgProps}
++      className={['app-icon', className].filter(Boolean).join(' ')}
++      style={iconStyle}
++      aria-hidden={shouldHide ? true : undefined}
++      aria-labelledby={labelledBy}
++      aria-label={labelledBy ? undefined : ariaLabel}
++      role={role ?? (!shouldHide && hasAccessibleName ? 'img' : undefined)}
++    >
++      {labelledBy ? <title id={labelledBy}>{title}</title> : null}
++      {ICONS[name]}
++    </svg>
++  );
++}
+
+**Updating CSS safely**
+
+I see there’s a tool warning regarding the apply_patch command being used via shell. But the developer indicated that it's fine to do it this way. I need to update the CSS, so I'll just proceed with the apply_patch command through shell, even if there's a warning. It seems to work, and I don’t have a separate namespace for this. My goal here is to correctly patch the CSS after the .danger-text.
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\styles.css
+diff --git a/src/renderer/components/icons.tsx b/src/renderer/components/icons.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d662e87f6f345d179213366cb56a61152566145
+--- /dev/null
++++ b/src/renderer/components/icons.tsx
+@@ -0,0 +1,262 @@
++import * as React from 'react';
++
++const overviewIcon = (
++  <>
++    <rect x="3.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="13.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="3.5" y="14" width="7" height="6" rx="1.6" />
++    <path d="M14 17h6" />
++    <path d="M17 14v6" />
++  </>
++);
++
++const requirementIcon = (
++  <>
++    <path d="M6.5 3.5h7.8L18 7.2v13.3H6.5z" />
++    <path d="M14 3.8v3.7h3.7" />
++    <path d="M9 11h6" />
++    <path d="M9 15h6" />
++    <path d="M9 18h3.5" />
++  </>
++);
++
++const feedbackIcon = (
++  <>
++    <path d="M5 5.5h14v9.2H9.7L6.2 18v-3.3H5z" />
++    <path d="M8.5 9.2h7" />
++    <path d="M8.5 12h4.8" />
++  </>
++);
++
++const taskIcon = (
++  <>
++    <path d="M8 6h12" />
++    <path d="M8 12h12" />
++    <path d="M8 18h12" />
++    <path d="m3.8 6 1.1 1.1L7 4.9" />
++    <path d="m3.8 12 1.1 1.1L7 10.9" />
++    <path d="m3.8 18 1.1 1.1L7 16.9" />
++  </>
++);
++
++const eventIcon = (
++  <>
++    <path d="M4 12h3l2-5 4 10 2-5h5" />
++    <circle cx="4" cy="12" r="1.4" />
++    <circle cx="20" cy="12" r="1.4" />
++  </>
++);
++
++const planIcon = (
++  <>
++    <rect x="4" y="5" width="16" height="15" rx="2" />
++    <path d="M8 3.5v3" />
++    <path d="M16 3.5v3" />
++    <path d="M4 9h16" />
++    <path d="M8 13h3" />
++    <path d="M13.5 13H16" />
++    <path d="M8 16.5h5" />
++  </>
++);
++
++const runIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m10.2 8.7 5.1 3.3-5.1 3.3z" />
++  </>
++);
++
++const completeIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m8.2 12.2 2.4 2.4 5.2-5.2" />
++  </>
++);
++
++const editIcon = (
++  <>
++    <path d="M4.5 19.5h4.2L19 9.2 14.8 5 4.5 15.3z" />
++    <path d="m13.6 6.2 4.2 4.2" />
++  </>
++);
++
++const deleteIcon = (
++  <>
++    <path d="M5 7h14" />
++    <path d="M9 7V5h6v2" />
++    <path d="M7 7.5 8 20h8l1-12.5" />
++    <path d="M10.2 11v5" />
++    <path d="M13.8 11v5" />
++  </>
++);
++
++const warningIcon = (
++  <>
++    <path d="M10.4 4.5 3.6 17.2A1.8 1.8 0 0 0 5.2 20h13.6a1.8 1.8 0 0 0 1.6-2.8L13.6 4.5a1.8 1.8 0 0 0-3.2 0z" />
++    <path d="M12 9v4.5" />
++    <path d="M12 17h.01" />
++  </>
++);
++
++const refreshIcon = (
++  <>
++    <path d="M20 6v5h-5" />
++    <path d="M4 18v-5h5" />
++    <path d="M18.2 10A6.5 6.5 0 0 0 7 6.4L4 9" />
++    <path d="M5.8 14A6.5 6.5 0 0 0 17 17.6l3-2.6" />
++  </>
++);
++
++const attachmentIcon = (
++  <>
++    <path d="m8.6 12.5 5.8-5.8a3 3 0 0 1 4.2 4.2l-7.2 7.2a4.2 4.2 0 0 1-6-6l7.1-7.1" />
++    <path d="m10.8 14.7 5.6-5.6" />
++  </>
++);
++
++const sendIcon = (
++  <>
++    <path d="M20 4 9.5 14.5" />
++    <path d="m20 4-5.6 16-4.9-5.5L4 12z" />
++  </>
++);
++
++const plusIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="M12 8v8" />
++    <path d="M8 12h8" />
++  </>
++);
++
++const closeIcon = (
++  <>
++    <path d="M7 7 17 17" />
++    <path d="M17 7 7 17" />
++  </>
++);
++
++const searchIcon = (
++  <>
++    <circle cx="10.5" cy="10.5" r="6" />
++    <path d="m15 15 4.5 4.5" />
++  </>
++);
++
++const enterIcon = (
++  <>
++    <path d="M4.5 12h10" />
++    <path d="m11 8 4 4-4 4" />
++    <path d="M14.5 5H19v14h-4.5" />
++  </>
++);
++
++const backIcon = (
++  <>
++    <path d="M19.5 12h-15" />
++    <path d="m9 7-5 5 5 5" />
++  </>
++);
++
++const fileIcon = (
++  <>
++    <path d="M6.5 3.5h8L18 7v13.5H6.5z" />
++    <path d="M14.2 3.8v3.5h3.5" />
++  </>
++);
++
++const ICONS = {
++  overview: overviewIcon,
++  requirement: requirementIcon,
++  requirements: requirementIcon,
++  feedback: feedbackIcon,
++  task: taskIcon,
++  tasks: taskIcon,
++  event: eventIcon,
++  events: eventIcon,
++  plan: planIcon,
++  plans: planIcon,
++  run: runIcon,
++  running: runIcon,
++  complete: completeIcon,
++  completed: completeIcon,
++  edit: editIcon,
++  delete: deleteIcon,
++  trash: deleteIcon,
++  warning: warningIcon,
++  alert: warningIcon,
++  refresh: refreshIcon,
++  attachment: attachmentIcon,
++  attachments: attachmentIcon,
++  send: sendIcon,
++  plus: plusIcon,
++  close: closeIcon,
++  search: searchIcon,
++  enter: enterIcon,
++  open: enterIcon,
++  back: backIcon,
++  file: fileIcon,
++} as const;
++
++export type IconName = keyof typeof ICONS;
++
++export const iconNames = Object.freeze(Object.keys(ICONS) as IconName[]);
++
++type IconSize = number | string;
++
++export interface IconProps extends Omit<React.SVGProps<SVGSVGElement>, 'children' | 'height' | 'viewBox' | 'width'> {
++  name: IconName;
++  size?: IconSize;
++  title?: string;
++}
++
++function isAriaHidden(value: IconProps['aria-hidden']) {
++  return value === true || value === 'true';
++}
++
++function formatIconSize(size: IconSize) {
++  return typeof size === 'number' ? `${size}px` : size;
++}
++
++export function Icon({
++  name,
++  size = 20,
++  title,
++  className,
++  style,
++  role,
++  'aria-hidden': ariaHidden,
++  'aria-label': ariaLabel,
++  ...svgProps
++}: IconProps) {
++  const titleId = React.useId();
++  const hasAccessibleName = Boolean(title || ariaLabel);
++  const shouldHide = ariaHidden === undefined ? !hasAccessibleName : isAriaHidden(ariaHidden);
++  const labelledBy = title && !shouldHide ? titleId : undefined;
++  const iconStyle = {
++    '--icon-size': formatIconSize(size),
++    ...style,
++  } as React.CSSProperties;
++
++  return (
++    <svg
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth={1.8}
++      strokeLinecap="round"
++      strokeLinejoin="round"
++      focusable="false"
++      {...svgProps}
++      className={['app-icon', className].filter(Boolean).join(' ')}
++      style={iconStyle}
++      aria-hidden={shouldHide ? true : undefined}
++      aria-labelledby={labelledBy}
++      aria-label={labelledBy ? undefined : ariaLabel}
++      role={role ?? (!shouldHide && hasAccessibleName ? 'img' : undefined)}
++    >
++      {labelledBy ? <title id={labelledBy}>{title}</title> : null}
++      {ICONS[name]}
++    </svg>
++  );
++}
+diff --git a/src/styles.css b/src/styles.css
+index 4b3d2b7dc84ebd9a211a49e682f95022b3ef77ce..0b9eb90014eace46d710e4b9b0629a06551e10bf
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -105,6 +105,20 @@
+ .req { color: var(--danger); }
+ .danger-text { color: var(--danger); }
+ 
++.app-icon { display: inline-block; flex: 0 0 auto; width: var(--icon-size, 1em); height: var(--icon-size, 1em); color: inherit; vertical-align: -0.14em; }
++.app-icon * { vector-effect: non-scaling-stroke; }
++.app-icon-muted { color: var(--text-3); }
++.app-icon-brand { color: var(--brand-600); }
++.app-icon-success { color: var(--success); }
++.app-icon-warning { color: var(--warning); }
++.app-icon-danger { color: var(--danger); }
++.icon-with-text { display: inline-flex; align-items: center; gap: 6px; }
++.icon-surface { display: inline-grid; place-items: center; width: var(--icon-surface-size, 36px); height: var(--icon-surface-size, 36px); border-radius: 50%; color: var(--icon-surface-color, currentColor); background: var(--icon-surface-bg, transparent); }
++.icon-surface-brand { --icon-surface-color: var(--brand-600); --icon-surface-bg: var(--brand-50); }
++.icon-surface-success { --icon-surface-color: var(--success); --icon-surface-bg: var(--success-bg); }
++.icon-surface-warning { --icon-surface-color: var(--warning); --icon-surface-bg: var(--warning-bg); }
++.icon-surface-danger { --icon-surface-color: var(--danger); --icon-surface-bg: var(--danger-bg); }
++
+ .list { display: grid; gap: 10px; padding: 16px 18px; }
+ .list.compact { max-height: none; overflow: auto; }
+ .item { min-width: 0; border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 12px; background: var(--bg-soft); }
+
+diff --git a/src/renderer/components/icons.tsx b/src/renderer/components/icons.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d662e87f6f345d179213366cb56a61152566145
+--- /dev/null
++++ b/src/renderer/components/icons.tsx
+@@ -0,0 +1,262 @@
++import * as React from 'react';
++
++const overviewIcon = (
++  <>
++    <rect x="3.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="13.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="3.5" y="14" width="7" height="6" rx="1.6" />
++    <path d="M14 17h6" />
++    <path d="M17 14v6" />
++  </>
++);
++
++const requirementIcon = (
++  <>
++    <path d="M6.5 3.5h7.8L18 7.2v13.3H6.5z" />
++    <path d="M14 3.8v3.7h3.7" />
++    <path d="M9 11h6" />
++    <path d="M9 15h6" />
++    <path d="M9 18h3.5" />
++  </>
++);
++
++const feedbackIcon = (
++  <>
++    <path d="M5 5.5h14v9.2H9.7L6.2 18v-3.3H5z" />
++    <path d="M8.5 9.2h7" />
++    <path d="M8.5 12h4.8" />
++  </>
++);
++
++const taskIcon = (
++  <>
++    <path d="M8 6h12" />
++    <path d="M8 12h12" />
++    <path d="M8 18h12" />
++    <path d="m3.8 6 1.1 1.1L7 4.9" />
++    <path d="m3.8 12 1.1 1.1L7 10.9" />
++    <path d="m3.8 18 1.1 1.1L7 16.9" />
++  </>
++);
++
++const eventIcon = (
++  <>
++    <path d="M4 12h3l2-5 4 10 2-5h5" />
++    <circle cx="4" cy="12" r="1.4" />
++    <circle cx="20" cy="12" r="1.4" />
++  </>
++);
++
++const planIcon = (
++  <>
++    <rect x="4" y="5" width="16" height="15" rx="2" />
++    <path d="M8 3.5v3" />
++    <path d="M16 3.5v3" />
++    <path d="M4 9h16" />
++    <path d="M8 13h3" />
++    <path d="M13.5 13H16" />
++    <path d="M8 16.5h5" />
++  </>
++);
++
++const runIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m10.2 8.7 5.1 3.3-5.1 3.3z" />
++  </>
++);
++
++const completeIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m8.2 12.2 2.4 2.4 5.2-5.2" />
++  </>
++);
++
++const editIcon = (
++  <>
++    <path d="M4.5 19.5h4.2L19 9.2 14.8 5 4.5 15.3z" />
++    <path d="m13.6 6.2 4.2 4.2" />
++  </>
++);
++
++const deleteIcon = (
++  <>
++    <path d="M5 7h14" />
++    <path d="M9 7V5h6v2" />
++    <path d="M7 7.5 8 20h8l1-12.5" />
++    <path d="M10.2 11v5" />
++    <path d="M13.8 11v5" />
++  </>
++);
++
++const warningIcon = (
++  <>
++    <path d="M10.4 4.5 3.6 17.2A1.8 1.8 0 0 0 5.2 20h13.6a1.8 1.8 0 0 0 1.6-2.8L13.6 4.5a1.8 1.8 0 0 0-3.2 0z" />
++    <path d="M12 9v4.5" />
++    <path d="M12 17h.01" />
++  </>
++);
++
++const refreshIcon = (
++  <>
++    <path d="M20 6v5h-5" />
++    <path d="M4 18v-5h5" />
++    <path d="M18.2 10A6.5 6.5 0 0 0 7 6.4L4 9" />
++    <path d="M5.8 14A6.5 6.5 0 0 0 17 17.6l3-2.6" />
++  </>
++);
++
++const attachmentIcon = (
++  <>
++    <path d="m8.6 12.5 5.8-5.8a3 3 0 0 1 4.2 4.2l-7.2 7.2a4.2 4.2 0 0 1-6-6l7.1-7.1" />
++    <path d="m10.8 14.7 5.6-5.6" />
++  </>
++);
++
++const sendIcon = (
++  <>
++    <path d="M20 4 9.5 14.5" />
++    <path d="m20 4-5.6 16-4.9-5.5L4 12z" />
++  </>
++);
++
++const plusIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="M12 8v8" />
++    <path d="M8 12h8" />
++  </>
++);
++
++const closeIcon = (
++  <>
++    <path d="M7 7 17 17" />
++    <path d="M17 7 7 17" />
++  </>
++);
++
++const searchIcon = (
++  <>
++    <circle cx="10.5" cy="10.5" r="6" />
++    <path d="m15 15 4.5 4.5" />
++  </>
++);
++
++const enterIcon = (
++  <>
++    <path d="M4.5 12h10" />
++    <path d="m11 8 4 4-4 4" />
++    <path d="M14.5 5H19v14h-4.5" />
++  </>
++);
++
++const backIcon = (
++  <>
++    <path d="M19.5 12h-15" />
++    <path d="m9 7-5 5 5 5" />
++  </>
++);
++
++const fileIcon = (
++  <>
++    <path d="M6.5 3.5h8L18 7v13.5H6.5z" />
++    <path d="M14.2 3.8v3.5h3.5" />
++  </>
++);
++
++const ICONS = {
++  overview: overviewIcon,
++  requirement: requirementIcon,
++  requirements: requirementIcon,
++  feedback: feedbackIcon,
++  task: taskIcon,
++  tasks: taskIcon,
++  event: eventIcon,
++  events: eventIcon,
++  plan: planIcon,
++  plans: planIcon,
++  run: runIcon,
++  running: runIcon,
++  complete: completeIcon,
++  completed: completeIcon,
++  edit: editIcon,
++  delete: deleteIcon,
++  trash: deleteIcon,
++  warning: warningIcon,
++  alert: warningIcon,
++  refresh: refreshIcon,
++  attachment: attachmentIcon,
++  attachments: attachmentIcon,
++  send: sendIcon,
++  plus: plusIcon,
++  close: closeIcon,
++  search: searchIcon,
++  enter: enterIcon,
++  open: enterIcon,
++  back: backIcon,
++  file: fileIcon,
++} as const;
++
++export type IconName = keyof typeof ICONS;
++
++export const iconNames = Object.freeze(Object.keys(ICONS) as IconName[]);
++
++type IconSize = number | string;
++
++export interface IconProps extends Omit<React.SVGProps<SVGSVGElement>, 'children' | 'height' | 'viewBox' | 'width'> {
++  name: IconName;
++  size?: IconSize;
++  title?: string;
++}
++
++function isAriaHidden(value: IconProps['aria-hidden']) {
++  return value === true || value === 'true';
++}
++
++function formatIconSize(size: IconSize) {
++  return typeof size === 'number' ? `${size}px` : size;
++}
++
++export function Icon({
++  name,
++  size = 20,
++  title,
++  className,
++  style,
++  role,
++  'aria-hidden': ariaHidden,
++  'aria-label': ariaLabel,
++  ...svgProps
++}: IconProps) {
++  const titleId = React.useId();
++  const hasAccessibleName = Boolean(title || ariaLabel);
++  const shouldHide = ariaHidden === undefined ? !hasAccessibleName : isAriaHidden(ariaHidden);
++  const labelledBy = title && !shouldHide ? titleId : undefined;
++  const iconStyle = {
++    '--icon-size': formatIconSize(size),
++    ...style,
++  } as React.CSSProperties;
++
++  return (
++    <svg
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth={1.8}
++      strokeLinecap="round"
++      strokeLinejoin="round"
++      focusable="false"
++      {...svgProps}
++      className={['app-icon', className].filter(Boolean).join(' ')}
++      style={iconStyle}
++      aria-hidden={shouldHide ? true : undefined}
++      aria-labelledby={labelledBy}
++      aria-label={labelledBy ? undefined : ariaLabel}
++      role={role ?? (!shouldHide && hasAccessibleName ? 'img' : undefined)}
++    >
++      {labelledBy ? <title id={labelledBy}>{title}</title> : null}
++      {ICONS[name]}
++    </svg>
++  );
++}
+diff --git a/src/styles.css b/src/styles.css
+index 4b3d2b7dc84ebd9a211a49e682f95022b3ef77ce..0b9eb90014eace46d710e4b9b0629a06551e10bf
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -105,6 +105,20 @@
+ .req { color: var(--danger); }
+ .danger-text { color: var(--danger); }
+ 
++.app-icon { display: inline-block; flex: 0 0 auto; width: var(--icon-size, 1em); height: var(--icon-size, 1em); color: inherit; vertical-align: -0.14em; }
++.app-icon * { vector-effect: non-scaling-stroke; }
++.app-icon-muted { color: var(--text-3); }
++.app-icon-brand { color: var(--brand-600); }
++.app-icon-success { color: var(--success); }
++.app-icon-warning { color: var(--warning); }
++.app-icon-danger { color: var(--danger); }
++.icon-with-text { display: inline-flex; align-items: center; gap: 6px; }
++.icon-surface { display: inline-grid; place-items: center; width: var(--icon-surface-size, 36px); height: var(--icon-surface-size, 36px); border-radius: 50%; color: var(--icon-surface-color, currentColor); background: var(--icon-surface-bg, transparent); }
++.icon-surface-brand { --icon-surface-color: var(--brand-600); --icon-surface-bg: var(--brand-50); }
++.icon-surface-success { --icon-surface-color: var(--success); --icon-surface-bg: var(--success-bg); }
++.icon-surface-warning { --icon-surface-color: var(--warning); --icon-surface-bg: var(--warning-bg); }
++.icon-surface-danger { --icon-surface-color: var(--danger); --icon-surface-bg: var(--danger-bg); }
++
+ .list { display: grid; gap: 10px; padding: 16px 18px; }
+ .list.compact { max-height: none; overflow: auto; }
+ .item { min-width: 0; border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 12px; background: var(--bg-soft); }
+
+**Updating validation plan**
+
+I need to revise my approach here. First, I should focus on updating my plan, then validate the changes. The developer advised against re-reading files after applying a patch, since that could waste resources. If the patch fails, the tool call won't work. For validation, I could consider using a compiler, though I'm not sure about using cat. It might be best to run a targeted TypeScript compile first—so I should prioritize updating my plan.
+  ✓ 读取 P001 相关上下文
+  ✓ 实现统一图标组件
+  ✓ 补充图标样式规则
+  → 做最小范围校验
+diff --git a/src/renderer/components/icons.tsx b/src/renderer/components/icons.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d662e87f6f345d179213366cb56a61152566145
+--- /dev/null
++++ b/src/renderer/components/icons.tsx
+@@ -0,0 +1,262 @@
++import * as React from 'react';
++
++const overviewIcon = (
++  <>
++    <rect x="3.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="13.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="3.5" y="14" width="7" height="6" rx="1.6" />
++    <path d="M14 17h6" />
++    <path d="M17 14v6" />
++  </>
++);
++
++const requirementIcon = (
++  <>
++    <path d="M6.5 3.5h7.8L18 7.2v13.3H6.5z" />
++    <path d="M14 3.8v3.7h3.7" />
++    <path d="M9 11h6" />
++    <path d="M9 15h6" />
++    <path d="M9 18h3.5" />
++  </>
++);
++
++const feedbackIcon = (
++  <>
++    <path d="M5 5.5h14v9.2H9.7L6.2 18v-3.3H5z" />
++    <path d="M8.5 9.2h7" />
++    <path d="M8.5 12h4.8" />
++  </>
++);
++
++const taskIcon = (
++  <>
++    <path d="M8 6h12" />
++    <path d="M8 12h12" />
++    <path d="M8 18h12" />
++    <path d="m3.8 6 1.1 1.1L7 4.9" />
++    <path d="m3.8 12 1.1 1.1L7 10.9" />
++    <path d="m3.8 18 1.1 1.1L7 16.9" />
++  </>
++);
++
++const eventIcon = (
++  <>
++    <path d="M4 12h3l2-5 4 10 2-5h5" />
++    <circle cx="4" cy="12" r="1.4" />
++    <circle cx="20" cy="12" r="1.4" />
++  </>
++);
++
++const planIcon = (
++  <>
++    <rect x="4" y="5" width="16" height="15" rx="2" />
++    <path d="M8 3.5v3" />
++    <path d="M16 3.5v3" />
++    <path d="M4 9h16" />
++    <path d="M8 13h3" />
++    <path d="M13.5 13H16" />
++    <path d="M8 16.5h5" />
++  </>
++);
++
++const runIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m10.2 8.7 5.1 3.3-5.1 3.3z" />
++  </>
++);
++
++const completeIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m8.2 12.2 2.4 2.4 5.2-5.2" />
++  </>
++);
++
++const editIcon = (
++  <>
++    <path d="M4.5 19.5h4.2L19 9.2 14.8 5 4.5 15.3z" />
++    <path d="m13.6 6.2 4.2 4.2" />
++  </>
++);
++
++const deleteIcon = (
++  <>
++    <path d="M5 7h14" />
++    <path d="M9 7V5h6v2" />
++    <path d="M7 7.5 8 20h8l1-12.5" />
++    <path d="M10.2 11v5" />
++    <path d="M13.8 11v5" />
++  </>
++);
++
++const warningIcon = (
++  <>
++    <path d="M10.4 4.5 3.6 17.2A1.8 1.8 0 0 0 5.2 20h13.6a1.8 1.8 0 0 0 1.6-2.8L13.6 4.5a1.8 1.8 0 0 0-3.2 0z" />
++    <path d="M12 9v4.5" />
++    <path d="M12 17h.01" />
++  </>
++);
++
++const refreshIcon = (
++  <>
++    <path d="M20 6v5h-5" />
++    <path d="M4 18v-5h5" />
++    <path d="M18.2 10A6.5 6.5 0 0 0 7 6.4L4 9" />
++    <path d="M5.8 14A6.5 6.5 0 0 0 17 17.6l3-2.6" />
++  </>
++);
++
++const attachmentIcon = (
++  <>
++    <path d="m8.6 12.5 5.8-5.8a3 3 0 0 1 4.2 4.2l-7.2 7.2a4.2 4.2 0 0 1-6-6l7.1-7.1" />
++    <path d="m10.8 14.7 5.6-5.6" />
++  </>
++);
++
++const sendIcon = (
++  <>
++    <path d="M20 4 9.5 14.5" />
++    <path d="m20 4-5.6 16-4.9-5.5L4 12z" />
++  </>
++);
++
++const plusIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="M12 8v8" />
++    <path d="M8 12h8" />
++  </>
++);
++
++const closeIcon = (
++  <>
++    <path d="M7 7 17 17" />
++    <path d="M17 7 7 17" />
++  </>
++);
++
++const searchIcon = (
++  <>
++    <circle cx="10.5" cy="10.5" r="6" />
++    <path d="m15 15 4.5 4.5" />
++  </>
++);
++
++const enterIcon = (
++  <>
++    <path d="M4.5 12h10" />
++    <path d="m11 8 4 4-4 4" />
++    <path d="M14.5 5H19v14h-4.5" />
++  </>
++);
++
++const backIcon = (
++  <>
++    <path d="M19.5 12h-15" />
++    <path d="m9 7-5 5 5 5" />
++  </>
++);
++
++const fileIcon = (
++  <>
++    <path d="M6.5 3.5h8L18 7v13.5H6.5z" />
++    <path d="M14.2 3.8v3.5h3.5" />
++  </>
++);
++
++const ICONS = {
++  overview: overviewIcon,
++  requirement: requirementIcon,
++  requirements: requirementIcon,
++  feedback: feedbackIcon,
++  task: taskIcon,
++  tasks: taskIcon,
++  event: eventIcon,
++  events: eventIcon,
++  plan: planIcon,
++  plans: planIcon,
++  run: runIcon,
++  running: runIcon,
++  complete: completeIcon,
++  completed: completeIcon,
++  edit: editIcon,
++  delete: deleteIcon,
++  trash: deleteIcon,
++  warning: warningIcon,
++  alert: warningIcon,
++  refresh: refreshIcon,
++  attachment: attachmentIcon,
++  attachments: attachmentIcon,
++  send: sendIcon,
++  plus: plusIcon,
++  close: closeIcon,
++  search: searchIcon,
++  enter: enterIcon,
++  open: enterIcon,
++  back: backIcon,
++  file: fileIcon,
++} as const;
++
++export type IconName = keyof typeof ICONS;
++
++export const iconNames = Object.freeze(Object.keys(ICONS) as IconName[]);
++
++type IconSize = number | string;
++
++export interface IconProps extends Omit<React.SVGProps<SVGSVGElement>, 'children' | 'height' | 'viewBox' | 'width'> {
++  name: IconName;
++  size?: IconSize;
++  title?: string;
++}
++
++function isAriaHidden(value: IconProps['aria-hidden']) {
++  return value === true || value === 'true';
++}
++
++function formatIconSize(size: IconSize) {
++  return typeof size === 'number' ? `${size}px` : size;
++}
++
++export function Icon({
++  name,
++  size = 20,
++  title,
++  className,
++  style,
++  role,
++  'aria-hidden': ariaHidden,
++  'aria-label': ariaLabel,
++  ...svgProps
++}: IconProps) {
++  const titleId = React.useId();
++  const hasAccessibleName = Boolean(title || ariaLabel);
++  const shouldHide = ariaHidden === undefined ? !hasAccessibleName : isAriaHidden(ariaHidden);
++  const labelledBy = title && !shouldHide ? titleId : undefined;
++  const iconStyle = {
++    '--icon-size': formatIconSize(size),
++    ...style,
++  } as React.CSSProperties;
++
++  return (
++    <svg
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth={1.8}
++      strokeLinecap="round"
++      strokeLinejoin="round"
++      focusable="false"
++      {...svgProps}
++      className={['app-icon', className].filter(Boolean).join(' ')}
++      style={iconStyle}
++      aria-hidden={shouldHide ? true : undefined}
++      aria-labelledby={labelledBy}
++      aria-label={labelledBy ? undefined : ariaLabel}
++      role={role ?? (!shouldHide && hasAccessibleName ? 'img' : undefined)}
++    >
++      {labelledBy ? <title id={labelledBy}>{title}</title> : null}
++      {ICONS[name]}
++    </svg>
++  );
++}
+diff --git a/src/styles.css b/src/styles.css
+index 4b3d2b7dc84ebd9a211a49e682f95022b3ef77ce..0b9eb90014eace46d710e4b9b0629a06551e10bf
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -105,6 +105,20 @@
+ .req { color: var(--danger); }
+ .danger-text { color: var(--danger); }
+ 
++.app-icon { display: inline-block; flex: 0 0 auto; width: var(--icon-size, 1em); height: var(--icon-size, 1em); color: inherit; vertical-align: -0.14em; }
++.app-icon * { vector-effect: non-scaling-stroke; }
++.app-icon-muted { color: var(--text-3); }
++.app-icon-brand { color: var(--brand-600); }
++.app-icon-success { color: var(--success); }
++.app-icon-warning { color: var(--warning); }
++.app-icon-danger { color: var(--danger); }
++.icon-with-text { display: inline-flex; align-items: center; gap: 6px; }
++.icon-surface { display: inline-grid; place-items: center; width: var(--icon-surface-size, 36px); height: var(--icon-surface-size, 36px); border-radius: 50%; color: var(--icon-surface-color, currentColor); background: var(--icon-surface-bg, transparent); }
++.icon-surface-brand { --icon-surface-color: var(--brand-600); --icon-surface-bg: var(--brand-50); }
++.icon-surface-success { --icon-surface-color: var(--success); --icon-surface-bg: var(--success-bg); }
++.icon-surface-warning { --icon-surface-color: var(--warning); --icon-surface-bg: var(--warning-bg); }
++.icon-surface-danger { --icon-surface-color: var(--danger); --icon-surface-bg: var(--danger-bg); }
++
+ .list { display: grid; gap: 10px; padding: 16px 18px; }
+ .list.compact { max-height: none; overflow: auto; }
+ .item { min-width: 0; border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 12px; background: var(--bg-soft); }
+
+codex
+改动已完成；接下来只对新增图标文件做 TypeScript 级别的最小校验。
+exec
+powershell.exe -Command 'npx --no-install tsc --noEmit --jsx react-jsx --moduleResolution node --module esnext --target es2020 --lib DOM,ES2020 --skipLibCheck src/renderer/components/icons.tsx' in D:\project\GitHub\autoplan
+2026-06-24T19:31:43.338031Z ERROR codex_core::tools::router: error={"output":"error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error.\r\n","metadata":{"exit_code":1,"duration_seconds":1.1}}
+ exited 1 in 1084ms:
+error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error.
+
+diff --git a/src/renderer/components/icons.tsx b/src/renderer/components/icons.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d662e87f6f345d179213366cb56a61152566145
+--- /dev/null
++++ b/src/renderer/components/icons.tsx
+@@ -0,0 +1,262 @@
++import * as React from 'react';
++
++const overviewIcon = (
++  <>
++    <rect x="3.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="13.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="3.5" y="14" width="7" height="6" rx="1.6" />
++    <path d="M14 17h6" />
++    <path d="M17 14v6" />
++  </>
++);
++
++const requirementIcon = (
++  <>
++    <path d="M6.5 3.5h7.8L18 7.2v13.3H6.5z" />
++    <path d="M14 3.8v3.7h3.7" />
++    <path d="M9 11h6" />
++    <path d="M9 15h6" />
++    <path d="M9 18h3.5" />
++  </>
++);
++
++const feedbackIcon = (
++  <>
++    <path d="M5 5.5h14v9.2H9.7L6.2 18v-3.3H5z" />
++    <path d="M8.5 9.2h7" />
++    <path d="M8.5 12h4.8" />
++  </>
++);
++
++const taskIcon = (
++  <>
++    <path d="M8 6h12" />
++    <path d="M8 12h12" />
++    <path d="M8 18h12" />
++    <path d="m3.8 6 1.1 1.1L7 4.9" />
++    <path d="m3.8 12 1.1 1.1L7 10.9" />
++    <path d="m3.8 18 1.1 1.1L7 16.9" />
++  </>
++);
++
++const eventIcon = (
++  <>
++    <path d="M4 12h3l2-5 4 10 2-5h5" />
++    <circle cx="4" cy="12" r="1.4" />
++    <circle cx="20" cy="12" r="1.4" />
++  </>
++);
++
++const planIcon = (
++  <>
++    <rect x="4" y="5" width="16" height="15" rx="2" />
++    <path d="M8 3.5v3" />
++    <path d="M16 3.5v3" />
++    <path d="M4 9h16" />
++    <path d="M8 13h3" />
++    <path d="M13.5 13H16" />
++    <path d="M8 16.5h5" />
++  </>
++);
++
++const runIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m10.2 8.7 5.1 3.3-5.1 3.3z" />
++  </>
++);
++
++const completeIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m8.2 12.2 2.4 2.4 5.2-5.2" />
++  </>
++);
++
++const editIcon = (
++  <>
++    <path d="M4.5 19.5h4.2L19 9.2 14.8 5 4.5 15.3z" />
++    <path d="m13.6 6.2 4.2 4.2" />
++  </>
++);
++
++const deleteIcon = (
++  <>
++    <path d="M5 7h14" />
++    <path d="M9 7V5h6v2" />
++    <path d="M7 7.5 8 20h8l1-12.5" />
++    <path d="M10.2 11v5" />
++    <path d="M13.8 11v5" />
++  </>
++);
++
++const warningIcon = (
++  <>
++    <path d="M10.4 4.5 3.6 17.2A1.8 1.8 0 0 0 5.2 20h13.6a1.8 1.8 0 0 0 1.6-2.8L13.6 4.5a1.8 1.8 0 0 0-3.2 0z" />
++    <path d="M12 9v4.5" />
++    <path d="M12 17h.01" />
++  </>
++);
++
++const refreshIcon = (
++  <>
++    <path d="M20 6v5h-5" />
++    <path d="M4 18v-5h5" />
++    <path d="M18.2 10A6.5 6.5 0 0 0 7 6.4L4 9" />
++    <path d="M5.8 14A6.5 6.5 0 0 0 17 17.6l3-2.6" />
++  </>
++);
++
++const attachmentIcon = (
++  <>
++    <path d="m8.6 12.5 5.8-5.8a3 3 0 0 1 4.2 4.2l-7.2 7.2a4.2 4.2 0 0 1-6-6l7.1-7.1" />
++    <path d="m10.8 14.7 5.6-5.6" />
++  </>
++);
++
++const sendIcon = (
++  <>
++    <path d="M20 4 9.5 14.5" />
++    <path d="m20 4-5.6 16-4.9-5.5L4 12z" />
++  </>
++);
++
++const plusIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="M12 8v8" />
++    <path d="M8 12h8" />
++  </>
++);
++
++const closeIcon = (
++  <>
++    <path d="M7 7 17 17" />
++    <path d="M17 7 7 17" />
++  </>
++);
++
++const searchIcon = (
++  <>
++    <circle cx="10.5" cy="10.5" r="6" />
++    <path d="m15 15 4.5 4.5" />
++  </>
++);
++
++const enterIcon = (
++  <>
++    <path d="M4.5 12h10" />
++    <path d="m11 8 4 4-4 4" />
++    <path d="M14.5 5H19v14h-4.5" />
++  </>
++);
++
++const backIcon = (
++  <>
++    <path d="M19.5 12h-15" />
++    <path d="m9 7-5 5 5 5" />
++  </>
++);
++
++const fileIcon = (
++  <>
++    <path d="M6.5 3.5h8L18 7v13.5H6.5z" />
++    <path d="M14.2 3.8v3.5h3.5" />
++  </>
++);
++
++const ICONS = {
++  overview: overviewIcon,
++  requirement: requirementIcon,
++  requirements: requirementIcon,
++  feedback: feedbackIcon,
++  task: taskIcon,
++  tasks: taskIcon,
++  event: eventIcon,
++  events: eventIcon,
++  plan: planIcon,
++  plans: planIcon,
++  run: runIcon,
++  running: runIcon,
++  complete: completeIcon,
++  completed: completeIcon,
++  edit: editIcon,
++  delete: deleteIcon,
++  trash: deleteIcon,
++  warning: warningIcon,
++  alert: warningIcon,
++  refresh: refreshIcon,
++  attachment: attachmentIcon,
++  attachments: attachmentIcon,
++  send: sendIcon,
++  plus: plusIcon,
++  close: closeIcon,
++  search: searchIcon,
++  enter: enterIcon,
++  open: enterIcon,
++  back: backIcon,
++  file: fileIcon,
++} as const;
++
++export type IconName = keyof typeof ICONS;
++
++export const iconNames = Object.freeze(Object.keys(ICONS) as IconName[]);
++
++type IconSize = number | string;
++
++export interface IconProps extends Omit<React.SVGProps<SVGSVGElement>, 'children' | 'height' | 'viewBox' | 'width'> {
++  name: IconName;
++  size?: IconSize;
++  title?: string;
++}
++
++function isAriaHidden(value: IconProps['aria-hidden']) {
++  return value === true || value === 'true';
++}
++
++function formatIconSize(size: IconSize) {
++  return typeof size === 'number' ? `${size}px` : size;
++}
++
++export function Icon({
++  name,
++  size = 20,
++  title,
++  className,
++  style,
++  role,
++  'aria-hidden': ariaHidden,
++  'aria-label': ariaLabel,
++  ...svgProps
++}: IconProps) {
++  const titleId = React.useId();
++  const hasAccessibleName = Boolean(title || ariaLabel);
++  const shouldHide = ariaHidden === undefined ? !hasAccessibleName : isAriaHidden(ariaHidden);
++  const labelledBy = title && !shouldHide ? titleId : undefined;
++  const iconStyle = {
++    '--icon-size': formatIconSize(size),
++    ...style,
++  } as React.CSSProperties;
++
++  return (
++    <svg
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth={1.8}
++      strokeLinecap="round"
++      strokeLinejoin="round"
++      focusable="false"
++      {...svgProps}
++      className={['app-icon', className].filter(Boolean).join(' ')}
++      style={iconStyle}
++      aria-hidden={shouldHide ? true : undefined}
++      aria-labelledby={labelledBy}
++      aria-label={labelledBy ? undefined : ariaLabel}
++      role={role ?? (!shouldHide && hasAccessibleName ? 'img' : undefined)}
++    >
++      {labelledBy ? <title id={labelledBy}>{title}</title> : null}
++      {ICONS[name]}
++    </svg>
++  );
++}
+diff --git a/src/styles.css b/src/styles.css
+index 4b3d2b7dc84ebd9a211a49e682f95022b3ef77ce..0b9eb90014eace46d710e4b9b0629a06551e10bf
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -105,6 +105,20 @@
+ .req { color: var(--danger); }
+ .danger-text { color: var(--danger); }
+ 
++.app-icon { display: inline-block; flex: 0 0 auto; width: var(--icon-size, 1em); height: var(--icon-size, 1em); color: inherit; vertical-align: -0.14em; }
++.app-icon * { vector-effect: non-scaling-stroke; }
++.app-icon-muted { color: var(--text-3); }
++.app-icon-brand { color: var(--brand-600); }
++.app-icon-success { color: var(--success); }
++.app-icon-warning { color: var(--warning); }
++.app-icon-danger { color: var(--danger); }
++.icon-with-text { display: inline-flex; align-items: center; gap: 6px; }
++.icon-surface { display: inline-grid; place-items: center; width: var(--icon-surface-size, 36px); height: var(--icon-surface-size, 36px); border-radius: 50%; color: var(--icon-surface-color, currentColor); background: var(--icon-surface-bg, transparent); }
++.icon-surface-brand { --icon-surface-color: var(--brand-600); --icon-surface-bg: var(--brand-50); }
++.icon-surface-success { --icon-surface-color: var(--success); --icon-surface-bg: var(--success-bg); }
++.icon-surface-warning { --icon-surface-color: var(--warning); --icon-surface-bg: var(--warning-bg); }
++.icon-surface-danger { --icon-surface-color: var(--danger); --icon-surface-bg: var(--danger-bg); }
++
+ .list { display: grid; gap: 10px; padding: 16px 18px; }
+ .list.compact { max-height: none; overflow: auto; }
+ .item { min-width: 0; border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 12px; background: var(--bg-soft); }
+
+codex
+这个校验命令被 TypeScript 配置保护拦截了；我用显式忽略配置的同一文件校验再跑一次。
+exec
+powershell.exe -Command 'npx --no-install tsc --ignoreConfig --noEmit --jsx react-jsx --moduleResolution node --module esnext --target es2020 --lib DOM,ES2020 --skipLibCheck src/renderer/components/icons.tsx' in D:\project\GitHub\autoplan
+2026-06-24T19:31:49.615889Z ERROR codex_core::tools::router: error={"output":"error TS5107: Option 'moduleResolution=node10' is deprecated and will stop functioning in TypeScript 7.0. Specify compilerOption '\"ignoreDeprecations\": \"6.0\"' to silence this error.\r\n  Visit https://aka.ms/ts6 for migration information.\r\n","metadata":{"exit_code":1,"duration_seconds":1.2}}
+ exited 1 in 1221ms:
+error TS5107: Option 'moduleResolution=node10' is deprecated and will stop functioning in TypeScript 7.0. Specify compilerOption '"ignoreDeprecations": "6.0"' to silence this error.
+  Visit https://aka.ms/ts6 for migration information.
+
+diff --git a/src/renderer/components/icons.tsx b/src/renderer/components/icons.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d662e87f6f345d179213366cb56a61152566145
+--- /dev/null
++++ b/src/renderer/components/icons.tsx
+@@ -0,0 +1,262 @@
++import * as React from 'react';
++
++const overviewIcon = (
++  <>
++    <rect x="3.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="13.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="3.5" y="14" width="7" height="6" rx="1.6" />
++    <path d="M14 17h6" />
++    <path d="M17 14v6" />
++  </>
++);
++
++const requirementIcon = (
++  <>
++    <path d="M6.5 3.5h7.8L18 7.2v13.3H6.5z" />
++    <path d="M14 3.8v3.7h3.7" />
++    <path d="M9 11h6" />
++    <path d="M9 15h6" />
++    <path d="M9 18h3.5" />
++  </>
++);
++
++const feedbackIcon = (
++  <>
++    <path d="M5 5.5h14v9.2H9.7L6.2 18v-3.3H5z" />
++    <path d="M8.5 9.2h7" />
++    <path d="M8.5 12h4.8" />
++  </>
++);
++
++const taskIcon = (
++  <>
++    <path d="M8 6h12" />
++    <path d="M8 12h12" />
++    <path d="M8 18h12" />
++    <path d="m3.8 6 1.1 1.1L7 4.9" />
++    <path d="m3.8 12 1.1 1.1L7 10.9" />
++    <path d="m3.8 18 1.1 1.1L7 16.9" />
++  </>
++);
++
++const eventIcon = (
++  <>
++    <path d="M4 12h3l2-5 4 10 2-5h5" />
++    <circle cx="4" cy="12" r="1.4" />
++    <circle cx="20" cy="12" r="1.4" />
++  </>
++);
++
++const planIcon = (
++  <>
++    <rect x="4" y="5" width="16" height="15" rx="2" />
++    <path d="M8 3.5v3" />
++    <path d="M16 3.5v3" />
++    <path d="M4 9h16" />
++    <path d="M8 13h3" />
++    <path d="M13.5 13H16" />
++    <path d="M8 16.5h5" />
++  </>
++);
++
++const runIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m10.2 8.7 5.1 3.3-5.1 3.3z" />
++  </>
++);
++
++const completeIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m8.2 12.2 2.4 2.4 5.2-5.2" />
++  </>
++);
++
++const editIcon = (
++  <>
++    <path d="M4.5 19.5h4.2L19 9.2 14.8 5 4.5 15.3z" />
++    <path d="m13.6 6.2 4.2 4.2" />
++  </>
++);
++
++const deleteIcon = (
++  <>
++    <path d="M5 7h14" />
++    <path d="M9 7V5h6v2" />
++    <path d="M7 7.5 8 20h8l1-12.5" />
++    <path d="M10.2 11v5" />
++    <path d="M13.8 11v5" />
++  </>
++);
++
++const warningIcon = (
++  <>
++    <path d="M10.4 4.5 3.6 17.2A1.8 1.8 0 0 0 5.2 20h13.6a1.8 1.8 0 0 0 1.6-2.8L13.6 4.5a1.8 1.8 0 0 0-3.2 0z" />
++    <path d="M12 9v4.5" />
++    <path d="M12 17h.01" />
++  </>
++);
++
++const refreshIcon = (
++  <>
++    <path d="M20 6v5h-5" />
++    <path d="M4 18v-5h5" />
++    <path d="M18.2 10A6.5 6.5 0 0 0 7 6.4L4 9" />
++    <path d="M5.8 14A6.5 6.5 0 0 0 17 17.6l3-2.6" />
++  </>
++);
++
++const attachmentIcon = (
++  <>
++    <path d="m8.6 12.5 5.8-5.8a3 3 0 0 1 4.2 4.2l-7.2 7.2a4.2 4.2 0 0 1-6-6l7.1-7.1" />
++    <path d="m10.8 14.7 5.6-5.6" />
++  </>
++);
++
++const sendIcon = (
++  <>
++    <path d="M20 4 9.5 14.5" />
++    <path d="m20 4-5.6 16-4.9-5.5L4 12z" />
++  </>
++);
++
++const plusIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="M12 8v8" />
++    <path d="M8 12h8" />
++  </>
++);
++
++const closeIcon = (
++  <>
++    <path d="M7 7 17 17" />
++    <path d="M17 7 7 17" />
++  </>
++);
++
++const searchIcon = (
++  <>
++    <circle cx="10.5" cy="10.5" r="6" />
++    <path d="m15 15 4.5 4.5" />
++  </>
++);
++
++const enterIcon = (
++  <>
++    <path d="M4.5 12h10" />
++    <path d="m11 8 4 4-4 4" />
++    <path d="M14.5 5H19v14h-4.5" />
++  </>
++);
++
++const backIcon = (
++  <>
++    <path d="M19.5 12h-15" />
++    <path d="m9 7-5 5 5 5" />
++  </>
++);
++
++const fileIcon = (
++  <>
++    <path d="M6.5 3.5h8L18 7v13.5H6.5z" />
++    <path d="M14.2 3.8v3.5h3.5" />
++  </>
++);
++
++const ICONS = {
++  overview: overviewIcon,
++  requirement: requirementIcon,
++  requirements: requirementIcon,
++  feedback: feedbackIcon,
++  task: taskIcon,
++  tasks: taskIcon,
++  event: eventIcon,
++  events: eventIcon,
++  plan: planIcon,
++  plans: planIcon,
++  run: runIcon,
++  running: runIcon,
++  complete: completeIcon,
++  completed: completeIcon,
++  edit: editIcon,
++  delete: deleteIcon,
++  trash: deleteIcon,
++  warning: warningIcon,
++  alert: warningIcon,
++  refresh: refreshIcon,
++  attachment: attachmentIcon,
++  attachments: attachmentIcon,
++  send: sendIcon,
++  plus: plusIcon,
++  close: closeIcon,
++  search: searchIcon,
++  enter: enterIcon,
++  open: enterIcon,
++  back: backIcon,
++  file: fileIcon,
++} as const;
++
++export type IconName = keyof typeof ICONS;
++
++export const iconNames = Object.freeze(Object.keys(ICONS) as IconName[]);
++
++type IconSize = number | string;
++
++export interface IconProps extends Omit<React.SVGProps<SVGSVGElement>, 'children' | 'height' | 'viewBox' | 'width'> {
++  name: IconName;
++  size?: IconSize;
++  title?: string;
++}
++
++function isAriaHidden(value: IconProps['aria-hidden']) {
++  return value === true || value === 'true';
++}
++
++function formatIconSize(size: IconSize) {
++  return typeof size === 'number' ? `${size}px` : size;
++}
++
++export function Icon({
++  name,
++  size = 20,
++  title,
++  className,
++  style,
++  role,
++  'aria-hidden': ariaHidden,
++  'aria-label': ariaLabel,
++  ...svgProps
++}: IconProps) {
++  const titleId = React.useId();
++  const hasAccessibleName = Boolean(title || ariaLabel);
++  const shouldHide = ariaHidden === undefined ? !hasAccessibleName : isAriaHidden(ariaHidden);
++  const labelledBy = title && !shouldHide ? titleId : undefined;
++  const iconStyle = {
++    '--icon-size': formatIconSize(size),
++    ...style,
++  } as React.CSSProperties;
++
++  return (
++    <svg
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth={1.8}
++      strokeLinecap="round"
++      strokeLinejoin="round"
++      focusable="false"
++      {...svgProps}
++      className={['app-icon', className].filter(Boolean).join(' ')}
++      style={iconStyle}
++      aria-hidden={shouldHide ? true : undefined}
++      aria-labelledby={labelledBy}
++      aria-label={labelledBy ? undefined : ariaLabel}
++      role={role ?? (!shouldHide && hasAccessibleName ? 'img' : undefined)}
++    >
++      {labelledBy ? <title id={labelledBy}>{title}</title> : null}
++      {ICONS[name]}
++    </svg>
++  );
++}
+diff --git a/src/styles.css b/src/styles.css
+index 4b3d2b7dc84ebd9a211a49e682f95022b3ef77ce..0b9eb90014eace46d710e4b9b0629a06551e10bf
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -105,6 +105,20 @@
+ .req { color: var(--danger); }
+ .danger-text { color: var(--danger); }
+ 
++.app-icon { display: inline-block; flex: 0 0 auto; width: var(--icon-size, 1em); height: var(--icon-size, 1em); color: inherit; vertical-align: -0.14em; }
++.app-icon * { vector-effect: non-scaling-stroke; }
++.app-icon-muted { color: var(--text-3); }
++.app-icon-brand { color: var(--brand-600); }
++.app-icon-success { color: var(--success); }
++.app-icon-warning { color: var(--warning); }
++.app-icon-danger { color: var(--danger); }
++.icon-with-text { display: inline-flex; align-items: center; gap: 6px; }
++.icon-surface { display: inline-grid; place-items: center; width: var(--icon-surface-size, 36px); height: var(--icon-surface-size, 36px); border-radius: 50%; color: var(--icon-surface-color, currentColor); background: var(--icon-surface-bg, transparent); }
++.icon-surface-brand { --icon-surface-color: var(--brand-600); --icon-surface-bg: var(--brand-50); }
++.icon-surface-success { --icon-surface-color: var(--success); --icon-surface-bg: var(--success-bg); }
++.icon-surface-warning { --icon-surface-color: var(--warning); --icon-surface-bg: var(--warning-bg); }
++.icon-surface-danger { --icon-surface-color: var(--danger); --icon-surface-bg: var(--danger-bg); }
++
+ .list { display: grid; gap: 10px; padding: 16px 18px; }
+ .list.compact { max-height: none; overflow: auto; }
+ .item { min-width: 0; border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 12px; background: var(--bg-soft); }
+
+codex
+拦截点是命令行选项版本差异；我切到 bundler 解析，仍只校验该文件。
+exec
+powershell.exe -Command 'npx --no-install tsc --ignoreConfig --noEmit --jsx react-jsx --moduleResolution bundler --module esnext --target es2020 --lib DOM,ES2020 --skipLibCheck src/renderer/components/icons.tsx' in D:\project\GitHub\autoplan
+ succeeded in 1485ms:
+diff --git a/src/renderer/components/icons.tsx b/src/renderer/components/icons.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d662e87f6f345d179213366cb56a61152566145
+--- /dev/null
++++ b/src/renderer/components/icons.tsx
+@@ -0,0 +1,262 @@
++import * as React from 'react';
++
++const overviewIcon = (
++  <>
++    <rect x="3.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="13.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="3.5" y="14" width="7" height="6" rx="1.6" />
++    <path d="M14 17h6" />
++    <path d="M17 14v6" />
++  </>
++);
++
++const requirementIcon = (
++  <>
++    <path d="M6.5 3.5h7.8L18 7.2v13.3H6.5z" />
++    <path d="M14 3.8v3.7h3.7" />
++    <path d="M9 11h6" />
++    <path d="M9 15h6" />
++    <path d="M9 18h3.5" />
++  </>
++);
++
++const feedbackIcon = (
++  <>
++    <path d="M5 5.5h14v9.2H9.7L6.2 18v-3.3H5z" />
++    <path d="M8.5 9.2h7" />
++    <path d="M8.5 12h4.8" />
++  </>
++);
++
++const taskIcon = (
++  <>
++    <path d="M8 6h12" />
++    <path d="M8 12h12" />
++    <path d="M8 18h12" />
++    <path d="m3.8 6 1.1 1.1L7 4.9" />
++    <path d="m3.8 12 1.1 1.1L7 10.9" />
++    <path d="m3.8 18 1.1 1.1L7 16.9" />
++  </>
++);
++
++const eventIcon = (
++  <>
++    <path d="M4 12h3l2-5 4 10 2-5h5" />
++    <circle cx="4" cy="12" r="1.4" />
++    <circle cx="20" cy="12" r="1.4" />
++  </>
++);
++
++const planIcon = (
++  <>
++    <rect x="4" y="5" width="16" height="15" rx="2" />
++    <path d="M8 3.5v3" />
++    <path d="M16 3.5v3" />
++    <path d="M4 9h16" />
++    <path d="M8 13h3" />
++    <path d="M13.5 13H16" />
++    <path d="M8 16.5h5" />
++  </>
++);
++
++const runIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m10.2 8.7 5.1 3.3-5.1 3.3z" />
++  </>
++);
++
++const completeIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m8.2 12.2 2.4 2.4 5.2-5.2" />
++  </>
++);
++
++const editIcon = (
++  <>
++    <path d="M4.5 19.5h4.2L19 9.2 14.8 5 4.5 15.3z" />
++    <path d="m13.6 6.2 4.2 4.2" />
++  </>
++);
++
++const deleteIcon = (
++  <>
++    <path d="M5 7h14" />
++    <path d="M9 7V5h6v2" />
++    <path d="M7 7.5 8 20h8l1-12.5" />
++    <path d="M10.2 11v5" />
++    <path d="M13.8 11v5" />
++  </>
++);
++
++const warningIcon = (
++  <>
++    <path d="M10.4 4.5 3.6 17.2A1.8 1.8 0 0 0 5.2 20h13.6a1.8 1.8 0 0 0 1.6-2.8L13.6 4.5a1.8 1.8 0 0 0-3.2 0z" />
++    <path d="M12 9v4.5" />
++    <path d="M12 17h.01" />
++  </>
++);
++
++const refreshIcon = (
++  <>
++    <path d="M20 6v5h-5" />
++    <path d="M4 18v-5h5" />
++    <path d="M18.2 10A6.5 6.5 0 0 0 7 6.4L4 9" />
++    <path d="M5.8 14A6.5 6.5 0 0 0 17 17.6l3-2.6" />
++  </>
++);
++
++const attachmentIcon = (
++  <>
++    <path d="m8.6 12.5 5.8-5.8a3 3 0 0 1 4.2 4.2l-7.2 7.2a4.2 4.2 0 0 1-6-6l7.1-7.1" />
++    <path d="m10.8 14.7 5.6-5.6" />
++  </>
++);
++
++const sendIcon = (
++  <>
++    <path d="M20 4 9.5 14.5" />
++    <path d="m20 4-5.6 16-4.9-5.5L4 12z" />
++  </>
++);
++
++const plusIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="M12 8v8" />
++    <path d="M8 12h8" />
++  </>
++);
++
++const closeIcon = (
++  <>
++    <path d="M7 7 17 17" />
++    <path d="M17 7 7 17" />
++  </>
++);
++
++const searchIcon = (
++  <>
++    <circle cx="10.5" cy="10.5" r="6" />
++    <path d="m15 15 4.5 4.5" />
++  </>
++);
++
++const enterIcon = (
++  <>
++    <path d="M4.5 12h10" />
++    <path d="m11 8 4 4-4 4" />
++    <path d="M14.5 5H19v14h-4.5" />
++  </>
++);
++
++const backIcon = (
++  <>
++    <path d="M19.5 12h-15" />
++    <path d="m9 7-5 5 5 5" />
++  </>
++);
++
++const fileIcon = (
++  <>
++    <path d="M6.5 3.5h8L18 7v13.5H6.5z" />
++    <path d="M14.2 3.8v3.5h3.5" />
++  </>
++);
++
++const ICONS = {
++  overview: overviewIcon,
++  requirement: requirementIcon,
++  requirements: requirementIcon,
++  feedback: feedbackIcon,
++  task: taskIcon,
++  tasks: taskIcon,
++  event: eventIcon,
++  events: eventIcon,
++  plan: planIcon,
++  plans: planIcon,
++  run: runIcon,
++  running: runIcon,
++  complete: completeIcon,
++  completed: completeIcon,
++  edit: editIcon,
++  delete: deleteIcon,
++  trash: deleteIcon,
++  warning: warningIcon,
++  alert: warningIcon,
++  refresh: refreshIcon,
++  attachment: attachmentIcon,
++  attachments: attachmentIcon,
++  send: sendIcon,
++  plus: plusIcon,
++  close: closeIcon,
++  search: searchIcon,
++  enter: enterIcon,
++  open: enterIcon,
++  back: backIcon,
++  file: fileIcon,
++} as const;
++
++export type IconName = keyof typeof ICONS;
++
++export const iconNames = Object.freeze(Object.keys(ICONS) as IconName[]);
++
++type IconSize = number | string;
++
++export interface IconProps extends Omit<React.SVGProps<SVGSVGElement>, 'children' | 'height' | 'viewBox' | 'width'> {
++  name: IconName;
++  size?: IconSize;
++  title?: string;
++}
++
++function isAriaHidden(value: IconProps['aria-hidden']) {
++  return value === true || value === 'true';
++}
++
++function formatIconSize(size: IconSize) {
++  return typeof size === 'number' ? `${size}px` : size;
++}
++
++export function Icon({
++  name,
++  size = 20,
++  title,
++  className,
++  style,
++  role,
++  'aria-hidden': ariaHidden,
++  'aria-label': ariaLabel,
++  ...svgProps
++}: IconProps) {
++  const titleId = React.useId();
++  const hasAccessibleName = Boolean(title || ariaLabel);
++  const shouldHide = ariaHidden === undefined ? !hasAccessibleName : isAriaHidden(ariaHidden);
++  const labelledBy = title && !shouldHide ? titleId : undefined;
++  const iconStyle = {
++    '--icon-size': formatIconSize(size),
++    ...style,
++  } as React.CSSProperties;
++
++  return (
++    <svg
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth={1.8}
++      strokeLinecap="round"
++      strokeLinejoin="round"
++      focusable="false"
++      {...svgProps}
++      className={['app-icon', className].filter(Boolean).join(' ')}
++      style={iconStyle}
++      aria-hidden={shouldHide ? true : undefined}
++      aria-labelledby={labelledBy}
++      aria-label={labelledBy ? undefined : ariaLabel}
++      role={role ?? (!shouldHide && hasAccessibleName ? 'img' : undefined)}
++    >
++      {labelledBy ? <title id={labelledBy}>{title}</title> : null}
++      {ICONS[name]}
++    </svg>
++  );
++}
+diff --git a/src/styles.css b/src/styles.css
+index 4b3d2b7dc84ebd9a211a49e682f95022b3ef77ce..0b9eb90014eace46d710e4b9b0629a06551e10bf
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -105,6 +105,20 @@
+ .req { color: var(--danger); }
+ .danger-text { color: var(--danger); }
+ 
++.app-icon { display: inline-block; flex: 0 0 auto; width: var(--icon-size, 1em); height: var(--icon-size, 1em); color: inherit; vertical-align: -0.14em; }
++.app-icon * { vector-effect: non-scaling-stroke; }
++.app-icon-muted { color: var(--text-3); }
++.app-icon-brand { color: var(--brand-600); }
++.app-icon-success { color: var(--success); }
++.app-icon-warning { color: var(--warning); }
++.app-icon-danger { color: var(--danger); }
++.icon-with-text { display: inline-flex; align-items: center; gap: 6px; }
++.icon-surface { display: inline-grid; place-items: center; width: var(--icon-surface-size, 36px); height: var(--icon-surface-size, 36px); border-radius: 50%; color: var(--icon-surface-color, currentColor); background: var(--icon-surface-bg, transparent); }
++.icon-surface-brand { --icon-surface-color: var(--brand-600); --icon-surface-bg: var(--brand-50); }
++.icon-surface-success { --icon-surface-color: var(--success); --icon-surface-bg: var(--success-bg); }
++.icon-surface-warning { --icon-surface-color: var(--warning); --icon-surface-bg: var(--warning-bg); }
++.icon-surface-danger { --icon-surface-color: var(--danger); --icon-surface-bg: var(--danger-bg); }
++
+ .list { display: grid; gap: 10px; padding: 16px 18px; }
+ .list.compact { max-height: none; overflow: auto; }
+ .item { min-width: 0; border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 12px; background: var(--bg-soft); }
+
+**Figuring out project references**
+
+I need to consider using single quotes for our project lint style – that seems like a good approach. I’m not quite sure about running CSS syntax. I wonder if using `git diff -- src files` could be helpful, but I should avoid outputting the whole diff. Getting line references seems crucial, especially for files. Am I wasting time reading after the patch? I think using `Select-String` to find line numbers could save time. The summary from `git diff --stat` might include other files, but I need to keep it scoped to specific files.
+codex
+校验通过了；我只抓取改动位置行号，方便最后交接。
+exec
+powershell.exe -Command "Select-String -Path 'src/renderer/components/icons.tsx','src/styles.css' -Pattern 'const ICONS|export interface IconProps|export function Icon|\\.app-icon \\{|\\.icon-surface \\{' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path, $_.LineNumber, $_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 185ms:
+D:\project\GitHub\autoplan\src\renderer\components\icons.tsx:168: const ICONS = {
+D:\project\GitHub\autoplan\src\renderer\components\icons.tsx:207: export interface IconProps extends Omit<React.SVGProps<SVGSVGElement>, 'children' | 'height' | 'viewBox' | 'width'> {
+D:\project\GitHub\autoplan\src\renderer\components\icons.tsx:221: export function Icon({
+D:\project\GitHub\autoplan\src\renderer\components\icons.tsx:236: const iconStyle = {
+D:\project\GitHub\autoplan\src\styles.css:108: .app-icon { display: inline-block; flex: 0 0 auto; width: var(--icon-size, 1em); height: var(--icon-size, 1em); color: inherit; vertical-align: -0.14em; }
+D:\project\GitHub\autoplan\src\styles.css:116: .icon-surface { display: inline-grid; place-items: center; width: var(--icon-surface-size, 36px); height: var(--icon-surface-size, 36px); border-radius: 50%; color: var(--icon-surface-color, currentColor); background: var(--icon-surface-bg, transparent); }
+
+diff --git a/src/renderer/components/icons.tsx b/src/renderer/components/icons.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d662e87f6f345d179213366cb56a61152566145
+--- /dev/null
++++ b/src/renderer/components/icons.tsx
+@@ -0,0 +1,262 @@
++import * as React from 'react';
++
++const overviewIcon = (
++  <>
++    <rect x="3.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="13.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="3.5" y="14" width="7" height="6" rx="1.6" />
++    <path d="M14 17h6" />
++    <path d="M17 14v6" />
++  </>
++);
++
++const requirementIcon = (
++  <>
++    <path d="M6.5 3.5h7.8L18 7.2v13.3H6.5z" />
++    <path d="M14 3.8v3.7h3.7" />
++    <path d="M9 11h6" />
++    <path d="M9 15h6" />
++    <path d="M9 18h3.5" />
++  </>
++);
++
++const feedbackIcon = (
++  <>
++    <path d="M5 5.5h14v9.2H9.7L6.2 18v-3.3H5z" />
++    <path d="M8.5 9.2h7" />
++    <path d="M8.5 12h4.8" />
++  </>
++);
++
++const taskIcon = (
++  <>
++    <path d="M8 6h12" />
++    <path d="M8 12h12" />
++    <path d="M8 18h12" />
++    <path d="m3.8 6 1.1 1.1L7 4.9" />
++    <path d="m3.8 12 1.1 1.1L7 10.9" />
++    <path d="m3.8 18 1.1 1.1L7 16.9" />
++  </>
++);
++
++const eventIcon = (
++  <>
++    <path d="M4 12h3l2-5 4 10 2-5h5" />
++    <circle cx="4" cy="12" r="1.4" />
++    <circle cx="20" cy="12" r="1.4" />
++  </>
++);
++
++const planIcon = (
++  <>
++    <rect x="4" y="5" width="16" height="15" rx="2" />
++    <path d="M8 3.5v3" />
++    <path d="M16 3.5v3" />
++    <path d="M4 9h16" />
++    <path d="M8 13h3" />
++    <path d="M13.5 13H16" />
++    <path d="M8 16.5h5" />
++  </>
++);
++
++const runIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m10.2 8.7 5.1 3.3-5.1 3.3z" />
++  </>
++);
++
++const completeIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m8.2 12.2 2.4 2.4 5.2-5.2" />
++  </>
++);
++
++const editIcon = (
++  <>
++    <path d="M4.5 19.5h4.2L19 9.2 14.8 5 4.5 15.3z" />
++    <path d="m13.6 6.2 4.2 4.2" />
++  </>
++);
++
++const deleteIcon = (
++  <>
++    <path d="M5 7h14" />
++    <path d="M9 7V5h6v2" />
++    <path d="M7 7.5 8 20h8l1-12.5" />
++    <path d="M10.2 11v5" />
++    <path d="M13.8 11v5" />
++  </>
++);
++
++const warningIcon = (
++  <>
++    <path d="M10.4 4.5 3.6 17.2A1.8 1.8 0 0 0 5.2 20h13.6a1.8 1.8 0 0 0 1.6-2.8L13.6 4.5a1.8 1.8 0 0 0-3.2 0z" />
++    <path d="M12 9v4.5" />
++    <path d="M12 17h.01" />
++  </>
++);
++
++const refreshIcon = (
++  <>
++    <path d="M20 6v5h-5" />
++    <path d="M4 18v-5h5" />
++    <path d="M18.2 10A6.5 6.5 0 0 0 7 6.4L4 9" />
++    <path d="M5.8 14A6.5 6.5 0 0 0 17 17.6l3-2.6" />
++  </>
++);
++
++const attachmentIcon = (
++  <>
++    <path d="m8.6 12.5 5.8-5.8a3 3 0 0 1 4.2 4.2l-7.2 7.2a4.2 4.2 0 0 1-6-6l7.1-7.1" />
++    <path d="m10.8 14.7 5.6-5.6" />
++  </>
++);
++
++const sendIcon = (
++  <>
++    <path d="M20 4 9.5 14.5" />
++    <path d="m20 4-5.6 16-4.9-5.5L4 12z" />
++  </>
++);
++
++const plusIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="M12 8v8" />
++    <path d="M8 12h8" />
++  </>
++);
++
++const closeIcon = (
++  <>
++    <path d="M7 7 17 17" />
++    <path d="M17 7 7 17" />
++  </>
++);
++
++const searchIcon = (
++  <>
++    <circle cx="10.5" cy="10.5" r="6" />
++    <path d="m15 15 4.5 4.5" />
++  </>
++);
++
++const enterIcon = (
++  <>
++    <path d="M4.5 12h10" />
++    <path d="m11 8 4 4-4 4" />
++    <path d="M14.5 5H19v14h-4.5" />
++  </>
++);
++
++const backIcon = (
++  <>
++    <path d="M19.5 12h-15" />
++    <path d="m9 7-5 5 5 5" />
++  </>
++);
++
++const fileIcon = (
++  <>
++    <path d="M6.5 3.5h8L18 7v13.5H6.5z" />
++    <path d="M14.2 3.8v3.5h3.5" />
++  </>
++);
++
++const ICONS = {
++  overview: overviewIcon,
++  requirement: requirementIcon,
++  requirements: requirementIcon,
++  feedback: feedbackIcon,
++  task: taskIcon,
++  tasks: taskIcon,
++  event: eventIcon,
++  events: eventIcon,
++  plan: planIcon,
++  plans: planIcon,
++  run: runIcon,
++  running: runIcon,
++  complete: completeIcon,
++  completed: completeIcon,
++  edit: editIcon,
++  delete: deleteIcon,
++  trash: deleteIcon,
++  warning: warningIcon,
++  alert: warningIcon,
++  refresh: refreshIcon,
++  attachment: attachmentIcon,
++  attachments: attachmentIcon,
++  send: sendIcon,
++  plus: plusIcon,
++  close: closeIcon,
++  search: searchIcon,
++  enter: enterIcon,
++  open: enterIcon,
++  back: backIcon,
++  file: fileIcon,
++} as const;
++
++export type IconName = keyof typeof ICONS;
++
++export const iconNames = Object.freeze(Object.keys(ICONS) as IconName[]);
++
++type IconSize = number | string;
++
++export interface IconProps extends Omit<React.SVGProps<SVGSVGElement>, 'children' | 'height' | 'viewBox' | 'width'> {
++  name: IconName;
++  size?: IconSize;
++  title?: string;
++}
++
++function isAriaHidden(value: IconProps['aria-hidden']) {
++  return value === true || value === 'true';
++}
++
++function formatIconSize(size: IconSize) {
++  return typeof size === 'number' ? `${size}px` : size;
++}
++
++export function Icon({
++  name,
++  size = 20,
++  title,
++  className,
++  style,
++  role,
++  'aria-hidden': ariaHidden,
++  'aria-label': ariaLabel,
++  ...svgProps
++}: IconProps) {
++  const titleId = React.useId();
++  const hasAccessibleName = Boolean(title || ariaLabel);
++  const shouldHide = ariaHidden === undefined ? !hasAccessibleName : isAriaHidden(ariaHidden);
++  const labelledBy = title && !shouldHide ? titleId : undefined;
++  const iconStyle = {
++    '--icon-size': formatIconSize(size),
++    ...style,
++  } as React.CSSProperties;
++
++  return (
++    <svg
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth={1.8}
++      strokeLinecap="round"
++      strokeLinejoin="round"
++      focusable="false"
++      {...svgProps}
++      className={['app-icon', className].filter(Boolean).join(' ')}
++      style={iconStyle}
++      aria-hidden={shouldHide ? true : undefined}
++      aria-labelledby={labelledBy}
++      aria-label={labelledBy ? undefined : ariaLabel}
++      role={role ?? (!shouldHide && hasAccessibleName ? 'img' : undefined)}
++    >
++      {labelledBy ? <title id={labelledBy}>{title}</title> : null}
++      {ICONS[name]}
++    </svg>
++  );
++}
+diff --git a/src/styles.css b/src/styles.css
+index 4b3d2b7dc84ebd9a211a49e682f95022b3ef77ce..0b9eb90014eace46d710e4b9b0629a06551e10bf
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -105,6 +105,20 @@
+ .req { color: var(--danger); }
+ .danger-text { color: var(--danger); }
+ 
++.app-icon { display: inline-block; flex: 0 0 auto; width: var(--icon-size, 1em); height: var(--icon-size, 1em); color: inherit; vertical-align: -0.14em; }
++.app-icon * { vector-effect: non-scaling-stroke; }
++.app-icon-muted { color: var(--text-3); }
++.app-icon-brand { color: var(--brand-600); }
++.app-icon-success { color: var(--success); }
++.app-icon-warning { color: var(--warning); }
++.app-icon-danger { color: var(--danger); }
++.icon-with-text { display: inline-flex; align-items: center; gap: 6px; }
++.icon-surface { display: inline-grid; place-items: center; width: var(--icon-surface-size, 36px); height: var(--icon-surface-size, 36px); border-radius: 50%; color: var(--icon-surface-color, currentColor); background: var(--icon-surface-bg, transparent); }
++.icon-surface-brand { --icon-surface-color: var(--brand-600); --icon-surface-bg: var(--brand-50); }
++.icon-surface-success { --icon-surface-color: var(--success); --icon-surface-bg: var(--success-bg); }
++.icon-surface-warning { --icon-surface-color: var(--warning); --icon-surface-bg: var(--warning-bg); }
++.icon-surface-danger { --icon-surface-color: var(--danger); --icon-surface-bg: var(--danger-bg); }
++
+ .list { display: grid; gap: 10px; padding: 16px 18px; }
+ .list.compact { max-height: none; overflow: auto; }
+ .item { min-width: 0; border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 12px; background: var(--bg-soft); }
+
+  ✓ 读取 P001 相关上下文
+  ✓ 实现统一图标组件
+  ✓ 补充图标样式规则
+  ✓ 做最小范围校验
+diff --git a/src/renderer/components/icons.tsx b/src/renderer/components/icons.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d662e87f6f345d179213366cb56a61152566145
+--- /dev/null
++++ b/src/renderer/components/icons.tsx
+@@ -0,0 +1,262 @@
++import * as React from 'react';
++
++const overviewIcon = (
++  <>
++    <rect x="3.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="13.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="3.5" y="14" width="7" height="6" rx="1.6" />
++    <path d="M14 17h6" />
++    <path d="M17 14v6" />
++  </>
++);
++
++const requirementIcon = (
++  <>
++    <path d="M6.5 3.5h7.8L18 7.2v13.3H6.5z" />
++    <path d="M14 3.8v3.7h3.7" />
++    <path d="M9 11h6" />
++    <path d="M9 15h6" />
++    <path d="M9 18h3.5" />
++  </>
++);
++
++const feedbackIcon = (
++  <>
++    <path d="M5 5.5h14v9.2H9.7L6.2 18v-3.3H5z" />
++    <path d="M8.5 9.2h7" />
++    <path d="M8.5 12h4.8" />
++  </>
++);
++
++const taskIcon = (
++  <>
++    <path d="M8 6h12" />
++    <path d="M8 12h12" />
++    <path d="M8 18h12" />
++    <path d="m3.8 6 1.1 1.1L7 4.9" />
++    <path d="m3.8 12 1.1 1.1L7 10.9" />
++    <path d="m3.8 18 1.1 1.1L7 16.9" />
++  </>
++);
++
++const eventIcon = (
++  <>
++    <path d="M4 12h3l2-5 4 10 2-5h5" />
++    <circle cx="4" cy="12" r="1.4" />
++    <circle cx="20" cy="12" r="1.4" />
++  </>
++);
++
++const planIcon = (
++  <>
++    <rect x="4" y="5" width="16" height="15" rx="2" />
++    <path d="M8 3.5v3" />
++    <path d="M16 3.5v3" />
++    <path d="M4 9h16" />
++    <path d="M8 13h3" />
++    <path d="M13.5 13H16" />
++    <path d="M8 16.5h5" />
++  </>
++);
++
++const runIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m10.2 8.7 5.1 3.3-5.1 3.3z" />
++  </>
++);
++
++const completeIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m8.2 12.2 2.4 2.4 5.2-5.2" />
++  </>
++);
++
++const editIcon = (
++  <>
++    <path d="M4.5 19.5h4.2L19 9.2 14.8 5 4.5 15.3z" />
++    <path d="m13.6 6.2 4.2 4.2" />
++  </>
++);
++
++const deleteIcon = (
++  <>
++    <path d="M5 7h14" />
++    <path d="M9 7V5h6v2" />
++    <path d="M7 7.5 8 20h8l1-12.5" />
++    <path d="M10.2 11v5" />
++    <path d="M13.8 11v5" />
++  </>
++);
++
++const warningIcon = (
++  <>
++    <path d="M10.4 4.5 3.6 17.2A1.8 1.8 0 0 0 5.2 20h13.6a1.8 1.8 0 0 0 1.6-2.8L13.6 4.5a1.8 1.8 0 0 0-3.2 0z" />
++    <path d="M12 9v4.5" />
++    <path d="M12 17h.01" />
++  </>
++);
++
++const refreshIcon = (
++  <>
++    <path d="M20 6v5h-5" />
++    <path d="M4 18v-5h5" />
++    <path d="M18.2 10A6.5 6.5 0 0 0 7 6.4L4 9" />
++    <path d="M5.8 14A6.5 6.5 0 0 0 17 17.6l3-2.6" />
++  </>
++);
++
++const attachmentIcon = (
++  <>
++    <path d="m8.6 12.5 5.8-5.8a3 3 0 0 1 4.2 4.2l-7.2 7.2a4.2 4.2 0 0 1-6-6l7.1-7.1" />
++    <path d="m10.8 14.7 5.6-5.6" />
++  </>
++);
++
++const sendIcon = (
++  <>
++    <path d="M20 4 9.5 14.5" />
++    <path d="m20 4-5.6 16-4.9-5.5L4 12z" />
++  </>
++);
++
++const plusIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="M12 8v8" />
++    <path d="M8 12h8" />
++  </>
++);
++
++const closeIcon = (
++  <>
++    <path d="M7 7 17 17" />
++    <path d="M17 7 7 17" />
++  </>
++);
++
++const searchIcon = (
++  <>
++    <circle cx="10.5" cy="10.5" r="6" />
++    <path d="m15 15 4.5 4.5" />
++  </>
++);
++
++const enterIcon = (
++  <>
++    <path d="M4.5 12h10" />
++    <path d="m11 8 4 4-4 4" />
++    <path d="M14.5 5H19v14h-4.5" />
++  </>
++);
++
++const backIcon = (
++  <>
++    <path d="M19.5 12h-15" />
++    <path d="m9 7-5 5 5 5" />
++  </>
++);
++
++const fileIcon = (
++  <>
++    <path d="M6.5 3.5h8L18 7v13.5H6.5z" />
++    <path d="M14.2 3.8v3.5h3.5" />
++  </>
++);
++
++const ICONS = {
++  overview: overviewIcon,
++  requirement: requirementIcon,
++  requirements: requirementIcon,
++  feedback: feedbackIcon,
++  task: taskIcon,
++  tasks: taskIcon,
++  event: eventIcon,
++  events: eventIcon,
++  plan: planIcon,
++  plans: planIcon,
++  run: runIcon,
++  running: runIcon,
++  complete: completeIcon,
++  completed: completeIcon,
++  edit: editIcon,
++  delete: deleteIcon,
++  trash: deleteIcon,
++  warning: warningIcon,
++  alert: warningIcon,
++  refresh: refreshIcon,
++  attachment: attachmentIcon,
++  attachments: attachmentIcon,
++  send: sendIcon,
++  plus: plusIcon,
++  close: closeIcon,
++  search: searchIcon,
++  enter: enterIcon,
++  open: enterIcon,
++  back: backIcon,
++  file: fileIcon,
++} as const;
++
++export type IconName = keyof typeof ICONS;
++
++export const iconNames = Object.freeze(Object.keys(ICONS) as IconName[]);
++
++type IconSize = number | string;
++
++export interface IconProps extends Omit<React.SVGProps<SVGSVGElement>, 'children' | 'height' | 'viewBox' | 'width'> {
++  name: IconName;
++  size?: IconSize;
++  title?: string;
++}
++
++function isAriaHidden(value: IconProps['aria-hidden']) {
++  return value === true || value === 'true';
++}
++
++function formatIconSize(size: IconSize) {
++  return typeof size === 'number' ? `${size}px` : size;
++}
++
++export function Icon({
++  name,
++  size = 20,
++  title,
++  className,
++  style,
++  role,
++  'aria-hidden': ariaHidden,
++  'aria-label': ariaLabel,
++  ...svgProps
++}: IconProps) {
++  const titleId = React.useId();
++  const hasAccessibleName = Boolean(title || ariaLabel);
++  const shouldHide = ariaHidden === undefined ? !hasAccessibleName : isAriaHidden(ariaHidden);
++  const labelledBy = title && !shouldHide ? titleId : undefined;
++  const iconStyle = {
++    '--icon-size': formatIconSize(size),
++    ...style,
++  } as React.CSSProperties;
++
++  return (
++    <svg
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth={1.8}
++      strokeLinecap="round"
++      strokeLinejoin="round"
++      focusable="false"
++      {...svgProps}
++      className={['app-icon', className].filter(Boolean).join(' ')}
++      style={iconStyle}
++      aria-hidden={shouldHide ? true : undefined}
++      aria-labelledby={labelledBy}
++      aria-label={labelledBy ? undefined : ariaLabel}
++      role={role ?? (!shouldHide && hasAccessibleName ? 'img' : undefined)}
++    >
++      {labelledBy ? <title id={labelledBy}>{title}</title> : null}
++      {ICONS[name]}
++    </svg>
++  );
++}
+diff --git a/src/styles.css b/src/styles.css
+index 4b3d2b7dc84ebd9a211a49e682f95022b3ef77ce..0b9eb90014eace46d710e4b9b0629a06551e10bf
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -105,6 +105,20 @@
+ .req { color: var(--danger); }
+ .danger-text { color: var(--danger); }
+ 
++.app-icon { display: inline-block; flex: 0 0 auto; width: var(--icon-size, 1em); height: var(--icon-size, 1em); color: inherit; vertical-align: -0.14em; }
++.app-icon * { vector-effect: non-scaling-stroke; }
++.app-icon-muted { color: var(--text-3); }
++.app-icon-brand { color: var(--brand-600); }
++.app-icon-success { color: var(--success); }
++.app-icon-warning { color: var(--warning); }
++.app-icon-danger { color: var(--danger); }
++.icon-with-text { display: inline-flex; align-items: center; gap: 6px; }
++.icon-surface { display: inline-grid; place-items: center; width: var(--icon-surface-size, 36px); height: var(--icon-surface-size, 36px); border-radius: 50%; color: var(--icon-surface-color, currentColor); background: var(--icon-surface-bg, transparent); }
++.icon-surface-brand { --icon-surface-color: var(--brand-600); --icon-surface-bg: var(--brand-50); }
++.icon-surface-success { --icon-surface-color: var(--success); --icon-surface-bg: var(--success-bg); }
++.icon-surface-warning { --icon-surface-color: var(--warning); --icon-surface-bg: var(--warning-bg); }
++.icon-surface-danger { --icon-surface-color: var(--danger); --icon-surface-bg: var(--danger-bg); }
++
+ .list { display: grid; gap: 10px; padding: 16px 18px; }
+ .list.compact { max-height: none; overflow: auto; }
+ .item { min-width: 0; border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 12px; background: var(--bg-soft); }
+
+codex
+完成 P001，仅修改任务 scope 内文件，未改 plan/checkbox/进度区。
+
+- 新增统一 SVG 图标映射与 `Icon` 组件：`src/renderer/components/icons.tsx:168`
+- 支持 `size`、`className`、`title`、默认装饰图标 `aria-hidden` 语义：`src/renderer/components/icons.tsx:207`
+- 覆盖概览、需求、反馈、任务、事件、计划、运行、完成、编辑、删除、警告、刷新、附件、发送等基础图标：`src/renderer/components/icons.tsx:221`
+- 补充图标基础样式、颜色状态和圆形承载样式：`src/styles.css:108`、`src/styles.css:116`
+
+最小校验已通过：`npx --no-install tsc --ignoreConfig --noEmit --jsx react-jsx --moduleResolution bundler --module esnext --target es2020 --lib DOM,ES2020 --skipLibCheck src/renderer/components/icons.tsx`。
+diff --git a/src/renderer/components/icons.tsx b/src/renderer/components/icons.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d662e87f6f345d179213366cb56a61152566145
+--- /dev/null
++++ b/src/renderer/components/icons.tsx
+@@ -0,0 +1,262 @@
++import * as React from 'react';
++
++const overviewIcon = (
++  <>
++    <rect x="3.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="13.5" y="4" width="7" height="7" rx="1.6" />
++    <rect x="3.5" y="14" width="7" height="6" rx="1.6" />
++    <path d="M14 17h6" />
++    <path d="M17 14v6" />
++  </>
++);
++
++const requirementIcon = (
++  <>
++    <path d="M6.5 3.5h7.8L18 7.2v13.3H6.5z" />
++    <path d="M14 3.8v3.7h3.7" />
++    <path d="M9 11h6" />
++    <path d="M9 15h6" />
++    <path d="M9 18h3.5" />
++  </>
++);
++
++const feedbackIcon = (
++  <>
++    <path d="M5 5.5h14v9.2H9.7L6.2 18v-3.3H5z" />
++    <path d="M8.5 9.2h7" />
++    <path d="M8.5 12h4.8" />
++  </>
++);
++
++const taskIcon = (
++  <>
++    <path d="M8 6h12" />
++    <path d="M8 12h12" />
++    <path d="M8 18h12" />
++    <path d="m3.8 6 1.1 1.1L7 4.9" />
++    <path d="m3.8 12 1.1 1.1L7 10.9" />
++    <path d="m3.8 18 1.1 1.1L7 16.9" />
++  </>
++);
++
++const eventIcon = (
++  <>
++    <path d="M4 12h3l2-5 4 10 2-5h5" />
++    <circle cx="4" cy="12" r="1.4" />
++    <circle cx="20" cy="12" r="1.4" />
++  </>
++);
++
++const planIcon = (
++  <>
++    <rect x="4" y="5" width="16" height="15" rx="2" />
++    <path d="M8 3.5v3" />
++    <path d="M16 3.5v3" />
++    <path d="M4 9h16" />
++    <path d="M8 13h3" />
++    <path d="M13.5 13H16" />
++    <path d="M8 16.5h5" />
++  </>
++);
++
++const runIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m10.2 8.7 5.1 3.3-5.1 3.3z" />
++  </>
++);
++
++const completeIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="m8.2 12.2 2.4 2.4 5.2-5.2" />
++  </>
++);
++
++const editIcon = (
++  <>
++    <path d="M4.5 19.5h4.2L19 9.2 14.8 5 4.5 15.3z" />
++    <path d="m13.6 6.2 4.2 4.2" />
++  </>
++);
++
++const deleteIcon = (
++  <>
++    <path d="M5 7h14" />
++    <path d="M9 7V5h6v2" />
++    <path d="M7 7.5 8 20h8l1-12.5" />
++    <path d="M10.2 11v5" />
++    <path d="M13.8 11v5" />
++  </>
++);
++
++const warningIcon = (
++  <>
++    <path d="M10.4 4.5 3.6 17.2A1.8 1.8 0 0 0 5.2 20h13.6a1.8 1.8 0 0 0 1.6-2.8L13.6 4.5a1.8 1.8 0 0 0-3.2 0z" />
++    <path d="M12 9v4.5" />
++    <path d="M12 17h.01" />
++  </>
++);
++
++const refreshIcon = (
++  <>
++    <path d="M20 6v5h-5" />
++    <path d="M4 18v-5h5" />
++    <path d="M18.2 10A6.5 6.5 0 0 0 7 6.4L4 9" />
++    <path d="M5.8 14A6.5 6.5 0 0 0 17 17.6l3-2.6" />
++  </>
++);
++
++const attachmentIcon = (
++  <>
++    <path d="m8.6 12.5 5.8-5.8a3 3 0 0 1 4.2 4.2l-7.2 7.2a4.2 4.2 0 0 1-6-6l7.1-7.1" />
++    <path d="m10.8 14.7 5.6-5.6" />
++  </>
++);
++
++const sendIcon = (
++  <>
++    <path d="M20 4 9.5 14.5" />
++    <path d="m20 4-5.6 16-4.9-5.5L4 12z" />
++  </>
++);
++
++const plusIcon = (
++  <>
++    <circle cx="12" cy="12" r="8.5" />
++    <path d="M12 8v8" />
++    <path d="M8 12h8" />
++  </>
++);
++
++const closeIcon = (
++  <>
++    <path d="M7 7 17 17" />
++    <path d="M17 7 7 17" />
++  </>
++);
++
++const searchIcon = (
++  <>
++    <circle cx="10.5" cy="10.5" r="6" />
++    <path d="m15 15 4.5 4.5" />
++  </>
++);
++
++const enterIcon = (
++  <>
++    <path d="M4.5 12h10" />
++    <path d="m11 8 4 4-4 4" />
++    <path d="M14.5 5H19v14h-4.5" />
++  </>
++);
++
++const backIcon = (
++  <>
++    <path d="M19.5 12h-15" />
++    <path d="m9 7-5 5 5 5" />
++  </>
++);
++
++const fileIcon = (
++  <>
++    <path d="M6.5 3.5h8L18 7v13.5H6.5z" />
++    <path d="M14.2 3.8v3.5h3.5" />
++  </>
++);
++
++const ICONS = {
++  overview: overviewIcon,
++  requirement: requirementIcon,
++  requirements: requirementIcon,
++  feedback: feedbackIcon,
++  task: taskIcon,
++  tasks: taskIcon,
++  event: eventIcon,
++  events: eventIcon,
++  plan: planIcon,
++  plans: planIcon,
++  run: runIcon,
++  running: runIcon,
++  complete: completeIcon,
++  completed: completeIcon,
++  edit: editIcon,
++  delete: deleteIcon,
++  trash: deleteIcon,
++  warning: warningIcon,
++  alert: warningIcon,
++  refresh: refreshIcon,
++  attachment: attachmentIcon,
++  attachments: attachmentIcon,
++  send: sendIcon,
++  plus: plusIcon,
++  close: closeIcon,
++  search: searchIcon,
++  enter: enterIcon,
++  open: enterIcon,
++  back: backIcon,
++  file: fileIcon,
++} as const;
++
++export type IconName = keyof typeof ICONS;
++
++export const iconNames = Object.freeze(Object.keys(ICONS) as IconName[]);
++
++type IconSize = number | string;
++
++export interface IconProps extends Omit<React.SVGProps<SVGSVGElement>, 'children' | 'height' | 'viewBox' | 'width'> {
++  name: IconName;
++  size?: IconSize;
++  title?: string;
++}
++
++function isAriaHidden(value: IconProps['aria-hidden']) {
++  return value === true || value === 'true';
++}
++
++function formatIconSize(size: IconSize) {
++  return typeof size === 'number' ? `${size}px` : size;
++}
++
++export function Icon({
++  name,
++  size = 20,
++  title,
++  className,
++  style,
++  role,
++  'aria-hidden': ariaHidden,
++  'aria-label': ariaLabel,
++  ...svgProps
++}: IconProps) {
++  const titleId = React.useId();
++  const hasAccessibleName = Boolean(title || ariaLabel);
++  const shouldHide = ariaHidden === undefined ? !hasAccessibleName : isAriaHidden(ariaHidden);
++  const labelledBy = title && !shouldHide ? titleId : undefined;
++  const iconStyle = {
++    '--icon-size': formatIconSize(size),
++    ...style,
++  } as React.CSSProperties;
++
++  return (
++    <svg
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth={1.8}
++      strokeLinecap="round"
++      strokeLinejoin="round"
++      focusable="false"
++      {...svgProps}
++      className={['app-icon', className].filter(Boolean).join(' ')}
++      style={iconStyle}
++      aria-hidden={shouldHide ? true : undefined}
++      aria-labelledby={labelledBy}
++      aria-label={labelledBy ? undefined : ariaLabel}
++      role={role ?? (!shouldHide && hasAccessibleName ? 'img' : undefined)}
++    >
++      {labelledBy ? <title id={labelledBy}>{title}</title> : null}
++      {ICONS[name]}
++    </svg>
++  );
++}
+diff --git a/src/styles.css b/src/styles.css
+index 4b3d2b7dc84ebd9a211a49e682f95022b3ef77ce..0b9eb90014eace46d710e4b9b0629a06551e10bf
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -105,6 +105,20 @@
+ .req { color: var(--danger); }
+ .danger-text { color: var(--danger); }
+ 
++.app-icon { display: inline-block; flex: 0 0 auto; width: var(--icon-size, 1em); height: var(--icon-size, 1em); color: inherit; vertical-align: -0.14em; }
++.app-icon * { vector-effect: non-scaling-stroke; }
++.app-icon-muted { color: var(--text-3); }
++.app-icon-brand { color: var(--brand-600); }
++.app-icon-success { color: var(--success); }
++.app-icon-warning { color: var(--warning); }
++.app-icon-danger { color: var(--danger); }
++.icon-with-text { display: inline-flex; align-items: center; gap: 6px; }
++.icon-surface { display: inline-grid; place-items: center; width: var(--icon-surface-size, 36px); height: var(--icon-surface-size, 36px); border-radius: 50%; color: var(--icon-surface-color, currentColor); background: var(--icon-surface-bg, transparent); }
++.icon-surface-brand { --icon-surface-color: var(--brand-600); --icon-surface-bg: var(--brand-50); }
++.icon-surface-success { --icon-surface-color: var(--success); --icon-surface-bg: var(--success-bg); }
++.icon-surface-warning { --icon-surface-color: var(--warning); --icon-surface-bg: var(--warning-bg); }
++.icon-surface-danger { --icon-surface-color: var(--danger); --icon-surface-bg: var(--danger-bg); }
++
+ .list { display: grid; gap: 10px; padding: 16px 18px; }
+ .list.compact { max-height: none; overflow: auto; }
+ .item { min-width: 0; border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 12px; background: var(--bg-soft); }
+
+tokens used
+93,392
+完成 P001，仅修改任务 scope 内文件，未改 plan/checkbox/进度区。
+
+- 新增统一 SVG 图标映射与 `Icon` 组件：`src/renderer/components/icons.tsx:168`
+- 支持 `size`、`className`、`title`、默认装饰图标 `aria-hidden` 语义：`src/renderer/components/icons.tsx:207`
+- 覆盖概览、需求、反馈、任务、事件、计划、运行、完成、编辑、删除、警告、刷新、附件、发送等基础图标：`src/renderer/components/icons.tsx:221`
+- 补充图标基础样式、颜色状态和圆形承载样式：`src/styles.css:108`、`src/styles.css:116`
+
+最小校验已通过：`npx --no-install tsc --ignoreConfig --noEmit --jsx react-jsx --moduleResolution bundler --module esnext --target es2020 --lib DOM,ES2020 --skipLibCheck src/renderer/components/icons.tsx`。

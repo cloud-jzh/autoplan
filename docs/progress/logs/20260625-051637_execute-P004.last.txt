@@ -1,0 +1,10 @@
+**完成**
+- 已完成 P004，仅修改 `src/loopService.js:452`、`src/loopService.js:868`、`src/loopService.js:905`、`src/loopService.js:917`。
+- `executeTask` 现在从当前任务记录读取已有 session，并在执行 Codex 时传入。
+- 执行结束后会把捕获到的 session id 写回同一 `plan_tasks` 记录，失败回 pending、重试、不同任务隔离都保持独立生命周期。
+- 未修改 plan 文件、checkbox 或进度区。
+
+**验证**
+- 已运行 `node --check src/loopService.js`。
+- 已用临时 DB 执行最小行为验证：失败写回 session、重试复用 session、不同任务不继承 session。
+- 未运行全量 `npm run check` 或 `npm run smoke`，符合当前任务最小验证要求。

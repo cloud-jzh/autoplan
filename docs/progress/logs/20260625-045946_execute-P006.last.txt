@@ -1,0 +1,16 @@
+已完成 P006，未修改 plan 文件、未勾选 checkbox、未更新进度区。
+
+**变更**
+- `src/renderer/components/icons.tsx:69` 新增统一 `stop` SVG icon 映射。
+- `src/renderer/pages/WorkspacePage.tsx:328` 替换启动/停止按钮的 `■/●` 字符图标。
+- `src/renderer/pages/WorkspacePage.tsx:514`、`src/renderer/pages/WorkspacePage.tsx:763` 替换返回/查看任务箭头字符为 `Icon`。
+- `src/styles.css:65` 调整 `btn-link` 为图文 inline-flex 对齐。
+- `ui/projects.html:386`、`ui/workspace.html:561` 清理静态原型中的流程箭头扫描歧义。
+
+**验证**
+- `npm run check` 通过。
+- `npm run build` 通过。
+- P006 scope 字符扫描通过：无 emoji/符号范围命中。
+- 已用 Chrome headless 截图核对项目页、工作区概览、任务与计划、事件流、需求/反馈输入区，图标展示和布局正常。
+
+补充：全目录扫描仍能看到 `src/renderer/components/shared.tsx:27` 注释箭头和 `ui/README.md:24` 文档箭头，均不承担图标职责且不在本次 P006 scope 内，未修改。

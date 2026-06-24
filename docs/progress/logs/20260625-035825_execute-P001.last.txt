@@ -1,0 +1,12 @@
+**完成**
+- 已完成 P001，仅修改 scope 内文件：`src/main.js`、`src/preload.js`、`src/renderer/types.ts`。
+- 新增 `plans:read` IPC：`src/main.js:52`，通过 `readPlan` 按需读取 Plan 全文：`src/main.js:309`。
+- 主进程基于 `projects.workspace_path` 与 `plans.file_path` 解析真实路径，并拒绝工作区外路径：`src/main.js:335`。
+- preload 暴露 `window.autoplan.readPlan`：`src/preload.js:13`。
+- 新增 `ReadPlanResult` / `ReadPlanInput` 与 API 类型声明：`src/renderer/types.ts:177`、`src/renderer/types.ts:372`、`src/renderer/types.ts:402`。
+- 未修改 plan 文件，未勾选 checkbox，未处理其它任务。
+
+**验证**
+- 通过：`node --check .\src\main.js`
+- 通过：`node --check .\src\preload.js`
+- 通过：`.\node_modules\.bin\tsc.cmd --noEmit --pretty false --skipLibCheck --target ES2020 --module ESNext --moduleResolution bundler --ignoreConfig .\src\renderer\types.ts`

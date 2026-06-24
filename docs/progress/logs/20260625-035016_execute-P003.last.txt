@@ -1,0 +1,10 @@
+已完成 P003，未修改 plan 文件，也未处理其它 checkbox。
+
+- 在 `src/renderer/pages/WorkspacePage.tsx:41` 接入工作区搜索关键字状态，项目切换时自动清空，tab 切换会保留。
+- 在 `src/renderer/pages/WorkspacePage.tsx:306` 顶部栏新增统一搜索入口，支持输入、`Esc` 清空、清空按钮和命中数量展示。
+- 在 `src/renderer/pages/WorkspacePage.tsx:560` 使用现有 `Icon` 的 `search` / `close` 图标，没有改动 `icons.tsx`。
+- 在 `src/styles.css:248` 补充搜索框 hover、focus、disabled、清空按钮和响应式样式。
+
+验证：
+- 已通过最小范围 TypeScript 检查：`npx tsc --ignoreConfig --noEmit ... WorkspacePage.tsx icons.tsx`
+- 已通过 `git diff --check -- src/renderer/pages/WorkspacePage.tsx src/renderer/components/icons.tsx src/styles.css`；仅有 Git 行尾提示，无空白错误。

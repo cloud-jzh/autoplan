@@ -1,0 +1,11 @@
+已完成 P002，仅修改 `src/loopService.js`，未写入 plan 文件或更新 checkbox。
+
+- 在统一入口 `executeTask` 写入 `task.started`，覆盖自动、手动、并发执行且避免重复开始事件：`src/loopService.js:847`
+- 成功完成改为写入 `task.succeeded`，保留 `planId`、任务标识、退出码、日志路径等 meta：`src/loopService.js:908`
+- 失败统一写入 `task.failed`，并避免停止/中断后的非零退出再被误记为失败：`src/loopService.js:471`
+- 手动停止、循环停止、Plan 中断分别写入 `task.stopped` / `task.interrupted`：`src/loopService.js:248`、`src/loopService.js:489`
+- 新增任务事件文案 helper，生成“开始了/结束了 Pxxx 任务：标题”等文案：`src/loopService.js:1401`
+
+验证已跑：
+- `node --check src/loopService.js`
+- `git diff --check -- src/loopService.js`

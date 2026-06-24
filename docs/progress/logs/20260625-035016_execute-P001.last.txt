@@ -1,0 +1,9 @@
+**完成**
+- 已完成 P001，仅处理本任务 scope。
+- `src/renderer/types.ts:1` 新增工作区搜索来源、命中字段、查询、结果、分组和状态类型。
+- `src/renderer/utils/search.ts:1` 新增来源配置、查询归一化、未知来源兜底、空分组和空搜索状态工具。
+- 未修改 plan 文件，未勾选 checkbox，未执行 P002 或其它任务。
+
+**验证**
+- 已通过：`git diff --check -- src/renderer/types.ts src/renderer/utils/search.ts`
+- 已通过：`node_modules/.bin/tsc.cmd --ignoreConfig --noEmit --pretty false --target ES2020 --module ESNext --moduleResolution Bundler src/renderer/types.ts src/renderer/utils/search.ts`

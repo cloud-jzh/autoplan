@@ -1,0 +1,12 @@
+已完成 P001，仅修改指定 scope 文件，未修改 plan/checkbox/进度区。
+
+**变更**
+- `src/database.js:143`：`plan_tasks` 新增可空字段 `codex_session_id TEXT`
+- `src/database.js:185`：通过 `ensureColumn` 兼容历史 SQLite 数据库
+- `src/renderer/types.ts:112`：`PlanTask` 新增 `codex_session_id: string | null`
+
+**验证**
+- 已运行 `git diff --check -- src/database.js src/renderer/types.ts`
+- 已运行 `node --check src/database.js`
+- 未运行全量测试；只做了与本任务直接相关的最小验证  
+- `git status` 显示 plan 文件为未跟踪状态，但本次未写入或修改该 plan 文件

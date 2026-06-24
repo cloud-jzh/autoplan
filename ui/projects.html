@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AutoPlan · 项目管理</title>
+    <style>
+      /* ============================================================
+         设计系统 · Design Tokens（与 workspace 共享色板）
+         ============================================================ */
+      :root {
+        color-scheme: light;
+        --font-sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        --font-mono: "Cascadia Code", Consolas, "Courier New", monospace;
+
+        --brand-50: #eef4ff;
+        --brand-100: #dbe7ff;
+        --brand-500: #3b6ef5;
+        --brand-600: #255fbd;
+        --brand-700: #1d4a94;
+        --brand-grad: linear-gradient(135deg, #4f7bff 0%, #6d5dfc 100%);
+
+        --bg-app: #f4f6fb;
+        --bg-elevated: #ffffff;
+        --bg-soft: #f8fafd;
+        --bg-hover: #eef2f9;
+        --line: #e2e8f1;
+        --line-soft: #eef2f8;
+
+        --text-1: #172033;
+        --text-2: #475067;
+        --text-3: #7c879b;
+        --text-4: #a4adc0;
+
+        --success: #18a957; --success-bg: #e7f7ee;
+        --warning: #e08600; --warning-bg: #fdf3e3;
+        --danger: #e5484d;  --danger-bg: #fdecec;
+        --info: #2563eb;    --info-bg: #e8f0ff;
+
+        --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-xl: 20px;
+        --shadow-sm: 0 1px 2px rgba(23, 32, 51, 0.06);
+        --shadow-md: 0 6px 18px rgba(23, 32, 51, 0.08);
+        --shadow-lg: 0 18px 48px rgba(37, 62, 120, 0.14);
+
+        font-family: var(--font-sans);
+        background: var(--bg-app);
+        color: var(--text-1);
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body { font-size: 14px; -webkit-font-smoothing: antialiased; overflow: auto; }
+      h1, h2, h3, p { margin: 0; }
+      button { font: inherit; cursor: pointer; }
+      a { color: var(--brand-600); text-decoration: none; }
+      .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+      .icon {
+        width: 1em; height: 1em; flex: 0 0 auto;
+        display: inline-block; vertical-align: -0.15em;
+        fill: none; stroke: currentColor; stroke-width: 2;
+        stroke-linecap: round; stroke-linejoin: round;
+      }
+      .icon-sm { width: 14px; height: 14px; }
+
+      /* ============================================================
+         布局：顶部 header + 全宽内容区（区别于 workspace 的侧边栏结构）
+         ============================================================ */
+      .app-header {
+        position: sticky; top: 0; z-index: 20;
+        background: var(--bg-elevated);
+        border-bottom: 1px solid var(--line);
+      }
+      .header-inner {
+        max-width: 1240px; margin: 0 auto;
+        padding: 18px 32px;
+        display: flex; align-items: center; gap: 16px;
+      }
+      .brand { display: flex; align-items: center; gap: 12px; }
+      .brand-mark {
+        display: grid; place-items: center; width: 40px; height: 40px;
+        border-radius: 12px; background: var(--brand-grad); color: #fff;
+        font-weight: 800; font-size: 18px; box-shadow: 0 8px 18px rgba(77, 110, 255, 0.35);
+      }
+      .brand-name { font-size: 17px; font-weight: 700; }
+      .brand-sub { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+      .header-spacer { flex: 1 1 auto; }
+      .header-link {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: 13px; color: var(--text-2); font-weight: 600;
+        padding: 8px 12px; border-radius: var(--r-sm);
+      }
+      .header-link:hover { background: var(--bg-hover); color: var(--text-1); }
+
+      /* 页面标题区 */
+      .page-hero {
+        max-width: 1240px; margin: 0 auto;
+        padding: 32px 32px 0;
+        display: flex; align-items: flex-end; gap: 20px; flex-wrap: wrap;
+      }
+      .page-hero h1 { font-size: 26px; font-weight: 800; }
+      .page-hero p { font-size: 13px; color: var(--text-3); margin-top: 6px; }
+      .hero-stats { margin-left: auto; display: flex; gap: 24px; }
+      .hero-stat { text-align: right; }
+      .hero-stat b { display: block; font-size: 20px; font-weight: 800; color: var(--text-1); }
+      .hero-stat span { font-size: 11px; color: var(--text-3); }
+
+      /* 工具栏 */
+      .toolbar {
+        max-width: 1240px; margin: 22px auto 0;
+        padding: 0 32px;
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      }
+      .search-box { position: relative; flex: 1 1 280px; max-width: 360px; }
+      .search-box input {
+        width: 100%; padding: 9px 12px 9px 34px;
+        border: 1px solid var(--line); border-radius: var(--r-md);
+        background: var(--bg-elevated); font: inherit; font-size: 13px;
+      }
+      .search-box input:focus { outline: none; border-color: var(--brand-500); box-shadow: 0 0 0 3px var(--brand-50); }
+      .search-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--text-3); pointer-events: none; }
+      .seg { display: inline-flex; padding: 3px; gap: 3px; background: var(--bg-soft); border: 1px solid var(--line); border-radius: var(--r-md); }
+      .seg button { border: 0; background: transparent; padding: 6px 12px; border-radius: var(--r-sm); color: var(--text-2); font-size: 12.5px; font-weight: 600; }
+      .seg button.active { background: var(--bg-elevated); color: var(--brand-600); box-shadow: var(--shadow-sm); }
+
+      /* 按钮 */
+      .btn {
+        display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+        padding: 9px 16px; border: 1px solid var(--line); border-radius: var(--r-md);
+        background: var(--bg-elevated); color: var(--text-1); font-size: 13px; font-weight: 600;
+        transition: background .14s, border-color .14s, transform .06s;
+      }
+      .btn:hover { background: var(--bg-hover); }
+      .btn:active { transform: translateY(1px); }
+      .btn-primary { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+      .btn-primary:hover { background: var(--brand-700); }
+      .btn .icon { width: 15px; height: 15px; }
+
+      /* 项目网格 */
+      .content {
+        max-width: 1240px; margin: 18px auto 48px;
+        padding: 0 32px;
+      }
+      .project-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 16px;
+      }
+      .project-card {
+        position: relative; background: var(--bg-elevated);
+        border: 1px solid var(--line); border-radius: var(--r-lg);
+        padding: 18px; box-shadow: var(--shadow-sm);
+        transition: transform .14s, box-shadow .14s, border-color .14s;
+        cursor: pointer;
+      }
+      .project-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: #cdd8ea; }
+      .project-card-top { display: flex; align-items: flex-start; gap: 12px; }
+      .pc-avatar {
+        width: 44px; height: 44px; flex: 0 0 auto; border-radius: 12px;
+        display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 18px;
+      }
+      .pc-info { min-width: 0; flex: 1 1 auto; }
+      .pc-name { font-size: 15px; font-weight: 700; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .pc-path { font-size: 11.5px; color: var(--text-3); margin-top: 3px; font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .pc-menu { flex: 0 0 auto; position: relative; }
+      .pc-menu-btn { width: 30px; height: 30px; border-radius: 8px; border: 0; background: transparent; color: var(--text-3); display: grid; place-items: center; font-size: 18px; line-height: 1; }
+      .pc-menu-btn:hover { background: var(--bg-hover); color: var(--text-1); }
+      .pc-menu-btn .icon { width: 18px; height: 18px; }
+      .pc-desc {
+        font-size: 12.5px; color: var(--text-2); line-height: 1.55; margin-top: 12px;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+      }
+      .pc-stats { display: flex; gap: 16px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+      .pc-stat { font-size: 11px; color: var(--text-3); }
+      .pc-stat b { display: block; font-size: 15px; color: var(--text-1); font-weight: 700; }
+      .pc-footer { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+      .pc-led { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+      .pc-led.running { background: var(--success); box-shadow: 0 0 0 3px var(--success-bg); animation: led-pulse 1.6s ease-in-out infinite; }
+      .pc-led.stopped { background: var(--text-4); box-shadow: 0 0 0 3px var(--line); }
+      .pc-led.error { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-bg); }
+      @keyframes led-pulse { 0%,100% { box-shadow: 0 0 0 3px var(--success-bg); } 50% { box-shadow: 0 0 0 6px rgba(24,169,87,.15); } }
+      .pc-status { font-size: 11.5px; color: var(--text-2); }
+      .pc-time { margin-left: auto; font-size: 11px; color: var(--text-4); }
+
+      /* 右键菜单 */
+      .ctx-menu {
+        position: absolute; z-index: 60; right: 0; top: calc(100% + 4px);
+        min-width: 150px; padding: 5px;
+        background: var(--bg-elevated); border: 1px solid var(--line);
+        border-radius: var(--r-md); box-shadow: var(--shadow-lg); display: none;
+      }
+      .ctx-menu.open { display: block; }
+      .ctx-item { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); text-align: left; font-size: 12.5px; }
+      .ctx-item:hover { background: var(--bg-hover); color: var(--text-1); }
+      .ctx-item.danger { color: var(--danger); }
+      .ctx-item.danger:hover { background: var(--danger-bg); }
+      .ctx-item .icon { width: 14px; height: 14px; }
+      .ctx-divider { height: 1px; background: var(--line-soft); margin: 4px 2px; }
+
+      /* 空态 */
+      .big-empty { text-align: center; padding: 70px 20px; color: var(--text-3); grid-column: 1 / -1; }
+      .big-empty .be-ico { width: 64px; height: 64px; margin: 0 auto 16px; border-radius: 18px; background: var(--brand-50); color: var(--brand-600); display: grid; place-items: center; font-size: 30px; }
+      .big-empty .be-ico .icon { width: 30px; height: 30px; }
+      .big-empty h3 { font-size: 16px; color: var(--text-1); margin-bottom: 6px; }
+
+      /* 模态框 */
+      .modal-mask {
+        position: fixed; inset: 0; z-index: 100;
+        background: rgba(23, 32, 51, 0.42); backdrop-filter: blur(2px);
+        display: none; align-items: center; justify-content: center; padding: 24px;
+        animation: fade-in .16s ease;
+      }
+      .modal-mask.open { display: flex; }
+      @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+      .modal { width: 100%; max-width: 480px; background: var(--bg-elevated); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: hidden; animation: pop-in .18s cubic-bezier(.2,.8,.3,1); }
+      @keyframes pop-in { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
+      .modal-head { display: flex; align-items: center; gap: 12px; padding: 18px 22px; border-bottom: 1px solid var(--line-soft); }
+      .modal-head h3 { font-size: 16px; font-weight: 700; }
+      .modal-head .modal-close { margin-left: auto; width: 30px; height: 30px; border-radius: 8px; border: 0; background: transparent; color: var(--text-3); display: grid; place-items: center; }
+      .modal-head .modal-close:hover { background: var(--bg-hover); color: var(--text-1); }
+      .modal-head .modal-close .icon { width: 18px; height: 18px; }
+      .modal-body { padding: 20px 22px; }
+      .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+      .field:last-child { margin-bottom: 0; }
+      .field label { font-size: 11.5px; font-weight: 600; color: var(--text-3); }
+      .field input { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); font: inherit; font-size: 13px; }
+      .field input:focus { outline: none; border-color: var(--brand-500); box-shadow: 0 0 0 3px var(--brand-50); }
+      .field .mono { font-family: var(--font-mono); font-size: 12px; }
+      .avatar-picker { display: flex; gap: 8px; flex-wrap: wrap; }
+      .avatar-opt { width: 36px; height: 36px; border-radius: 10px; border: 2px solid transparent; cursor: pointer; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 14px; }
+      .avatar-opt.sel { border-color: var(--brand-600); box-shadow: 0 0 0 2px var(--brand-50); }
+      .modal-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 22px; border-top: 1px solid var(--line-soft); background: var(--bg-soft); }
+      .modal-danger-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--danger-bg); color: var(--danger); font-size: 24px; margin: 0 auto 14px; }
+      .modal-danger-icon .icon { width: 24px; height: 24px; }
+      .modal-confirm { text-align: center; }
+      .modal-confirm h3 { font-size: 16px; margin-bottom: 8px; }
+      .modal-confirm p { font-size: 13px; color: var(--text-2); line-height: 1.6; }
+      .modal-confirm b { color: var(--text-1); }
+
+      ::-webkit-scrollbar { width: 9px; height: 9px; }
+      ::-webkit-scrollbar-thumb { background: #d4dce8; border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+      ::-webkit-scrollbar-track { background: transparent; }
+
+      .watermark { position: fixed; right: 18px; bottom: 14px; z-index: 50; font-size: 10.5px; color: var(--text-4); background: var(--bg-elevated); border: 1px solid var(--line); padding: 4px 10px; border-radius: 999px; box-shadow: var(--shadow-sm); }
+    </style>
+  </head>
+  <body>
+    <svg class="icon-sprite" aria-hidden="true" focusable="false">
+      <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></symbol>
+      <symbol id="icon-arrow-up-right" viewBox="0 0 24 24"><path d="M7 17 17 7"></path><path d="M9 7h8v8"></path></symbol>
+      <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14"></path><path d="M5 12h14"></path></symbol>
+      <symbol id="icon-x" viewBox="0 0 24 24"><path d="m18 6-12 12"></path><path d="m6 6 12 12"></path></symbol>
+      <symbol id="icon-warning" viewBox="0 0 24 24"><path d="M12 3 22 20H2L12 3Z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></symbol>
+      <symbol id="icon-box" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="M4 10h16"></path><path d="M10 10v10"></path></symbol>
+      <symbol id="icon-more-horizontal" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"></circle><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"></circle><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"></circle></symbol>
+      <symbol id="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7-11-7Z"></path></symbol>
+      <symbol id="icon-pencil" viewBox="0 0 24 24"><path d="m15.5 5.5 3 3"></path><path d="M4 20l4.5-1 9-9a2.1 2.1 0 0 0-3-3l-9 9L4 20Z"></path></symbol>
+      <symbol id="icon-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"></path></symbol>
+      <symbol id="icon-trash" viewBox="0 0 24 24"><path d="M4 7h16"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M6 7l1 13h10l1-13"></path><path d="M9 7V4h6v3"></path></symbol>
+    </svg>
+    <!-- 顶部 header（区别于 workspace 的侧边栏） -->
+    <header class="app-header">
+      <div class="header-inner">
+        <div class="brand">
+          <div class="brand-mark">A</div>
+          <div>
+            <div class="brand-name">AutoPlan</div>
+            <div class="brand-sub">项目管理</div>
+          </div>
+        </div>
+        <div class="header-spacer"></div>
+        <a class="header-link" href="workspace.html"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#icon-arrow-up-right"></use></svg>打开工作区</a>
+        <button class="btn btn-primary" id="headerCreate"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-plus"></use></svg>创建项目</button>
+      </div>
+    </header>
+
+    <!-- 页面标题 -->
+    <div class="page-hero">
+      <div>
+        <h1>项目</h1>
+        <p>管理工作区项目 · 点击卡片进入对应项目的工作区</p>
+      </div>
+      <div class="hero-stats">
+        <div class="hero-stat"><b id="hsTotal">4</b><span>项目总数</span></div>
+        <div class="hero-stat"><b id="hsRunning">2</b><span>运行中</span></div>
+        <div class="hero-stat"><b id="hsIssue">1</b><span>异常</span></div>
+      </div>
+    </div>
+
+    <!-- 工具栏 -->
+    <div class="toolbar">
+      <div class="search-box">
+        <svg class="icon search-icon" aria-hidden="true" focusable="false"><use href="#icon-search"></use></svg>
+        <input type="text" id="projectSearch" placeholder="搜索项目名称或路径…" />
+      </div>
+      <div class="seg" id="projectFilter">
+        <button class="active" data-filter="all">全部</button>
+        <button data-filter="running">运行中</button>
+        <button data-filter="stopped">已停止</button>
+        <button data-filter="error">异常</button>
+      </div>
+    </div>
+
+    <!-- 项目网格 -->
+    <div class="content">
+      <div class="project-grid" id="projectGrid"></div>
+    </div>
+
+    <!-- 创建 / 编辑模态框 -->
+    <div class="modal-mask" id="projectModal">
+      <div class="modal" role="dialog" aria-modal="true">
+        <div class="modal-head">
+          <h3 id="projectModalTitle">创建项目</h3>
+          <button class="modal-close" data-close-modal="projectModal" aria-label="关闭"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-x"></use></svg></button>
+        </div>
+        <form id="projectForm" onsubmit="return false">
+          <div class="modal-body">
+            <div class="field">
+              <label>项目图标颜色</label>
+              <div class="avatar-picker" id="avatarPicker">
+                <span class="avatar-opt sel" data-c="grad1" style="background:linear-gradient(135deg,#4f7bff,#6d5dfc)">W</span>
+                <span class="avatar-opt" data-c="grad2" style="background:linear-gradient(135deg,#36c5a8,#2c9bd1)">A</span>
+                <span class="avatar-opt" data-c="grad3" style="background:linear-gradient(135deg,#f093fb,#f5576c)">D</span>
+                <span class="avatar-opt" data-c="grad4" style="background:linear-gradient(135deg,#f6d365,#fda085)">S</span>
+                <span class="avatar-opt" data-c="grad5" style="background:linear-gradient(135deg,#84fab0,#8fd3f4)">N</span>
+                <span class="avatar-opt" data-c="grad6" style="background:linear-gradient(135deg,#a18cd1,#fbc2eb)">P</span>
+              </div>
+            </div>
+            <div class="field">
+              <label>项目名称 <span style="color:var(--danger)">*</span></label>
+              <input type="text" id="pf-name" placeholder="例如 wenz_richtext" />
+            </div>
+            <div class="field">
+              <label>工作区路径 <span style="color:var(--danger)">*</span></label>
+              <input type="text" id="pf-path" class="mono" placeholder="D:\project\GitHub\wenz_flutter\wenz_richtext" />
+            </div>
+            <div class="field">
+              <label>验收命令</label>
+              <input type="text" id="pf-cmd" class="mono" value="flutter analyze" />
+            </div>
+            <div class="field">
+              <label>循环间隔（秒）</label>
+              <input type="number" id="pf-interval" min="1" value="5" />
+            </div>
+            <div class="field">
+              <label>描述</label>
+              <input type="text" id="pf-desc" placeholder="一句话描述这个项目" />
+            </div>
+          </div>
+          <div class="modal-foot">
+            <button class="btn" data-close-modal="projectModal">取消</button>
+            <button class="btn btn-primary" id="projectSave">保存</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 删除确认模态框 -->
+    <div class="modal-mask" id="deleteModal">
+      <div class="modal" role="dialog" aria-modal="true">
+        <div class="modal-body">
+          <div class="modal-confirm">
+            <div class="modal-danger-icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-warning"></use></svg></div>
+            <h3>删除项目</h3>
+            <p>确定要删除项目 <b id="deleteName">—</b> 吗？<br />该操作会移除项目记录，<b style="color:var(--danger)">不会删除磁盘上的工作区文件</b>。</p>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" data-close-modal="deleteModal">取消</button>
+          <button class="btn" id="deleteConfirm" style="background:var(--danger);border-color:var(--danger);color:#fff">确认删除</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="watermark">AutoPlan · 项目管理设计稿</div>
+
+    <script>
+      const GRAD_MAP = {
+        grad1: 'linear-gradient(135deg,#4f7bff,#6d5dfc)',
+        grad2: 'linear-gradient(135deg,#36c5a8,#2c9bd1)',
+        grad3: 'linear-gradient(135deg,#f093fb,#f5576c)',
+        grad4: 'linear-gradient(135deg,#f6d365,#fda085)',
+        grad5: 'linear-gradient(135deg,#84fab0,#8fd3f4)',
+        grad6: 'linear-gradient(135deg,#a18cd1,#fbc2eb)',
+      };
+      let projects = [
+        { id: 1, color: 'grad1', name: 'wenz_richtext', path: 'wenz_flutter/wenz_richtext', desc: '富文本编辑器组件，支持图片粘贴、段落样式、工具栏。', cmd: 'flutter analyze', interval: 5, status: 'running', plans: 2, tasks: 7, done: 3, time: '2 分钟前' },
+        { id: 2, color: 'grad2', name: 'autoplan', path: 'GitHub/autoplan', desc: '本工具自身：需求 / 计划 / 执行 / 验收的自动化循环。', cmd: 'npm run check', interval: 5, status: 'stopped', plans: 1, tasks: 5, done: 5, time: '1 小时前' },
+        { id: 3, color: 'grad3', name: 'design-system', path: 'GitHub/design-system', desc: '团队设计系统文档站与组件 Token 同步工具。', cmd: 'npm run build', interval: 10, status: 'running', plans: 3, tasks: 12, done: 8, time: '12 分钟前' },
+        { id: 4, color: 'grad4', name: 'shop-admin', path: 'biz/shop-admin', desc: '电商后台，订单与商品管理模块改造。', cmd: 'pnpm lint', interval: 8, status: 'error', plans: 1, tasks: 4, done: 1, time: '今天 09:18' },
+      ];
+      let filterStatus = 'all';
+      let searchKey = '';
+      let editingId = null;
+      let pendingDeleteId = null;
+      let pickedColor = 'grad1';
+
+      const grid = document.getElementById('projectGrid');
+      const searchInput = document.getElementById('projectSearch');
+
+      function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+      function statusText(s) { return ({ running: '运行中', stopped: '已停止', error: '执行异常' })[s] || s; }
+      function icon(name, className = '') {
+        const classes = className ? `icon ${className}` : 'icon';
+        return `<svg class="${classes}" aria-hidden="true" focusable="false"><use href="#icon-${name}"></use></svg>`;
+      }
+
+      function renderProjects() {
+        const list = projects.filter((p) => {
+          if (filterStatus !== 'all' && p.status !== filterStatus) return false;
+          if (searchKey && !(p.name.toLowerCase().includes(searchKey) || p.path.toLowerCase().includes(searchKey))) return false;
+          return true;
+        });
+
+        if (!list.length) {
+          grid.innerHTML = `
+            <div class="big-empty">
+              <div class="be-ico">${icon('box')}</div>
+              <h3>${searchKey || filterStatus !== 'all' ? '没有匹配的项目' : '还没有项目'}</h3>
+              <p>${searchKey || filterStatus !== 'all' ? '换个关键词或筛选条件试试' : '点击右上角“创建项目”开始第一个工作区'}</p>
+            </div>`;
+          updateHero();
+          return;
+        }
+
+        grid.innerHTML = list.map((p) => `
+          <article class="project-card" data-id="${p.id}">
+            <div class="project-card-top">
+              <span class="pc-avatar" style="background:${GRAD_MAP[p.color] || GRAD_MAP.grad1}">${escapeHtml(p.name.slice(0,1).toUpperCase())}</span>
+              <div class="pc-info">
+                <div class="pc-name">${escapeHtml(p.name)}</div>
+                <div class="pc-path">${escapeHtml(p.path)}</div>
+              </div>
+              <div class="pc-menu">
+                <button class="pc-menu-btn" data-ctx="${p.id}" title="更多操作">${icon('more-horizontal')}</button>
+                <div class="ctx-menu" id="ctx-${p.id}">
+                  <button class="ctx-item" data-act="open" data-id="${p.id}">${icon('play')}打开工作区</button>
+                  <button class="ctx-item" data-act="edit" data-id="${p.id}">${icon('pencil')}编辑</button>
+                  <button class="ctx-item" data-act="duplicate" data-id="${p.id}">${icon('copy')}复制</button>
+                  <div class="ctx-divider"></div>
+                  <button class="ctx-item danger" data-act="delete" data-id="${p.id}">${icon('trash')}删除</button>
+                </div>
+              </div>
+            </div>
+            <div class="pc-desc">${escapeHtml(p.desc)}</div>
+            <div class="pc-stats">
+              <div class="pc-stat">计划<b>${p.plans}</b></div>
+              <div class="pc-stat">任务<b>${p.done}/${p.tasks}</b></div>
+              <div class="pc-stat">间隔<b>${p.interval}s</b></div>
+            </div>
+            <div class="pc-footer">
+              <span class="pc-led ${p.status}"></span>
+              <span class="pc-status">${statusText(p.status)}</span>
+              <span class="pc-time">${escapeHtml(p.time)}</span>
+            </div>
+          </article>`).join('');
+        updateHero();
+      }
+
+      function updateHero() {
+        document.getElementById('hsTotal').textContent = projects.length;
+        document.getElementById('hsRunning').textContent = projects.filter((p) => p.status === 'running').length;
+        document.getElementById('hsIssue').textContent = projects.filter((p) => p.status === 'error').length;
+      }
+
+      // 搜索 / 筛选
+      searchInput.addEventListener('input', (e) => { searchKey = e.target.value.trim().toLowerCase(); renderProjects(); });
+      document.getElementById('projectFilter').addEventListener('click', (e) => {
+        const b = e.target.closest('button'); if (!b) return;
+        document.querySelectorAll('#projectFilter button').forEach((x) => x.classList.toggle('active', x === b));
+        filterStatus = b.dataset.filter; renderProjects();
+      });
+
+      // 卡片事件委托
+      grid.addEventListener('click', (e) => {
+        const ctxBtn = e.target.closest('[data-ctx]');
+        if (ctxBtn) {
+          e.stopPropagation();
+          const id = ctxBtn.dataset.ctx;
+          const menu = document.getElementById('ctx-' + id);
+          const isOpen = menu.classList.contains('open');
+          closeAllCtx();
+          if (!isOpen) menu.classList.add('open');
+          return;
+        }
+        const actBtn = e.target.closest('[data-act]');
+        if (actBtn) {
+          e.stopPropagation();
+          const id = Number(actBtn.dataset.id);
+          const act = actBtn.dataset.act;
+          if (act === 'open') openProject(id);
+          if (act === 'edit') openProjectModal(id);
+          if (act === 'duplicate') duplicateProject(id);
+          if (act === 'delete') askDelete(id);
+          closeAllCtx();
+          return;
+        }
+        const card = e.target.closest('.project-card');
+        if (card) openProject(Number(card.dataset.id));
+      });
+      function closeAllCtx() { document.querySelectorAll('.ctx-menu.open').forEach((m) => m.classList.remove('open')); }
+      document.addEventListener('click', closeAllCtx);
+
+      function openProject(id) {
+        // 跳转到工作区界面
+        window.location.href = 'workspace.html';
+      }
+      function duplicateProject(id) {
+        const p = projects.find((x) => x.id === id); if (!p) return;
+        projects.unshift({ ...p, id: Date.now(), name: p.name + '-copy', time: '刚刚', status: 'stopped' });
+        renderProjects();
+      }
+
+      // 创建 / 编辑模态框
+      const projectModal = document.getElementById('projectModal');
+      function openProjectModal(id) {
+        editingId = id || null;
+        const p = id ? projects.find((x) => x.id === id) : null;
+        document.getElementById('projectModalTitle').textContent = id ? '编辑项目' : '创建项目';
+        document.getElementById('pf-name').value = p ? p.name : '';
+        document.getElementById('pf-path').value = p ? p.path : '';
+        document.getElementById('pf-cmd').value = p ? p.cmd : 'flutter analyze';
+        document.getElementById('pf-interval').value = p ? p.interval : 5;
+        document.getElementById('pf-desc').value = p ? p.desc : '';
+        pickedColor = p ? p.color : 'grad1';
+        document.querySelectorAll('#avatarPicker .avatar-opt').forEach((o) => o.classList.toggle('sel', o.dataset.c === pickedColor));
+        document.querySelectorAll('#avatarPicker .avatar-opt').forEach((o) => o.textContent = (document.getElementById('pf-name').value || 'P').slice(0,1).toUpperCase());
+        projectModal.classList.add('open');
+      }
+      document.getElementById('avatarPicker').addEventListener('click', (e) => {
+        const o = e.target.closest('.avatar-opt'); if (!o) return;
+        pickedColor = o.dataset.c;
+        document.querySelectorAll('#avatarPicker .avatar-opt').forEach((x) => x.classList.toggle('sel', x === o));
+      });
+      document.getElementById('pf-name').addEventListener('input', (e) => {
+        const ch = (e.target.value || 'P').slice(0,1).toUpperCase();
+        document.querySelectorAll('#avatarPicker .avatar-opt').forEach((o) => o.textContent = ch);
+      });
+      document.getElementById('headerCreate').addEventListener('click', () => openProjectModal());
+      document.getElementById('projectSave').addEventListener('click', () => {
+        const name = document.getElementById('pf-name').value.trim();
+        const path = document.getElementById('pf-path').value.trim();
+        if (!name || !path) { alert('项目名称和工作区路径不能为空'); return; }
+        const payload = {
+          name, path,
+          cmd: document.getElementById('pf-cmd').value.trim() || 'flutter analyze',
+          interval: Number(document.getElementById('pf-interval').value) || 5,
+          desc: document.getElementById('pf-desc').value.trim() || '暂无描述',
+          color: pickedColor,
+        };
+        if (editingId) {
+          Object.assign(projects.find((x) => x.id === editingId), payload);
+        } else {
+          projects.unshift({ id: Date.now(), status: 'stopped', plans: 0, tasks: 0, done: 0, time: '刚刚', ...payload });
+        }
+        closeModal('projectModal');
+        renderProjects();
+      });
+
+      // 删除确认
+      const deleteModal = document.getElementById('deleteModal');
+      function askDelete(id) { pendingDeleteId = id; const p = projects.find((x) => x.id === id); document.getElementById('deleteName').textContent = p ? p.name : ''; deleteModal.classList.add('open'); }
+      document.getElementById('deleteConfirm').addEventListener('click', () => {
+        projects = projects.filter((x) => x.id !== pendingDeleteId);
+        pendingDeleteId = null;
+        closeModal('deleteModal');
+        renderProjects();
+      });
+
+      function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+      document.querySelectorAll('[data-close-modal]').forEach((b) => b.addEventListener('click', () => closeModal(b.dataset.closeModal)));
+      [projectModal, deleteModal].forEach((m) => m.addEventListener('click', (e) => { if (e.target === m) m.classList.remove('open'); }));
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { projectModal.classList.remove('open'); deleteModal.classList.remove('open'); } });
+
+      renderProjects();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,2720 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019efb33-f0e3-7561-84b5-d60690cf335e
+--------
+user
+你是需求整理与开发计划生成者。
+请根据以下需求，生成一个开发计划和验收标准。
+
+输出文件：D:\project\GitHub\autoplan\docs\plan\plan_requirement_11_20260625-035545.md
+
+格式要求：
+- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->
+- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行
+- 每个任务要有验收要点
+- 必须包含总体验收标准和进度区
+- 只写 plan 文件，不要改业务代码
+
+需求 #11 内容：
+plan计划，要支持阅读全文；用markdown组件阅读；
+**Structuring tasks properly**
+
+I need to make sure my tasks follow a strict format, like "- [ ] P001: Task Title <!-- scope: lib/foo.dart,test/foo_test.dart -->" along with acceptance criteria. Each task must adhere to this fixed structure. I also need a section for total acceptance and progress. Plus, I'll only write the file and perhaps create a directory if it exists. It's important to inspect the repository to ensure everything's in order!
+codex
+我先快速看下项目结构，确保计划里的 `scope` 准确。
+exec
+powershell.exe -Command 'Get-ChildItem -Force; Get-ChildItem -Recurse -Filter AGENTS.md -Force | Select-Object -ExpandProperty FullName' in D:\project\GitHub\autoplan
+ succeeded in 377ms:
+
+
+    目录: D:\project\GitHub\autoplan
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+d--h--         2026/6/25      3:53                .git                                                                 
+d-----         2026/6/24     23:46                assets                                                               
+d-----         2026/6/25      2:24                dist                                                                 
+d-----         2026/6/25      0:34                docs                                                                 
+d-----         2026/6/24     23:43                node_modules                                                         
+d-----         2026/6/25      2:24                release                                                              
+d-----         2026/6/24     23:36                release-test                                                         
+d-----         2026/6/24     20:10                scripts                                                              
+d-----         2026/6/24     22:38                src                                                                  
+d-----         2026/6/24     19:44                ui                                                                   
+-a----         2026/6/24     23:18         109404 .codex-autoplan-overview-final.png                                   
+-a----         2026/6/24     23:17         108438 .codex-autoplan-overview-left-log.png                                
+-a----         2026/6/24     23:21          79462 .codex-autoplan-overview-merged-log.png                              
+-a----         2026/6/24     23:14         102400 .codex-autoplan-overview.png                                         
+-a----         2026/6/24     22:52            288 .codex-dev-20260624-225246.log                                       
+-a----         2026/6/24     22:57            546 .codex-dev-20260624-225652.log                                       
+-a----         2026/6/24     23:01            686 .codex-dev-20260624-225837.log                                       
+-a----         2026/6/25      1:48           9065 .codex-dev-20260624-230150.log                                       
+-a----         2026/6/24     22:48            419 .codex-dev.log                                                       
+-a----         2026/6/25      0:11             66 .gitattributes                                                       
+-a----         2026/6/25      1:48              9 .gitignore                                                           
+-a----         2026/6/24     19:10            307 index.html                                                           
+-a----         2026/6/25      0:18         175109 package-lock.json                                                    
+-a----         2026/6/25      0:16           1776 package.json                                                         
+-a----         2026/6/24     23:45           7191 System.Drawing.Drawing2D.GraphicsPath                                
+-a----         2026/6/24     19:10            555 tsconfig.json                                                        
+-a----         2026/6/24     23:41            287 vite.config.ts                                                       
+
+
+
+**Inspecting files and tools**
+
+I'm noticing there was no AGENTS output, just a listing, which makes me think there might not be any AGENTS to output. I need to check the files with a command like `rg --files`, or I could start with `codegraph_files`. Since we're in a coding environment, the instructions suggest using the primary tool first for architectural queries. We already used shell, so now I might try `codegraph_files`, although I worry it may not be initialized. I guess I'll list relevant files with shell first.
+codex
+我会再定位和阅读计划相关的前端文件名。
+exec
+powershell.exe -Command "rg --files -g '"'!node_modules'"' -g '"'!dist'"' -g '"'!release'"' | Sort-Object" in D:\project\GitHub\autoplan
+ succeeded in 204ms:
+assets\icon.ico
+assets\icon.png
+assets\icon-128.png
+assets\icon-16.png
+assets\icon-24.png
+assets\icon-256.png
+assets\icon-32.png
+assets\icon-48.png
+assets\icon-64.png
+docs\plan\plan_requirement_4_20260625-030248.md
+docs\plan\plan_requirement_5_20260625-031229.md
+docs\plan\plan_requirement_6_20260625-032502.md
+docs\plan\plan_requirement_7_20260625-033918.md
+docs\plan\plan_requirement_8_20260625-034659.md
+docs\progress\logs\20260625-030248_gen-requirement-4.last.txt
+docs\progress\logs\20260625-030248_gen-requirement-4.log
+docs\progress\logs\20260625-030632_execute-P001.last.txt
+docs\progress\logs\20260625-030632_execute-P001.log
+docs\progress\logs\20260625-030632_execute-P004.last.txt
+docs\progress\logs\20260625-030632_execute-P004.log
+docs\progress\logs\20260625-031229_gen-requirement-5.last.txt
+docs\progress\logs\20260625-031229_gen-requirement-5.log
+docs\progress\logs\20260625-031550_execute-P001.last.txt
+docs\progress\logs\20260625-031550_execute-P001.log
+docs\progress\logs\20260625-031550_execute-P004.last.txt
+docs\progress\logs\20260625-031550_execute-P004.log
+docs\progress\logs\20260625-032502_gen-requirement-6.last.txt
+docs\progress\logs\20260625-032502_gen-requirement-6.log
+docs\progress\logs\20260625-032739_execute-P001.last.txt
+docs\progress\logs\20260625-032739_execute-P001.log
+docs\progress\logs\20260625-032739_execute-P005.last.txt
+docs\progress\logs\20260625-032739_execute-P005.log
+docs\progress\logs\20260625-033918_gen-requirement-7.last.txt
+docs\progress\logs\20260625-033918_gen-requirement-7.log
+docs\progress\logs\20260625-034308_execute-P001.last.txt
+docs\progress\logs\20260625-034308_execute-P001.log
+docs\progress\logs\20260625-034308_execute-P002.last.txt
+docs\progress\logs\20260625-034308_execute-P002.log
+docs\progress\logs\20260625-034659_gen-requirement-8.last.txt
+docs\progress\logs\20260625-034659_gen-requirement-8.log
+docs\progress\logs\20260625-035016_execute-P001.last.txt
+docs\progress\logs\20260625-035016_execute-P001.log
+docs\progress\logs\20260625-035016_execute-P003.last.txt
+docs\progress\logs\20260625-035016_execute-P003.log
+docs\progress\logs\20260625-035545_gen-requirement-11.log
+index.html
+package.json
+package-lock.json
+scripts\dev.js
+scripts\smoke-test.js
+src\attachments.js
+src\codexActivity.js
+src\database.js
+src\loopService.js
+src\main.js
+src\planDrafts.js
+src\preload.js
+src\renderer\App.tsx
+src\renderer\components\CodexLog.tsx
+src\renderer\components\Composer.tsx
+src\renderer\components\icons.tsx
+src\renderer\components\IntakePanel.tsx
+src\renderer\components\PlanLists.tsx
+src\renderer\components\shared.tsx
+src\renderer\hooks\useSnapshot.ts
+src\renderer\main.tsx
+src\renderer\pages\ProjectsPage.tsx
+src\renderer\pages\WorkspacePage.tsx
+src\renderer\types.ts
+src\renderer\utils\search.ts
+src\renderer\utils\time.ts
+src\styles.css
+src\vite-env.d.ts
+System.Drawing.Drawing2D.GraphicsPath
+tsconfig.json
+ui\projects.html
+ui\README.md
+ui\workspace.html
+vite.config.ts
+
+**Evaluating style plans**
+
+I need to take a close look at the existing plans to assess their style. It's important to identify what's working well and what might need adjustment. I wonder if the style aligns with our goals and the intended audience. I'll consider the elements that make the style effective and see if there's anything that could enhance the overall impression. Keeping things cohesive is key!
+codex
+我找到了现有计划文件，接着沿用它们的格式。
+exec
+powershell.exe -Command "Get-Content -Raw docs\\plan\\plan_requirement_8_20260625-034659.md; Write-Output '---'; Get-Content -Raw docs\\plan\\plan_requirement_7_20260625-033918.md" in D:\project\GitHub\autoplan
+ succeeded in 200ms:
+# 闇€姹?#8 寮€鍙戣鍒掞細澧炲姞鎼滅储鍔熻兘
+
+## 鑳屾櫙
+
+褰撳墠 AutoPlan 鐨勯」鐩垪琛ㄥ凡鏀寔鎸夐」鐩悕绉般€佽矾寰勫拰澶囨敞杩涜鍓嶇鎼滅储锛屼絾杩涘叆鍗曚釜椤圭洰宸ヤ綔鍖哄悗锛岄渶姹傘€佸弽棣堛€佽鍒掕崏绋裤€丳lan銆佷换鍔″拰浜嬩欢娴佸垎鍒垎甯冨湪涓嶅悓妯″潡涓€傞殢鐫€浠诲姟鎵ц鍜屼簨浠剁Н绱紝鐢ㄦ埛闅句互蹇€熷畾浣嶆煇鏉￠渶姹傘€佹煇涓换鍔°€佹煇浠借鍒掓垨鐩稿叧杩愯璁板綍銆?
+闇€姹?#8 瑕佹眰鈥滃鍔犳悳绱㈠姛鑳解€濄€傛湰璁″垝榛樿灏嗘悳绱㈣兘鍔涜惤鍦ㄥ綋鍓嶉」鐩伐浣滃尯鍐咃細鎻愪緵缁熶竴鎼滅储鍏ュ彛锛屾寜褰撳墠椤圭洰蹇収鏁版嵁杩涜瀹㈡埛绔绱紝瑕嗙洊闇€姹傘€佸弽棣堛€佽鍒掕崏绋裤€丳lan銆佷换鍔″拰浜嬩欢娴侊紱淇濈暀椤圭洰鍒楄〃鐜版湁鎼滅储鑳藉姏锛屽苟鍦ㄤ氦浜掑拰鏍峰紡涓婁繚鎸佷竴鑷淬€?
+## 浠诲姟鎷嗚В
+
+- [x] P001: 瀹氫箟宸ヤ綔鍖烘悳绱㈡ā鍨?<!-- scope: src/renderer/types.ts,src/renderer/utils/search.ts -->
+  - 楠屾敹瑕佺偣锛氭柊澧炴悳绱㈢粨鏋溿€佹悳绱㈠垎缁勩€佹悳绱㈡潵婧愮被鍨嬪拰鍛戒腑瀛楁绛夊墠绔被鍨嬶紝瑕嗙洊闇€姹傘€佸弽棣堛€佽鍒掕崏绋裤€丳lan銆佷换鍔″拰浜嬩欢娴併€?  - 楠屾敹瑕佺偣锛氭悳绱㈡ā鍨嬩笉鏀瑰彉鍚庣 `snapshot()` 鏁版嵁缁撴瀯锛屼笉瑕佹眰鏁版嵁搴撴柊澧炲瓧娈垫垨杩佺Щ锛岄伩鍏嶆墿澶ч渶姹傝寖鍥淬€?  - 楠屾敹瑕佺偣锛氱粨鏋滈」鑳芥惡甯︾洰鏍?tab銆佽褰?id銆佹爣棰樸€佹憳瑕併€佺姸鎬佸拰鏇存柊鏃堕棿锛屼究浜庡悗缁偣鍑诲畾浣嶄笌灞曠ず銆?  - 楠屾敹瑕佺偣锛氱┖鏌ヨ銆佺函绌虹櫧鏌ヨ鍜屾湭鐭ユ潵婧愮被鍨嬪潎鏈夊畨鍏ㄥ厹搴曪紝涓嶅奖鍝?TypeScript 缂栬瘧銆?
+- [ ] P002: 瀹炵幇蹇収鎼滅储宸ュ叿鍑芥暟 <!-- scope: src/renderer/utils/search.ts,src/renderer/utils/time.ts -->
+  - 楠屾敹瑕佺偣锛氭悳绱㈠伐鍏锋敮鎸佸鏍囬銆佹鏂囥€佺姸鎬併€佹枃浠惰矾寰勩€佷换鍔?key銆乻cope銆佷簨浠剁被鍨嬪拰浜嬩欢淇℃伅杩涜澶у皬鍐欎笉鏁忔劅鍖归厤銆?  - 楠屾敹瑕佺偣锛氭悳绱㈣緭鍏ヤ細缁熶竴 trim銆佽浆灏忓啓骞跺帇缂╁浣欑┖鐧斤紱绌烘煡璇㈣繑鍥炵┖缁撴灉鎴栧師鍒楄〃鐘舵€佺敱璋冪敤鏂规槑纭帶鍒躲€?  - 楠屾敹瑕佺偣锛氱粨鏋滄寜鍛戒腑浼樺厛绾у拰鏇存柊鏃堕棿鎺掑簭锛屾爣棰樻垨 key 鍛戒腑浼樺厛浜庢鏂囥€佹棩蹇楀拰闄勫睘瀛楁鍛戒腑銆?  - 楠屾敹瑕佺偣锛氬伐鍏峰嚱鏁颁繚鎸佺函鍑芥暟瀹炵幇锛屼笉淇敼浼犲叆鐨?`snapshot`銆佸垪琛ㄩ」鎴栭檮浠舵暟鎹紝渚夸簬 memo 鍖栧拰鍥炲綊娴嬭瘯銆?
+- [x] P003: 鎺ュ叆宸ヤ綔鍖烘悳绱㈠叆鍙?<!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/icons.tsx,src/styles.css -->
+  - 楠屾敹瑕佺偣锛氬伐浣滃尯椤堕儴鎴栦富鍐呭鍖哄煙鏂板缁熶竴鎼滅储杈撳叆妗嗭紝鏀寔杈撳叆鍏抽敭瀛椼€佹竻绌哄叧閿瓧鍜屾樉绀哄綋鍓嶅懡涓暟閲忋€?  - 楠屾敹瑕佺偣锛氭悳绱㈠叆鍙ｄ娇鐢ㄧ幇鏈夎瑙夊彉閲忓拰缁熶竴鍥炬爣浣撶郴锛岃仛鐒︽€併€佹偓娴€併€佺鐢ㄦ€佷笌椤圭洰椤垫悳绱㈤鏍间竴鑷淬€?  - 楠屾敹瑕佺偣锛氭悳绱㈠叧閿瓧鍦ㄥ伐浣滃尯 tab 鍒囨崲鏃朵繚鐣欙紝鍦ㄥ垏鎹㈤」鐩垨绂诲紑宸ヤ綔鍖哄悗涓嶆薄鏌撳叾瀹冮」鐩€?  - 楠屾敹瑕佺偣锛氳緭鍏ユ鍏峰鏄庣‘鐨?placeholder銆乣aria-label` 鍜岄敭鐩樺彲鎿嶄綔娓呯┖鎸夐挳锛屼笉渚濊禆榧犳爣鎵嶈兘瀹屾垚鎼滅储銆?
+- [ ] P004: 杩囨护鍚勬ā鍧楀垪琛ㄥ睍绀?<!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/IntakePanel.tsx,src/renderer/components/PlanLists.tsx -->
+  - 楠屾敹瑕佺偣锛氶渶姹傚拰鍙嶉妯″潡鍦ㄦ湁鎼滅储鍏抽敭瀛楁椂浠呭睍绀哄綋鍓嶆ā鍧楀懡涓殑璁板綍锛岀┖鏌ヨ鏃朵繚鎸佺幇鏈夊畬鏁村垪琛ㄤ笌缂栬緫銆佸垹闄ゃ€佷腑鏂€佹仮澶嶈涓恒€?  - 楠屾敹瑕佺偣锛氫换鍔′笌璁″垝妯″潡鏀寔杩囨护璁″垝鑽夌銆丳lan 鍜屼换鍔″垪琛紝浠诲姟鍛戒腑涓嶇牬鍧忔墽琛屻€佸仠姝€佽€楁椂銆佷笂涓嬫枃鏍囪瘑鍜岀姸鎬佸睍绀恒€?  - 楠屾敹瑕佺偣锛氫簨浠舵祦妯″潡鏀寔鎸変簨浠剁被鍨嬨€佸睍绀烘枃妗堛€佷换鍔?key銆丳lan id 鍜屽厓淇℃伅妫€绱紝鏍煎紡鍖栧悗鐨勪簨浠跺睍绀轰繚鎸佺幇鏈夎涔夈€?  - 楠屾敹瑕佺偣锛氭瘡涓ā鍧楀湪鏃犲尮閰嶇粨鏋滄椂鏄剧ず鈥滄病鏈夊尮閰嶇粨鏋溾€濈被绌虹姸鎬侊紝鑰屼笉鏄鏄剧ず鈥滄殏鏃犳暟鎹€濋€犳垚璇箟娣锋穯銆?
+- [ ] P005: 灞曠ず缁熶竴鎼滅储缁撴灉姒傝 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/SearchResults.tsx,src/styles.css -->
+  - 楠屾敹瑕佺偣锛氭悳绱㈠悗灞曠ず鎸夋潵婧愬垎缁勭殑缁撴灉姒傝锛岃嚦灏戣兘鐪嬪埌闇€姹傘€佸弽棣堛€佽鍒掕崏绋裤€丳lan銆佷换鍔″拰浜嬩欢娴佺殑鍛戒腑鏁伴噺銆?  - 楠屾敹瑕佺偣锛氱偣鍑荤粨鏋滈」鑳藉垏鎹㈠埌瀵瑰簲 tab锛屽苟浣跨敤鎴疯兘澶熷湪鐩爣鍒楄〃涓湅鍒板尮閰嶈褰曪紱鏃犳硶绮剧‘婊氬姩鏃朵篃瑕佷繚鎸佺洰鏍?tab 鐨勮繃婊ょ姸鎬併€?  - 楠屾敹瑕佺偣锛氱粨鏋滄憳瑕佷紭鍏堝睍绀哄懡涓殑鏍囬銆佹鏂囩墖娈垫垨鍏抽敭瀛楁锛岄暱鏂囨湰浼氭埅鏂紝涓嶉€犳垚甯冨眬婧㈠嚭銆?  - 楠屾敹瑕佺偣锛氱粨鏋滄瑙堝湪鏃犳煡璇㈡椂闅愯棌鎴栧睍绀鸿交閲忔彁绀猴紝鍦ㄦ棤鍛戒腑鏃舵彁渚涙竻绌烘悳绱㈢殑鏄庢樉鍏ュ彛銆?
+- [ ] P006: 琛ュ厖鎼滅储鍥炲綊楠岃瘉 <!-- scope: scripts/smoke-test.js,src/renderer/utils/search.ts,src/renderer/pages/WorkspacePage.tsx,src/renderer/components/IntakePanel.tsx,src/renderer/components/PlanLists.tsx,src/styles.css -->
+  - 楠屾敹瑕佺偣锛氳ˉ鍏呰鐩栨悳绱㈠伐鍏风殑浠ｈ〃鎬ф暟鎹牎楠岋紝鍖呮嫭鏍囬鍛戒腑銆佹鏂囧懡涓€佷换鍔?key 鍛戒腑銆佷簨浠跺厓淇℃伅鍛戒腑鍜屾棤缁撴灉鍦烘櫙銆?  - 楠屾敹瑕佺偣锛歚npm run check` 閫氳繃锛岀‘璁?TypeScript銆佷富杩涚▼鑴氭湰銆侀鍔犺浇鑴氭湰鍜岀幇鏈?Node 妫€鏌ユ棤閿欒銆?  - 楠屾敹瑕佺偣锛歚npm run build` 閫氳繃锛岀‘璁ゆ柊澧炴悳绱㈢粍浠躲€佸伐鍏峰嚱鏁板拰鏍峰紡鍙 Vite 姝ｅ父鏋勫缓銆?  - 楠屾敹瑕佺偣锛氭墜鍔ㄦ牳瀵归」鐩〉鍘熸湁鎼滅储銆佸伐浣滃尯鏂板鎼滅储銆乼ab 鍒囨崲銆佷换鍔℃墽琛?鍋滄鎸夐挳鍜岄渶姹?鍙嶉缂栬緫娴佺▼鏃犲洖褰掋€?
+## 鎬讳綋楠屾敹鏍囧噯
+
+- 鎼滅储瑕嗙洊锛氬綋鍓嶉」鐩伐浣滃尯鍐呯殑闇€姹傘€佸弽棣堛€佽鍒掕崏绋裤€丳lan銆佷换鍔″拰浜嬩欢娴佸潎鍙€氳繃缁熶竴鍏抽敭瀛楁绱€?- 椤圭洰闅旂锛氭悳绱㈠彧浣滅敤浜庡綋鍓嶉」鐩揩鐓э紝涓嶈法椤圭洰灞曠ず鏁版嵁锛屼篃涓嶆敼鍙樻暟鎹簱鍐呭鎴栧悗鍙板惊鐜姸鎬併€?- 浜や簰娓呮櫚锛氱敤鎴疯兘鐪嬪埌鎼滅储杈撳叆銆佸懡涓暟閲忋€佸垎缁勭粨鏋溿€佹棤缁撴灉鎻愮ず鍜屾竻绌哄叆鍙ｏ紱绌烘煡璇㈡椂鎵€鏈夊垪琛ㄦ仮澶嶅師濮嬪睍绀恒€?- 鎬ц兘绋冲畾锛氭悳绱㈠湪鍓嶇鍩轰簬鐜版湁蹇収鍜?memo 鍖栬绠楀畬鎴愶紝涓嶆柊澧為珮棰?IPC銆佷笉闃诲浠诲姟鎵ц鏃ュ織鍒锋柊銆?- 鍙闂€у彲鐢細鎼滅储杈撳叆鍜屾竻绌烘搷浣滄敮鎸侀敭鐩樿闂紝鍏抽敭鎸夐挳鍏峰鍙鏍囩锛岀獎灞忓竷灞€涓嶆孩鍑恒€?- 娴佺▼鏃犲洖褰掞細椤圭洰绠＄悊銆侀渶姹?鍙嶉鎻愪氦涓庣紪杈戙€丳lan 鑽夌纭銆佷换鍔℃墽琛?鍋滄銆佷簨浠舵祦灞曠ず鍜岀幇鏈夐」鐩〉鎼滅储淇濇寔鍘熸湁琛屼负銆?- 楠岃瘉閫氳繃锛氬畬鎴愬疄鐜板悗 `npm run check` 涓?`npm run build` 鍧囬€氳繃锛屽繀瑕佺殑鎼滅储宸ュ叿鍥炲綊鏍￠獙閫氳繃銆?
+## 杩涘害鍖?
+- 2026-06-25 AutoPlan 鐢熸垚锛氶渶姹?#8 寮€鍙戣鍒掑凡鍒涘缓锛屽緟鎵ц銆?- P001 AutoPlan 瀹屾垚锛?026-06-24T19:55:45.350Z锛涙棩蹇楋細docs/progress/logs/20260625-035016_execute-P001.log
+- P003 AutoPlan 瀹屾垚锛?026-06-24T19:55:45.363Z锛涙棩蹇楋細docs/progress/logs/20260625-035016_execute-P003.log
+
+---
+# 闇€姹?#7 寮€鍙戣鍒掞細鍚屼竴 Plan 浠诲姟鎸佺画浣跨敤鍚屼竴涓婁笅鏂?
+## 鑳屾櫙
+
+褰撳墠 AutoPlan 鍦ㄦ墽琛?plan 浠诲姟鏃讹紝姣忔璋冪敤 Codex 閮戒細閫氳繃 `codex exec` 鍚姩涓€涓柊鐨勯潪浜や簰寮忎細璇濄€傚浜庡悓涓€涓?plan 浠诲姟锛屽鏋滃洜涓哄け璐ャ€佸仠姝€侀噸璇曟垨鎵嬪姩鍐嶆鎵ц鑰岄渶瑕佺户缁帹杩涳紝鏂扮殑浼氳瘽鏃犳硶缁ф壙璇ヤ换鍔′笂涓€娆＄殑鐞嗚В銆佸凡鍋氬垎鏋愬拰鎵ц涓婁笅鏂囷紝瀹规槗閫犳垚閲嶅鎺㈢储銆侀仐婕忓墠搴忕害鏉熸垨涓庝笂涓€杞墽琛岀粨璁轰笉涓€鑷淬€?
+闇€姹?#7 瑕佹眰锛氬悓涓€涓?plan 浠诲姟搴旇鍦ㄥ悓涓€涓笂涓嬫枃鍐呴儴鎸佺画鎵ц銆傚疄鐜扮洰鏍囨槸浠?`plan_id + task_key` 涓轰换鍔′笂涓嬫枃杈圭晫锛岄娆℃墽琛屽垱寤?Codex 浼氳瘽锛屽悗缁悓涓€浠诲姟缁х画鎵ц鏃舵仮澶嶈浼氳瘽锛涗笉鍚屼换鍔′粛淇濇寔闅旂锛岄伩鍏嶄笂涓嬫枃涓叉壈銆?
+## 浠诲姟鎷嗚В
+
+- [x] P001: 鎸佷箙鍖栦换鍔′笂涓嬫枃鏍囪瘑 <!-- scope: src/database.js,src/renderer/types.ts -->
+  - 楠屾敹瑕佺偣锛歚plan_tasks` 琛ㄦ柊澧炲彲绌虹殑 Codex 浼氳瘽鏍囪瘑瀛楁锛岃兘澶熻褰曞悓涓€浠诲姟棣栨鎵ц浜х敓鐨?session id銆?  - 楠屾敹瑕佺偣锛氭柊澧炲瓧娈甸€氳繃 `ensureColumn` 鍏煎鍘嗗彶 SQLite 鏁版嵁搴擄紝鏃т换鍔＄己澶变細璇濇爣璇嗘椂涓嶅奖鍝嶅惎鍔ㄣ€佸揩鐓у拰浠诲姟鍒楄〃灞曠ず銆?  - 楠屾敹瑕佺偣锛氬墠绔?`PlanTask` 绫诲瀷鍚屾鏂板涓婁笅鏂囧瓧娈碉紝鐜版湁浠诲姟鑰楁椂銆佺姸鎬併€乻cope銆佹帓搴忓瓧娈电被鍨嬩笉鍥為€€銆?  - 楠屾敹瑕佺偣锛氫細璇濇爣璇嗕粎缁戝畾鍒板叿浣?`plan_tasks` 璁板綍鎴?`plan_id + task_key`锛屼笉浣跨敤鍏ㄥ眬鍗曚緥瀛樺偍锛岄伩鍏嶈法 plan 鎴栬法浠诲姟澶嶇敤銆?
+- [x] P002: 淇濈暀浠诲姟鍚屾涓殑涓婁笅鏂?<!-- scope: src/loopService.js -->
+  - 楠屾敹瑕佺偣锛歚syncPlanTasks` 鍦ㄩ噸鏂拌В鏋?plan 鏂囦欢鏃朵繚鐣欏悓涓€ `plan_id + task_key` 宸叉湁浠诲姟鐨?Codex 浼氳瘽鏍囪瘑銆佽€楁椂瀛楁鍜屽叧閿姸鎬佷俊鎭€?  - 楠屾敹瑕佺偣锛氫换鍔℃爣棰樸€乺aw line銆乻cope 鎴栨帓搴忓彉鍖栨椂浠嶈兘鏇存柊鏈€鏂拌В鏋愮粨鏋滐紝浣嗕笉浼氬洜涓哄垹闄ら噸寤轰换鍔¤€屼涪澶变笂涓嬫枃銆?  - 楠屾敹瑕佺偣锛氫换鍔?key 琚Щ闄ゆ垨鏀瑰悕鏃朵笉鎶婃棫浼氳瘽閿欒杩佺Щ鍒版柊浠诲姟锛涙柊澧炰换鍔￠粯璁ゆ病鏈変細璇濇爣璇嗐€?  - 楠屾敹瑕佺偣锛氬凡瀹屾垚浠诲姟鐨?checkbox 涓庤繘搴﹀尯鐢辩幇鏈?AutoPlan 鍥炲啓娴佺▼缁х画璐熻矗锛屼笂涓嬫枃淇濈暀閫昏緫涓嶆墿澶?plan 鏂囦欢鍐欏叆鑼冨洿銆?
+- [ ] P003: 鏀寔 Codex 浼氳瘽鎭㈠鎵ц <!-- scope: src/loopService.js -->
+  - 楠屾敹瑕佺偣锛歚runCodex` 鏀寔浼犲叆宸叉湁 session id锛涘瓨鍦?session id 鏃朵娇鐢?`codex exec resume <session_id> -` 缁х画浼氳瘽锛屼笉鍐嶄负鍚屼竴浠诲姟鍒涘缓鍏ㄦ柊涓婁笅鏂囥€?  - 楠屾敹瑕佺偣锛氭病鏈?session id銆乻ession id 涓虹┖鎴栨仮澶嶅け璐ユ椂鑳藉鍥為€€涓烘柊寤?`codex exec`锛屽苟璁板綍鍙帓鏌ヤ簨浠讹紝涓嶅鑷翠换鍔℃祦绋嬪崱姝汇€?  - 楠屾敹瑕佺偣锛氭柊寤轰細璇濇椂缁х画淇濈暀褰撳墠 `--cd`銆乣--color never`銆乣--output-last-message`銆佹矙绠卞拰 stdin prompt 琛屼负锛涙仮澶嶄細璇濇椂涓嶄紶鍏?Codex CLI 涓嶆敮鎸佺殑鍙傛暟銆?  - 楠屾敹瑕佺偣锛氫粠 Codex 杈撳嚭涓崟鑾风湡瀹?session id锛屽啓鍏ヨ繍琛岀粨鏋滐紝鏃ュ織鏂囦欢鍜?last message 鏂囦欢璺緞浠嶆寜鐜版湁瑙勫垯鐢熸垚銆?
+- [ ] P004: 缁戝畾浠诲姟鎵ц涓庝笂涓嬫枃鐢熷懡鍛ㄦ湡 <!-- scope: src/loopService.js -->
+  - 楠屾敹瑕佺偣锛歚executeTask` 鎵ц鍓嶈鍙栧綋鍓嶄换鍔′繚瀛樼殑 session id锛屽苟鎶婂畠浼犵粰 Codex 璋冪敤锛涙墽琛岀粨鏉熷悗鎶婃崟鑾峰埌鐨?session id 鍐欏洖瀵瑰簲浠诲姟銆?  - 楠屾敹瑕佺偣锛氬悓涓€浠诲姟澶辫触鍚庡洖鍒?`pending`銆佽鍋滄鍚庡啀娆℃墽琛屻€佹垨鐢ㄦ埛鎵嬪姩鐐瑰嚮杩愯鏃讹紝閮戒細澶嶇敤璇ヤ换鍔″凡鏈変笂涓嬫枃銆?  - 楠屾敹瑕佺偣锛氫笉鍚屼换鍔″嵆浣垮睘浜庡悓涓€ plan锛屼篃涓嶄細澶嶇敤褰兼鐨?session id锛涘苟鍙戜换鍔″悇鑷淮鎶ょ嫭绔嬩笂涓嬫枃銆?  - 楠屾敹瑕佺偣锛氫换鍔℃垚鍔熷畬鎴愬悗淇濈暀 session id 浣滀负瀹¤淇℃伅锛屼絾涓嶄細璁╁悗缁叾浠栦换鍔¤嚜鍔ㄧ户鎵胯涓婁笅鏂囥€?
+- [ ] P005: 鏆撮湶涓婁笅鏂囩姸鎬佷笌浜嬩欢淇℃伅 <!-- scope: src/loopService.js,src/renderer/types.ts,src/renderer/pages/WorkspacePage.tsx,src/renderer/components/CodexLog.tsx -->
+  - 楠屾敹瑕佺偣锛歚snapshot()` 鐨?`tasks`銆乣activeOperation`銆乣activeOperations` 鍜?`lastOperation` 鑳芥惡甯﹀綋鍓嶄换鍔＄殑 session id 鎴栤€滄柊寤?鎭㈠鈥濈姸鎬併€?  - 楠屾敹瑕佺偣锛氫簨浠舵祦鍦ㄤ换鍔″紑濮嬨€佹仮澶嶃€佸洖閫€鏂板缓銆佸け璐ュ拰瀹屾垚鏃跺寘鍚彲璇荤殑涓婁笅鏂囦俊鎭紝鏂逛究瀹氫綅鏌愭浠诲姟鏄惁澶嶇敤浜嗕笂涓嬫枃銆?  - 楠屾敹瑕佺偣锛氬伐浣滃尯 Codex 鏃ュ織鍖哄煙鑳藉睍绀哄綋鍓嶆墽琛屾槸鏂颁細璇濊繕鏄仮澶嶄細璇濓紝涓嶅奖鍝嶅師鏈?logTail 鍜?activity 灞曠ず銆?  - 楠屾敹瑕佺偣锛氱晫闈㈠彧鏄剧ず蹇呰鐨勭煭鏍囪瘑鎴栫姸鎬佹枃妗堬紝閬垮厤闀?UUID 閫犳垚甯冨眬婧㈠嚭锛涙棤 session id 鐨勫巻鍙蹭换鍔℃樉绀轰负鏅€氫换鍔°€?
+- [ ] P006: 琛ュ厖涓婁笅鏂囧鐢ㄥ洖褰掓祴璇?<!-- scope: scripts/smoke-test.js -->
+  - 楠屾敹瑕佺偣锛歴moke 娴嬭瘯瑕嗙洊鍚屼竴浠诲姟棣栨鎵ц浜х敓 session id锛屽苟鍦ㄥけ璐ュ悗鍐嶆鎵ц鏃朵紶鍏ュ悓涓€涓?session id銆?  - 楠屾敹瑕佺偣锛歴moke 娴嬭瘯瑕嗙洊鍚屼竴 plan 鐨勪笉鍚屼换鍔′笉浼氬鐢?session id锛屽苟鍙戞墽琛屾椂姣忎釜浠诲姟鎷ユ湁鐙珛涓婁笅鏂囥€?  - 楠屾敹瑕佺偣锛歴moke 娴嬭瘯瑕嗙洊 `syncPlanTasks` 鍚庡悓涓€ `task_key` 鐨勪笂涓嬫枃浠嶄繚鐣欙紝鏂板鎴栨敼鍚嶄换鍔′笉浼氱户鎵挎棫涓婁笅鏂囥€?  - 楠屾敹瑕佺偣锛氱幇鏈?plan guard銆乻cope 骞跺彂閫夋嫨銆佷换鍔″畬鎴愬洖鍐欍€侀獙鏀跺畬鎴愬拰鑰楁椂缁熻鏂█缁х画閫氳繃銆?
+- [ ] P007: 鎵ц鏋勫缓涓庣鍒扮楠岃瘉 <!-- scope: package.json,scripts/smoke-test.js,src/database.js,src/loopService.js,src/renderer/types.ts,src/renderer/pages/WorkspacePage.tsx,src/renderer/components/CodexLog.tsx -->
+  - 楠屾敹瑕佺偣锛歚npm run check` 閫氳繃锛岀‘璁?TypeScript銆丯ode 璇硶妫€鏌ュ拰鑴氭湰妫€鏌ユ棤閿欒銆?  - 楠屾敹瑕佺偣锛歚npm run smoke` 閫氳繃锛岀‘璁や换鍔′笂涓嬫枃澶嶇敤銆佽鍒掕В鏋愩€佹墽琛屻€佸仠姝€佸畬鎴愬拰楠屾敹娴佺▼鏃犲洖褰掋€?  - 楠屾敹瑕佺偣锛氭墜鍔ㄩ獙璇佸悓涓€浠诲姟杩炵画涓ゆ鎵ц鏃舵棩蹇楁樉绀烘仮澶嶅悓涓€ session锛屼笉鍚屼换鍔℃樉绀轰笉鍚?session 鎴栨柊寤轰笂涓嬫枃銆?  - 楠屾敹瑕佺偣锛氬 Codex CLI 鎭㈠浼氳瘽涓嶅彲鐢紝绯荤粺鑳芥竻鏅拌褰曞洖閫€浜嬩欢骞剁户缁柊寤轰細璇濇墽琛岋紝涓嶅嚭鐜版棤闄愰噸璇曟垨 UI 鍗′綇銆?
+## 鎬讳綋楠屾敹鏍囧噯
+
+- 涓婁笅鏂囪繛缁細鍚屼竴涓?plan 浠诲姟鍦ㄥけ璐ャ€佸仠姝€侀噸璇曟垨鎵嬪姩鍐嶆杩愯鏃讹紝浼樺厛鎭㈠璇ヤ换鍔′笂涓€娆＄殑 Codex 浼氳瘽缁х画鎵ц銆?- 浠诲姟闅旂锛氫笂涓嬫枃浠?`plan_id + task_key` 涓鸿竟鐣岋紝涓嶅悓浠诲姟銆佷笉鍚?plan銆佷笉鍚岄」鐩箣闂翠笉浼氬叡浜細璇濄€?- 鏁版嵁鍙潬锛氫細璇濇爣璇嗘寔涔呭寲鍒?SQLite锛屽苟鍦?plan 鏂囦欢閲嶆柊鍚屾鏃朵繚鐣欙紱鍘嗗彶鏁版嵁鍜屾棤浼氳瘽浠诲姟淇濇寔鍏煎銆?- 娴佺▼绋冲畾锛歱lan guard銆佷换鍔＄姸鎬佹祦杞€佸苟鍙?scope 鎺у埗銆佹棩蹇楄緭鍑恒€佽繘搴﹀尯鍥炲啓鍜岄獙鏀舵祦绋嬩繚鎸佸師鏈夎涓恒€?- 鍙娴嬶細浜嬩欢娴併€佹椿鍔ㄦ棩蹇楁垨浠诲姟蹇収鑳藉鍒ゆ柇鏈鎵ц鏄柊寤轰笂涓嬫枃杩樻槸鎭㈠涓婁笅鏂囷紝骞惰兘瀹氫綅鍏宠仈 session銆?- 楠岃瘉閫氳繃锛氬畬鎴愬疄鐜板悗 `npm run check` 涓?`npm run smoke` 鍧囬€氳繃锛屽繀瑕佹椂琛ュ厖鎵嬪姩楠岃瘉璁板綍銆?
+## 杩涘害鍖?
+- 2026-06-25 AutoPlan 鐢熸垚锛氶渶姹?#7 寮€鍙戣鍒掑凡鍒涘缓锛屽緟鎵ц銆?- P001 AutoPlan 瀹屾垚锛?026-06-24T19:46:58.214Z锛涙棩蹇楋細docs/progress/logs/20260625-034308_execute-P001.log
+- P002 AutoPlan 瀹屾垚锛?026-06-24T19:46:58.224Z锛涙棩蹇楋細docs/progress/logs/20260625-034308_execute-P002.log
+
+
+**Addressing encoding issues**
+
+I think the output might be mojibake due to encoding issues, possibly with the file being UTF-8 while PowerShell defaults to a different encoding. It seems like using Get-Content -Encoding UTF8 could help. The console might be displaying mojibake too, so maybe I should consider using [Console] for output. If needed, I could look into reading the file with Python, but I wonder if that’s necessary. I might also try running chcp 65001 to change the code page.
+codex
+现有文件在终端里编码显示异常，我切到 UTF-8 再读。
+exec
+powershell.exe -Command 'chcp 65001 > $null; Get-Content -Raw -Encoding UTF8 docs'"\\plan\\plan_requirement_8_20260625-034659.md" in D:\project\GitHub\autoplan
+ succeeded in 237ms:
+# 需求 #8 开发计划：增加搜索功能
+
+## 背景
+
+当前 AutoPlan 的项目列表已支持按项目名称、路径和备注进行前端搜索，但进入单个项目工作区后，需求、反馈、计划草稿、Plan、任务和事件流分别分布在不同模块中。随着任务执行和事件积累，用户难以快速定位某条需求、某个任务、某份计划或相关运行记录。
+
+需求 #8 要求“增加搜索功能”。本计划默认将搜索能力落在当前项目工作区内：提供统一搜索入口，按当前项目快照数据进行客户端检索，覆盖需求、反馈、计划草稿、Plan、任务和事件流；保留项目列表现有搜索能力，并在交互和样式上保持一致。
+
+## 任务拆解
+
+- [x] P001: 定义工作区搜索模型 <!-- scope: src/renderer/types.ts,src/renderer/utils/search.ts -->
+  - 验收要点：新增搜索结果、搜索分组、搜索来源类型和命中字段等前端类型，覆盖需求、反馈、计划草稿、Plan、任务和事件流。
+  - 验收要点：搜索模型不改变后端 `snapshot()` 数据结构，不要求数据库新增字段或迁移，避免扩大需求范围。
+  - 验收要点：结果项能携带目标 tab、记录 id、标题、摘要、状态和更新时间，便于后续点击定位与展示。
+  - 验收要点：空查询、纯空白查询和未知来源类型均有安全兜底，不影响 TypeScript 编译。
+
+- [ ] P002: 实现快照搜索工具函数 <!-- scope: src/renderer/utils/search.ts,src/renderer/utils/time.ts -->
+  - 验收要点：搜索工具支持对标题、正文、状态、文件路径、任务 key、scope、事件类型和事件信息进行大小写不敏感匹配。
+  - 验收要点：搜索输入会统一 trim、转小写并压缩多余空白；空查询返回空结果或原列表状态由调用方明确控制。
+  - 验收要点：结果按命中优先级和更新时间排序，标题或 key 命中优先于正文、日志和附属字段命中。
+  - 验收要点：工具函数保持纯函数实现，不修改传入的 `snapshot`、列表项或附件数据，便于 memo 化和回归测试。
+
+- [x] P003: 接入工作区搜索入口 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/icons.tsx,src/styles.css -->
+  - 验收要点：工作区顶部或主内容区域新增统一搜索输入框，支持输入关键字、清空关键字和显示当前命中数量。
+  - 验收要点：搜索入口使用现有视觉变量和统一图标体系，聚焦态、悬浮态、禁用态与项目页搜索风格一致。
+  - 验收要点：搜索关键字在工作区 tab 切换时保留，在切换项目或离开工作区后不污染其它项目。
+  - 验收要点：输入框具备明确的 placeholder、`aria-label` 和键盘可操作清空按钮，不依赖鼠标才能完成搜索。
+
+- [ ] P004: 过滤各模块列表展示 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/IntakePanel.tsx,src/renderer/components/PlanLists.tsx -->
+  - 验收要点：需求和反馈模块在有搜索关键字时仅展示当前模块命中的记录，空查询时保持现有完整列表与编辑、删除、中断、恢复行为。
+  - 验收要点：任务与计划模块支持过滤计划草稿、Plan 和任务列表，任务命中不破坏执行、停止、耗时、上下文标识和状态展示。
+  - 验收要点：事件流模块支持按事件类型、展示文案、任务 key、Plan id 和元信息检索，格式化后的事件展示保持现有语义。
+  - 验收要点：每个模块在无匹配结果时显示“没有匹配结果”类空状态，而不是误显示“暂无数据”造成语义混淆。
+
+- [ ] P005: 展示统一搜索结果概览 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/SearchResults.tsx,src/styles.css -->
+  - 验收要点：搜索后展示按来源分组的结果概览，至少能看到需求、反馈、计划草稿、Plan、任务和事件流的命中数量。
+  - 验收要点：点击结果项能切换到对应 tab，并使用户能够在目标列表中看到匹配记录；无法精确滚动时也要保持目标 tab 的过滤状态。
+  - 验收要点：结果摘要优先展示命中的标题、正文片段或关键字段，长文本会截断，不造成布局溢出。
+  - 验收要点：结果概览在无查询时隐藏或展示轻量提示，在无命中时提供清空搜索的明显入口。
+
+- [ ] P006: 补充搜索回归验证 <!-- scope: scripts/smoke-test.js,src/renderer/utils/search.ts,src/renderer/pages/WorkspacePage.tsx,src/renderer/components/IntakePanel.tsx,src/renderer/components/PlanLists.tsx,src/styles.css -->
+  - 验收要点：补充覆盖搜索工具的代表性数据校验，包括标题命中、正文命中、任务 key 命中、事件元信息命中和无结果场景。
+  - 验收要点：`npm run check` 通过，确认 TypeScript、主进程脚本、预加载脚本和现有 Node 检查无错误。
+  - 验收要点：`npm run build` 通过，确认新增搜索组件、工具函数和样式可被 Vite 正常构建。
+  - 验收要点：手动核对项目页原有搜索、工作区新增搜索、tab 切换、任务执行/停止按钮和需求/反馈编辑流程无回归。
+
+## 总体验收标准
+
+- 搜索覆盖：当前项目工作区内的需求、反馈、计划草稿、Plan、任务和事件流均可通过统一关键字检索。
+- 项目隔离：搜索只作用于当前项目快照，不跨项目展示数据，也不改变数据库内容或后台循环状态。
+- 交互清晰：用户能看到搜索输入、命中数量、分组结果、无结果提示和清空入口；空查询时所有列表恢复原始展示。
+- 性能稳定：搜索在前端基于现有快照和 memo 化计算完成，不新增高频 IPC、不阻塞任务执行日志刷新。
+- 可访问性可用：搜索输入和清空操作支持键盘访问，关键按钮具备可读标签，窄屏布局不溢出。
+- 流程无回归：项目管理、需求/反馈提交与编辑、Plan 草稿确认、任务执行/停止、事件流展示和现有项目页搜索保持原有行为。
+- 验证通过：完成实现后 `npm run check` 与 `npm run build` 均通过，必要的搜索工具回归校验通过。
+
+## 进度区
+
+- 2026-06-25 AutoPlan 生成：需求 #8 开发计划已创建，待执行。
+- P001 AutoPlan 完成：2026-06-24T19:55:45.350Z；日志：docs/progress/logs/20260625-035016_execute-P001.log
+- P003 AutoPlan 完成：2026-06-24T19:55:45.363Z；日志：docs/progress/logs/20260625-035016_execute-P003.log
+
+
+**Generating a reading plan**
+
+I need to create plan #11 about "计划," making sure it supports the full reading experience with a markdown component. First, I want to understand the current components available. I might also consider planning lists for better organization. Additionally, I'll need to inspect any relevant files to ensure I'm incorporating everything necessary. Let's make sure this plan is thorough and user-friendly!
+codex
+接下来我会查看 Plan 展示相关组件，确认应规划哪些文件。
+exec
+powershell.exe -Command 'chcp 65001 > $null; Get-Content -Raw -Encoding UTF8 src'"\\renderer\\components\\PlanLists.tsx; Write-Output '---'; Get-Content -Raw -Encoding UTF8 src\\renderer\\pages\\WorkspacePage.tsx; Write-Output '---'; Get-Content -Raw -Encoding UTF8 src\\renderer\\types.ts; Write-Output '---'; Get-Content -Raw -Encoding UTF8 package.json" in D:\project\GitHub\autoplan
+ succeeded in 212ms:
+import type { AppEvent, Plan, PlanDraft, PlanTask } from '../types';
+import { RecordCard } from './IntakePanel';
+import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+
+type TimedPlanTask = PlanTask & {
+  plan_id?: number | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  duration_ms?: number | null;
+};
+
+type EventMetaRecord = Record<string, unknown>;
+
+type TaskEventTone = 'start' | 'success' | 'failed' | 'stopped' | 'stopping' | 'updated';
+
+type TaskEventDisplay = {
+  title: string;
+  body: string;
+  meta: string;
+  badge?: string;
+  tone?: TaskEventTone;
+};
+
+const TASK_EVENT_PRESENTATION: Record<TaskEventTone, { action: string; badge: string }> = {
+  start: { action: '开始了', badge: '开始' },
+  success: { action: '结束了', badge: '成功' },
+  failed: { action: '执行失败', badge: '失败' },
+  stopped: { action: '停止了', badge: '停止' },
+  stopping: { action: '请求停止', badge: '停止中' },
+  updated: { action: '更新了', badge: '任务' },
+};
+
+function readDurationMs(task: TimedPlanTask) {
+  if (task.duration_ms === null || typeof task.duration_ms === 'undefined') return null;
+  const duration = Number(task.duration_ms);
+  return Number.isFinite(duration) && duration >= 0 ? duration : null;
+}
+
+function getTaskDurationMs(task: TimedPlanTask) {
+  if (task.status === 'running') return getRunningDurationMs(readDurationMs(task), task.started_at);
+  return readDurationMs(task);
+}
+
+function readPlanId(task: TimedPlanTask) {
+  if (task.plan_id === null || typeof task.plan_id === 'undefined') return null;
+  const planId = Number(task.plan_id);
+  return Number.isFinite(planId) ? planId : null;
+}
+
+function formatTaskDuration(task: TimedPlanTask) {
+  const duration = getTaskDurationMs(task);
+  if (task.status === 'running') return `已运行 ${formatDuration(duration, '0秒')}`;
+  if (duration === null || (duration === 0 && !task.started_at && !task.finished_at)) return '未开始';
+  return `耗时 ${formatDuration(duration, '0秒')}`;
+}
+
+function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
+  const timedTasks = tasks as TimedPlanTask[];
+  const hasPlanIds = timedTasks.some((task) => readPlanId(task) !== null);
+  if (!hasPlanIds) return planCount === 1 ? timedTasks : [];
+  return timedTasks.filter((task) => readPlanId(task) === plan.id);
+}
+
+function formatPlanDurationSummary(tasks: TimedPlanTask[]) {
+  const totalMs = tasks.reduce((sum, task) => sum + (getTaskDurationMs(task) ?? 0), 0);
+  const completedMs = tasks.reduce(
+    (sum, task) => sum + (task.status === 'completed' ? getTaskDurationMs(task) ?? 0 : 0),
+    0,
+  );
+
+  return `总耗时 ${formatDuration(totalMs, '0秒')} · 已完成 ${formatDuration(completedMs, '0秒')}`;
+}
+
+function toEventMetaRecord(value: unknown): EventMetaRecord | null {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    try {
+      return toEventMetaRecord(JSON.parse(value));
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value === 'object' && !Array.isArray(value)) return value as EventMetaRecord;
+  return null;
+}
+
+function readEventMeta(event: AppEvent) {
+  return toEventMetaRecord((event as AppEvent & { meta?: unknown }).meta);
+}
+
+function readMetaText(meta: EventMetaRecord | null, keys: string[]) {
+  if (!meta) return '';
+  for (const key of keys) {
+    const value = meta[key];
+    if (typeof value === 'string') {
+      const text = value.trim();
+      if (text) return text;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return '';
+}
+
+function readMetaNumber(meta: EventMetaRecord | null, keys: string[]) {
+  const text = readMetaText(meta, keys);
+  if (!text) return null;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+}
+
+function includesAny(text: string, keywords: string[]) {
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function classifyTaskEvent(event: AppEvent, meta: EventMetaRecord | null): TaskEventTone {
+  const eventText = `${event.type || ''} ${readMetaText(meta, ['status', 'taskStatus', 'task_status'])}`.toLowerCase();
+  if (includesAny(eventText, ['stop_requested', 'stop-requested', 'stop.requested', 'request_stop', 'stopping'])) {
+    return 'stopping';
+  }
+  if (includesAny(eventText, ['fail', 'error', 'errored'])) return 'failed';
+  if (includesAny(eventText, ['stop', 'interrupt', 'cancel'])) return 'stopped';
+  if (includesAny(eventText, ['start', 'begin', 'running'])) return 'start';
+  if (includesAny(eventText, ['complete', 'finish', 'success', 'succeed', 'executed', 'done'])) return 'success';
+  return 'updated';
+}
+
+function isTaskEventType(type: string) {
+  return /^task[.:_-]/i.test(type);
+}
+
+function sameEventText(left: string, right: string) {
+  return left.replace(/\s+/g, ' ').trim() === right.replace(/\s+/g, ' ').trim();
+}
+
+function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): TaskEventDisplay | null {
+  const taskKey = readMetaText(meta, ['taskKey', 'task_key']);
+  const taskId = readMetaText(meta, ['taskId', 'task_id']);
+  const taskTitle = readMetaText(meta, ['taskTitle', 'task_title', 'title']) || '未命名任务';
+  const hasTaskIdentity = Boolean(taskKey || taskId || readMetaText(meta, ['taskTitle', 'task_title', 'title']));
+  if (!hasTaskIdentity) return null;
+
+  const tone = classifyTaskEvent(event, meta);
+  const presentation = TASK_EVENT_PRESENTATION[tone];
+  const taskLabel = taskKey ? `${taskKey} 任务` : taskId ? `任务 #${taskId}` : '任务';
+  const separator = taskLabel === '任务' ? '' : ' ';
+  const title = `${presentation.action}${separator}${taskLabel}：${taskTitle}`;
+  const originalMessage = event.message?.trim() || '';
+  const planId = readMetaText(meta, ['planId', 'plan_id']);
+  const status = readMetaText(meta, ['status', 'taskStatus', 'task_status']);
+  const durationMs = readMetaNumber(meta, ['durationMs', 'duration_ms']);
+  const metaParts = [
+    formatChinaDateTime(event.created_at),
+    planId ? `Plan #${planId}` : '',
+    status ? `状态 ${status}` : '',
+    durationMs !== null ? `耗时 ${formatDuration(durationMs, '0秒')}` : '',
+  ].filter(Boolean);
+
+  return {
+    title,
+    body: originalMessage && !sameEventText(originalMessage, title) ? originalMessage : '',
+    meta: metaParts.join(' · '),
+    badge: presentation.badge,
+    tone,
+  };
+}
+
+function formatEvent(event: AppEvent): TaskEventDisplay {
+  const meta = readEventMeta(event);
+  const taskDisplay = meta && (isTaskEventType(event.type) || readMetaText(meta, ['taskKey', 'task_key', 'taskId', 'task_id']))
+    ? formatTaskEvent(event, meta)
+    : null;
+  if (taskDisplay) return taskDisplay;
+
+  return {
+    title: event.type || '事件',
+    body: event.message || '',
+    meta: formatChinaDateTime(event.created_at),
+  };
+}
+
+export function PlanDraftList({
+  drafts,
+  draftTextById,
+  onAccept,
+  onChange,
+  onSave,
+}: {
+  drafts: PlanDraft[];
+  draftTextById: Record<number, string>;
+  onAccept: (draft: PlanDraft) => void;
+  onChange: (id: number, markdown: string) => void;
+  onSave: (draft: PlanDraft) => void;
+}) {
+  if (!drafts.length) {
+    return <div className="empty">暂无计划草稿。发送需求或反馈后会自动生成。</div>;
+  }
+
+  return (
+    <div className="list compact">
+      {drafts.map((draft) => {
+        const accepted = draft.status === 'accepted';
+        return (
+          <article className="item plan-draft" key={draft.id}>
+            <div className="item-title">
+              <span>
+                草稿 #{draft.id} · {draft.source_type === 'feedback' ? '反馈' : '需求'} #{draft.source_id}
+              </span>
+              <span className={`chip ${accepted ? 'chip-accepted' : 'chip-waiting'}`}>{draft.status}</span>
+            </div>
+            <textarea
+              readOnly={accepted}
+              value={draftTextById[draft.id] ?? draft.markdown ?? ''}
+              onChange={(event) => onChange(draft.id, event.target.value)}
+            />
+            <div className="button-row">
+              {accepted ? (
+                <span className="draft-note">已加入任务系统：Plan #{draft.linked_plan_id || ''}</span>
+              ) : (
+                <>
+                  <button type="button" onClick={() => onSave(draft)}>
+                    保存调整
+                  </button>
+                  <button className="btn-primary" type="button" onClick={() => onAccept(draft)}>
+                    确认加入任务系统
+                  </button>
+                </>
+              )}
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+export function PlanList({ plans, tasks = [] }: { plans: Plan[]; tasks?: PlanTask[] }) {
+  if (!plans.length) return <div className="empty">暂无 plan。</div>;
+
+  return (
+    <div className="list compact">
+      {plans.map((plan) => {
+        const durationSummary = formatPlanDurationSummary(tasksForPlan(tasks, plan, plans.length));
+        return (
+          <RecordCard
+            key={plan.id}
+            title={plan.file_path}
+            status={plan.status}
+            body={`${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+              plan.validation_passed ? 'passed' : 'pending'
+            }`}
+            meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+export function TaskList({
+  tasks,
+  onRun,
+  onStop,
+}: {
+  tasks: PlanTask[];
+  onRun?: (task: PlanTask) => void;
+  onStop?: (task: PlanTask) => void;
+}) {
+  if (!tasks.length) return <div className="empty">暂无任务。</div>;
+
+  return (
+    <div className="list compact">
+      {tasks.map((task) => {
+        const running = task.status === 'running';
+        const completed = task.status === 'completed';
+        const durationLabel = formatTaskDuration(task as TimedPlanTask);
+        return (
+          <RecordCard
+            actions={
+              <div className="item-actions">
+                <button type="button" className="btn-link" disabled={completed || running} onClick={() => onRun?.(task)}>
+                  执行
+                </button>
+                <button type="button" className="btn-link danger-link" disabled={!running} onClick={() => onStop?.(task)}>
+                  停止
+                </button>
+              </div>
+            }
+            key={task.id}
+            title={task.title}
+            status={task.status}
+            body={task.file_path}
+            meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+export function EventList({ events }: { events: AppEvent[] }) {
+  if (!events.length) return <div className="empty">暂无事件。</div>;
+
+  return (
+    <div className="list compact event-list">
+      {events.map((event) => {
+        const display = formatEvent(event);
+        return (
+          <article className={`item event-item ${display.tone ? `event-item-${display.tone}` : ''}`} key={event.id}>
+            <div className="item-title event-title">
+              <span>{display.title}</span>
+              {display.badge ? <span className={`event-badge event-badge-${display.tone}`}>{display.badge}</span> : null}
+            </div>
+            {display.body ? <div className="item-body plain-text">{display.body}</div> : null}
+            <div className="meta event-meta">{display.meta}</div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+---
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import type {
+  AppSnapshot,
+  IntakeType,
+  PendingAttachment,
+  Project,
+  ProjectState,
+  WorkspaceTab,
+} from '../types';
+import { useSnapshot } from '../hooks/useSnapshot';
+import { IntakePanel } from '../components/IntakePanel';
+import { EventList, PlanList, TaskList } from '../components/PlanLists';
+import { CodexLog } from '../components/CodexLog';
+import { Icon } from '../components/icons';
+import { getFilePath } from '../components/shared';
+import { formatChinaTime } from '../utils/time';
+
+const emptyPendingAttachments: Record<IntakeType, PendingAttachment[]> = {
+  requirement: [],
+  feedback: [],
+};
+
+const tabs: Array<{ id: WorkspaceTab; label: string; icon: string }> = [
+  { id: 'overview', label: '概览', icon: '◑' },
+  { id: 'requirement', label: '需求', icon: '◎' },
+  { id: 'feedback', label: '反馈', icon: '✎' },
+  { id: 'tasks', label: '任务与计划', icon: '☑' },
+  { id: 'events', label: '事件流', icon: '≡' },
+];
+
+export function WorkspacePage() {
+  const params = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
+  const projectId = Number(params.projectId);
+  const { snapshot, setSnapshot, error, setError } = useSnapshot(Number.isFinite(projectId) ? projectId : null);
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('overview');
+  const [pendingAttachments, setPendingAttachments] =
+    useState<Record<IntakeType, PendingAttachment[]>>(emptyPendingAttachments);
+  const [loopForm, setLoopForm] = useState({ workspacePath: '', intervalSeconds: '5', validationCommand: '' });
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const project = snapshot?.activeProject || null;
+  const state = snapshot?.state || null;
+  const projects = snapshot?.projects || [];
+  const normalizedSearchQuery = useMemo(() => normalizeSearchQuery(searchQuery), [searchQuery]);
+  const searchableItemCount = useMemo(() => (snapshot ? countSearchableItems(snapshot) : 0), [snapshot]);
+  const searchHitCount = useMemo(
+    () => (snapshot && normalizedSearchQuery ? countWorkspaceSearchMatches(snapshot, normalizedSearchQuery) : 0),
+    [snapshot, normalizedSearchQuery],
+  );
+
+  const showError = useCallback((e: unknown) => {
+    const msg = e instanceof Error ? e.message : String(e);
+    setError(msg);
+    window.alert(msg);
+  }, [setError]);
+
+  useEffect(() => {
+    if (!state) return;
+    setLoopForm({
+      workspacePath: state.workspace_path || '',
+      intervalSeconds: String(state.interval_seconds || 5),
+      validationCommand: state.validation_command || '',
+    });
+  }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state]);
+
+  useEffect(() => {
+    setSearchQuery('');
+  }, [projectId]);
+
+  const addPendingFiles = useCallback((type: IntakeType, files: FileList | File[] | null) => {
+    const selected = Array.from(files || [])
+      .map((file) => ({ path: getFilePath(file), name: file.name, size: file.size, type: file.type }))
+      .filter((file) => file.path);
+    if (!selected.length) return;
+    setPendingAttachments((current) => {
+      const nextItems = [...current[type]];
+      for (const file of selected) {
+        if (!nextItems.some((item) => item.path === file.path && item.size === file.size)) nextItems.push(file);
+      }
+      return { ...current, [type]: nextItems };
+    });
+  }, []);
+
+  const removePendingAttachment = useCallback((type: IntakeType, index: number) => {
+    setPendingAttachments((current) => ({
+      ...current,
+      [type]: current[type].filter((_, itemIndex) => itemIndex !== index),
+    }));
+  }, []);
+
+  const createRequirement = useCallback(
+    async (body: string) => {
+      if (!projectId) return false;
+      try {
+        const next = await window.autoplan.createRequirement({
+          projectId,
+          body,
+          attachments: pendingAttachments.requirement,
+        });
+        setSnapshot(next);
+        setPendingAttachments((current) => ({ ...current, requirement: [] }));
+        setError(null);
+        return true;
+      } catch (e) {
+        showError(e);
+        return false;
+      }
+    },
+    [pendingAttachments.requirement, projectId, setSnapshot, setError, showError],
+  );
+
+  const createFeedback = useCallback(
+    async (body: string) => {
+      if (!projectId) return false;
+      try {
+        const next = await window.autoplan.createFeedback({
+          projectId,
+          body,
+          attachments: pendingAttachments.feedback,
+        });
+        setSnapshot(next);
+        setPendingAttachments((current) => ({ ...current, feedback: [] }));
+        setError(null);
+        return true;
+      } catch (e) {
+        showError(e);
+        return false;
+      }
+    },
+    [pendingAttachments.feedback, projectId, setSnapshot, setError, showError],
+  );
+
+  const updateRequirement = useCallback(
+    async (id: number, input: { title?: string; body?: string; status?: string }) => {
+      if (!projectId) return false;
+      try {
+        const next = await window.autoplan.updateRequirement({ projectId, id, ...input });
+        setSnapshot(next);
+        setError(null);
+        return true;
+      } catch (e) {
+        showError(e);
+        return false;
+      }
+    },
+    [projectId, setSnapshot, setError, showError],
+  );
+
+  const deleteRequirement = useCallback(
+    async (id: number) => {
+      if (!projectId) return false;
+      try {
+        const next = await window.autoplan.deleteRequirement({ projectId, id });
+        setSnapshot(next);
+        setError(null);
+        return true;
+      } catch (e) {
+        showError(e);
+        return false;
+      }
+    },
+    [projectId, setSnapshot, setError, showError],
+  );
+
+  const updateFeedback = useCallback(
+    async (id: number, input: { title?: string; body?: string; status?: string }) => {
+      if (!projectId) return false;
+      try {
+        const next = await window.autoplan.updateFeedback({ projectId, id, ...input });
+        setSnapshot(next);
+        setError(null);
+        return true;
+      } catch (e) {
+        showError(e);
+        return false;
+      }
+    },
+    [projectId, setSnapshot, setError, showError],
+  );
+
+  const deleteFeedback = useCallback(
+    async (id: number) => {
+      if (!projectId) return false;
+      try {
+        const next = await window.autoplan.deleteFeedback({ projectId, id });
+        setSnapshot(next);
+        setError(null);
+        return true;
+      } catch (e) {
+        showError(e);
+        return false;
+      }
+    },
+    [projectId, setSnapshot, setError, showError],
+  );
+
+  const submitLoopConfig = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      const next = await window.autoplan.configureLoop({
+        projectId,
+        workspacePath: loopForm.workspacePath,
+        intervalSeconds: Number(loopForm.intervalSeconds || 5),
+        validationCommand: loopForm.validationCommand,
+      });
+      setSnapshot(next);
+      setError(null);
+    } catch (e) {
+      showError(e);
+    }
+  };
+
+  const runLoopAction = async (action: () => Promise<AppSnapshot>) => {
+    try {
+      const next = await action();
+      setSnapshot(next);
+      setError(null);
+    } catch (e) {
+      showError(e);
+    }
+  };
+
+  const interruptIntake = useCallback(
+    async (type: IntakeType, id: number) => {
+      try {
+        const next = await window.autoplan.interruptIntake({ projectId, type, id });
+        setSnapshot(next);
+        setError(null);
+      } catch (e) {
+        showError(e);
+      }
+    },
+    [projectId, setSnapshot, setError, showError],
+  );
+
+  const resumeIntake = useCallback(
+    async (type: IntakeType, id: number) => {
+      try {
+        const next = await window.autoplan.resumeIntake({ projectId, type, id });
+        setSnapshot(next);
+        setError(null);
+      } catch (e) {
+        showError(e);
+      }
+    },
+    [projectId, setSnapshot, setError, showError],
+  );
+
+  const appendIntakeTask = useCallback(
+    async (type: IntakeType, id: number, title: string) => {
+      try {
+        const next = await window.autoplan.appendIntakeTask({ projectId, type, id, title });
+        setSnapshot(next);
+        setError(null);
+      } catch (e) {
+        showError(e);
+      }
+    },
+    [projectId, setSnapshot, setError, showError],
+  );
+
+  const switchProject = (nextId: number) => {
+    if (nextId && nextId !== projectId) navigate(`/projects/${nextId}`);
+  };
+
+  if (!snapshot) {
+    return (
+      <div className="workspace-shell">
+        <WorkspaceSidebar
+          activeTab={activeTab}
+          onTab={setActiveTab}
+          onBack={() => navigate('/projects')}
+          projectId={projectId}
+          projects={projects}
+          currentProject={project}
+          state={null}
+          onSwitchProject={switchProject}
+        />
+        <div className="workspace-main">
+          <div className="empty">加载中...</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="workspace-shell">
+      <WorkspaceSidebar
+        activeTab={activeTab}
+        onTab={setActiveTab}
+        onBack={() => navigate('/projects')}
+        projectId={projectId}
+        projects={projects}
+        currentProject={project}
+        state={state}
+        onSwitchProject={switchProject}
+      />
+      <div className="workspace-main">
+        <header className="topbar">
+          <div className="topbar-title">
+            <h1>{tabTitle(activeTab)}</h1>
+            <p>{tabSubtitle(activeTab, project)}</p>
+          </div>
+          <WorkspaceSearchBox
+            hitCount={searchHitCount}
+            onQueryChange={setSearchQuery}
+            query={searchQuery}
+            totalCount={searchableItemCount}
+          />
+          <div className="topbar-actions">
+            <span className="pill">
+              <span className={`led ${state?.running ? 'running' : 'stopped'}`} />
+              {state ? `${state.running ? 'running' : 'stopped'} · ${state.phase || 'idle'}` : 'idle'}
+            </span>
+            <button
+              type="button"
+              className={`btn btn-sm ${state?.running ? 'btn-danger' : 'btn-primary'}`}
+              onClick={() =>
+                runLoopAction(() =>
+                  state?.running
+                    ? window.autoplan.stopLoop({ projectId, manual: true })
+                    : window.autoplan.startLoop({ projectId, manual: true }),
+                )
+              }
+            >
+              {state?.running ? '■ 停止' : '● 启动'}
+            </button>
+          </div>
+        </header>
+
+        <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
+          {error ? <div className="error-banner">{error}</div> : null}
+          <OverviewView snapshot={snapshot} state={state} onGoTasks={() => setActiveTab('tasks')} />
+        </section>
+
+        <section className={`view ${activeTab === 'requirement' ? 'active' : ''}`}>
+          {activeTab === 'requirement' ? (
+            <IntakePanel
+              emptyText="暂无需求。也可以把需求文件放到工作区 docs/issues。"
+              heading="需求记录"
+              items={snapshot.requirements}
+              pendingAttachments={pendingAttachments.requirement}
+              placeholder="输入需求，Enter 发送，Shift+Enter 换行"
+              submitLabel="发送需求"
+              subtitle="循环开启后自动扫描并生成计划"
+              type="requirement"
+              attachments={snapshot.attachments}
+              onAddFiles={addPendingFiles}
+              onDelete={deleteRequirement}
+              onRemoveAttachment={removePendingAttachment}
+              onSubmit={createRequirement}
+              onUpdate={updateRequirement}
+              onInterrupt={interruptIntake}
+              onResume={resumeIntake}
+              onAppendTask={appendIntakeTask}
+            />
+          ) : null}
+        </section>
+
+        <section className={`view ${activeTab === 'feedback' ? 'active' : ''}`}>
+          {activeTab === 'feedback' ? (
+            <IntakePanel
+              emptyText="暂无反馈。"
+              heading="反馈记录"
+              items={snapshot.feedback}
+              pendingAttachments={pendingAttachments.feedback}
+              placeholder="输入反馈，Enter 发送，Shift+Enter 换行"
+              submitLabel="发送反馈"
+              subtitle="循环开启后自动扫描并生成计划"
+              type="feedback"
+              attachments={snapshot.attachments}
+              onAddFiles={addPendingFiles}
+              onDelete={deleteFeedback}
+              onRemoveAttachment={removePendingAttachment}
+              onSubmit={createFeedback}
+              onUpdate={updateFeedback}
+              onInterrupt={interruptIntake}
+              onResume={resumeIntake}
+              onAppendTask={appendIntakeTask}
+            />
+          ) : null}
+        </section>
+
+        <section className={`view ${activeTab === 'tasks' ? 'active' : ''}`}>
+          {activeTab === 'tasks' ? (
+            <div className="task-layout">
+              <aside className="task-sidebar">
+                <form className="editor card" onSubmit={submitLoopConfig}>
+                  <div className="card-head">
+                    <h2>循环控制</h2>
+                  </div>
+                  <label className="field">
+                    工作区路径
+                    <input
+                      value={loopForm.workspacePath}
+                      onChange={(event) => setLoopForm((current) => ({ ...current, workspacePath: event.target.value }))}
+                      placeholder="D:\project\GitHub\my-app"
+                    />
+                  </label>
+                  <label className="field">
+                    间隔秒数
+                    <input
+                      min="1"
+                      type="number"
+                      value={loopForm.intervalSeconds}
+                      onChange={(event) => setLoopForm((current) => ({ ...current, intervalSeconds: event.target.value }))}
+                    />
+                  </label>
+                  <label className="field">
+                    验收命令（留空则不校验）
+                    <input
+                      value={loopForm.validationCommand}
+                      onChange={(event) => setLoopForm((current) => ({ ...current, validationCommand: event.target.value }))}
+                      placeholder="flutter analyze"
+                    />
+                  </label>
+                  <div className="button-row">
+                    <button type="submit">保存配置</button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        runLoopAction(() =>
+                          state?.running
+                            ? window.autoplan.stopLoop({ projectId, manual: true })
+                            : window.autoplan.startLoop({ projectId, manual: true }),
+                        )
+                      }
+                    >
+                      {state?.running ? '停止' : '启动'}
+                    </button>
+                  </div>
+                </form>
+                <section className="side-section card">
+                  <div className="card-head">
+                    <h2>事件</h2>
+                  </div>
+                  <EventList events={snapshot.events} />
+                </section>
+              </aside>
+
+              <div className="task-main">
+                <div className="task-status-grid">
+                  <section className="card">
+                    <div className="card-head">
+                      <h2>Plan</h2>
+                    </div>
+                    <PlanList plans={snapshot.plans} tasks={snapshot.tasks} />
+                  </section>
+                  <section className="card">
+                    <div className="card-head">
+                      <h2>任务</h2>
+                    </div>
+                    <TaskList
+                      tasks={snapshot.tasks}
+                      onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+                      onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+                    />
+                  </section>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <section className={`view ${activeTab === 'events' ? 'active' : ''}`}>
+          {activeTab === 'events' ? (
+            <section className="card">
+              <div className="card-head">
+                <h2>事件流</h2>
+                <span className="hint">最近 80 条 · 实时更新</span>
+              </div>
+              <EventList events={snapshot.events} />
+            </section>
+          ) : null}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function WorkspaceSidebar({
+  activeTab,
+  onTab,
+  onBack,
+  projectId,
+  projects,
+  currentProject,
+  state,
+  onSwitchProject,
+}: {
+  activeTab: WorkspaceTab;
+  onTab: (tab: WorkspaceTab) => void;
+  onBack: () => void;
+  projectId: number;
+  projects: Project[];
+  currentProject: Project | null;
+  state: ProjectState | null;
+  onSwitchProject: (id: number) => void;
+}) {
+  return (
+    <aside className="sidebar">
+      <div className="brand">
+        <div className="brand-mark">A</div>
+        <div>
+          <div className="brand-name">AutoPlan</div>
+          <div className="brand-sub">需求 · 计划 · 执行 · 验收</div>
+        </div>
+      </div>
+
+      <button type="button" className="back-link" onClick={onBack}>
+        ← 返回项目列表
+      </button>
+
+      <div className="project-switcher">
+        <div className="project-label">当前项目</div>
+        <select
+          className="project-select"
+          value={projectId}
+          onChange={(event) => onSwitchProject(Number(event.target.value))}
+        >
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
+          ))}
+        </select>
+        {currentProject ? <div className="project-path mono">{currentProject.workspace_path || '未设置工作区'}</div> : null}
+      </div>
+
+      <div className="nav-group-label">工作区</div>
+      {tabs.map((tab) => (
+        <button
+          className={`nav-item ${activeTab === tab.id ? 'active' : ''}`}
+          key={tab.id}
+          type="button"
+          onClick={() => onTab(tab.id)}
+        >
+          <span className="nav-ico">{tab.icon}</span> {tab.label}
+        </button>
+      ))}
+
+      <div className="sidebar-footer">
+        <div className="loop-mini">
+          <span className={`led ${state?.running ? 'running' : 'stopped'}`} />
+          <span>
+            循环 <b>{state?.running ? '运行中' : '已停止'}</b>
+          </span>
+        </div>
+        <div className="loop-config mono">
+          间隔 {state?.interval_seconds || 5}s
+          {state?.validation_command ? ` · ${state.validation_command}` : ' · 无验收命令'}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function WorkspaceSearchBox({
+  hitCount,
+  onQueryChange,
+  query,
+  totalCount,
+}: {
+  hitCount: number;
+  onQueryChange: (query: string) => void;
+  query: string;
+  totalCount: number;
+}) {
+  const hasQuery = Boolean(normalizeSearchQuery(query));
+  const resultLabel = hasQuery ? `命中 ${hitCount} 条` : `可搜索 ${totalCount} 条`;
+
+  return (
+    <div className="workspace-search" role="search" aria-label="工作区搜索">
+      <div className="workspace-search-field">
+        <Icon name="search" size={16} className="workspace-search-icon" aria-hidden="true" />
+        <input
+          aria-label="搜索当前工作区"
+          className="workspace-search-input search-input"
+          onChange={(event) => onQueryChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' && query) {
+              event.preventDefault();
+              onQueryChange('');
+            }
+          }}
+          placeholder="搜索需求、反馈、任务、Plan 或事件"
+          value={query}
+        />
+        {query ? (
+          <button
+            type="button"
+            className="workspace-search-clear"
+            onClick={() => onQueryChange('')}
+            aria-label="清空工作区搜索关键字"
+          >
+            <Icon name="close" size={15} aria-hidden="true" />
+          </button>
+        ) : null}
+      </div>
+      <span className={`workspace-search-count${hasQuery && hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
+        {resultLabel}
+      </span>
+    </div>
+  );
+}
+
+function normalizeSearchQuery(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function countSearchableItems(snapshot: AppSnapshot) {
+  return (
+    snapshot.requirements.length +
+    snapshot.feedback.length +
+    snapshot.planDrafts.length +
+    snapshot.plans.length +
+    snapshot.tasks.length +
+    snapshot.events.length
+  );
+}
+
+function countWorkspaceSearchMatches(snapshot: AppSnapshot, normalizedQuery: string) {
+  const groups: unknown[][] = [
+    snapshot.requirements,
+    snapshot.feedback,
+    snapshot.planDrafts,
+    snapshot.plans,
+    snapshot.tasks,
+    snapshot.events,
+  ];
+
+  return groups.reduce(
+    (count, group) => count + group.filter((item) => normalizeSearchQuery(toSearchText(item)).includes(normalizedQuery)).length,
+    0,
+  );
+}
+
+function toSearchText(value: unknown, depth = 0): string {
+  if (value === null || value === undefined || depth > 6) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map((item) => toSearchText(item, depth + 1)).join(' ');
+  if (typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>)
+      .map((item) => toSearchText(item, depth + 1))
+      .join(' ');
+  }
+  return '';
+}
+
+function OverviewView({
+  snapshot,
+  state,
+  onGoTasks,
+}: {
+  snapshot: AppSnapshot;
+  state: ProjectState | null;
+  onGoTasks: () => void;
+}) {
+  const reqCount = snapshot.requirements.length;
+  const planCount = snapshot.plans.length;
+  const runningPlan = snapshot.plans.find((plan) => !['completed'].includes(plan.status));
+  const doneTasks = snapshot.tasks.filter((task) => task.status === 'completed').length;
+  const totalTasks = snapshot.tasks.length;
+
+  const phases = ['scan', 'generate-plan', 'execute-task', 'validate', 'completed'];
+  const currentPhase = state?.phase || 'idle';
+  const activeIndex = phases.indexOf(currentPhase);
+  const operation = snapshot.activeOperation || snapshot.lastOperation;
+  const operationActive = Boolean(snapshot.activeOperation);
+  const operationTime = operation?.startedAt ? `开始于 ${formatChinaTime(operation.startedAt)}` : '';
+  const operationExit =
+    operation && !operationActive && typeof operation.exitCode === 'number'
+      ? ` · 退出码 ${operation.exitCode}${operation.exitCode === 0 ? '（成功）' : '（失败）'}`
+      : '';
+  const operationHint = operation ? `${operationTime}${operationExit}` : '等待下一次执行';
+  const operationTitle = operation ? `${operationActive ? '执行日志' : '最近执行'} · ${operation.label}` : '执行日志';
+
+  return (
+    <>
+      <div className="stat-grid">
+        <StatCard icon="◎" value={String(reqCount)} label="需求" accent="brand" />
+        <StatCard
+          icon="▤"
+          value={String(planCount)}
+          label="计划"
+          sub={runningPlan ? `${runningPlan.completed_tasks}/${runningPlan.total_tasks} 任务` : '无进行中'}
+          accent="info"
+        />
+        <StatCard icon="☑" value={`${doneTasks}/${totalTasks}`} label="任务进度" accent="success" />
+        <StatCard icon="↻" value={`${state?.interval_seconds || 5}s`} label="循环间隔" accent="warning" />
+      </div>
+
+      <div className="overview-grid">
+        <div className="overview-main-column">
+          <section className="card live-log-card">
+            <div className="card-head log-card-head">
+              <div className="log-title-line">
+                <h2>
+                  <span className={`live-dot${operationActive ? '' : ' idle'}`} /> {operationTitle}
+                </h2>
+                <span className="hint">{operationHint}</span>
+                <span className={`log-phase-chip ${state?.running ? 'running' : 'stopped'}`}>
+                  {state?.running ? '循环运行中' : '循环已停止'} · {currentPhase}
+                </span>
+              </div>
+              <div className="log-summary">
+                <span>
+                  计划草稿 <b>{snapshot.planDrafts.length}</b>
+                </span>
+                <span>
+                  待确认草稿 <b>{snapshot.planDrafts.filter((draft) => draft.status !== 'accepted').length}</b>
+                </span>
+                <span>
+                  反馈 <b>{snapshot.feedback.length}</b>
+                </span>
+              </div>
+            </div>
+            <CodexLog log={operation?.logTail || ''} activity={operation?.activity || []} />
+          </section>
+        </div>
+
+        <div className="overview-side-column">
+          <section className="card">
+            <div className="card-head">
+              <h2>循环阶段流水线</h2>
+            </div>
+            <div className="card-body">
+              <div className="pipeline">
+                {phases.map((phase, index) => {
+                  const done = activeIndex > index;
+                  const active = activeIndex === index;
+                  return (
+                    <div className={`pipe-step ${done ? 'done' : ''} ${active ? 'active' : ''}`} key={phase}>
+                      <div className="pipe-node">{done ? '✓' : active ? '▶' : index + 1}</div>
+                      <div className="pipe-label">{phaseLabel(phase)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+
+          <section className="card">
+            <div className="card-head">
+              <h2>近期事件</h2>
+              <span className="spacer">
+                <button type="button" className="btn-link" onClick={onGoTasks}>
+                  查看任务 →
+                </button>
+              </span>
+            </div>
+            <div className="card-body">
+              <EventList events={snapshot.events.slice(0, 8)} />
+            </div>
+          </section>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function StatCard({
+  icon,
+  value,
+  label,
+  sub,
+  accent,
+}: {
+  icon: string;
+  value: string;
+  label: string;
+  sub?: string;
+  accent: 'brand' | 'info' | 'success' | 'warning';
+}) {
+  return (
+    <div className={`stat stat-${accent}`}>
+      <div className="stat-ico">{icon}</div>
+      <div className="stat-value">{value}</div>
+      <div className="stat-label">{label}</div>
+      {sub ? <div className="stat-delta">{sub}</div> : null}
+    </div>
+  );
+}
+
+function tabTitle(tab: WorkspaceTab) {
+  return { overview: '概览', requirement: '需求模块', feedback: '反馈模块', tasks: '任务与计划', events: '事件流' }[tab];
+}
+
+function tabSubtitle(tab: WorkspaceTab, project: Project | null) {
+  const base = {
+    overview: '循环状态、阶段流水线与各模块一览',
+    requirement: '收集需求，发送后自动生成计划草稿',
+    feedback: '收集反馈，关联需求并生成计划草稿',
+    tasks: '循环控制、计划草稿、Plan 与任务进度',
+    events: '循环运行日志与任务执行记录',
+  }[tab];
+  return project ? `${base} · ${project.name}` : base;
+}
+
+function phaseLabel(phase: string) {
+  return (
+    {
+      idle: '空闲',
+      scan: '扫描',
+      'generate-plan': '生成计划',
+      'execute-task': '执行任务',
+      validate: '验收',
+      completed: '完成',
+      waiting: '等待',
+      error: '异常',
+    }[phase] || phase
+  );
+}
+
+---
+export type IntakeType = 'requirement' | 'feedback';
+export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'tasks' | 'events';
+
+export const WORKSPACE_SEARCH_SOURCE_TYPES = {
+  REQUIREMENT: 'requirement',
+  FEEDBACK: 'feedback',
+  PLAN_DRAFT: 'planDraft',
+  PLAN: 'plan',
+  TASK: 'task',
+  EVENT: 'event',
+} as const;
+
+export type WorkspaceSearchSourceType =
+  (typeof WORKSPACE_SEARCH_SOURCE_TYPES)[keyof typeof WORKSPACE_SEARCH_SOURCE_TYPES];
+
+export const WORKSPACE_SEARCH_HIT_FIELDS = {
+  TITLE: 'title',
+  BODY: 'body',
+  STATUS: 'status',
+  MARKDOWN: 'markdown',
+  FILE_PATH: 'filePath',
+  SOURCE_PATH: 'sourcePath',
+  TASK_KEY: 'taskKey',
+  SCOPE: 'scope',
+  RAW_LINE: 'rawLine',
+  EVENT_TYPE: 'eventType',
+  EVENT_MESSAGE: 'eventMessage',
+  EVENT_META: 'eventMeta',
+} as const;
+
+export type WorkspaceSearchHitField =
+  (typeof WORKSPACE_SEARCH_HIT_FIELDS)[keyof typeof WORKSPACE_SEARCH_HIT_FIELDS];
+
+export interface WorkspaceSearchQuery {
+  raw: string;
+  normalized: string;
+  terms: string[];
+  isEmpty: boolean;
+}
+
+export interface WorkspaceSearchSourceConfig {
+  type: WorkspaceSearchSourceType;
+  label: string;
+  targetTab: WorkspaceTab;
+}
+
+export interface WorkspaceSearchMatch {
+  field: WorkspaceSearchHitField;
+  label: string;
+  value: string;
+  snippet?: string;
+}
+
+export interface WorkspaceSearchResult {
+  id: string;
+  source: WorkspaceSearchSourceType;
+  targetTab: WorkspaceTab;
+  recordId: number;
+  title: string;
+  summary: string;
+  status: string | null;
+  updatedAt: string;
+  matches: WorkspaceSearchMatch[];
+}
+
+export interface WorkspaceSearchGroup {
+  source: WorkspaceSearchSourceType;
+  label: string;
+  targetTab: WorkspaceTab;
+  count: number;
+  results: WorkspaceSearchResult[];
+}
+
+export interface WorkspaceSearchState {
+  query: WorkspaceSearchQuery;
+  total: number;
+  results: WorkspaceSearchResult[];
+  groups: WorkspaceSearchGroup[];
+}
+
+export interface Project {
+  id: number;
+  name: string;
+  workspace_path: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+  running?: number;
+  phase?: string;
+  interval_seconds?: number;
+  validation_command?: string;
+}
+
+export interface ProjectState {
+  project_id: number;
+  running: number;
+  phase: string;
+  interval_seconds: number;
+  validation_command: string;
+  last_issue_hash?: string | null;
+  last_error?: string | null;
+  updated_at: string;
+  /** 由 snapshot 合并自 project.workspace_path */
+  workspace_path?: string;
+}
+
+export interface Requirement {
+  id: number;
+  project_id: number;
+  title: string;
+  body: string;
+  status: string;
+  source_path?: string | null;
+  source_hash?: string | null;
+  linked_plan_id?: number | null;
+  plan_status?: string | null;
+  plan_completed?: number | null;
+  plan_total?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Feedback {
+  id: number;
+  project_id: number;
+  requirement_id?: number | null;
+  title: string;
+  body: string;
+  status: string;
+  linked_plan_id?: number | null;
+  plan_status?: string | null;
+  plan_completed?: number | null;
+  plan_total?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Attachment {
+  id: number;
+  project_id: number;
+  owner_type: IntakeType;
+  owner_id: number;
+  original_name: string;
+  stored_path: string;
+  mime_type?: string | null;
+  size: number;
+  hash: string;
+  created_at: string;
+}
+
+export interface PlanDraft {
+  id: number;
+  project_id: number;
+  source_type: IntakeType;
+  source_id: number;
+  markdown: string;
+  status: string;
+  linked_plan_id?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Plan {
+  id: number;
+  project_id: number;
+  issue_hash: string;
+  file_path: string;
+  hash: string;
+  status: string;
+  total_tasks: number;
+  completed_tasks: number;
+  validation_passed: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlanTask {
+  id: number;
+  plan_id: number;
+  task_key: string;
+  title: string;
+  raw_line: string;
+  scope: string;
+  status: string;
+  sort_order: number;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number;
+  codex_session_id: string | null;
+  updated_at: string;
+  /** JOIN plans 得到 */
+  file_path: string;
+}
+
+export const TASK_EVENT_TYPES = {
+  STARTED: 'task.started',
+  SUCCEEDED: 'task.succeeded',
+  FAILED: 'task.failed',
+  STOP_REQUESTED: 'task.stop.requested',
+  STOPPED: 'task.stopped',
+  INTERRUPTED: 'task.interrupted',
+} as const;
+
+export const LEGACY_TASK_EVENT_TYPES = {
+  EXECUTED: 'task.executed',
+  STOPPING: 'task.stopping',
+} as const;
+
+export const TASK_EVENT_STATUS = {
+  PENDING: 'pending',
+  RUNNING: 'running',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+  STOPPING: 'stopping',
+  STOPPED: 'stopped',
+  INTERRUPTED: 'interrupted',
+} as const;
+
+export type TaskEventType = (typeof TASK_EVENT_TYPES)[keyof typeof TASK_EVENT_TYPES];
+export type LegacyTaskEventType = (typeof LEGACY_TASK_EVENT_TYPES)[keyof typeof LEGACY_TASK_EVENT_TYPES];
+export type TaskEventStatus = (typeof TASK_EVENT_STATUS)[keyof typeof TASK_EVENT_STATUS];
+
+export interface TaskEventSemantics {
+  status: TaskEventStatus;
+  label: string;
+}
+
+export const TASK_EVENT_SEMANTICS: Record<TaskEventType, TaskEventSemantics> = {
+  [TASK_EVENT_TYPES.STARTED]: { status: TASK_EVENT_STATUS.RUNNING, label: '开始了任务' },
+  [TASK_EVENT_TYPES.SUCCEEDED]: { status: TASK_EVENT_STATUS.COMPLETED, label: '结束了任务' },
+  [TASK_EVENT_TYPES.FAILED]: { status: TASK_EVENT_STATUS.FAILED, label: '任务失败' },
+  [TASK_EVENT_TYPES.STOP_REQUESTED]: { status: TASK_EVENT_STATUS.STOPPING, label: '请求停止任务' },
+  [TASK_EVENT_TYPES.STOPPED]: { status: TASK_EVENT_STATUS.STOPPED, label: '已停止任务' },
+  [TASK_EVENT_TYPES.INTERRUPTED]: { status: TASK_EVENT_STATUS.INTERRUPTED, label: '已中断任务' },
+};
+
+export const TASK_EVENT_COMPATIBILITY: Record<LegacyTaskEventType, TaskEventType> = {
+  [LEGACY_TASK_EVENT_TYPES.EXECUTED]: TASK_EVENT_TYPES.SUCCEEDED,
+  [LEGACY_TASK_EVENT_TYPES.STOPPING]: TASK_EVENT_TYPES.STOPPED,
+};
+
+export interface TaskEventMeta {
+  taskId?: number | null;
+  taskKey?: string | null;
+  taskTitle?: string | null;
+  planId?: number | null;
+  status?: TaskEventStatus | string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  exitCode?: number | null;
+  log?: string | null;
+  error?: string | null;
+  [key: string]: unknown;
+}
+
+export type AppEventStructuredMeta = TaskEventMeta | Record<string, unknown>;
+export type AppEventMeta = string | AppEventStructuredMeta;
+
+export interface AppEvent<TMeta extends AppEventMeta | null = string | null> {
+  id: number;
+  project_id: number;
+  type: string;
+  message: string;
+  meta?: TMeta;
+  created_at: string;
+}
+
+export interface ScanFile {
+  project_id: number;
+  scan_type: string;
+  file_path: string;
+  hash: string;
+  size: number;
+  modified_at: string;
+  scanned_at: string;
+}
+
+export interface AppSnapshot {
+  activeProjectId: number | null;
+  activeProject: Project | null;
+  projects: Project[];
+  state: ProjectState | null;
+  requirements: Requirement[];
+  feedback: Feedback[];
+  attachments: Attachment[];
+  planDrafts: PlanDraft[];
+  plans: Plan[];
+  tasks: PlanTask[];
+  events: AppEvent[];
+  scans: ScanFile[];
+  activeOperation: ActiveOperation | null;
+  activeOperations: ActiveOperation[];
+  lastOperation: ActiveOperation | null;
+}
+
+export interface ActivityLine {
+  role: string;
+  text: string;
+  at: string;
+}
+
+export interface ActiveOperation {
+  label: string;
+  projectId: number | null;
+  planId: number | null;
+  taskId: number | null;
+  startedAt: string | null;
+  finishedAt?: string | null;
+  exitCode?: number | null;
+  logTail: string;
+  activity: ActivityLine[];
+}
+
+export interface PendingAttachment {
+  path: string;
+  name: string;
+  size: number;
+  type: string;
+}
+
+export interface CreateIntakeInput {
+  projectId: number;
+  body: string;
+  attachments: PendingAttachment[];
+  title?: string;
+  status?: string;
+  autoRun?: boolean;
+  requirementId?: number | null;
+}
+
+export interface CreateProjectInput {
+  name: string;
+  workspacePath: string;
+  description?: string;
+}
+
+export interface UpdateProjectInput extends CreateProjectInput {
+  id: number;
+}
+
+export interface LoopConfigInput {
+  projectId: number;
+  workspacePath?: string;
+  intervalSeconds?: number;
+  validationCommand?: string;
+}
+
+export interface ProjectIdInput {
+  projectId: number;
+  manual?: boolean;
+}
+
+export interface RecordIdInput extends ProjectIdInput {
+  id: number;
+}
+
+export interface TaskIdInput extends ProjectIdInput {
+  taskId: number;
+}
+
+export interface IntakeActionInput extends ProjectIdInput {
+  type: IntakeType;
+  id: number;
+  title?: string;
+}
+
+export interface UpdateRequirementInput extends RecordIdInput {
+  title?: string;
+  body?: string;
+  status?: string;
+  attachments?: PendingAttachment[];
+}
+
+export interface UpdateFeedbackInput extends UpdateRequirementInput {
+  requirementId?: number | null;
+}
+
+export interface AutoplanApi {
+  snapshot: (projectId?: number | null) => Promise<AppSnapshot>;
+  createProject: (input: CreateProjectInput) => Promise<AppSnapshot>;
+  updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+  deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+  stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+  createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+  updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+  deleteRequirement: (input: RecordIdInput) => Promise<AppSnapshot>;
+  createFeedback: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+  updateFeedback: (input: UpdateFeedbackInput) => Promise<AppSnapshot>;
+  deleteFeedback: (input: RecordIdInput) => Promise<AppSnapshot>;
+  updatePlanDraft: (input: { id: number; markdown: string }) => Promise<AppSnapshot>;
+  interruptIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  resumeIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  appendIntakeTask: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  getDroppedFilePath: (file: File) => string;
+  toFileUrl: (filePath: string) => string;
+  onLoopUpdate: (handler: (snapshot: AppSnapshot) => void) => () => void;
+}
+
+declare global {
+  interface Window {
+    autoplan: AutoplanApi;
+  }
+}
+
+---
+{
+  "name": "autoplan",
+  "version": "0.1.4",
+  "description": "Electron app for issue-driven autonomous planning and development loops.",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "node scripts/dev.js",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/planDrafts.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "build": {
+    "appId": "com.autoplan.desktop",
+    "productName": "AutoPlan",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "assets/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.18.0",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^33.3.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}
+
+
+codex
+我会用搜索直接定位现有 Plan 正文/Markdown 呈现逻辑。
+exec
+powershell.exe -Command 'chcp 65001 > $null; rg -n "markdown|Markdown|plan'"\\.markdown|Plan|draft|计划|全文|read|body\" src\\renderer -g \"*.tsx\" -g \"*.ts\"" in D:\project\GitHub\autoplan
+ succeeded in 177ms:
+src\renderer\utils\search.ts:24:    label: '计划草稿',
+src\renderer\utils\search.ts:29:    label: 'Plan',
+src\renderer\components\shared.tsx:33:  if (['waiting', 'pending', 'draft', 'ready_for_validation', 'validation_failed', 'open'].includes(s)) return 'chip-waiting';
+src\renderer\components\Composer.tsx:12:  onSubmit: (body: string) => Promise<boolean>;
+src\renderer\components\Composer.tsx:24:  const [body, setBody] = useState('');
+src\renderer\components\Composer.tsx:31:  }, [body]);
+src\renderer\components\Composer.tsx:35:    if (!body.trim() && !pendingAttachments.length) return;
+src\renderer\components\Composer.tsx:36:    const succeeded = await onSubmit(body);
+src\renderer\components\Composer.tsx:70:        name="body"
+src\renderer\components\Composer.tsx:76:        value={body}
+src\renderer\pages\ProjectsPage.tsx:17:  const [draft, setDraft] = useState<Draft>(emptyDraft);
+src\renderer\pages\ProjectsPage.tsx:48:    if (!draft.name.trim()) return;
+src\renderer\pages\ProjectsPage.tsx:50:      const description = (draft.description || '').trim();
+src\renderer\pages\ProjectsPage.tsx:51:      const next = draft.id
+src\renderer\pages\ProjectsPage.tsx:53:            id: draft.id,
+src\renderer\pages\ProjectsPage.tsx:54:            name: draft.name.trim(),
+src\renderer\pages\ProjectsPage.tsx:55:            workspacePath: draft.workspacePath.trim(),
+src\renderer\pages\ProjectsPage.tsx:59:            name: draft.name.trim(),
+src\renderer\pages\ProjectsPage.tsx:60:            workspacePath: draft.workspacePath.trim(),
+src\renderer\pages\ProjectsPage.tsx:94:            <h1>AutoPlan</h1>
+src\renderer\pages\ProjectsPage.tsx:180:              <h3>{draft.id ? '编辑项目' : '创建项目'}</h3>
+src\renderer\pages\ProjectsPage.tsx:189:                  value={draft.name}
+src\renderer\pages\ProjectsPage.tsx:199:                  value={draft.workspacePath}
+src\renderer\pages\ProjectsPage.tsx:207:                  value={draft.description}
+src\renderer\pages\ProjectsPage.tsx:262:      'generate-plan': '生成计划',
+src\renderer\components\IntakePanel.tsx:8:type IntakeUpdate = { title?: string; body?: string; status?: string };
+src\renderer\components\IntakePanel.tsx:23:  onSubmit: (body: string) => Promise<boolean>;
+src\renderer\components\IntakePanel.tsx:50:  const [editDraft, setEditDraft] = useState({ title: '', body: '', status: 'open' });
+src\renderer\components\IntakePanel.tsx:56:    setEditDraft({ title: item.title || '', body: item.body || '', status: item.status || 'open' });
+src\renderer\components\IntakePanel.tsx:64:      body: editDraft.body,
+src\renderer\components\IntakePanel.tsx:139:                          value={editDraft.body}
+src\renderer\components\IntakePanel.tsx:140:                          onChange={(event) => setEditDraft((current) => ({ ...current, body: event.target.value }))}
+src\renderer\components\IntakePanel.tsx:158:              const hasPlan = Boolean(item.linked_plan_id);
+src\renderer\components\IntakePanel.tsx:168:                      {hasPlan && ps ? (
+src\renderer\components\IntakePanel.tsx:177:                  {item.body ? <div className="item-body plain-text">{item.body}</div> : null}
+src\renderer\components\IntakePanel.tsx:180:                  {hasPlan ? (
+src\renderer\components\IntakePanel.tsx:193:                      {hasPlan && !isCompleted && !isInterrupted ? (
+src\renderer\components\IntakePanel.tsx:211:                      {hasPlan ? (
+src\renderer\components\IntakePanel.tsx:236:                        placeholder="输入任务标题，Enter 追加到计划"
+src\renderer\components\IntakePanel.tsx:278:  body,
+src\renderer\components\IntakePanel.tsx:285:  body?: string;
+src\renderer\components\IntakePanel.tsx:299:      {body ? <div className="item-body plain-text">{body}</div> : null}
+src\renderer\pages\WorkspacePage.tsx:13:import { EventList, PlanList, TaskList } from '../components/PlanLists';
+src\renderer\pages\WorkspacePage.tsx:28:  { id: 'tasks', label: '任务与计划', icon: '☑' },
+src\renderer\pages\WorkspacePage.tsx:94:    async (body: string) => {
+src\renderer\pages\WorkspacePage.tsx:99:          body,
+src\renderer\pages\WorkspacePage.tsx:115:    async (body: string) => {
+src\renderer\pages\WorkspacePage.tsx:120:          body,
+src\renderer\pages\WorkspacePage.tsx:136:    async (id: number, input: { title?: string; body?: string; status?: string }) => {
+src\renderer\pages\WorkspacePage.tsx:168:    async (id: number, input: { title?: string; body?: string; status?: string }) => {
+src\renderer\pages\WorkspacePage.tsx:347:              subtitle="循环开启后自动扫描并生成计划"
+src\renderer\pages\WorkspacePage.tsx:371:              subtitle="循环开启后自动扫描并生成计划"
+src\renderer\pages\WorkspacePage.tsx:447:                      <h2>Plan</h2>
+src\renderer\pages\WorkspacePage.tsx:449:                    <PlanList plans={snapshot.plans} tasks={snapshot.tasks} />
+src\renderer\pages\WorkspacePage.tsx:507:          <div className="brand-name">AutoPlan</div>
+src\renderer\pages\WorkspacePage.tsx:508:          <div className="brand-sub">需求 · 计划 · 执行 · 验收</div>
+src\renderer\pages\WorkspacePage.tsx:588:          placeholder="搜索需求、反馈、任务、Plan 或事件"
+src\renderer\pages\WorkspacePage.tsx:663:  const runningPlan = snapshot.plans.find((plan) => !['completed'].includes(plan.status));
+src\renderer\pages\WorkspacePage.tsx:687:          label="计划"
+src\renderer\pages\WorkspacePage.tsx:688:          sub={runningPlan ? `${runningPlan.completed_tasks}/${runningPlan.total_tasks} 任务` : '无进行中'}
+src\renderer\pages\WorkspacePage.tsx:710:                  计划草稿 <b>{snapshot.planDrafts.length}</b>
+src\renderer\pages\WorkspacePage.tsx:713:                  待确认草稿 <b>{snapshot.planDrafts.filter((draft) => draft.status !== 'accepted').length}</b>
+src\renderer\pages\WorkspacePage.tsx:729:            <div className="card-body">
+src\renderer\pages\WorkspacePage.tsx:754:            <div className="card-body">
+src\renderer\pages\WorkspacePage.tsx:788:  return { overview: '概览', requirement: '需求模块', feedback: '反馈模块', tasks: '任务与计划', events: '事件流' }[tab];
+src\renderer\pages\WorkspacePage.tsx:794:    requirement: '收集需求，发送后自动生成计划草稿',
+src\renderer\pages\WorkspacePage.tsx:795:    feedback: '收集反馈，关联需求并生成计划草稿',
+src\renderer\pages\WorkspacePage.tsx:796:    tasks: '循环控制、计划草稿、Plan 与任务进度',
+src\renderer\pages\WorkspacePage.tsx:807:      'generate-plan': '生成计划',
+src\renderer\components\PlanLists.tsx:1:import type { AppEvent, Plan, PlanDraft, PlanTask } from '../types';
+src\renderer\components\PlanLists.tsx:5:type TimedPlanTask = PlanTask & {
+src\renderer\components\PlanLists.tsx:18:  body: string;
+src\renderer\components\PlanLists.tsx:33:function readDurationMs(task: TimedPlanTask) {
+src\renderer\components\PlanLists.tsx:39:function getTaskDurationMs(task: TimedPlanTask) {
+src\renderer\components\PlanLists.tsx:40:  if (task.status === 'running') return getRunningDurationMs(readDurationMs(task), task.started_at);
+src\renderer\components\PlanLists.tsx:41:  return readDurationMs(task);
+src\renderer\components\PlanLists.tsx:44:function readPlanId(task: TimedPlanTask) {
+src\renderer\components\PlanLists.tsx:50:function formatTaskDuration(task: TimedPlanTask) {
+src\renderer\components\PlanLists.tsx:57:function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
+src\renderer\components\PlanLists.tsx:58:  const timedTasks = tasks as TimedPlanTask[];
+src\renderer\components\PlanLists.tsx:59:  const hasPlanIds = timedTasks.some((task) => readPlanId(task) !== null);
+src\renderer\components\PlanLists.tsx:60:  if (!hasPlanIds) return planCount === 1 ? timedTasks : [];
+src\renderer\components\PlanLists.tsx:61:  return timedTasks.filter((task) => readPlanId(task) === plan.id);
+src\renderer\components\PlanLists.tsx:64:function formatPlanDurationSummary(tasks: TimedPlanTask[]) {
+src\renderer\components\PlanLists.tsx:87:function readEventMeta(event: AppEvent) {
+src\renderer\components\PlanLists.tsx:91:function readMetaText(meta: EventMetaRecord | null, keys: string[]) {
+src\renderer\components\PlanLists.tsx:104:function readMetaNumber(meta: EventMetaRecord | null, keys: string[]) {
+src\renderer\components\PlanLists.tsx:105:  const text = readMetaText(meta, keys);
+src\renderer\components\PlanLists.tsx:116:  const eventText = `${event.type || ''} ${readMetaText(meta, ['status', 'taskStatus', 'task_status'])}`.toLowerCase();
+src\renderer\components\PlanLists.tsx:136:  const taskKey = readMetaText(meta, ['taskKey', 'task_key']);
+src\renderer\components\PlanLists.tsx:137:  const taskId = readMetaText(meta, ['taskId', 'task_id']);
+src\renderer\components\PlanLists.tsx:138:  const taskTitle = readMetaText(meta, ['taskTitle', 'task_title', 'title']) || '未命名任务';
+src\renderer\components\PlanLists.tsx:139:  const hasTaskIdentity = Boolean(taskKey || taskId || readMetaText(meta, ['taskTitle', 'task_title', 'title']));
+src\renderer\components\PlanLists.tsx:148:  const planId = readMetaText(meta, ['planId', 'plan_id']);
+src\renderer\components\PlanLists.tsx:149:  const status = readMetaText(meta, ['status', 'taskStatus', 'task_status']);
+src\renderer\components\PlanLists.tsx:150:  const durationMs = readMetaNumber(meta, ['durationMs', 'duration_ms']);
+src\renderer\components\PlanLists.tsx:153:    planId ? `Plan #${planId}` : '',
+src\renderer\components\PlanLists.tsx:160:    body: originalMessage && !sameEventText(originalMessage, title) ? originalMessage : '',
+src\renderer\components\PlanLists.tsx:168:  const meta = readEventMeta(event);
+src\renderer\components\PlanLists.tsx:169:  const taskDisplay = meta && (isTaskEventType(event.type) || readMetaText(meta, ['taskKey', 'task_key', 'taskId', 'task_id']))
+src\renderer\components\PlanLists.tsx:176:    body: event.message || '',
+src\renderer\components\PlanLists.tsx:181:export function PlanDraftList({
+src\renderer\components\PlanLists.tsx:182:  drafts,
+src\renderer\components\PlanLists.tsx:183:  draftTextById,
+src\renderer\components\PlanLists.tsx:188:  drafts: PlanDraft[];
+src\renderer\components\PlanLists.tsx:189:  draftTextById: Record<number, string>;
+src\renderer\components\PlanLists.tsx:190:  onAccept: (draft: PlanDraft) => void;
+src\renderer\components\PlanLists.tsx:191:  onChange: (id: number, markdown: string) => void;
+src\renderer\components\PlanLists.tsx:192:  onSave: (draft: PlanDraft) => void;
+src\renderer\components\PlanLists.tsx:194:  if (!drafts.length) {
+src\renderer\components\PlanLists.tsx:195:    return <div className="empty">暂无计划草稿。发送需求或反馈后会自动生成。</div>;
+src\renderer\components\PlanLists.tsx:200:      {drafts.map((draft) => {
+src\renderer\components\PlanLists.tsx:201:        const accepted = draft.status === 'accepted';
+src\renderer\components\PlanLists.tsx:203:          <article className="item plan-draft" key={draft.id}>
+src\renderer\components\PlanLists.tsx:206:                草稿 #{draft.id} · {draft.source_type === 'feedback' ? '反馈' : '需求'} #{draft.source_id}
+src\renderer\components\PlanLists.tsx:208:              <span className={`chip ${accepted ? 'chip-accepted' : 'chip-waiting'}`}>{draft.status}</span>
+src\renderer\components\PlanLists.tsx:211:              readOnly={accepted}
+src\renderer\components\PlanLists.tsx:212:              value={draftTextById[draft.id] ?? draft.markdown ?? ''}
+src\renderer\components\PlanLists.tsx:213:              onChange={(event) => onChange(draft.id, event.target.value)}
+src\renderer\components\PlanLists.tsx:217:                <span className="draft-note">已加入任务系统：Plan #{draft.linked_plan_id || ''}</span>
+src\renderer\components\PlanLists.tsx:220:                  <button type="button" onClick={() => onSave(draft)}>
+src\renderer\components\PlanLists.tsx:223:                  <button className="btn-primary" type="button" onClick={() => onAccept(draft)}>
+src\renderer\components\PlanLists.tsx:236:export function PlanList({ plans, tasks = [] }: { plans: Plan[]; tasks?: PlanTask[] }) {
+src\renderer\components\PlanLists.tsx:242:        const durationSummary = formatPlanDurationSummary(tasksForPlan(tasks, plan, plans.length));
+src\renderer\components\PlanLists.tsx:248:            body={`${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+src\renderer\components\PlanLists.tsx:264:  tasks: PlanTask[];
+src\renderer\components\PlanLists.tsx:265:  onRun?: (task: PlanTask) => void;
+src\renderer\components\PlanLists.tsx:266:  onStop?: (task: PlanTask) => void;
+src\renderer\components\PlanLists.tsx:275:        const durationLabel = formatTaskDuration(task as TimedPlanTask);
+src\renderer\components\PlanLists.tsx:291:            body={task.file_path}
+src\renderer\components\PlanLists.tsx:313:            {display.body ? <div className="item-body plain-text">{display.body}</div> : null}
+src\renderer\types.ts:18:  BODY: 'body',
+src\renderer\types.ts:20:  MARKDOWN: 'markdown',
+src\renderer\types.ts:111:  body: string;
+src\renderer\types.ts:128:  body: string;
+src\renderer\types.ts:151:export interface PlanDraft {
+src\renderer\types.ts:156:  markdown: string;
+src\renderer\types.ts:163:export interface Plan {
+src\renderer\types.ts:177:export interface PlanTask {
+src\renderer\types.ts:286:  planDrafts: PlanDraft[];
+src\renderer\types.ts:287:  plans: Plan[];
+src\renderer\types.ts:288:  tasks: PlanTask[];
+src\renderer\types.ts:323:  body: string;
+src\renderer\types.ts:369:  body?: string;
+src\renderer\types.ts:395:  updatePlanDraft: (input: { id: number; markdown: string }) => Promise<AppSnapshot>;
+
+**Reviewing plan lists**
+
+I'm thinking about how to read the PlanLists effectively. I want to make sure I'm using tools like Select-Object or Get-Content properly, focusing on specific line numbers. That way, I can extract the information I need without getting lost in unnecessary details. It’s all about being precise and efficient! I wonder if I might consider the best approach to organize and analyze this data effectively. Alright, let’s get to it!
+codex
+我会读取 Plan 列表的关键片段来确认当前只显示摘要。
+exec
+powershell.exe -Command 'chcp 65001 > $null; $lines = Get-Content -Encoding UTF8 src'"\\renderer\\components\\PlanLists.tsx; for ("'$i=170; $i -le 330; $i++) { if ($i -le $lines.Length) { '"'{0,4}: {1}' -f "'$i, $lines[$i-1] } }' in D:\project\GitHub\autoplan
+ succeeded in 198ms:
+ 170:     ? formatTaskEvent(event, meta)
+ 171:     : null;
+ 172:   if (taskDisplay) return taskDisplay;
+ 173: 
+ 174:   return {
+ 175:     title: event.type || '事件',
+ 176:     body: event.message || '',
+ 177:     meta: formatChinaDateTime(event.created_at),
+ 178:   };
+ 179: }
+ 180: 
+ 181: export function PlanDraftList({
+ 182:   drafts,
+ 183:   draftTextById,
+ 184:   onAccept,
+ 185:   onChange,
+ 186:   onSave,
+ 187: }: {
+ 188:   drafts: PlanDraft[];
+ 189:   draftTextById: Record<number, string>;
+ 190:   onAccept: (draft: PlanDraft) => void;
+ 191:   onChange: (id: number, markdown: string) => void;
+ 192:   onSave: (draft: PlanDraft) => void;
+ 193: }) {
+ 194:   if (!drafts.length) {
+ 195:     return <div className="empty">暂无计划草稿。发送需求或反馈后会自动生成。</div>;
+ 196:   }
+ 197: 
+ 198:   return (
+ 199:     <div className="list compact">
+ 200:       {drafts.map((draft) => {
+ 201:         const accepted = draft.status === 'accepted';
+ 202:         return (
+ 203:           <article className="item plan-draft" key={draft.id}>
+ 204:             <div className="item-title">
+ 205:               <span>
+ 206:                 草稿 #{draft.id} · {draft.source_type === 'feedback' ? '反馈' : '需求'} #{draft.source_id}
+ 207:               </span>
+ 208:               <span className={`chip ${accepted ? 'chip-accepted' : 'chip-waiting'}`}>{draft.status}</span>
+ 209:             </div>
+ 210:             <textarea
+ 211:               readOnly={accepted}
+ 212:               value={draftTextById[draft.id] ?? draft.markdown ?? ''}
+ 213:               onChange={(event) => onChange(draft.id, event.target.value)}
+ 214:             />
+ 215:             <div className="button-row">
+ 216:               {accepted ? (
+ 217:                 <span className="draft-note">已加入任务系统：Plan #{draft.linked_plan_id || ''}</span>
+ 218:               ) : (
+ 219:                 <>
+ 220:                   <button type="button" onClick={() => onSave(draft)}>
+ 221:                     保存调整
+ 222:                   </button>
+ 223:                   <button className="btn-primary" type="button" onClick={() => onAccept(draft)}>
+ 224:                     确认加入任务系统
+ 225:                   </button>
+ 226:                 </>
+ 227:               )}
+ 228:             </div>
+ 229:           </article>
+ 230:         );
+ 231:       })}
+ 232:     </div>
+ 233:   );
+ 234: }
+ 235: 
+ 236: export function PlanList({ plans, tasks = [] }: { plans: Plan[]; tasks?: PlanTask[] }) {
+ 237:   if (!plans.length) return <div className="empty">暂无 plan。</div>;
+ 238: 
+ 239:   return (
+ 240:     <div className="list compact">
+ 241:       {plans.map((plan) => {
+ 242:         const durationSummary = formatPlanDurationSummary(tasksForPlan(tasks, plan, plans.length));
+ 243:         return (
+ 244:           <RecordCard
+ 245:             key={plan.id}
+ 246:             title={plan.file_path}
+ 247:             status={plan.status}
+ 248:             body={`${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+ 249:               plan.validation_passed ? 'passed' : 'pending'
+ 250:             }`}
+ 251:             meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+ 252:           />
+ 253:         );
+ 254:       })}
+ 255:     </div>
+ 256:   );
+ 257: }
+ 258: 
+ 259: export function TaskList({
+ 260:   tasks,
+ 261:   onRun,
+ 262:   onStop,
+ 263: }: {
+ 264:   tasks: PlanTask[];
+ 265:   onRun?: (task: PlanTask) => void;
+ 266:   onStop?: (task: PlanTask) => void;
+ 267: }) {
+ 268:   if (!tasks.length) return <div className="empty">暂无任务。</div>;
+ 269: 
+ 270:   return (
+ 271:     <div className="list compact">
+ 272:       {tasks.map((task) => {
+ 273:         const running = task.status === 'running';
+ 274:         const completed = task.status === 'completed';
+ 275:         const durationLabel = formatTaskDuration(task as TimedPlanTask);
+ 276:         return (
+ 277:           <RecordCard
+ 278:             actions={
+ 279:               <div className="item-actions">
+ 280:                 <button type="button" className="btn-link" disabled={completed || running} onClick={() => onRun?.(task)}>
+ 281:                   执行
+ 282:                 </button>
+ 283:                 <button type="button" className="btn-link danger-link" disabled={!running} onClick={() => onStop?.(task)}>
+ 284:                   停止
+ 285:                 </button>
+ 286:               </div>
+ 287:             }
+ 288:             key={task.id}
+ 289:             title={task.title}
+ 290:             status={task.status}
+ 291:             body={task.file_path}
+ 292:             meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+ 293:           />
+ 294:         );
+ 295:       })}
+ 296:     </div>
+ 297:   );
+ 298: }
+ 299: 
+ 300: export function EventList({ events }: { events: AppEvent[] }) {
+ 301:   if (!events.length) return <div className="empty">暂无事件。</div>;
+ 302: 
+ 303:   return (
+ 304:     <div className="list compact event-list">
+ 305:       {events.map((event) => {
+ 306:         const display = formatEvent(event);
+ 307:         return (
+ 308:           <article className={`item event-item ${display.tone ? `event-item-${display.tone}` : ''}`} key={event.id}>
+ 309:             <div className="item-title event-title">
+ 310:               <span>{display.title}</span>
+ 311:               {display.badge ? <span className={`event-badge event-badge-${display.tone}`}>{display.badge}</span> : null}
+ 312:             </div>
+ 313:             {display.body ? <div className="item-body plain-text">{display.body}</div> : null}
+ 314:             <div className="meta event-meta">{display.meta}</div>
+ 315:           </article>
+ 316:         );
+ 317:       })}
+ 318:     </div>
+ 319:   );
+ 320: }
+
+codex
+我还需要确认 Plan 数据模型是否包含正文或只有路径。
+exec
+powershell.exe -Command 'chcp 65001 > $null; $lines = Get-Content -Encoding UTF8 src'"\\renderer\\types.ts; for ("'$i=140; $i -le 190; $i++) { if ($i -le $lines.Length) { '"'{0,4}: {1}' -f "'$i, $lines[$i-1] } }' in D:\project\GitHub\autoplan
+ succeeded in 199ms:
+ 140:   project_id: number;
+ 141:   owner_type: IntakeType;
+ 142:   owner_id: number;
+ 143:   original_name: string;
+ 144:   stored_path: string;
+ 145:   mime_type?: string | null;
+ 146:   size: number;
+ 147:   hash: string;
+ 148:   created_at: string;
+ 149: }
+ 150: 
+ 151: export interface PlanDraft {
+ 152:   id: number;
+ 153:   project_id: number;
+ 154:   source_type: IntakeType;
+ 155:   source_id: number;
+ 156:   markdown: string;
+ 157:   status: string;
+ 158:   linked_plan_id?: number | null;
+ 159:   created_at: string;
+ 160:   updated_at: string;
+ 161: }
+ 162: 
+ 163: export interface Plan {
+ 164:   id: number;
+ 165:   project_id: number;
+ 166:   issue_hash: string;
+ 167:   file_path: string;
+ 168:   hash: string;
+ 169:   status: string;
+ 170:   total_tasks: number;
+ 171:   completed_tasks: number;
+ 172:   validation_passed: number;
+ 173:   created_at: string;
+ 174:   updated_at: string;
+ 175: }
+ 176: 
+ 177: export interface PlanTask {
+ 178:   id: number;
+ 179:   plan_id: number;
+ 180:   task_key: string;
+ 181:   title: string;
+ 182:   raw_line: string;
+ 183:   scope: string;
+ 184:   status: string;
+ 185:   sort_order: number;
+ 186:   started_at: string | null;
+ 187:   finished_at: string | null;
+ 188:   duration_ms: number;
+ 189:   codex_session_id: string | null;
+ 190:   updated_at: string;
+
+**Planning database schema**
+
+I'm thinking about the database schema plans for storing paths or hashes, without using markdown. It seems I need a structure that supports full reading, likely involving the ability to read file content as well. I should inspect the database or preload data, and maybe I should consider how APIs come into play here too. My goal is to ensure everything functions smoothly together!
+codex
+我会看后端快照和 IPC，确认全文阅读需在哪层补齐。
+exec
+powershell.exe -Command 'chcp 65001 > $null; rg -n "plans|plan_tasks|plan_drafts|updatePlanDraft|snapshot|file_path|markdown" src'"\\database.js src\\preload.js src\\main.js src\\loopService.js src\\planDrafts.js" in D:\project\GitHub\autoplan
+ succeeded in 169ms:
+src\planDrafts.js:8:  const markdown = buildPlanMarkdown({ sourceType, sourceId, body, attachments });
+src\planDrafts.js:11:    `INSERT INTO plan_drafts (project_id, source_type, source_id, markdown, status, created_at, updated_at)
+src\planDrafts.js:13:    [projectId, sourceType, sourceId, markdown, 'draft', now, now],
+src\planDrafts.js:17:function updatePlanDraft(db, id, markdown) {
+src\planDrafts.js:18:  db.run('UPDATE plan_drafts SET markdown = ?, updated_at = ? WHERE id = ?', [
+src\planDrafts.js:19:    markdown || '',
+src\planDrafts.js:26:  const draft = db.get('SELECT * FROM plan_drafts WHERE id = ?', [draftId]);
+src\planDrafts.js:34:  fs.writeFileSync(planFile, draft.markdown, 'utf8');
+src\planDrafts.js:35:  const issueHash = `draft-${draft.id}-${hashText(draft.markdown).slice(0, 16)}`;
+src\planDrafts.js:38:    `INSERT INTO plans
+src\planDrafts.js:39:     (project_id, issue_hash, file_path, hash, status, total_tasks, completed_tasks, validation_passed, created_at, updated_at)
+src\planDrafts.js:45:  db.run('UPDATE plan_drafts SET status = ?, linked_plan_id = ?, updated_at = ? WHERE id = ?', [
+src\planDrafts.js:145:module.exports = { acceptPlanDraft, buildPlanMarkdown, createPlanDraft, updatePlanDraft };
+src\loopService.js:144:    this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE status = ?', ['pending', now, 'running']);
+src\loopService.js:265:          this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', [
+src\loopService.js:335:        ? this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [generatedPlanId, projectId])
+src\loopService.js:362:    const plan = task ? this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [task.plan_id, projectId]) : null;
+src\loopService.js:373:      this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['running', nowIso(), taskId]);
+src\loopService.js:398:      this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['pending', nowIso(), taskId]);
+src\loopService.js:408:      this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ? AND status = ?', [
+src\loopService.js:429:      `SELECT plan_tasks.*
+src\loopService.js:430:       FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
+src\loopService.js:431:       WHERE plan_tasks.id = ? AND plans.project_id = ?`,
+src\loopService.js:438:    const plan = this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId]);
+src\loopService.js:450:        this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['blocked', nowIso(), activeTaskId]);
+src\loopService.js:466:      `UPDATE plan_tasks SET status = ?, updated_at = ?
+src\loopService.js:470:    this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['interrupted', nowIso(), planId]);
+src\loopService.js:478:      `UPDATE plan_tasks SET status = ?, updated_at = ?
+src\loopService.js:482:    this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['pending', nowIso(), planId]);
+src\loopService.js:491:    const plan = this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId]);
+src\loopService.js:495:    const planFile = path.join(workspace, plan.file_path);
+src\loopService.js:502:    const existing = this.db.all('SELECT task_key FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order', [planId]);
+src\loopService.js:522:      this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['pending', nowIso(), planId]);
+src\loopService.js:526:    const task = this.db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, taskKey]);
+src\loopService.js:587:         (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+src\loopService.js:596:      this.db.get('SELECT id FROM plans WHERE project_id = ? AND issue_hash = ? LIMIT 1', [projectId, issueHash]),
+src\loopService.js:602:      `SELECT * FROM plans
+src\loopService.js:649:      `INSERT INTO plans
+src\loopService.js:650:       (project_id, issue_hash, file_path, hash, status, total_tasks, completed_tasks, validation_passed, created_at, updated_at)
+src\loopService.js:708:      `INSERT INTO plans
+src\loopService.js:709:       (project_id, issue_hash, file_path, hash, status, total_tasks, completed_tasks, validation_passed, created_at, updated_at)
+src\loopService.js:721:    const planFile = path.join(workspace, plan.file_path);
+src\loopService.js:724:      `SELECT * FROM plan_tasks WHERE plan_id = ? AND status = 'pending'
+src\loopService.js:801:    this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['running', nowIso(), task.id]);
+src\loopService.js:803:    const planFile = path.join(workspace, plan.file_path);
+src\loopService.js:834:      this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['pending', nowIso(), task.id]);
+src\loopService.js:854:    const planFile = path.join(workspace, plan.file_path);
+src\loopService.js:856:    this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['completed', nowIso(), task.id]);
+src\loopService.js:865:       FROM plan_tasks
+src\loopService.js:874:      'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
+src\loopService.js:903:    const planFile = path.join(workspace, plan.file_path);
+src\loopService.js:908:        'UPDATE plans SET status = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
+src\loopService.js:916:      this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', [
+src\loopService.js:940:        'UPDATE plans SET status = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
+src\loopService.js:943:      this.addEvent(plan.project_id, 'plan.completed', plan.file_path);
+src\loopService.js:972:    const existingTasks = this.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+src\loopService.js:987:          `UPDATE plan_tasks
+src\loopService.js:1002:          `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
+src\loopService.js:1011:        this.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
+src\loopService.js:1018:      'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
+src\loopService.js:1215:    this.emit('update', this.snapshot(projectId));
+src\loopService.js:1218:  snapshot(projectId = null) {
+src\loopService.js:1237:        `SELECT requirements.*, plans.status AS plan_status,
+src\loopService.js:1238:                plans.completed_tasks AS plan_completed, plans.total_tasks AS plan_total
+src\loopService.js:1240:         LEFT JOIN plans ON plans.id = requirements.linked_plan_id
+src\loopService.js:1246:        `SELECT feedback.*, plans.status AS plan_status,
+src\loopService.js:1247:                plans.completed_tasks AS plan_completed, plans.total_tasks AS plan_total
+src\loopService.js:1249:         LEFT JOIN plans ON plans.id = feedback.linked_plan_id
+src\loopService.js:1258:      planDrafts: this.db.all('SELECT * FROM plan_drafts WHERE project_id = ? ORDER BY updated_at DESC, id DESC', [
+src\loopService.js:1261:      plans: this.db.all('SELECT * FROM plans WHERE project_id = ? ORDER BY created_at DESC', [projectId]),
+src\loopService.js:1263:        `SELECT plan_tasks.*, plans.file_path
+src\loopService.js:1264:         FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
+src\loopService.js:1265:         WHERE plans.project_id = ?
+src\loopService.js:1266:         ORDER BY plans.created_at DESC, plan_tasks.sort_order ASC`,
+src\loopService.js:1271:        'SELECT * FROM scan_files WHERE project_id = ? ORDER BY scanned_at DESC, file_path ASC',
+src\loopService.js:1382:    plans: [],
+src\database.js:91:      CREATE TABLE IF NOT EXISTS plan_drafts (
+src\database.js:96:        markdown TEXT NOT NULL,
+src\database.js:103:      CREATE INDEX IF NOT EXISTS idx_plan_drafts_source
+src\database.js:104:      ON plan_drafts (source_type, source_id);
+src\database.js:109:        file_path TEXT NOT NULL,
+src\database.js:114:        PRIMARY KEY (project_id, scan_type, file_path)
+src\database.js:117:      CREATE TABLE IF NOT EXISTS plans (
+src\database.js:121:        file_path TEXT NOT NULL,
+src\database.js:131:      CREATE TABLE IF NOT EXISTS plan_tasks (
+src\database.js:179:    this.ensureColumn('plan_drafts', 'project_id', 'INTEGER');
+src\database.js:180:    this.ensureColumn('plans', 'project_id', 'INTEGER');
+src\database.js:181:    this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
+src\database.js:182:    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+src\database.js:183:    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+src\database.js:184:    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+src\database.js:185:    this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+src\database.js:227:    for (const table of ['requirements', 'feedback', 'attachments', 'plan_drafts', 'plans', 'events', 'scan_files']) {
+src\database.js:241:    if (String(table?.sql || '').includes('PRIMARY KEY (project_id, scan_type, file_path)')) return;
+src\database.js:250:        file_path TEXT NOT NULL,
+src\database.js:255:        PRIMARY KEY (project_id, scan_type, file_path)
+src\database.js:262:        (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+src\database.js:263:        SELECT COALESCE(project_id, ${fallbackProjectId}), scan_type, file_path, hash, size, modified_at, scanned_at
+src\database.js:269:        (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+src\database.js:270:        SELECT ${fallbackProjectId}, scan_type, file_path, hash, size, modified_at, scanned_at
+src\main.js:7:const { updatePlanDraft } = require('./planDrafts');
+src\main.js:18:  loop.on('update', (snapshot) => {
+src\main.js:20:      mainWindow.webContents.send('loop:update', snapshot);
+src\main.js:50:ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+src\main.js:61:  return loop.snapshot(id);
+src\main.js:82:  return loop.snapshot(projectId);
+src\main.js:91:    .all('SELECT id FROM plans WHERE project_id = ?', [projectId])
+src\main.js:93:  for (const table of ['requirements', 'feedback', 'attachments', 'plan_drafts', 'events', 'scan_files']) {
+src\main.js:98:    db.run(`DELETE FROM plan_tasks WHERE plan_id IN (${placeholders})`, taskIds);
+src\main.js:100:  db.run('DELETE FROM plans WHERE project_id = ?', [projectId]);
+src\main.js:103:  return loop.snapshot(null);
+src\main.js:109:  return loop.snapshot(projectId);
+src\main.js:116:  return loop.snapshot(projectId);
+src\main.js:122:  return loop.snapshot(projectId);
+src\main.js:129:  return loop.snapshot(projectId);
+src\main.js:135:  return loop.snapshot(projectId);
+src\main.js:141:  return loop.snapshot(projectId);
+src\main.js:155:  return loop.snapshot(projectId);
+src\main.js:176:  return loop.snapshot(projectId);
+src\main.js:185:  return loop.snapshot(projectId);
+src\main.js:207:  return loop.snapshot(projectId);
+src\main.js:231:  return loop.snapshot(projectId);
+src\main.js:240:  return loop.snapshot(projectId);
+src\main.js:244:  updatePlanDraft(db, input.id, input.markdown);
+src\main.js:245:  const draft = db.get('SELECT project_id FROM plan_drafts WHERE id = ?', [input.id]);
+src\main.js:246:  return loop.snapshot(draft?.project_id || null);
+src\main.js:258:  return loop.snapshot(projectId);
+src\main.js:270:  return loop.snapshot(projectId);
+src\main.js:283:  return loop.snapshot(projectId);
+src\main.js:330:  db.run('DELETE FROM plan_drafts WHERE project_id = ? AND source_type = ? AND source_id = ?', [projectId, ownerType, id]);
+src\preload.js:5:  snapshot: (projectId) => ipcRenderer.invoke('snapshot', { projectId }),
+src\preload.js:21:  updatePlanDraft: (input) => ipcRenderer.invoke('planDrafts:update', input),
+src\preload.js:28:    const listener = (_event, snapshot) => handler(snapshot);
+
+**Inspecting snapshot function**
+
+I need to look closely at the relevant lines in the snapshot function. There might be some details that I need to clarify or understand better. It's important to do this thoroughly to ensure everything is working as it should. I wonder if there are any common issues I should keep an eye out for, but overall I'm just making sure I have a clear grasp of it. Let's get into it!
+codex
+我会查看快照函数附近，规划是否需要新增正文字段或读取接口。
+exec
+powershell.exe -Command 'chcp 65001 > $null; $lines = Get-Content -Encoding UTF8 src'"\\loopService.js; for ("'$i=1235; $i -le 1285; $i++) { if ($i -le $lines.Length) { '"'{0,4}: {1}' -f "'$i, $lines[$i-1] } }; Write-Output '"'---'; "'$lines = Get-Content -Encoding UTF8 src'"\\preload.js; for ("'$i=1; $i -le $lines.Length; $i++) { '"'{0,4}: {1}' -f "'$i, $lines[$i-1] }' in D:\project\GitHub\autoplan
+ succeeded in 241ms:
+1235:       state,
+1236:       requirements: this.db.all(
+1237:         `SELECT requirements.*, plans.status AS plan_status,
+1238:                 plans.completed_tasks AS plan_completed, plans.total_tasks AS plan_total
+1239:          FROM requirements
+1240:          LEFT JOIN plans ON plans.id = requirements.linked_plan_id
+1241:          WHERE requirements.project_id = ?
+1242:          ORDER BY requirements.updated_at DESC`,
+1243:         [projectId],
+1244:       ),
+1245:       feedback: this.db.all(
+1246:         `SELECT feedback.*, plans.status AS plan_status,
+1247:                 plans.completed_tasks AS plan_completed, plans.total_tasks AS plan_total
+1248:          FROM feedback
+1249:          LEFT JOIN plans ON plans.id = feedback.linked_plan_id
+1250:          WHERE feedback.project_id = ?
+1251:          ORDER BY feedback.updated_at DESC`,
+1252:         [projectId],
+1253:       ),
+1254:       attachments: this.db.all(
+1255:         'SELECT * FROM attachments WHERE project_id = ? ORDER BY created_at DESC, id DESC',
+1256:         [projectId],
+1257:       ),
+1258:       planDrafts: this.db.all('SELECT * FROM plan_drafts WHERE project_id = ? ORDER BY updated_at DESC, id DESC', [
+1259:         projectId,
+1260:       ]),
+1261:       plans: this.db.all('SELECT * FROM plans WHERE project_id = ? ORDER BY created_at DESC', [projectId]),
+1262:       tasks: this.db.all(
+1263:         `SELECT plan_tasks.*, plans.file_path
+1264:          FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
+1265:          WHERE plans.project_id = ?
+1266:          ORDER BY plans.created_at DESC, plan_tasks.sort_order ASC`,
+1267:         [projectId],
+1268:       ),
+1269:       events: this.db.all('SELECT * FROM events WHERE project_id = ? ORDER BY id DESC LIMIT 80', [projectId]),
+1270:       scans: this.db.all(
+1271:         'SELECT * FROM scan_files WHERE project_id = ? ORDER BY scanned_at DESC, file_path ASC',
+1272:         [projectId],
+1273:       ),
+1274:       activeOperation: runtime?.activeOperation && Number(runtime.activeOperation.projectId) === Number(projectId)
+1275:         ? {
+1276:             label: runtime.activeOperation.label || '',
+1277:             projectId: runtime.activeOperation.projectId || null,
+1278:             planId: runtime.activeOperation.planId || null,
+1279:             taskId: runtime.activeOperation.taskId || null,
+1280:             startedAt: runtime.activeOperation.startedAt || null,
+1281:             logTail: (runtime.activeOperation.logBuffer || '').slice(-8000),
+1282:             activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+1283:           }
+1284:         : null,
+1285:       activeOperations: runtime?.activeOperations
+---
+   1: const { pathToFileURL } = require('node:url');
+   2: const { contextBridge, ipcRenderer, webUtils } = require('electron');
+   3: 
+   4: contextBridge.exposeInMainWorld('autoplan', {
+   5:   snapshot: (projectId) => ipcRenderer.invoke('snapshot', { projectId }),
+   6:   createProject: (input) => ipcRenderer.invoke('projects:create', input),
+   7:   updateProject: (input) => ipcRenderer.invoke('projects:update', input),
+   8:   deleteProject: (input) => ipcRenderer.invoke('projects:delete', input),
+   9:   configureLoop: (config) => ipcRenderer.invoke('loop:configure', config),
+  10:   startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+  11:   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+  12:   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
+  13:   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+  14:   stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+  15:   createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+  16:   updateRequirement: (input) => ipcRenderer.invoke('requirements:update', input),
+  17:   deleteRequirement: (input) => ipcRenderer.invoke('requirements:delete', input),
+  18:   createFeedback: (input) => ipcRenderer.invoke('feedback:create', input),
+  19:   updateFeedback: (input) => ipcRenderer.invoke('feedback:update', input),
+  20:   deleteFeedback: (input) => ipcRenderer.invoke('feedback:delete', input),
+  21:   updatePlanDraft: (input) => ipcRenderer.invoke('planDrafts:update', input),
+  22:   interruptIntake: (input) => ipcRenderer.invoke('intake:interrupt', input),
+  23:   resumeIntake: (input) => ipcRenderer.invoke('intake:resume', input),
+  24:   appendIntakeTask: (input) => ipcRenderer.invoke('intake:appendTask', input),
+  25:   getDroppedFilePath: (file) => webUtils.getPathForFile(file),
+  26:   toFileUrl: (filePath) => pathToFileURL(filePath).toString(),
+  27:   onLoopUpdate: (handler) => {
+  28:     const listener = (_event, snapshot) => handler(snapshot);
+  29:     ipcRenderer.on('loop:update', listener);
+  30:     return () => ipcRenderer.removeListener('loop:update', listener);
+  31:   },
+  32: });
+
+**Considering tool usage**
+
+It seems the developer suggests that the plan tool is helpful, but I'm not sure if it's truly necessary. The user has asked for the output of the plan file, so I might consider using a plan that involves inspecting, writing, and verifying. I think I could still go ahead and use the update_plan after I've done the initial inspection. Let's see how this unfolds!
+codex
+我已确认当前 Plan 只显示摘要；现在写入计划文件。
+  ✓ 确认现有 Plan 展示
+  → 编写需求计划文档
+  • 验证文件内容格式
+codex
+接下来只创建 `docs/plan` 下的计划文档，不动业务代码。
+exec
+powershell.exe -Command 'chcp 65001 > $null; @'"'
+# 需求 #11 开发计划：Plan 支持全文 Markdown 阅读
+
+## 背景
+
+当前 AutoPlan 工作区的“任务与计划”区域中，Plan 列表仅展示文件路径、任务完成数、耗时、校验状态、哈希和更新时间等摘要信息；计划草稿虽然可以在 textarea 中查看和编辑原始 Markdown，但已确认加入任务系统的正式 Plan 缺少“阅读全文”的入口。随着计划内容变长，用户无法直接在应用内阅读完整计划，也无法按 Markdown 结构查看标题、列表、任务勾选项、代码块和链接等内容。
+
+需求 #11 要求“plan 计划，要支持阅读全文；用 markdown 组件阅读”。本计划默认实现为：在当前项目工作区的正式 Plan 列表中提供“阅读全文”入口，按需从工作区内的 Plan 文件读取 Markdown 全文，并通过专用 Markdown 阅读组件渲染；同时保留现有 Plan 摘要、任务执行、计划草稿编辑和搜索/过滤行为。
+
+## 任务拆解
+
+- [ ] P001: 定义 Plan 全文读取接口 <"'!-- scope: src/main.js,src/preload.js,src/renderer/types.ts -->
+  - 验收要点：新增前后端 IPC 能力，例如 `plans:read` / `readPlan`，入参至少包含 `projectId` 与 `planId`，返回 Plan id、文件路径、Markdown 全文、哈希、更新时间和可读错误信息。
+  - 验收要点：主进程读取计划文件时必须通过数据库中的 `plans.file_path` 和项目 `workspace_path` 解析真实路径，禁止读取当前项目工作区外的文件。
+  - 验收要点：缺失 Plan、缺失项目、文件不存在、路径越界和读取失败时返回可展示的错误状态，不导致渲染进程崩溃。
+  - 验收要点：不把所有 Plan 全文塞进常规 `snapshot()`，避免长文档随轮询高频刷新造成 UI 卡顿和 IPC 负担。
+
+- [ ] P002: 引入 Markdown 阅读组件 <!-- scope: package.json,package-lock.json,src/renderer/components/MarkdownReader.tsx,src/styles.css -->
+  - 验收要点：新增可复用 `MarkdownReader` 组件，使用明确的 Markdown 渲染方案渲染正文，支持标题、段落、列表、任务勾选项、引用、行内代码、代码块、表格和链接等常见计划内容。
+  - 验收要点：Markdown 中的原始 HTML 默认不执行脚本或危险事件；外部链接具备安全属性，避免引入 XSS 或 opener 风险。
+  - 验收要点：空 Markdown、纯空白 Markdown 和超长 Markdown 均有稳定展示，空内容显示“暂无计划正文”类提示。
+  - 验收要点：组件样式复用现有色彩、字号、圆角和阴影变量，代码块、表格和长链接在窄屏下不撑破布局。
+
+- [ ] P003: 增加 Plan 全文阅读入口 <!-- scope: src/renderer/components/PlanLists.tsx,src/styles.css -->
+  - 验收要点：每个正式 Plan 卡片在现有摘要信息旁新增“阅读全文”按钮或链接，按钮文案清晰且不会与任务执行按钮混淆。
+  - 验收要点：点击“阅读全文”后能打开对应 Plan 的全文阅读区域、抽屉或弹窗，并显示 Plan 文件路径、状态、更新时间和 Markdown 正文。
+  - 验收要点：阅读入口不改变 Plan 列表排序、任务完成数、耗时汇总、校验状态、哈希展示和已有搜索/过滤结果。
+  - 验收要点：同一列表中多个 Plan 的阅读状态互不串扰，关闭后再次打开能重新展示正确 Plan 内容。
+
+- [ ] P004: 接入工作区阅读状态与加载流程 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/PlanLists.tsx,src/renderer/types.ts -->
+  - 验收要点：工作区维护当前正在阅读的 Plan、加载中状态、读取错误和已加载正文，切换项目或离开工作区时清理阅读状态。
+  - 验收要点：读取过程中显示加载提示并禁用重复触发；读取成功后用 `MarkdownReader` 展示全文，读取失败时显示可恢复错误和重试入口。
+  - 验收要点：阅读面板支持关闭、重新打开、刷新读取内容，不影响需求/反馈提交、计划草稿保存、任务执行、停止任务和事件流刷新。
+  - 验收要点：若后台轮询刷新导致 Plan 状态或更新时间变化，阅读面板仍以当前打开的 Plan 为准，并能提示或支持重新读取最新正文。
+
+- [ ] P005: 完善可访问性与阅读体验 <!-- scope: src/renderer/components/MarkdownReader.tsx,src/renderer/components/PlanLists.tsx,src/styles.css -->
+  - 验收要点：全文阅读容器具备明确标题、关闭按钮、键盘可达焦点顺序和必要的 `aria-label` / `aria-modal` / `aria-live` 信息。
+  - 验收要点：阅读区域支持长文滚动，弹窗或抽屉不会遮挡关闭入口；宽屏与窄屏下正文、表格和代码块均可阅读。
+  - 验收要点：正文渲染保留 Markdown 层级和任务勾选视觉，Plan 任务行与 `scope` 注释在阅读时可完整查看。
+  - 验收要点：阅读模式只读，不提供会让用户误以为可编辑正式 Plan 的控件；计划草稿仍沿用现有编辑流程。
+
+- [ ] P006: 补充回归验证与构建检查 <!-- scope: scripts/smoke-test.js,src/main.js,src/preload.js,src/renderer/components/MarkdownReader.tsx,src/renderer/components/PlanLists.tsx,src/renderer/pages/WorkspacePage.tsx,src/styles.css -->
+  - 验收要点：补充或扩展 smoke 校验，覆盖读取存在的 Plan 文件、读取不存在的 Plan、项目隔离和路径越界保护等关键分支。
+  - 验收要点：`npm run check` 通过，确认 TypeScript、主进程脚本、预加载脚本和 smoke 脚本语法均无错误。
+  - 验收要点：`npm run build` 通过，确认 Markdown 阅读组件、依赖和样式可被 Vite 正常构建打包。
+  - 验收要点：手动验证至少一个已有 Plan 可以打开阅读全文，Markdown 标题、任务列表、代码块和长文本显示正常，关闭后列表恢复原状态。
+
+## 总体验收标准
+
+- 全文可读：用户能从工作区正式 Plan 列表打开任意当前项目 Plan 的完整 Markdown 正文，而不是只能看到摘要信息。
+- Markdown 渲染：正文通过专用 Markdown 组件渲染，标题、列表、任务勾选项、代码块、表格、引用和链接具备清晰可读的视觉样式。
+- 按需加载：Plan 全文通过用户点击后按需读取，不随 `snapshot()` 高频刷新批量传输长文本。
+- 安全隔离：读取文件仅限当前项目工作区内数据库记录对应的 Plan 文件，路径越界、文件缺失和读取失败均有明确错误提示。
+- 流程无回归：计划草稿编辑、确认加入任务系统、任务执行/停止、事件流刷新、搜索/过滤和项目切换保持原有行为。
+- 可访问性可用：阅读全文入口和阅读面板支持键盘访问、可关闭、可重试，窄屏下长文、表格和代码块不破坏布局。
+- 验证通过：完成实现后 `npm run check` 与 `npm run build` 均通过，关键读取场景和手动阅读场景验证通过。
+
+## 进度区
+
+- 2026-06-25 AutoPlan 生成：需求 #11 开发计划已创建，待执行。
+'"'@ | Set-Content -Encoding UTF8 docs\\plan\\plan_requirement_11_20260625-035545.md" in D:\project\GitHub\autoplan
+ succeeded in 205ms:
+**Verifying file formatting**
+
+I need to check the file format and possibly use Get-Content to do that. I should also make sure there are no Byte Order Marks (BOM), so I might need to set the encoding to UTF-8 using Set-Content in PowerShell version 5. It's important to validate that every "- [ ]" line includes a scope comment, and I could use rg for that. I'll make sure everything is in order!
+codex
+计划文件已写好，我会检查格式和关键章节是否完整。
+exec
+powershell.exe -Command 'chcp 65001 > $null; $path='"'docs\\plan\\plan_requirement_11_20260625-035545.md'; Get-Content -Raw -Encoding UTF8 "'$path; Write-Output '"'--- task lines ---'; rg -n \""'^- '"\\[ \\] P[0-9]{3}: .*<"'!-- scope: .+ -->$|''^## 总体验收标准$|''^## 进度区$" $path' in D:\project\GitHub\autoplan
+ succeeded in 246ms:
+# 需求 #11 开发计划：Plan 支持全文 Markdown 阅读
+
+## 背景
+
+当前 AutoPlan 工作区的“任务与计划”区域中，Plan 列表仅展示文件路径、任务完成数、耗时、校验状态、哈希和更新时间等摘要信息；计划草稿虽然可以在 textarea 中查看和编辑原始 Markdown，但已确认加入任务系统的正式 Plan 缺少“阅读全文”的入口。随着计划内容变长，用户无法直接在应用内阅读完整计划，也无法按 Markdown 结构查看标题、列表、任务勾选项、代码块和链接等内容。
+
+需求 #11 要求“plan 计划，要支持阅读全文；用 markdown 组件阅读”。本计划默认实现为：在当前项目工作区的正式 Plan 列表中提供“阅读全文”入口，按需从工作区内的 Plan 文件读取 Markdown 全文，并通过专用 Markdown 阅读组件渲染；同时保留现有 Plan 摘要、任务执行、计划草稿编辑和搜索/过滤行为。
+
+## 任务拆解
+
+- [ ] P001: 定义 Plan 全文读取接口 <!-- scope: src/main.js,src/preload.js,src/renderer/types.ts -->
+  - 验收要点：新增前后端 IPC 能力，例如 `plans:read` / `readPlan`，入参至少包含 `projectId` 与 `planId`，返回 Plan id、文件路径、Markdown 全文、哈希、更新时间和可读错误信息。
+  - 验收要点：主进程读取计划文件时必须通过数据库中的 `plans.file_path` 和项目 `workspace_path` 解析真实路径，禁止读取当前项目工作区外的文件。
+  - 验收要点：缺失 Plan、缺失项目、文件不存在、路径越界和读取失败时返回可展示的错误状态，不导致渲染进程崩溃。
+  - 验收要点：不把所有 Plan 全文塞进常规 `snapshot()`，避免长文档随轮询高频刷新造成 UI 卡顿和 IPC 负担。
+
+- [ ] P002: 引入 Markdown 阅读组件 <!-- scope: package.json,package-lock.json,src/renderer/components/MarkdownReader.tsx,src/styles.css -->
+  - 验收要点：新增可复用 `MarkdownReader` 组件，使用明确的 Markdown 渲染方案渲染正文，支持标题、段落、列表、任务勾选项、引用、行内代码、代码块、表格和链接等常见计划内容。
+  - 验收要点：Markdown 中的原始 HTML 默认不执行脚本或危险事件；外部链接具备安全属性，避免引入 XSS 或 opener 风险。
+  - 验收要点：空 Markdown、纯空白 Markdown 和超长 Markdown 均有稳定展示，空内容显示“暂无计划正文”类提示。
+  - 验收要点：组件样式复用现有色彩、字号、圆角和阴影变量，代码块、表格和长链接在窄屏下不撑破布局。
+
+- [ ] P003: 增加 Plan 全文阅读入口 <!-- scope: src/renderer/components/PlanLists.tsx,src/styles.css -->
+  - 验收要点：每个正式 Plan 卡片在现有摘要信息旁新增“阅读全文”按钮或链接，按钮文案清晰且不会与任务执行按钮混淆。
+  - 验收要点：点击“阅读全文”后能打开对应 Plan 的全文阅读区域、抽屉或弹窗，并显示 Plan 文件路径、状态、更新时间和 Markdown 正文。
+  - 验收要点：阅读入口不改变 Plan 列表排序、任务完成数、耗时汇总、校验状态、哈希展示和已有搜索/过滤结果。
+  - 验收要点：同一列表中多个 Plan 的阅读状态互不串扰，关闭后再次打开能重新展示正确 Plan 内容。
+
+- [ ] P004: 接入工作区阅读状态与加载流程 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/PlanLists.tsx,src/renderer/types.ts -->
+  - 验收要点：工作区维护当前正在阅读的 Plan、加载中状态、读取错误和已加载正文，切换项目或离开工作区时清理阅读状态。
+  - 验收要点：读取过程中显示加载提示并禁用重复触发；读取成功后用 `MarkdownReader` 展示全文，读取失败时显示可恢复错误和重试入口。
+  - 验收要点：阅读面板支持关闭、重新打开、刷新读取内容，不影响需求/反馈提交、计划草稿保存、任务执行、停止任务和事件流刷新。
+  - 验收要点：若后台轮询刷新导致 Plan 状态或更新时间变化，阅读面板仍以当前打开的 Plan 为准，并能提示或支持重新读取最新正文。
+
+- [ ] P005: 完善可访问性与阅读体验 <!-- scope: src/renderer/components/MarkdownReader.tsx,src/renderer/components/PlanLists.tsx,src/styles.css -->
+  - 验收要点：全文阅读容器具备明确标题、关闭按钮、键盘可达焦点顺序和必要的 `aria-label` / `aria-modal` / `aria-live` 信息。
+  - 验收要点：阅读区域支持长文滚动，弹窗或抽屉不会遮挡关闭入口；宽屏与窄屏下正文、表格和代码块均可阅读。
+  - 验收要点：正文渲染保留 Markdown 层级和任务勾选视觉，Plan 任务行与 `scope` 注释在阅读时可完整查看。
+  - 验收要点：阅读模式只读，不提供会让用户误以为可编辑正式 Plan 的控件；计划草稿仍沿用现有编辑流程。
+
+- [ ] P006: 补充回归验证与构建检查 <!-- scope: scripts/smoke-test.js,src/main.js,src/preload.js,src/renderer/components/MarkdownReader.tsx,src/renderer/components/PlanLists.tsx,src/renderer/pages/WorkspacePage.tsx,src/styles.css -->
+  - 验收要点：补充或扩展 smoke 校验，覆盖读取存在的 Plan 文件、读取不存在的 Plan、项目隔离和路径越界保护等关键分支。
+  - 验收要点：`npm run check` 通过，确认 TypeScript、主进程脚本、预加载脚本和 smoke 脚本语法均无错误。
+  - 验收要点：`npm run build` 通过，确认 Markdown 阅读组件、依赖和样式可被 Vite 正常构建打包。
+  - 验收要点：手动验证至少一个已有 Plan 可以打开阅读全文，Markdown 标题、任务列表、代码块和长文本显示正常，关闭后列表恢复原状态。
+
+## 总体验收标准
+
+- 全文可读：用户能从工作区正式 Plan 列表打开任意当前项目 Plan 的完整 Markdown 正文，而不是只能看到摘要信息。
+- Markdown 渲染：正文通过专用 Markdown 组件渲染，标题、列表、任务勾选项、代码块、表格、引用和链接具备清晰可读的视觉样式。
+- 按需加载：Plan 全文通过用户点击后按需读取，不随 `snapshot()` 高频刷新批量传输长文本。
+- 安全隔离：读取文件仅限当前项目工作区内数据库记录对应的 Plan 文件，路径越界、文件缺失和读取失败均有明确错误提示。
+- 流程无回归：计划草稿编辑、确认加入任务系统、任务执行/停止、事件流刷新、搜索/过滤和项目切换保持原有行为。
+- 可访问性可用：阅读全文入口和阅读面板支持键盘访问、可关闭、可重试，窄屏下长文、表格和代码块不破坏布局。
+- 验证通过：完成实现后 `npm run check` 与 `npm run build` 均通过，关键读取场景和手动阅读场景验证通过。
+
+## 进度区
+
+- 2026-06-25 AutoPlan 生成：需求 #11 开发计划已创建，待执行。
+
+--- task lines ---
+11:- [ ] P001: 定义 Plan 全文读取接口 <!-- scope: src/main.js,src/preload.js,src/renderer/types.ts -->
+17:- [ ] P002: 引入 Markdown 阅读组件 <!-- scope: package.json,package-lock.json,src/renderer/components/MarkdownReader.tsx,src/styles.css -->
+23:- [ ] P003: 增加 Plan 全文阅读入口 <!-- scope: src/renderer/components/PlanLists.tsx,src/styles.css -->
+29:- [ ] P004: 接入工作区阅读状态与加载流程 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/PlanLists.tsx,src/renderer/types.ts -->
+35:- [ ] P005: 完善可访问性与阅读体验 <!-- scope: src/renderer/components/MarkdownReader.tsx,src/renderer/components/PlanLists.tsx,src/styles.css -->
+41:- [ ] P006: 补充回归验证与构建检查 <!-- scope: scripts/smoke-test.js,src/main.js,src/preload.js,src/renderer/components/MarkdownReader.tsx,src/renderer/components/PlanLists.tsx,src/renderer/pages/WorkspacePage.tsx,src/styles.css -->
+47:## 总体验收标准
+57:## 进度区
+
+**Finalizing the update plan**
+
+I need to complete the update plan and keep it concise. I don't think testing is necessary this time. It’s important to mention only the file that changed. Maybe I should use 'git diff' to check what has changed? I could also run 'git status' just to verify that I'm only working with the plan file. Since the focus is on writing that file, I should double-check everything about it.
+codex
+格式检查通过；最后确认只新增目标计划文件。
+exec
+powershell.exe -Command "git status --short -- docs\\plan\\plan_requirement_11_20260625-035545.md; git status --short" in D:\project\GitHub\autoplan
+ succeeded in 990ms:
+?? docs/plan/plan_requirement_11_20260625-035545.md
+ M release/builder-debug.yml
+ M release/win-unpacked/AutoPlan.exe
+ M release/win-unpacked/resources/app.asar
+ M scripts/smoke-test.js
+ M src/database.js
+ M src/loopService.js
+ M src/planDrafts.js
+ M src/renderer/components/PlanLists.tsx
+ M src/renderer/pages/WorkspacePage.tsx
+ M src/renderer/types.ts
+ M src/renderer/utils/time.ts
+ M src/styles.css
+ M ui/README.md
+ M ui/projects.html
+ M ui/workspace.html
+?? docs/
+?? src/renderer/components/icons.tsx
+?? src/renderer/utils/search.ts
+
+**Updating status and plan**
+
+I see that the git status shows many unrelated changes that were pre-existing. I need to ensure that I only mention the target file that I created, not these unrelated modified files. I want to make sure my update plan is clear and complete without referencing those other changes. It's all about focusing on the task at hand and ensuring everything is organized. I'll finalize my plan with this in mind!
+  ✓ 确认现有 Plan 展示
+  ✓ 编写需求计划文档
+  ✓ 验证文件内容格式
+codex
+已生成计划文件：`docs/plan/plan_requirement_11_20260625-035545.md:1`
+
+- 包含 6 个任务，均按固定格式填写 `scope`
+- 每个任务都包含验收要点
+- 已包含“总体验收标准”和“进度区”
+- 未修改业务代码；当前仓库里已有其它未提交改动，我只新增了该计划文件
+tokens used
+43,532
+已生成计划文件：`docs/plan/plan_requirement_11_20260625-035545.md:1`
+
+- 包含 6 个任务，均按固定格式填写 `scope`
+- 每个任务都包含验收要点
+- 已包含“总体验收标准”和“进度区”
+- 未修改业务代码；当前仓库里已有其它未提交改动，我只新增了该计划文件

@@ -1,0 +1,869 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AutoPlan · 工作区</title>
+    <style>
+      /* ============================================================
+         设计系统 · Design Tokens
+         ============================================================ */
+      :root {
+        color-scheme: light;
+        --font-sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        --font-mono: "Cascadia Code", Consolas, "Courier New", monospace;
+
+        --brand-50: #eef4ff;
+        --brand-100: #dbe7ff;
+        --brand-500: #3b6ef5;
+        --brand-600: #255fbd;
+        --brand-700: #1d4a94;
+        --brand-grad: linear-gradient(135deg, #4f7bff 0%, #6d5dfc 100%);
+
+        --bg-app: #f4f6fb;
+        --bg-elevated: #ffffff;
+        --bg-soft: #f8fafd;
+        --bg-hover: #eef2f9;
+        --line: #e2e8f1;
+        --line-soft: #eef2f8;
+
+        --text-1: #172033;
+        --text-2: #475067;
+        --text-3: #7c879b;
+        --text-4: #a4adc0;
+
+        --success: #18a957;
+        --success-bg: #e7f7ee;
+        --warning: #e08600;
+        --warning-bg: #fdf3e3;
+        --danger: #e5484d;
+        --danger-bg: #fdecec;
+        --info: #2563eb;
+        --info-bg: #e8f0ff;
+
+        --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-xl: 20px;
+        --shadow-sm: 0 1px 2px rgba(23, 32, 51, 0.06);
+        --shadow-md: 0 6px 18px rgba(23, 32, 51, 0.08);
+        --shadow-lg: 0 18px 48px rgba(37, 62, 120, 0.14);
+
+        font-family: var(--font-sans);
+        background: var(--bg-app);
+        color: var(--text-1);
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body { overflow: hidden; font-size: 14px; -webkit-font-smoothing: antialiased; }
+      h1, h2, h3, p { margin: 0; }
+      button { font: inherit; cursor: pointer; }
+      a { color: var(--brand-600); text-decoration: none; }
+      .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+      .icon {
+        width: 1em; height: 1em; flex: 0 0 auto;
+        display: inline-block; vertical-align: -0.15em;
+        fill: none; stroke: currentColor; stroke-width: 2;
+        stroke-linecap: round; stroke-linejoin: round;
+      }
+      .icon-sm { width: 14px; height: 14px; }
+      .icon-xs { width: 12px; height: 12px; }
+
+      /* 应用骨架 */
+      .app { display: grid; grid-template-columns: 248px 1fr; height: 100vh; }
+
+      /* 侧边栏 */
+      .sidebar {
+        display: flex; flex-direction: column; gap: 6px;
+        padding: 22px 14px 18px;
+        background: var(--bg-elevated); border-right: 1px solid var(--line);
+      }
+      .brand { display: flex; align-items: center; gap: 12px; padding: 4px 10px 22px; }
+      .brand-mark {
+        display: grid; place-items: center; width: 40px; height: 40px;
+        border-radius: 12px; background: var(--brand-grad); color: #fff;
+        font-weight: 800; font-size: 18px; box-shadow: 0 8px 18px rgba(77, 110, 255, 0.35);
+      }
+      .brand-name { font-size: 17px; font-weight: 700; }
+      .brand-sub { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+      /* ---------- 项目选择器 ---------- */
+      .project-switcher {
+        margin: 0 4px 10px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: var(--r-md);
+        background: var(--bg-soft);
+      }
+      .project-label {
+        display: flex; align-items: center; justify-content: space-between;
+        font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+        font-weight: 700; color: var(--text-4);
+        margin-bottom: 8px;
+      }
+      .project-label .new-project {
+        display: inline-flex; align-items: center; gap: 4px;
+        text-transform: none; letter-spacing: 0;
+        font-size: 11px; font-weight: 600;
+        color: var(--brand-600);
+        background: transparent; border: 0; cursor: pointer;
+        padding: 2px 4px; border-radius: var(--r-sm);
+      }
+      .project-label .new-project:hover { background: var(--brand-50); }
+      .project-label .new-project .icon { width: 12px; height: 12px; }
+
+      .project-select { position: relative; }
+      .project-select-trigger {
+        display: flex; align-items: center; gap: 10px; width: 100%;
+        padding: 8px 10px;
+        border: 1px solid var(--line); border-radius: var(--r-sm);
+        background: var(--bg-elevated); text-align: left;
+        transition: border-color .14s, box-shadow .14s;
+      }
+      .project-select-trigger:hover { border-color: #c6d1e3; }
+      .project-select-trigger.open {
+        border-color: var(--brand-500);
+        box-shadow: 0 0 0 3px var(--brand-50);
+      }
+      .project-avatar {
+        width: 26px; height: 26px; flex: 0 0 auto;
+        border-radius: 7px;
+        background: var(--brand-grad);
+        color: #fff; font-weight: 700; font-size: 12px;
+        display: grid; place-items: center;
+      }
+      .project-main { min-width: 0; flex: 1 1 auto; }
+      .project-name {
+        font-size: 13px; font-weight: 600; color: var(--text-1);
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .project-path {
+        font-size: 11px; color: var(--text-3);
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-family: var(--font-mono);
+      }
+      .project-caret { color: var(--text-3); flex: 0 0 auto; transition: transform .16s; }
+      .project-select-trigger.open .project-caret { transform: rotate(180deg); }
+      .project-caret .icon { width: 14px; height: 14px; }
+
+      .project-menu {
+        position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 40;
+        background: var(--bg-elevated); border: 1px solid var(--line);
+        border-radius: var(--r-md); box-shadow: var(--shadow-lg);
+        padding: 6px; display: none;
+      }
+      .project-menu.open { display: block; }
+      .project-option {
+        display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px;
+        border: 0; border-radius: var(--r-sm); background: transparent; text-align: left;
+        color: var(--text-2);
+      }
+      .project-option:hover { background: var(--bg-hover); }
+      .project-option.current { background: var(--brand-50); }
+      .project-option .check { margin-left: auto; color: var(--brand-600); opacity: 0; width: 16px; height: 16px; display: grid; place-items: center; }
+      .project-option.current .check { opacity: 1; }
+      .project-menu-divider { height: 1px; background: var(--line-soft); margin: 6px 4px; }
+      .project-menu-create {
+        display: flex; align-items: center; justify-content: center; gap: 6px;
+        width: 100%; padding: 8px; border: 0; border-radius: var(--r-sm);
+        background: var(--brand-50); color: var(--brand-700);
+        font-size: 12.5px; font-weight: 600;
+      }
+      .project-menu-create:hover { background: var(--brand-100); }
+      .project-menu-create .icon { width: 14px; height: 14px; }
+
+      /* 项目快速创建小弹层 */
+      .quick-create {
+        position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 40;
+        background: var(--bg-elevated); border: 1px solid var(--line);
+        border-radius: var(--r-md); box-shadow: var(--shadow-lg);
+        padding: 14px; display: none;
+      }
+      .quick-create.open { display: block; }
+      .quick-create .field { margin-bottom: 10px; }
+      .quick-create .field:last-child { margin-bottom: 0; }
+      .quick-create .qc-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+
+      .nav-group-label {
+        padding: 16px 12px 6px; font-size: 10.5px; letter-spacing: .12em;
+        text-transform: uppercase; color: var(--text-4); font-weight: 700;
+      }
+      .nav-item {
+        display: flex; align-items: center; gap: 12px; width: 100%;
+        padding: 10px 12px; border: 0; border-radius: var(--r-md);
+        background: transparent; color: var(--text-2); text-align: left;
+        font-size: 13.5px; font-weight: 500; transition: background .14s, color .14s;
+      }
+      .nav-item:hover { background: var(--bg-hover); color: var(--text-1); }
+      .nav-item.active { background: var(--brand-50); color: var(--brand-700); font-weight: 600; }
+      .nav-item.active .nav-ico { color: var(--brand-600); }
+      .nav-ico { width: 20px; height: 20px; flex: 0 0 auto; color: var(--text-3); display: grid; place-items: center; }
+      .nav-ico .icon { width: 18px; height: 18px; }
+      .nav-badge {
+        margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px;
+        border-radius: 999px; background: var(--line); color: var(--text-2);
+        font-size: 11px; font-weight: 700; display: grid; place-items: center;
+      }
+      .nav-item.active .nav-badge { background: var(--brand-600); color: #fff; }
+
+      .sidebar-footer {
+        margin-top: auto; padding: 12px; border-radius: var(--r-md);
+        background: var(--bg-soft); border: 1px solid var(--line-soft);
+      }
+      .loop-mini { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-2); }
+      .loop-mini b { color: var(--text-1); }
+      .led { width: 9px; height: 9px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 4px var(--success-bg); }
+      .led.running { animation: led-pulse 1.6s ease-in-out infinite; }
+      @keyframes led-pulse { 0%,100% { box-shadow: 0 0 0 4px var(--success-bg); } 50% { box-shadow: 0 0 0 7px rgba(24,169,87,.15); } }
+
+      /* 主区 */
+      .main { display: flex; flex-direction: column; min-width: 0; height: 100vh; overflow: hidden; }
+      .topbar {
+        display: flex; align-items: center; gap: 16px; padding: 16px 28px;
+        background: var(--bg-elevated); border-bottom: 1px solid var(--line); flex: 0 0 auto;
+      }
+      .topbar-title h1 { font-size: 18px; font-weight: 700; }
+      .topbar-title p { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+      .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+      .pill {
+        display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px;
+        border-radius: 999px; font-size: 12px; font-weight: 600;
+        background: var(--bg-soft); border: 1px solid var(--line); color: var(--text-2);
+      }
+      .pill .led { width: 7px; height: 7px; box-shadow: 0 0 0 3px var(--success-bg); }
+
+      .view { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 24px 28px 32px; display: none; }
+      .view.active { display: block; }
+
+      /* 通用组件 */
+      .btn {
+        display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+        padding: 9px 16px; border: 1px solid var(--line); border-radius: var(--r-md);
+        background: var(--bg-elevated); color: var(--text-1); font-size: 13px; font-weight: 600;
+        transition: background .14s, border-color .14s, transform .06s;
+      }
+      .btn:hover { background: var(--bg-hover); }
+      .btn:active { transform: translateY(1px); }
+      .btn-primary { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+      .btn-primary:hover { background: var(--brand-700); }
+      .btn-sm { padding: 6px 12px; font-size: 12px; }
+      .btn .icon { width: 14px; height: 14px; }
+
+      .card { background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); }
+      .card-head { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--line-soft); }
+      .card-head h2 { font-size: 14.5px; font-weight: 700; }
+      .card-head .hint { font-size: 12px; color: var(--text-3); }
+      .card-head .spacer { margin-left: auto; }
+      .card-head .spacer a { display: inline-flex; align-items: center; gap: 4px; }
+      .card-body { padding: 16px 18px; }
+
+      .chip {
+        display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
+        border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase;
+      }
+      .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+      .chip-pending { color: var(--text-3); background: var(--bg-soft); }
+      .chip-running { color: var(--info); background: var(--info-bg); }
+      .chip-completed { color: var(--success); background: var(--success-bg); }
+      .chip-failed { color: var(--danger); background: var(--danger-bg); }
+      .chip-waiting { color: var(--warning); background: var(--warning-bg); }
+      .chip-accepted { color: var(--success); background: var(--success-bg); }
+
+      /* 概览 */
+      .stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 16px; margin-bottom: 20px; }
+      .stat {
+        position: relative; padding: 18px 20px; background: var(--bg-elevated);
+        border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); overflow: hidden;
+      }
+      .stat::after { content:""; position:absolute; right:-18px; top:-18px; width:84px; height:84px; border-radius:50%; background:var(--stat-accent,var(--brand-50)); opacity:.6; }
+      .stat .stat-ico { width:36px; height:36px; border-radius:10px; display:grid; place-items:center; background:var(--stat-accent,var(--brand-50)); color:var(--stat-color,var(--brand-600)); margin-bottom:12px; position:relative; z-index:1; }
+      .stat .stat-ico .icon { width: 18px; height: 18px; }
+      .stat .stat-value { font-size:26px; font-weight:800; line-height:1; position:relative; z-index:1; }
+      .stat .stat-label { font-size:12px; color:var(--text-3); margin-top:6px; position:relative; z-index:1; }
+      .stat .stat-delta { font-size:11px; margin-top:8px; color:var(--success); font-weight:600; position:relative; z-index:1; }
+
+      .overview-grid { display:grid; grid-template-columns: minmax(0,1.6fr) minmax(0,1fr); gap:18px; }
+      .loop-card {
+        background: var(--brand-grad); color:#fff; border-radius:var(--r-lg); padding:22px 24px;
+        position:relative; overflow:hidden; box-shadow:0 18px 40px rgba(77,110,255,.28);
+      }
+      .loop-card::before { content:""; position:absolute; inset:0; background:radial-gradient(circle at 85% 15%, rgba(255,255,255,.22), transparent 50%); }
+      .loop-card > * { position:relative; z-index:1; }
+      .loop-card .lc-top { display:flex; align-items:center; gap:12px; }
+      .loop-card .lc-status { font-size:13px; opacity:.9; }
+      .loop-card .lc-phase { font-size:22px; font-weight:800; margin-top:4px; }
+      .loop-card .lc-meta { display:flex; gap:22px; margin-top:16px; font-size:12px; opacity:.92; }
+      .loop-card .lc-meta b { display:block; font-size:15px; font-weight:700; margin-top:2px; }
+      .loop-card .lc-led { width:12px; height:12px; border-radius:50%; background:#b6f5cf; box-shadow:0 0 0 4px rgba(182,245,207,.25); animation: led-pulse 1.6s ease-in-out infinite; }
+
+      .pipeline { display:flex; align-items:flex-start; gap:0; margin-top:4px; overflow-x:auto; }
+      .pipe-step { flex:1 1 0; min-width:0; text-align:center; position:relative; }
+      .pipe-node { width:40px; height:40px; margin:0 auto; border-radius:50%; display:grid; place-items:center; background:var(--bg-elevated); border:2px solid var(--line); color:var(--text-3); font-weight:700; font-size:14px; position:relative; z-index:1; }
+      .pipe-step.done .pipe-node { background:var(--success); border-color:var(--success); color:#fff; }
+      .pipe-step.active .pipe-node { background:var(--brand-600); border-color:var(--brand-600); color:#fff; box-shadow:0 0 0 5px var(--brand-50); }
+      .pipe-node .icon { width: 18px; height: 18px; }
+      .pipe-step::before { content:""; position:absolute; top:20px; left:-50%; right:50%; height:2px; background:var(--line); z-index:0; }
+      .pipe-step:first-child::before { display:none; }
+      .pipe-step.done::before, .pipe-step.active::before { background:var(--success); }
+      .pipe-label { font-size:12px; font-weight:600; margin-top:10px; color:var(--text-2); }
+      .pipe-step.active .pipe-label { color:var(--brand-600); }
+      .pipe-sub { font-size:11px; color:var(--text-4); margin-top:2px; }
+
+      .feed-list { display:flex; flex-direction:column; }
+      .feed-item { display:flex; gap:12px; padding:11px 0; border-bottom:1px solid var(--line-soft); font-size:13px; }
+      .feed-item:last-child { border-bottom:0; }
+      .feed-dot { width:8px; height:8px; border-radius:50%; margin-top:6px; flex:0 0 auto; background:var(--text-4); }
+      .feed-item.success .feed-dot { background:var(--success); }
+      .feed-item.info .feed-dot { background:var(--info); }
+      .feed-item.warn .feed-dot { background:var(--warning); }
+      .feed-text { color:var(--text-2); flex:1 1 auto; min-width:0; }
+      .feed-text b { color:var(--text-1); }
+      .feed-time { color:var(--text-4); font-size:11px; flex:0 0 auto; font-variant-numeric:tabular-nums; }
+      .progress { height:8px; border-radius:999px; background:var(--line); overflow:hidden; }
+      .progress > span { display:block; height:100%; border-radius:999px; background:var(--brand-grad); }
+      .progress.success > span { background:var(--success); }
+
+      /* 输入流 */
+      .intake-layout { display:grid; grid-template-rows: minmax(0,1fr) auto; gap:16px; height:100%; max-width:880px; margin:0 auto; }
+      .stream-list { display:flex; flex-direction:column; gap:12px; overflow:auto; padding-right:4px; }
+      .stream-card { background:var(--bg-elevated); border:1px solid var(--line); border-radius:var(--r-lg); padding:14px 16px; box-shadow:var(--shadow-sm); }
+      .stream-card-top { display:flex; align-items:center; gap:10px; }
+      .stream-id { font-size:12px; font-weight:700; color:var(--brand-600); background:var(--brand-50); padding:2px 8px; border-radius:6px; }
+      .stream-time { margin-left:auto; font-size:11px; color:var(--text-4); font-variant-numeric:tabular-nums; }
+      .stream-body { margin-top:10px; font-size:13.5px; line-height:1.6; color:var(--text-2); white-space:pre-wrap; }
+      .stream-attach { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+      .attach-thumb { width:56px; height:56px; border-radius:var(--r-sm); background:linear-gradient(135deg,#c7d7f5,#e9d8fd); display:grid; place-items:center; color:var(--brand-700); font-size:10px; font-weight:700; }
+      .attach-file { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:var(--r-sm); background:var(--bg-soft); border:1px solid var(--line); font-size:12px; color:var(--text-2); }
+      .attach-file .icon { width: 14px; height: 14px; }
+      .attach-file .remove-icon { color: var(--text-4); width: 12px; height: 12px; }
+
+      .composer { background:var(--bg-elevated); border:1px solid var(--line); border-radius:var(--r-xl); padding:14px 16px 12px; box-shadow:var(--shadow-lg); transition:border-color .16s, box-shadow .16s; }
+      .composer:focus-within { border-color:var(--brand-500); box-shadow:0 18px 48px rgba(37,62,120,.2); }
+      .composer textarea { width:100%; border:0; outline:none; resize:none; background:transparent; font:inherit; font-size:14.5px; line-height:1.5; color:var(--text-1); min-height:24px; max-height:180px; }
+      .composer textarea::placeholder { color:var(--text-4); }
+      .composer-bottom { display:flex; align-items:center; gap:10px; margin-top:8px; }
+      .composer-tools { display:flex; align-items:center; gap:8px; min-width:0; }
+      .icon-btn { width:34px; height:34px; flex:0 0 auto; border-radius:50%; border:0; background:transparent; color:var(--text-3); display:grid; place-items:center; }
+      .icon-btn:hover { background:var(--bg-hover); color:var(--text-1); }
+      .icon-btn .icon { width: 18px; height: 18px; }
+      .composer-hint { margin-left:auto; font-size:11px; color:var(--text-4); }
+      .send-btn { width:38px; height:38px; border-radius:50%; background:var(--brand-grad); border:0; color:#fff; display:grid; place-items:center; font-size:18px; box-shadow:0 6px 14px rgba(77,110,255,.4); }
+      .send-btn .icon { width: 18px; height: 18px; }
+
+      /* 任务 */
+      .task-layout { display:grid; grid-template-columns: 320px minmax(0,1fr); gap:18px; height:100%; }
+      .task-side { display:grid; grid-template-rows: auto minmax(0,1fr); gap:16px; min-height:0; }
+      .task-main { display:grid; grid-template-rows: minmax(0,1.3fr) minmax(220px,.7fr); gap:16px; min-height:0; }
+      .status-grid { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:16px; min-height:0; }
+      .field { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
+      .field:last-child { margin-bottom:0; }
+      .field label { font-size:11.5px; font-weight:600; color:var(--text-3); }
+      .field input { width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:var(--r-sm); background:var(--bg-elevated); font:inherit; font-size:13px; }
+      .field input:focus { outline:none; border-color:var(--brand-500); box-shadow:0 0 0 3px var(--brand-50); }
+      .field .mono { font-family:var(--font-mono); font-size:12px; }
+      .control-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+      .scroll-list { overflow:auto; padding-right:4px; display:flex; flex-direction:column; gap:8px; }
+      .draft-card { border:1px solid var(--line); border-radius:var(--r-md); background:var(--bg-soft); padding:14px; }
+      .draft-card.accepted { background:var(--success-bg); border-color:#bce8cd; }
+      .draft-top { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+      .draft-area { width:100%; min-height:160px; border:1px solid var(--line); border-radius:var(--r-sm); padding:10px 12px; background:var(--bg-elevated); font-family:var(--font-mono); font-size:12.5px; line-height:1.6; color:var(--text-1); resize:vertical; }
+      .draft-actions { display:flex; gap:8px; margin-top:10px; }
+      .plan-item, .task-item { padding:12px; border:1px solid var(--line); border-radius:var(--r-md); background:var(--bg-elevated); }
+      .plan-top { display:flex; align-items:center; gap:8px; }
+      .plan-path { font-family:var(--font-mono); font-size:12px; color:var(--text-1); font-weight:600; }
+      .plan-meta { font-size:11px; color:var(--text-3); margin-top:8px; display:flex; gap:10px; }
+      .task-item .task-title { font-size:13px; font-weight:600; color:var(--text-1); }
+      .task-item .task-key { font-family:var(--font-mono); font-size:11px; color:var(--brand-600); background:var(--brand-50); padding:1px 6px; border-radius:4px; }
+
+      /* 事件流 */
+      .event-row { display:grid; grid-template-columns:130px 120px 1fr auto; gap:14px; align-items:center; padding:11px 16px; border-bottom:1px solid var(--line-soft); font-size:13px; }
+      .event-row:hover { background:var(--bg-soft); }
+      .event-time { font-size:11.5px; color:var(--text-3); font-variant-numeric:tabular-nums; }
+      .event-msg { color:var(--text-2); }
+      .event-msg code { font-family:var(--font-mono); font-size:11.5px; color:var(--text-1); background:var(--bg-soft); padding:1px 5px; border-radius:4px; }
+
+      ::-webkit-scrollbar { width:9px; height:9px; }
+      ::-webkit-scrollbar-thumb { background:#d4dce8; border-radius:999px; border:2px solid transparent; background-clip:content-box; }
+      ::-webkit-scrollbar-track { background:transparent; }
+
+      .watermark { position:fixed; right:18px; bottom:14px; z-index:50; font-size:10.5px; color:var(--text-4); background:var(--bg-elevated); border:1px solid var(--line); padding:4px 10px; border-radius:999px; box-shadow:var(--shadow-sm); }
+    </style>
+  </head>
+  <body>
+    <svg class="icon-sprite" aria-hidden="true" focusable="false">
+      <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14"></path><path d="M5 12h14"></path></symbol>
+      <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></symbol>
+      <symbol id="icon-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"></path></symbol>
+      <symbol id="icon-overview" viewBox="0 0 24 24"><path d="M4 13a8 8 0 1 1 16 0"></path><path d="m12 13 4-4"></path><path d="M6 19h12"></path></symbol>
+      <symbol id="icon-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle></symbol>
+      <symbol id="icon-pencil" viewBox="0 0 24 24"><path d="m15.5 5.5 3 3"></path><path d="M4 20l4.5-1 9-9a2.1 2.1 0 0 0-3-3l-9 9L4 20Z"></path></symbol>
+      <symbol id="icon-check-square" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="m8 12 3 3 5-6"></path></symbol>
+      <symbol id="icon-list" viewBox="0 0 24 24"><path d="M9 7h11"></path><path d="M9 12h11"></path><path d="M9 17h11"></path><circle cx="4.5" cy="7" r="1" fill="currentColor" stroke="none"></circle><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none"></circle><circle cx="4.5" cy="17" r="1" fill="currentColor" stroke="none"></circle></symbol>
+      <symbol id="icon-panels" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="3"></rect><path d="M4 10h16"></path><path d="M10 10v9"></path></symbol>
+      <symbol id="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7-11-7Z"></path></symbol>
+      <symbol id="icon-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1"></rect></symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-13.7 5.6"></path><path d="M4 12A8 8 0 0 1 17.7 6.4"></path><path d="M17.7 3.8v2.6h-2.6"></path><path d="M6.3 20.2v-2.6h2.6"></path></symbol>
+      <symbol id="icon-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></symbol>
+      <symbol id="icon-paperclip" viewBox="0 0 24 24"><path d="m21 11.5-8.5 8.5a5 5 0 0 1-7.1-7.1l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-2.8-2.8l8.2-8.2"></path></symbol>
+      <symbol id="icon-x" viewBox="0 0 24 24"><path d="m18 6-12 12"></path><path d="m6 6 12 12"></path></symbol>
+      <symbol id="icon-bug" viewBox="0 0 24 24"><rect x="7" y="8" width="10" height="11" rx="5"></rect><path d="M9 8 7 5"></path><path d="m15 8 2-3"></path><path d="M7 13H4"></path><path d="M20 13h-3"></path><path d="M8 17l-3 2"></path><path d="m16 17 3 2"></path><path d="M12 8v11"></path></symbol>
+    </svg>
+    <div class="app">
+      <!-- ===================== 侧边栏 ===================== -->
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">A</div>
+          <div>
+            <div class="brand-name">AutoPlan</div>
+            <div class="brand-sub">需求 · 计划 · 执行 · 验收</div>
+          </div>
+        </div>
+
+        <!-- 项目选择器 -->
+        <div class="project-switcher">
+          <div class="project-label">
+            当前项目
+            <button class="new-project" id="quickToggle" title="快速创建项目"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-plus"></use></svg>新建</button>
+          </div>
+          <div class="project-select">
+            <button class="project-select-trigger" id="projectTrigger" type="button">
+              <span class="project-avatar" id="trigAvatar">W</span>
+              <span class="project-main">
+                <span class="project-name" id="trigName">wenz_richtext</span>
+                <span class="project-path" id="trigPath">wenz_flutter/wenz_richtext</span>
+              </span>
+              <span class="project-caret"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-chevron-down"></use></svg></span>
+            </button>
+            <!-- 下拉：切换已有项目 -->
+            <div class="project-menu" id="projectMenu">
+              <button class="project-option current" type="button" data-name="wenz_richtext" data-path="wenz_flutter/wenz_richtext" data-color="grad1">
+                <span class="project-avatar" style="background:linear-gradient(135deg,#4f7bff,#6d5dfc)">W</span>
+                <span class="project-main">
+                  <span class="project-name">wenz_richtext</span>
+                  <span class="project-path">wenz_flutter/wenz_richtext</span>
+                </span>
+                <span class="check"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check"></use></svg></span>
+              </button>
+              <button class="project-option" type="button" data-name="autoplan" data-path="GitHub/autoplan" data-color="grad2">
+                <span class="project-avatar" style="background:linear-gradient(135deg,#36c5a8,#2c9bd1)">A</span>
+                <span class="project-main">
+                  <span class="project-name">autoplan</span>
+                  <span class="project-path">GitHub/autoplan</span>
+                </span>
+                <span class="check"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check"></use></svg></span>
+              </button>
+              <button class="project-option" type="button" data-name="design-system" data-path="GitHub/design-system" data-color="grad3">
+                <span class="project-avatar" style="background:linear-gradient(135deg,#f093fb,#f5576c)">D</span>
+                <span class="project-main">
+                  <span class="project-name">design-system</span>
+                  <span class="project-path">GitHub/design-system</span>
+                </span>
+                <span class="check"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check"></use></svg></span>
+              </button>
+              <div class="project-menu-divider"></div>
+              <button class="project-menu-create" id="menuCreateProject" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-plus"></use></svg>创建新项目</button>
+            </div>
+            <!-- 快速创建弹层 -->
+            <div class="quick-create" id="quickCreate">
+              <div class="field">
+                <label style="font-size:11px;color:var(--text-3);font-weight:600;">项目名称</label>
+                <input type="text" id="qc-name" placeholder="例如 my-project" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-sm);font:inherit;font-size:13px;" />
+              </div>
+              <div class="field">
+                <label style="font-size:11px;color:var(--text-3);font-weight:600;">工作区路径</label>
+                <input type="text" id="qc-path" class="mono" placeholder="D:\project\xxx" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-sm);font:inherit;font-size:12px;font-family:var(--font-mono);" />
+              </div>
+              <div class="qc-actions">
+                <button class="btn btn-sm" id="qcCancel" type="button">取消</button>
+                <button class="btn btn-sm btn-primary" id="qcSave" type="button">创建</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="nav-group-label">工作区</div>
+        <button class="nav-item active" data-view="overview">
+          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-overview"></use></svg></span> 概览
+        </button>
+        <button class="nav-item" data-view="requirement">
+          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-target"></use></svg></span> 需求
+          <span class="nav-badge">4</span>
+        </button>
+        <button class="nav-item" data-view="feedback">
+          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-pencil"></use></svg></span> 反馈
+          <span class="nav-badge">2</span>
+        </button>
+
+        <div class="nav-group-label">执行</div>
+        <button class="nav-item" data-view="tasks">
+          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check-square"></use></svg></span> 任务与计划
+          <span class="nav-badge">1</span>
+        </button>
+        <button class="nav-item" data-view="events">
+          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-list"></use></svg></span> 事件流
+        </button>
+
+        <div class="sidebar-footer">
+          <div class="loop-mini">
+            <span class="led running"></span>
+            <span>循环 <b>运行中</b></span>
+          </div>
+          <div style="font-size:11px;color:var(--text-3);margin-top:6px;font-family:var(--font-mono);">
+            间隔 5s · flutter analyze
+          </div>
+        </div>
+      </aside>
+
+      <!-- ===================== 主区 ===================== -->
+      <div class="main">
+        <header class="topbar">
+          <div class="topbar-title">
+            <h1 id="viewTitle">概览</h1>
+            <p id="viewSubtitle">循环状态、阶段流水线与各模块一览</p>
+          </div>
+          <div class="topbar-actions">
+            <span class="pill"><span class="led running"></span> running · execute-task</span>
+            <button class="btn btn-sm">单轮执行</button>
+            <button class="btn btn-sm btn-primary"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-play"></use></svg>启动</button>
+          </div>
+        </header>
+
+        <!-- ============ 概览 ============ -->
+        <section class="view active" id="view-overview">
+          <div class="stat-grid">
+            <div class="stat" style="--stat-accent:var(--brand-50);--stat-color:var(--brand-600)">
+              <div class="stat-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-target"></use></svg></div><div class="stat-value">4</div>
+              <div class="stat-label">待处理需求</div><div class="stat-delta">+2 今日</div>
+            </div>
+            <div class="stat" style="--stat-accent:var(--info-bg);--stat-color:var(--info)">
+              <div class="stat-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-panels"></use></svg></div><div class="stat-value">1</div>
+              <div class="stat-label">进行中计划</div><div class="stat-delta">3/7 任务</div>
+            </div>
+            <div class="stat" style="--stat-accent:var(--success-bg);--stat-color:var(--success)">
+              <div class="stat-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check-square"></use></svg></div><div class="stat-value">12</div>
+              <div class="stat-label">已完成任务</div><div class="stat-delta">+5 本轮</div>
+            </div>
+            <div class="stat" style="--stat-accent:var(--warning-bg);--stat-color:var(--warning)">
+              <div class="stat-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-refresh"></use></svg></div><div class="stat-value">5s</div>
+              <div class="stat-label">循环间隔</div><div class="stat-delta">已运行 38 分钟</div>
+            </div>
+          </div>
+
+          <div class="overview-grid">
+            <div>
+              <div class="loop-card">
+                <div class="lc-top"><span class="lc-led"></span><span class="lc-status">循环运行中</span></div>
+                <div class="lc-phase">当前阶段 · execute-task</div>
+                <div class="lc-meta">
+                  <div>工作区<b>wenz_richtext</b></div>
+                  <div>当前 Plan<b>plan_20260624-1032</b></div>
+                  <div>下一任务<b>P004 · 富文本选区</b></div>
+                </div>
+              </div>
+              <div class="card" style="margin-top:16px;">
+                <div class="card-head"><h2>循环阶段流水线</h2><span class="hint">scan / generate-plan / execute-task / validate / completed</span></div>
+                <div class="card-body">
+                  <div class="pipeline">
+                    <div class="pipe-step done"><div class="pipe-node"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check"></use></svg></div><div class="pipe-label">扫描</div><div class="pipe-sub">3 issues · 2 plans</div></div>
+                    <div class="pipe-step done"><div class="pipe-node"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check"></use></svg></div><div class="pipe-label">生成计划</div><div class="pipe-sub">plan_20260624</div></div>
+                    <div class="pipe-step active"><div class="pipe-node"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-play"></use></svg></div><div class="pipe-label">执行任务</div><div class="pipe-sub">3 / 7</div></div>
+                    <div class="pipe-step"><div class="pipe-node">4</div><div class="pipe-label">验收</div><div class="pipe-sub">flutter analyze</div></div>
+                    <div class="pipe-step"><div class="pipe-node">5</div><div class="pipe-label">完成</div><div class="pipe-sub">—</div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h2>近期事件</h2><span class="spacer"><a href="#">查看全部 <svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#icon-arrow-right"></use></svg></a></span></div>
+              <div class="card-body">
+                <div class="feed-list">
+                  <div class="feed-item success"><span class="feed-dot"></span><span class="feed-text">任务 <b>P003 · 段落样式</b> 执行完成</span><span class="feed-time">10:42</span></div>
+                  <div class="feed-item info"><span class="feed-dot"></span><span class="feed-text">扫描完成 <b>issues=3, plans=2</b></span><span class="feed-time">10:42</span></div>
+                  <div class="feed-item success"><span class="feed-dot"></span><span class="feed-text">任务 <b>P002 · 工具栏</b> 执行完成</span><span class="feed-time">10:35</span></div>
+                  <div class="feed-item warn"><span class="feed-dot"></span><span class="feed-text">计划草稿 <b>#5</b> 待确认</span><span class="feed-time">10:21</span></div>
+                  <div class="feed-item info"><span class="feed-dot"></span><span class="feed-text">新计划生成 <b>plan_20260624-1032</b></span><span class="feed-time">10:32</span></div>
+                  <div class="feed-item success"><span class="feed-dot"></span><span class="feed-text">循环已启动</span><span class="feed-time">10:04</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ 需求 ============ -->
+        <section class="view" id="view-requirement">
+          <div class="intake-layout">
+            <div class="stream-list">
+              <div class="stream-card">
+                <div class="stream-card-top"><span class="stream-id">需求 #6</span><span class="chip chip-pending">pending</span><span class="stream-time">10:51 · 2 分钟前</span></div>
+                <div class="stream-body">富文本编辑器需要支持图片粘贴，粘贴后自动上传到 OSS 并插入图片节点。要能区分截图粘贴和文件粘贴。</div>
+                <div class="stream-attach"><div class="attach-thumb">IMG</div><a class="attach-file"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-paperclip"></use></svg>paste-demo.png · 128 KB</a></div>
+              </div>
+              <div class="stream-card">
+                <div class="stream-card-top"><span class="stream-id">需求 #5</span><span class="chip chip-running">processing</span><span class="stream-time">10:32 · 21 分钟前</span></div>
+                <div class="stream-body">工具栏样式与飞书文档对齐：图标 20px、悬浮态浅灰底、分组之间加竖线分隔。</div>
+              </div>
+              <div class="stream-card">
+                <div class="stream-card-top"><span class="stream-id">需求 #4</span><span class="chip chip-completed">done</span><span class="stream-time">09:18 · 2 小时前</span></div>
+                <div class="stream-body">段落支持标题 H1/H2/H3、正文、引用、代码块四种基础样式，快捷键 Ctrl+1/2/3 切换标题。</div>
+              </div>
+            </div>
+            <form class="composer" onsubmit="return false">
+              <textarea placeholder="输入需求，Enter 发送，Shift+Enter 换行。也可把需求文件放到工作区 docs/issues。"></textarea>
+              <div class="composer-bottom">
+                <div class="composer-tools">
+                  <button type="button" class="icon-btn" title="添加附件"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-plus"></use></svg></button>
+                  <span class="attach-file" style="padding:4px 10px">截图1.png <svg class="icon remove-icon" aria-hidden="true" focusable="false"><use href="#icon-x"></use></svg></span>
+                </div>
+                <span class="composer-hint">Enter 发送 · 拖拽添加附件</span>
+                <button type="submit" class="send-btn"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-arrow-right"></use></svg></button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- ============ 反馈 ============ -->
+        <section class="view" id="view-feedback">
+          <div class="intake-layout">
+            <div class="stream-list">
+              <div class="stream-card">
+                <div class="stream-card-top"><span class="stream-id">反馈 #3</span><span class="stream-id" style="background:var(--info-bg);color:var(--info)">关联 需求 #5</span><span class="stream-time">10:48</span></div>
+                <div class="stream-body">工具栏分组竖线太粗了，建议改成 1px、颜色 #E5E7EB，跟正文区拉开距离。</div>
+              </div>
+              <div class="stream-card">
+                <div class="stream-card-top"><span class="stream-id">反馈 #2</span><span class="stream-time">10:20</span></div>
+                <div class="stream-body">H1 标题在深色模式下颜色没跟随主题，固定成了黑色。希望用主题色变量。</div>
+                <div class="stream-attach"><a class="attach-file"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-bug"></use></svg>dark-mode-bug.log · 4 KB</a></div>
+              </div>
+            </div>
+            <form class="composer" onsubmit="return false">
+              <textarea placeholder="输入反馈，Enter 发送，Shift+Enter 换行。"></textarea>
+              <div class="composer-bottom">
+                <div class="composer-tools"><button type="button" class="icon-btn" title="添加附件"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-plus"></use></svg></button></div>
+                <span class="composer-hint">Enter 发送</span>
+                <button type="submit" class="send-btn"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-arrow-right"></use></svg></button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- ============ 任务与计划 ============ -->
+        <section class="view" id="view-tasks">
+          <div class="task-layout">
+            <div class="task-side">
+              <div class="card">
+                <div class="card-head"><h2>循环控制</h2></div>
+                <div class="card-body">
+                  <div class="field"><label>工作区路径</label><input class="mono" value="D:\project\GitHub\wenz_flutter\wenz_richtext" /></div>
+                  <div class="field"><label>间隔秒数</label><input type="number" min="1" value="5" /></div>
+                  <div class="field"><label>验收命令</label><input class="mono" value="flutter analyze" /></div>
+                  <div class="control-grid">
+                    <button class="btn btn-sm">保存配置</button>
+                    <button class="btn btn-sm btn-primary"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-play"></use></svg>启动</button>
+                    <button class="btn btn-sm"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-stop"></use></svg>停止</button>
+                    <button class="btn btn-sm"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-refresh"></use></svg>单轮</button>
+                  </div>
+                </div>
+              </div>
+              <div class="card" style="display:flex;flex-direction:column;min-height:0;">
+                <div class="card-head"><h2>事件</h2></div>
+                <div class="card-body scroll-list" style="padding-top:6px;">
+                  <div class="feed-item success"><span class="feed-dot"></span><span class="feed-text"><b>P003</b> 完成</span></div>
+                  <div class="feed-item info"><span class="feed-dot"></span><span class="feed-text">扫描完成</span></div>
+                  <div class="feed-item success"><span class="feed-dot"></span><span class="feed-text"><b>P002</b> 完成</span></div>
+                  <div class="feed-item warn"><span class="feed-dot"></span><span class="feed-text">草稿 #5 待确认</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="task-main">
+              <div class="card" style="display:flex;flex-direction:column;min-height:0;">
+                <div class="card-head"><h2>计划草稿</h2><span class="hint">发送需求/反馈后自动生成，可编辑后加入任务系统</span></div>
+                <div class="card-body scroll-list">
+                  <div class="draft-card">
+                    <div class="draft-top"><span class="stream-id">草稿 #5</span><span style="font-size:12px;color:var(--text-3)">来自 需求 #6</span><span class="chip chip-pending" style="margin-left:auto">draft</span></div>
+                    <textarea class="draft-area"># 富文本图片粘贴
+
+## 任务清单
+- [ ] P001: 监听 paste 事件，区分截图与文件
+- [ ] P002: 截图粘贴走 OSS 上传流程
+- [ ] P003: 插入 image 节点并处理选区
+
+## 验收标准
+- 粘贴截图后 1s 内插入图片
+- 文件粘贴弹出上传进度</textarea>
+                    <div class="draft-actions"><button class="btn btn-sm">保存调整</button><button class="btn btn-sm btn-primary">确认加入任务系统</button></div>
+                  </div>
+                  <div class="draft-card accepted">
+                    <div class="draft-top"><span class="stream-id">草稿 #4</span><span style="font-size:12px;color:var(--text-3)">来自 反馈 #2</span><span class="chip chip-accepted" style="margin-left:auto">accepted</span></div>
+                    <div style="font-size:12.5px;color:var(--text-2);">已加入任务系统：<b>Plan #3</b></div>
+                  </div>
+                </div>
+              </div>
+              <div class="status-grid">
+                <div class="card" style="display:flex;flex-direction:column;min-height:0;">
+                  <div class="card-head"><h2>Plan</h2></div>
+                  <div class="card-body scroll-list">
+                    <div class="plan-item">
+                      <div class="plan-top"><span class="plan-path">plan_20260624-1032.md</span><span class="chip chip-running" style="margin-left:auto">running</span></div>
+                      <div class="progress" style="margin-top:10px"><span style="width:43%"></span></div>
+                      <div class="plan-meta"><span>3 / 7 tasks</span><span>验收 pending</span></div>
+                    </div>
+                    <div class="plan-item">
+                      <div class="plan-top"><span class="plan-path">plan_20260624-0810.md</span><span class="chip chip-completed" style="margin-left:auto">completed</span></div>
+                      <div class="progress success" style="margin-top:10px"><span style="width:100%"></span></div>
+                      <div class="plan-meta"><span>5 / 5 tasks</span><span>验收 passed</span></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="card" style="display:flex;flex-direction:column;min-height:0;">
+                  <div class="card-head"><h2>任务</h2></div>
+                  <div class="card-body scroll-list">
+                    <div class="task-item"><div class="plan-top"><span class="task-key">P004</span><span class="task-title">富文本选区处理</span><span class="chip chip-pending" style="margin-left:auto">pending</span></div></div>
+                    <div class="task-item"><div class="plan-top"><span class="task-key">P003</span><span class="task-title">段落样式</span><span class="chip chip-completed" style="margin-left:auto">done</span></div></div>
+                    <div class="task-item"><div class="plan-top"><span class="task-key">P002</span><span class="task-title">工具栏</span><span class="chip chip-completed" style="margin-left:auto">done</span></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ 事件流 ============ -->
+        <section class="view" id="view-events">
+          <div class="card">
+            <div class="card-head">
+              <h2>事件流</h2><span class="hint">最近 80 条 · 实时更新</span>
+              <span class="spacer"><button class="btn btn-sm">全部</button><button class="btn btn-sm">成功</button><button class="btn btn-sm">异常</button></span>
+            </div>
+            <div>
+              <div class="event-row"><span class="event-time">2026-06-24 10:42:18</span><span class="chip chip-completed">task.executed</span><span class="event-msg">任务 <b>P003 · 段落样式</b> 执行完成 · <code>log: execute-P003.last.txt</code></span><a href="#">查看日志</a></div>
+              <div class="event-row"><span class="event-time">2026-06-24 10:42:05</span><span class="chip chip-running">scan.done</span><span class="event-msg">扫描完成 <code>issues=3, plans=2</code></span><a href="#">查看</a></div>
+              <div class="event-row"><span class="event-time">2026-06-24 10:35:02</span><span class="chip chip-completed">task.executed</span><span class="event-msg">任务 <b>P002 · 工具栏</b> 执行完成</span><a href="#">查看日志</a></div>
+              <div class="event-row"><span class="event-time">2026-06-24 10:32:41</span><span class="chip chip-running">plan.generated</span><span class="event-msg">新计划生成 <code>docs/plan/plan_20260624-1032_a1b2c3d4.md</code></span><a href="#">打开</a></div>
+              <div class="event-row"><span class="event-time">2026-06-24 10:21:09</span><span class="chip chip-waiting">draft.pending</span><span class="event-msg">计划草稿 <b>#5</b> 已生成，等待确认</span><a href="#">处理</a></div>
+              <div class="event-row"><span class="event-time">2026-06-24 10:04:00</span><span class="chip chip-running">loop.started</span><span class="event-msg">循环已启动 · 间隔 5s</span><span></span></div>
+              <div class="event-row"><span class="event-time">2026-06-24 09:18:33</span><span class="chip chip-failed">task.failed</span><span class="event-msg">任务 <b>P001</b> 执行失败 · <code>exit code 1</code>，已自动重试</span><a href="#">查看日志</a></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="watermark">AutoPlan · 工作区设计稿</div>
+
+    <script>
+      const titles = {
+        overview:   ['概览',       '循环状态、阶段流水线与各模块一览'],
+        requirement:['需求模块',   '收集需求，发送后自动生成计划草稿'],
+        feedback:   ['反馈模块',   '收集反馈，关联需求并生成计划草稿'],
+        tasks:      ['任务与计划', '循环控制、计划草稿、Plan 与任务进度'],
+        events:     ['事件流',     '循环运行日志与任务执行记录'],
+      };
+      document.querySelectorAll('.nav-item').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const v = btn.dataset.view;
+          document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b === btn));
+          document.querySelectorAll('.view').forEach((s) => s.classList.toggle('active', s.id === 'view-' + v));
+          const [t, s] = titles[v] || ['', ''];
+          document.getElementById('viewTitle').textContent = t;
+          document.getElementById('viewSubtitle').textContent = s;
+        });
+      });
+      document.querySelectorAll('.composer textarea').forEach((ta) => {
+        const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 180) + 'px'; };
+        ta.addEventListener('input', grow); grow();
+      });
+
+      /* ---------- 项目选择器 + 快速创建 ---------- */
+      const GRAD = {
+        grad1: 'linear-gradient(135deg,#4f7bff,#6d5dfc)',
+        grad2: 'linear-gradient(135deg,#36c5a8,#2c9bd1)',
+        grad3: 'linear-gradient(135deg,#f093fb,#f5576c)',
+      };
+      const projectTrigger = document.getElementById('projectTrigger');
+      const projectMenu = document.getElementById('projectMenu');
+      const quickCreate = document.getElementById('quickCreate');
+
+      const closeAllPanels = () => {
+        projectTrigger.classList.remove('open');
+        projectMenu.classList.remove('open');
+        quickCreate.classList.remove('open');
+      };
+      const openMenu = () => {
+        projectTrigger.classList.add('open');
+        projectMenu.classList.add('open');
+        quickCreate.classList.remove('open');
+      };
+      const openQuick = () => {
+        quickCreate.classList.add('open');
+        projectTrigger.classList.remove('open');
+        projectMenu.classList.remove('open');
+        document.getElementById('qc-name').focus();
+      };
+
+      // 触发器：展开/收起项目下拉
+      projectTrigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        projectMenu.classList.contains('open') ? closeAllPanels() : openMenu();
+      });
+      // 切换已有项目
+      projectMenu.querySelectorAll('.project-option').forEach((opt) => {
+        opt.addEventListener('click', () => {
+          projectMenu.querySelectorAll('.project-option').forEach((o) => o.classList.remove('current'));
+          opt.classList.add('current');
+          const ch = opt.dataset.name.slice(0, 1).toUpperCase();
+          const av = document.getElementById('trigAvatar');
+          av.textContent = ch;
+          av.style.background = GRAD[opt.dataset.color] || GRAD.grad1;
+          document.getElementById('trigName').textContent = opt.dataset.name;
+          document.getElementById('trigPath').textContent = opt.dataset.path;
+          closeAllPanels();
+        });
+      });
+      // 创建入口（两处）
+      document.getElementById('menuCreateProject').addEventListener('click', (e) => {
+        e.stopPropagation();
+        openQuick();
+      });
+      document.getElementById('quickToggle').addEventListener('click', (e) => {
+        e.stopPropagation();
+        quickCreate.classList.contains('open') ? closeAllPanels() : openQuick();
+      });
+      // 快速创建 取消/保存
+      document.getElementById('qcCancel').addEventListener('click', closeAllPanels);
+      document.getElementById('qcSave').addEventListener('click', () => {
+        const name = document.getElementById('qc-name').value.trim();
+        const path = document.getElementById('qc-path').value.trim();
+        if (!name || !path) { alert('项目名称和工作区路径不能为空'); return; }
+        // 将新项目加入下拉并切为当前
+        const opt = document.createElement('button');
+        opt.className = 'project-option';
+        opt.type = 'button';
+        opt.dataset.name = name;
+        opt.dataset.path = path;
+        opt.dataset.color = 'grad1';
+        opt.innerHTML = `<span class="project-avatar" style="background:${GRAD.grad1}">${name.slice(0,1).toUpperCase()}</span>
+          <span class="project-main"><span class="project-name">${name}</span><span class="project-path">${path}</span></span>
+          <span class="check"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check"></use></svg></span>`;
+        const divider = projectMenu.querySelector('.project-menu-divider');
+        divider.parentNode.insertBefore(opt, divider);
+        bindOption(opt);
+        // 选中新项目
+        opt.click();
+        document.getElementById('qc-name').value = '';
+        document.getElementById('qc-path').value = '';
+        closeAllPanels();
+      });
+      function bindOption(opt) {
+        opt.addEventListener('click', () => {
+          projectMenu.querySelectorAll('.project-option').forEach((o) => o.classList.remove('current'));
+          opt.classList.add('current');
+          const av = document.getElementById('trigAvatar');
+          av.textContent = opt.dataset.name.slice(0,1).toUpperCase();
+          av.style.background = GRAD[opt.dataset.color] || GRAD.grad1;
+          document.getElementById('trigName').textContent = opt.dataset.name;
+          document.getElementById('trigPath').textContent = opt.dataset.path;
+          closeAllPanels();
+        });
+      }
+      // 点击外部关闭
+      document.addEventListener('click', closeAllPanels);
+    </script>
+  </body>
+</html>

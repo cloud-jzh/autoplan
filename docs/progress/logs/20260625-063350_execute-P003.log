@@ -1,0 +1,2402 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019efbc4-aaf9-7012-a576-7ddb23cb7c97
+--------
+user
+你是开发执行者。
+请只执行指定任务 P003，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_5_20260625-040346.md
+指定任务：
+- [ ] P003: 覆盖原始日志与活动行两种模式 <!-- scope: src/renderer/components/CodexLog.tsx -->
+任务 scope：src/renderer/components/codexlog.tsx
+
+完成后必须：
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 如需测试，只运行与当前任务直接相关的最小测试集，不要运行全量测试或与本任务无关的测试
+- 只有当前任务本身明确要求全量验证时，才允许运行全量测试
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我先读取任务相关上下文和组件实现，确认只改 `CodexLog`。
+  → 读取任务上下文
+  • 定位组件逻辑
+  • 实现模式覆盖
+  • 运行最小验证
+mcp: codegraph/codegraph_explore started
+mcp: codegraph/codegraph_explore (failed)
+codex
+CodeGraph 需要显式项目路径；我继续带路径查询并检查本地约束。
+mcp: codegraph/codegraph_explore started
+mcp: codegraph/codegraph_explore (failed)
+codex
+CodeGraph 未初始化，我改用本地只读检查相关文件。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; Write-Host 'AGENTS:'; if (Get-Command rg -ErrorAction SilentlyContinue) { rg --files -g AGENTS.md } else { Get-ChildItem -Recurse -Filter AGENTS.md | ForEach-Object { "'$_.FullName } }; Write-Host '"'Component files:'; if (Get-Command rg -ErrorAction SilentlyContinue) { rg --files | rg -i 'src/renderer/components/codexlog\\.tsx"'$'"' } else { Get-ChildItem -Recurse -File | Where-Object { "'$_.FullName -match '"'src[\\\\/]renderer[\\\\/]components[\\\\/]codexlog\\.tsx"'$'"' } | ForEach-Object { "'$_.FullName } }; Write-Host '"'Plan P003:'; Select-String -Path 'D:\\project\\GitHub\\autoplan\\docs\\plan\\plan_feedback_5_20260625-040346.md' -Pattern 'P003|原始日志|活动行' -Context 3,5 -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 279ms:
+AGENTS:
+Component files:
+Plan P003:
+
+  docs\plan\plan_feedback_5_20260625-040346.md:2:
+  docs\plan\plan_feedback_5_20260625-040346.md:3:## 背景
+  docs\plan\plan_feedback_5_20260625-040346.md:4:
+> docs\plan\plan_feedback_5_20260625-040346.md:5:当前执行日志卡片由 `CodexLog` 展示实时日志或结构化活动行。现有逻辑在 `log` 或 `activity` 更新时直接把日志容器
+滚动到底部，这能保证用户看到最新日志，但也会在用户主动向上查看前面日志时被新日志打断，导致阅读历史输出不稳定。
+  docs\plan\plan_feedback_5_20260625-040346.md:6:
+  docs\plan\plan_feedback_5_20260625-040346.md:7:反馈 #5 要求：“日志卡片优化一下，如果内容在底部，则添加日志时自动滚动到底部，避免查看前面日志时自动滚动到底部”。本计划默认实现为：日志
+容器进入“粘底”状态时继续跟随新日志；用户滚动离开底部后暂停自动滚动；用户再次滚动到底部或初次打开日志时恢复自动跟随。
+  docs\plan\plan_feedback_5_20260625-040346.md:8:
+  docs\plan\plan_feedback_5_20260625-040346.md:9:## 任务拆解
+  docs\plan\plan_feedback_5_20260625-040346.md:10:
+  docs\plan\plan_feedback_5_20260625-040346.md:15:  - 验收要点：空日志、仅一屏日志、超出一屏日志都能得到稳定判定，不出现滚动高度为 0 时的异常。
+  docs\plan\plan_feedback_5_20260625-040346.md:16:
+  docs\plan\plan_feedback_5_20260625-040346.md:17:- [x] P002: 实现仅粘底时自动滚动 <!-- scope: src/renderer/components/CodexLog.t
+sx -->
+> docs\plan\plan_feedback_5_20260625-040346.md:18:  - 验收要点：当用户位于底部时，新增日志或活动行后自动滚动到最新内容底部，保持实时跟随体验。
+> docs\plan\plan_feedback_5_20260625-040346.md:19:  - 验收要点：当用户正在查看前面日志且不在底部时，新增日志或活动行不会修改 `scrollTop`，当前阅读位置保持稳定。
+  docs\plan\plan_feedback_5_20260625-040346.md:20:  - 验收要点：组件初次挂载、从空日志变为有日志、切换到新的日志内容时默认展示底部，避免进入页面后停留在旧内容顶部。
+  docs\plan\plan_feedback_5_20260625-040346.md:21:  - 验收要点：自动滚动在 React 渲染完成后执行，避免内容更新前读取旧 `scrollHeight` 造成滚动不到底。
+  docs\plan\plan_feedback_5_20260625-040346.md:22:
+> docs\plan\plan_feedback_5_20260625-040346.md:23:- [ ] P003: 覆盖原始日志与活动行两种模式 <!-- scope: src/renderer/components/CodexL
+og.tsx -->
+> docs\plan\plan_feedback_5_20260625-040346.md:24:  - 验收要点：`activity` 有内容时的结构化活动行模式遵循同一粘底策略，新增活动行不打断用户查看历史活动。
+> docs\plan\plan_feedback_5_20260625-040346.md:25:  - 验收要点：`activity` 为空时的原始 `logTail` 模式遵循同一粘底策略，追加原始日志时行为一致。
+  docs\plan\plan_feedback_5_20260625-040346.md:26:  - 验收要点：两种模式之间切换时不产生空白、闪跳或错误滚动；当前日志容器仍只渲染一种内容来源。
+> docs\plan\plan_feedback_5_20260625-040346.md:27:  - 验收要点：保留现有日志尾部截断展示策略和活动行角色样式，不改变日志文本内容、时间展示和角色标签。
+  docs\plan\plan_feedback_5_20260625-040346.md:28:
+  docs\plan\plan_feedback_5_20260625-040346.md:29:- [ ] P004: 验证日志卡片交互回归 <!-- scope: src/renderer/components/CodexLog.t
+sx,src/renderer/pages/WorkspacePage.tsx,src/styles.css -->
+  docs\plan\plan_feedback_5_20260625-040346.md:30:  - 验收要点：手动验证运行中的执行日志：停留底部时新日志持续自动跟随到底部。
+  docs\plan\plan_feedback_5_20260625-040346.md:31:  - 验收要点：手动验证向上滚动查看历史日志：后台继续追加日志时页面不跳到底部，阅读位置不被打断。
+  docs\plan\plan_feedback_5_20260625-040346.md:32:  - 验收要点：手动验证再次滚动到底部后：后续新增日志恢复自动跟随。
+  docs\plan\plan_feedback_5_20260625-040346.md:37:- 粘底跟随：日志内容当前在底部时，新增日志自动滚动到最新内容底部。
+  docs\plan\plan_feedback_5_20260625-040346.md:38:- 阅读保护：用户主动向上查看历史日志时，新增日志不会强制跳到底部。
+  docs\plan\plan_feedback_5_20260625-040346.md:39:- 状态恢复：用户重新滚动到底部后，日志卡片恢复自动跟随最新日志。
+> docs\plan\plan_feedback_5_20260625-040346.md:40:- 模式一致：结构化活动行和原始日志尾部两种展示模式具备一致的滚动行为。
+  docs\plan\plan_feedback_5_20260625-040346.md:41:- 无业务回归：不改变任务执行、停止任务、事件流刷新、日志内容生成、日志截断和页面布局主流程。
+  docs\plan\plan_feedback_5_20260625-040346.md:42:- 构建通过：完成实现后 `npm run check` 与 `npm run build` 均通过，关键手动场景验证通过。
+  docs\plan\plan_feedback_5_20260625-040346.md:43:
+  docs\plan\plan_feedback_5_20260625-040346.md:44:## 进度区
+  docs\plan\plan_feedback_5_20260625-040346.md:45:
+
+
+
+**Investigating component files**
+
+I'm noticing that the output says there are no AGENTS and the component files are blank. This might be an issue related to the case sensitivity in the user scope. I'll need to check the plan scope in CodexLog.tsx to clarify. If the component files are still blank, it could indicate a weird file path. So, I should create a list of components to better diagnose the problem. Let's see what I can find!
+codex
+已确认 P003 验收点；现在定位实际组件路径和现有实现。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; Get-ChildItem -Path 'src\\renderer\\components' -Force | Select-Object Name,Length,LastWriteTime | Format-Table -AutoSize; Write-Host '--- CodexLog references ---'; if (Get-Command rg -ErrorAction SilentlyContinue) { rg -n \"CodexLog|logTail|activity\" src/renderer -S } else { Select-String -Path 'src\\renderer\\**\\*' -Pattern 'CodexLog|logTail|activity' -CaseSensitive:"'$false }' in D:\project\GitHub\autoplan
+ succeeded in 253ms:
+
+Name               Length LastWriteTime     
+----               ------ -------------     
+CodexLog.tsx         4065 2026/6/25 6:33:00 
+Composer.tsx         5142 2026/6/25 4:57:16 
+icons.tsx            5701 2026/6/25 5:01:44 
+IntakePanel.tsx     12446 2026/6/25 0:02:18 
+MarkdownReader.tsx   3799 2026/6/25 6:21:46 
+PlanLists.tsx       22231 2026/6/25 6:24:47 
+SearchResults.tsx    5166 2026/6/25 5:57:36 
+shared.tsx           2342 2026/6/24 19:55:58
+
+
+--- CodexLog references ---
+src/renderer\types.ts:346:  logTail: string;
+src/renderer\types.ts:347:  activity: ActivityLine[];
+src/renderer\pages\WorkspacePage.tsx:21:import { CodexLog } from '../components/CodexLog';
+src/renderer\pages\WorkspacePage.tsx:901:            <CodexLog log={operation?.logTail || ''} activity={operation?.activity || []} context={operation || null} />
+src/renderer\components\CodexLog.tsx:24: * 优先用过滤后的 activity 行；若为空则回退到 logTail 原始尾部。
+src/renderer\components\CodexLog.tsx:26:export function CodexLog({
+src/renderer\components\CodexLog.tsx:28:  activity,
+src/renderer\components\CodexLog.tsx:32:  activity?: ActivityLine[];
+src/renderer\components\CodexLog.tsx:37:  const lines = activity && activity.length > 0 ? activity : null;
+src/renderer\components\CodexLog.tsx:53:  }, [log, activity, contextLabel]);
+
+codex
+组件文件已找到；我现在阅读实现，找出模式切换的滚动边界。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; Get-Content -Path 'src\\renderer\\components\\CodexLog.tsx' -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 173ms:
+import { useEffect, useRef } from 'react';
+import type { ActivityLine, CodexSessionInfo } from '../types';
+import { formatChinaTime } from '../utils/time';
+
+const LOG_BOTTOM_THRESHOLD_PX = 24;
+
+const ROLE_CONFIG: Record<string, { label: string; cls: string }> = {
+  codex: { label: 'Codex', cls: 'act-codex' },
+  exec: { label: '执行', cls: 'act-exec' },
+  thinking: { label: '思考', cls: 'act-thinking' },
+  error: { label: '错误', cls: 'act-error' },
+  system: { label: '系统', cls: 'act-system' },
+  user: { label: '用户', cls: 'act-user' },
+  info: { label: '信息', cls: 'act-info' },
+};
+
+function isNearLogBottom(el: HTMLDivElement) {
+  const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+  return maxScrollTop - el.scrollTop <= LOG_BOTTOM_THRESHOLD_PX;
+}
+
+/**
+ * 以活动时间线显示 codex 执行过程（参考 run_advanced_plan_with_codex.dart 的 Activity 输出）。
+ * 优先用过滤后的 activity 行；若为空则回退到 logTail 原始尾部。
+ */
+export function CodexLog({
+  log,
+  activity,
+  context,
+}: {
+  log: string;
+  activity?: ActivityLine[];
+  context?: CodexSessionInfo | null;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const isAtBottomRef = useRef(true);
+  const lines = activity && activity.length > 0 ? activity : null;
+  const contextLabel = codexContextLabel(context);
+
+  const updateBottomState = () => {
+    const el = scrollRef.current;
+    isAtBottomRef.current = el ? isNearLogBottom(el) : true;
+  };
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) {
+      if (isAtBottomRef.current) {
+        el.scrollTop = el.scrollHeight;
+      }
+      updateBottomState();
+    }
+  }, [log, activity, contextLabel]);
+
+  const contextLine = contextLabel ? (
+    <div className="act-line act-info">
+      <span className="act-time">上下文</span>
+      <span className="act-tag">会话</span>
+      <span className="act-text">{contextLabel}</span>
+    </div>
+  ) : null;
+
+  if (!lines) {
+    return (
+      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+        {contextLine}
+        <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+      </div>
+    );
+  }
+
+  return (
+    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+      {contextLine}
+      {lines.map((line, index) => {
+        const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+        return (
+          <div className={`act-line ${config.cls}`} key={index}>
+            <span className="act-time">{formatChinaTime(line.at)}</span>
+            <span className="act-tag">{config.label}</span>
+            <span className="act-text">{line.text}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function codexContextLabel(context?: CodexSessionInfo | null) {
+  if (!context) return '';
+  const explicit = context.codexSessionLabel?.trim();
+  if (explicit) return explicit;
+  const requested = context.codexSessionRequestedShortId || shortCodexSessionId(context.codexSessionRequestedId);
+  const current = context.codexSessionShortId || shortCodexSessionId(context.codexSessionId);
+  if (context.codexSessionFallback || context.codexSessionState === 'fallback-new') {
+    if (current && requested) return `回退新建会话 ${current}（原 ${requested}）`;
+    if (current) return `回退新建会话 ${current}`;
+    return requested ? `回退新建会话（原 ${requested}）` : '回退新建会话';
+  }
+  if (context.codexSessionMode === 'resume') return current ? `恢复会话 ${current}` : '恢复会话';
+  if (context.codexSessionMode === 'new') return current ? `新建会话 ${current}` : '新建会话';
+  return current ? `会话 ${current}` : '';
+}
+
+function shortCodexSessionId(sessionId?: string | null) {
+  const text = sessionId?.trim();
+  if (!text) return '';
+  if (text.length <= 13) return text;
+  return `${text.slice(0, 8)}…${text.slice(-4)}`;
+}
+
+codex
+现有滚动逻辑已部分存在；我查看周边类型和脚本来做最小改动。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; Write-Host 'Package scripts:'; Get-Content -Path 'package.json' -Encoding UTF8 | Select-String -Pattern '\"scripts\"|\"check\"|\"typecheck\"|\"test\"|\"build\"' -Context 0,1; Write-Host 'ActivityLine type:'; Select-String -Path 'src\\renderer\\types.ts' -Pattern 'export interface ActivityLine|type ActivityLine|interface ActivityLine|ActivityLine' -Context 2,8 -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 229ms:
+Package scripts:
+
+>   "scripts": {
+      "start": "npm run dev",
+>     "build": "tsc --noEmit && vite build",
+      "package:win": "npm run build && electron-builder --win nsis --x64",
+>     "check": "tsc --noEmit && node --check src/main.js && node --check src/attachments.js && node --check src/databas
+e.js && node --check src/loopService.js && node --check src/planDrafts.js && node --check src/preload.js && node --chec
+k scripts/dev.js && node --check scripts/smoke-test.js",
+      "smoke": "node scripts/smoke-test.js"
+>   "build": {
+      "appId": "com.autoplan.desktop",
+ActivityLine type:
+  src\renderer\types.ts:330:}
+  src\renderer\types.ts:331:
+> src\renderer\types.ts:332:export interface ActivityLine {
+  src\renderer\types.ts:333:  role: string;
+  src\renderer\types.ts:334:  text: string;
+  src\renderer\types.ts:335:  at: string;
+  src\renderer\types.ts:336:}
+  src\renderer\types.ts:337:
+  src\renderer\types.ts:338:export interface ActiveOperation extends CodexSessionInfo {
+  src\renderer\types.ts:339:  label: string;
+  src\renderer\types.ts:340:  projectId: number | null;
+  src\renderer\types.ts:345:  exitCode?: number | null;
+  src\renderer\types.ts:346:  logTail: string;
+> src\renderer\types.ts:347:  activity: ActivityLine[];
+  src\renderer\types.ts:348:}
+  src\renderer\types.ts:349:
+  src\renderer\types.ts:350:export interface PendingAttachment {
+  src\renderer\types.ts:351:  path: string;
+  src\renderer\types.ts:352:  name: string;
+  src\renderer\types.ts:353:  size: number;
+  src\renderer\types.ts:354:  type: string;
+  src\renderer\types.ts:355:}
+
+
+
+**Evaluating code status**
+
+I need to figure out the expected code before making any decisions. It's important to understand the current branch status first, so I avoid messing with other branches. I'll use the git status command for that, as it's allowed and should give me the clarity I need. This way, I can work safely and efficiently while keeping everything organized! Let's ensure I have the right context before proceeding.
+codex
+我会先确认工作区状态，避免覆盖已有改动。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; git status --short -- src/renderer/components/CodexLog.tsx docs/plan/plan_feedback_5_20260625-040346.md" in D:\project\GitHub\autoplan
+ succeeded in 177ms:
+ M docs/plan/plan_feedback_5_20260625-040346.md
+ M src/renderer/components/CodexLog.tsx
+
+codex
+`CodexLog` 已有前序任务改动；我只会在其上做 P003 的最小增量。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; git diff -- src/renderer/components/CodexLog.tsx" in D:\project\GitHub\autoplan
+ succeeded in 181ms:
+diff --git a/src/renderer/components/CodexLog.tsx b/src/renderer/components/CodexLog.tsx
+index fc1049b..7b39c85 100644
+--- a/src/renderer/components/CodexLog.tsx
++++ b/src/renderer/components/CodexLog.tsx
+@@ -45,7 +45,9 @@ export function CodexLog({
+   useEffect(() => {
+     const el = scrollRef.current;
+     if (el) {
+-      el.scrollTop = el.scrollHeight;
++      if (isAtBottomRef.current) {
++        el.scrollTop = el.scrollHeight;
++      }
+       updateBottomState();
+     }
+   }, [log, activity, contextLabel]);
+warning: in the working copy of 'src/renderer/components/CodexLog.tsx', LF will be replaced by CRLF the next time Git touches it
+
+codex
+接下来检查活动行如何更新，确认依赖项能覆盖追加场景。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; Select-String -Path 'src\\renderer\\pages\\WorkspacePage.tsx' -Pattern 'activity|logTail|setOperation|ActiveOperation' -Context 2,4 -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 214ms:
+
+  src\renderer\pages\WorkspacePage.tsx:847:  const currentPhase = state?.phase || 'idle';
+  src\renderer\pages\WorkspacePage.tsx:848:  const activeIndex = phases.indexOf(currentPhase);
+> src\renderer\pages\WorkspacePage.tsx:849:  const operation = snapshot.activeOperation || snapshot.lastOperation;
+> src\renderer\pages\WorkspacePage.tsx:850:  const operationActive = Boolean(snapshot.activeOperation);
+  src\renderer\pages\WorkspacePage.tsx:851:  const operationTime = operation?.startedAt ? `开始于 ${formatChinaTime(operat
+ion.startedAt)}` : '';
+  src\renderer\pages\WorkspacePage.tsx:852:  const operationExit =
+  src\renderer\pages\WorkspacePage.tsx:853:    operation && !operationActive && typeof operation.exitCode === 'number'
+  src\renderer\pages\WorkspacePage.tsx:854:      ? `退出码 ${operation.exitCode}${operation.exitCode === 0 ? '（成功）' : '（失败
+）'}`
+  src\renderer\pages\WorkspacePage.tsx:899:              </div>
+  src\renderer\pages\WorkspacePage.tsx:900:            </div>
+> src\renderer\pages\WorkspacePage.tsx:901:            <CodexLog log={operation?.logTail || ''} activity={operation?.ac
+tivity || []} context={operation || null} />
+  src\renderer\pages\WorkspacePage.tsx:902:          </section>
+  src\renderer\pages\WorkspacePage.tsx:903:        </div>
+  src\renderer\pages\WorkspacePage.tsx:904:
+  src\renderer\pages\WorkspacePage.tsx:905:        <div className="overview-side-column">
+
+
+
+codex
+我再快速确认数据是否可能原地复用，避免漏掉活动行追加。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; if (Get-Command rg -ErrorAction SilentlyContinue) { rg -n \"activeOperation|lastOperation|activity|logTail\" src -S } else { Select-String -Path 'src\\**\\*' -Pattern 'activeOperation|lastOperation|activity|logTail' -CaseSensitive:"'$false }' in D:\project\GitHub\autoplan
+ succeeded in 161ms:
+src\loopService.js:266:    if (runtime?.activeOperations?.size) {
+src\loopService.js:267:      for (const [operationKey, operation] of Array.from(runtime.activeOperations.entries())) {
+src\loopService.js:1116:  /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+src\loopService.js:1120:    const op = operationKey ? runtime.activeOperations.get(operationKey) : runtime.activeOperation;
+src\loopService.js:1122:      if (op.activity && typeof op.activity.flush === 'function') {
+src\loopService.js:1123:        op.activity.flush();
+src\loopService.js:1125:      runtime.lastOperation = {
+src\loopService.js:1133:        logTail: (op.logBuffer || '').slice(-8000),
+src\loopService.js:1134:        activity: op.activity ? op.activity.getLines() : [],
+src\loopService.js:1140:      runtime.activeOperations.delete(operationKey);
+src\loopService.js:1143:      runtime.activeOperations.clear();
+src\loopService.js:1175:    const activeOperation = {
+src\loopService.js:1185:      activity: new CodexActivityPrinter(200),
+src\loopService.js:1195:      activeOperation.logBuffer = `${activeOperation.logBuffer || ''}${text}`;
+src\loopService.js:1196:      if (activeOperation.logBuffer.length > 24000) {
+src\loopService.js:1197:        activeOperation.logBuffer = activeOperation.logBuffer.slice(-16000);
+src\loopService.js:1221:      activeOperation.codexSessionMode = mode;
+src\loopService.js:1222:      activeOperation.codexSessionState = activeOperation.codexSessionFallback ? 'fallback-new' : mode;
+src\loopService.js:1223:      activeOperation.codexSessionId = mode === 'resume' ? requestedSessionId || null : capturedSessionId || null;
+src\loopService.js:1227:        runtime.activeOperation = activeOperation;
+src\loopService.js:1229:        operationKey = registerRuntimeOperation(runtime, child, activeOperation);
+src\loopService.js:1239:        if (!runtime.activeOperations.has(operationKey)) return;
+src\loopService.js:1240:        activeOperation.logBuffer = (activeOperation.logBuffer || '') + text;
+src\loopService.js:1241:        if (activeOperation.logBuffer.length > 24000) {
+src\loopService.js:1242:          activeOperation.logBuffer = activeOperation.logBuffer.slice(-16000);
+src\loopService.js:1248:          activeOperation.codexSessionId = parsedSessionId;
+src\loopService.js:1251:        if (activeOperation.activity) activeOperation.activity.offer(text);
+src\loopService.js:1259:      if (runtime.activeOperations.has(operationKey)) activeOperation.exitCode = exitCode;
+src\loopService.js:1296:        activeOperation.codexSessionFallback = true;
+src\loopService.js:1297:        activeOperation.codexSessionRequestedId = requestedSessionId;
+src\loopService.js:1298:        activeOperation.codexSessionId = null;
+src\loopService.js:1299:        activeOperation.codexSessionMode = 'new';
+src\loopService.js:1300:        activeOperation.codexSessionState = 'fallback-new';
+src\loopService.js:1318:      if (operationKey && runtime.activeOperations.has(operationKey)) {
+src\loopService.js:1337:    const activeOperation = {
+src\loopService.js:1341:      activity: new CodexActivityPrinter(200),
+src\loopService.js:1344:    const operationKey = registerRuntimeOperation(runtime, child, activeOperation);
+src\loopService.js:1349:      if (!runtime.activeOperations.has(operationKey)) return;
+src\loopService.js:1350:      activeOperation.logBuffer = (activeOperation.logBuffer || '') + text;
+src\loopService.js:1351:      if (activeOperation.logBuffer.length > 24000) {
+src\loopService.js:1352:        activeOperation.logBuffer = activeOperation.logBuffer.slice(-16000);
+src\loopService.js:1354:      if (activeOperation.activity) activeOperation.activity.offer(text);
+src\loopService.js:1364:      if (runtime.activeOperations.has(operationKey)) activeOperation.exitCode = exitCode;
+src\loopService.js:1368:      if (runtime.activeOperations.has(operationKey)) {
+src\loopService.js:1469:      activeOperation:
+src\loopService.js:1470:        runtime?.activeOperation && Number(runtime.activeOperation.projectId) === Number(projectId)
+src\loopService.js:1471:          ? operationSnapshotRow(runtime.activeOperation)
+src\loopService.js:1473:      activeOperations: runtime?.activeOperations
+src\loopService.js:1474:        ? Array.from(runtime.activeOperations.values())
+src\loopService.js:1478:      lastOperation:
+src\loopService.js:1479:        runtime?.lastOperation && Number(runtime.lastOperation.projectId) === Number(projectId)
+src\loopService.js:1480:          ? runtime.lastOperation
+src\loopService.js:1594:  const activity = Array.isArray(operation.activity)
+src\loopService.js:1595:    ? operation.activity
+src\loopService.js:1596:    : operation.activity && typeof operation.activity.getLines === 'function'
+src\loopService.js:1597:      ? operation.activity.getLines()
+src\loopService.js:1607:    logTail: (operation.logBuffer || operation.logTail || '').slice(-8000),
+src\loopService.js:1608:    activity,
+src\loopService.js:1615:  if (runtime?.lastOperation && Number(runtime.lastOperation.projectId) === Number(projectId) && runtime.lastOperation.taskId) {
+src\loopService.js:1616:    contexts.set(Number(runtime.lastOperation.taskId), codexSessionContextFields(runtime.lastOperation));
+src\loopService.js:1618:  for (const operation of runtime?.activeOperations?.values?.() || []) {
+src\loopService.js:1717:    activeOperation: null,
+src\loopService.js:1719:    activeOperations: new Map(),
+src\loopService.js:1720:    lastOperation: null,
+src\loopService.js:1738:    activeOperation: null,
+src\loopService.js:1739:    activeOperations: [],
+src\loopService.js:1740:    lastOperation: null,
+src\loopService.js:1826:  if (!runtime.activeOperations) runtime.activeOperations = new Map();
+src\loopService.js:1829:  runtime.activeOperations.set(operationKey, operation);
+src\loopService.js:1831:  runtime.activeOperation = operation;
+src\loopService.js:1836:  const entries = Array.from(runtime.activeOperations?.entries?.() || []);
+src\loopService.js:1840:    runtime.activeOperation = null;
+src\loopService.js:1844:  runtime.activeOperation = latest[1] || null;
+src\loopService.js:1852:  if (!runtime?.activeOperations) return [];
+src\loopService.js:1854:  for (const [operationKey, operation] of runtime.activeOperations.entries()) {
+src\renderer\types.ts:327:  activeOperation: ActiveOperation | null;
+src\renderer\types.ts:328:  activeOperations: ActiveOperation[];
+src\renderer\types.ts:329:  lastOperation: ActiveOperation | null;
+src\renderer\types.ts:346:  logTail: string;
+src\renderer\types.ts:347:  activity: ActivityLine[];
+src\renderer\components\CodexLog.tsx:24: * 优先用过滤后的 activity 行；若为空则回退到 logTail 原始尾部。
+src\renderer\components\CodexLog.tsx:28:  activity,
+src\renderer\components\CodexLog.tsx:32:  activity?: ActivityLine[];
+src\renderer\components\CodexLog.tsx:37:  const lines = activity && activity.length > 0 ? activity : null;
+src\renderer\components\CodexLog.tsx:53:  }, [log, activity, contextLabel]);
+src\renderer\pages\WorkspacePage.tsx:849:  const operation = snapshot.activeOperation || snapshot.lastOperation;
+src\renderer\pages\WorkspacePage.tsx:850:  const operationActive = Boolean(snapshot.activeOperation);
+src\renderer\pages\WorkspacePage.tsx:901:            <CodexLog log={operation?.logTail || ''} activity={operation?.activity || []} context={operation || null} />
+
+**Evaluating operationSnapshotRow**
+
+I'm thinking about whether I need to inspect operationSnapshotRow. I wonder if the activity might be returning a new array. It's interesting to consider how these elements interact and if there's something I've missed. Maybe I should take a closer look at the data structure and the operations involved to ensure I'm getting everything correctly. I'll dig into this more closely to clarify things and make sure it's functioning as intended!
+codex
+数据快照会影响依赖触发；我查看快照函数的返回形态。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; Get-Content -Path 'src\\loopService.js' -Encoding UTF8 | Select-Object -Skip 1588 -First 28" in D:\project\GitHub\autoplan
+ succeeded in 213ms:
+  };
+}
+
+function operationSnapshotRow(operation) {
+  if (!operation) return null;
+  const activity = Array.isArray(operation.activity)
+    ? operation.activity
+    : operation.activity && typeof operation.activity.getLines === 'function'
+      ? operation.activity.getLines()
+      : [];
+  return {
+    label: operation.label || '',
+    projectId: operation.projectId || null,
+    planId: operation.planId || null,
+    taskId: operation.taskId || null,
+    startedAt: operation.startedAt || null,
+    ...(operation.finishedAt ? { finishedAt: operation.finishedAt } : {}),
+    ...(typeof operation.exitCode === 'number' ? { exitCode: operation.exitCode } : {}),
+    logTail: (operation.logBuffer || operation.logTail || '').slice(-8000),
+    activity,
+    ...codexSessionContextFields(operation),
+  };
+}
+
+function runtimeCodexContextByTask(runtime, projectId) {
+  const contexts = new Map();
+  if (runtime?.lastOperation && Number(runtime.lastOperation.projectId) === Number(projectId) && runtime.lastOperation.taskId) {
+    contexts.set(Number(runtime.lastOperation.taskId), codexSessionContextFields(runtime.lastOperation));
+
+codex
+我只查活动行生成器，确认不会误改业务数据流。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; Select-String -Path 'src\\loopService.js' -Pattern 'class CodexActivityPrinter|function CodexActivityPrinter|getLines|offer\\(' -Context 2,5 -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 214ms:
+
+  src\loopService.js:1132:        exitCode: typeof op.exitCode === 'number' ? op.exitCode : null,
+  src\loopService.js:1133:        logTail: (op.logBuffer || '').slice(-8000),
+> src\loopService.js:1134:        activity: op.activity ? op.activity.getLines() : [],
+  src\loopService.js:1135:        ...codexSessionContextFields(op),
+  src\loopService.js:1136:      };
+  src\loopService.js:1137:    }
+  src\loopService.js:1138:    if (operationKey) {
+  src\loopService.js:1139:      runtime.activeChildren.delete(operationKey);
+  src\loopService.js:1249:        }
+  src\loopService.js:1250:        // 喂给活动打印机，提取人类可读的进度行
+> src\loopService.js:1251:        if (activeOperation.activity) activeOperation.activity.offer(text);
+  src\loopService.js:1252:      };
+  src\loopService.js:1253:      child.stdout.on('data', onChunk);
+  src\loopService.js:1254:      child.stderr.on('data', onChunk);
+  src\loopService.js:1255:      child.stdout.pipe(stream, { end: false });
+  src\loopService.js:1256:      child.stderr.pipe(stream, { end: false });
+  src\loopService.js:1352:        activeOperation.logBuffer = activeOperation.logBuffer.slice(-16000);
+  src\loopService.js:1353:      }
+> src\loopService.js:1354:      if (activeOperation.activity) activeOperation.activity.offer(text);
+  src\loopService.js:1355:    };
+  src\loopService.js:1356:    child.stdout.on('data', onChunk);
+  src\loopService.js:1357:    child.stderr.on('data', onChunk);
+  src\loopService.js:1358:    const tailTimer = setInterval(() => {
+  src\loopService.js:1359:      if (projectIdForEmit) this.emitUpdate(projectIdForEmit);
+  src\loopService.js:1594:  const activity = Array.isArray(operation.activity)
+  src\loopService.js:1595:    ? operation.activity
+> src\loopService.js:1596:    : operation.activity && typeof operation.activity.getLines === 'function'
+> src\loopService.js:1597:      ? operation.activity.getLines()
+  src\loopService.js:1598:      : [];
+  src\loopService.js:1599:  return {
+  src\loopService.js:1600:    label: operation.label || '',
+  src\loopService.js:1601:    projectId: operation.projectId || null,
+  src\loopService.js:1602:    planId: operation.planId || null,
+
+
+
+codex
+还需要定位 `CodexActivityPrinter` 定义，保证模式判断稳定。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; if (Get-Command rg -ErrorAction SilentlyContinue) { rg -n \"CodexActivityPrinter|getLines\\(\" . -S } else { Get-ChildItem -Recurse -File | Select-String -Pattern 'CodexActivityPrinter|getLines\\(' }" in D:\project\GitHub\autoplan
+ succeeded in 182ms:
+.\docs\progress\logs\20260625-030248_gen-requirement-4.log:11495: 908:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-030248_gen-requirement-4.log:11550: 963:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-030248_gen-requirement-4.log:11740:1017:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-030248_gen-requirement-4.log:11879:1148:             activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-030248_gen-requirement-4.log:11892:1161:               activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031229_gen-requirement-5.log:1072:7-const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-031229_gen-requirement-5.log:1350:911:        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-031229_gen-requirement-5.log:1366:966:      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031229_gen-requirement-5.log:1382:1021:      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031229_gen-requirement-5.log:1430:1152:            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031229_gen-requirement-5.log:1438:1165:              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031229_gen-requirement-5.log:2305:1152:             activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031229_gen-requirement-5.log:2318:1165:               activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031229_gen-requirement-5.log:2980:1021:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031229_gen-requirement-5.log:3176:1152:             activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031229_gen-requirement-5.log:3189:1165:               activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-034308_execute-P002.log:112:const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-034308_execute-P002.log:1112:        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-034308_execute-P002.log:1167:      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-034308_execute-P002.log:1222:      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-034308_execute-P002.log:1353:            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-034308_execute-P002.log:1366:              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-034308_execute-P002.log:2643: 1007:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-034308_execute-P002.log:2693:    7: const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-034308_execute-P002.log:2727: 1062: activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-034308_execute-P002.log:2728: 1117: activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-034659_gen-requirement-8.log:2454:src\loopService.js:7:const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-034659_gen-requirement-8.log:4188:   7: const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-033918_gen-requirement-7.log:550:src\codexActivity.js:2: * 移植自 run_advanced_plan_with_codex.dart 的 CodexActivityPrinter。
+.\docs\progress\logs\20260625-033918_gen-requirement-7.log:555:src\codexActivity.js:32:class CodexActivityPrinter {
+.\docs\progress\logs\20260625-033918_gen-requirement-7.log:556:src\codexActivity.js:156:module.exports = { CodexActivityPrinter };
+.\docs\progress\logs\20260625-033918_gen-requirement-7.log:579:src\loopService.js:7:const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-033918_gen-requirement-7.log:789:src\loopService.js:1062:      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-033918_gen-requirement-7.log:791:src\loopService.js:1117:      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-033918_gen-requirement-7.log:1050:src\loopService.js:7:const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-033918_gen-requirement-7.log:1660:1007:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-033918_gen-requirement-7.log:1715:1062:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-033918_gen-requirement-7.log:1818:1248:             activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-033918_gen-requirement-7.log:1831:1261:               activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-033918_gen-requirement-7.log:2281:1062:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-035545_gen-requirement-11.log:2483:1282:             activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-041737_execute-P003.log:68:const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-041737_execute-P003.log:1156:        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-041737_execute-P003.log:1211:      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-041737_execute-P003.log:1266:      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-041737_execute-P003.log:1397:            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-041737_execute-P003.log:1410:              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-041737_execute-P003.log:2302:src\loopService.js:1336:            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-041737_execute-P003.log:2313:src\loopService.js:1349:              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-041737_execute-P003.log:2433:1205:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-041737_execute-P003.log:2551:1336:             activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-041737_execute-P003.log:2564:1349:               activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-041737_execute-P003.log:2853:1336:             activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-041737_execute-P003.log:2866:1349:               activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-041737_execute-P003.log:2932:1150:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-041737_execute-P003.log:3042:1095:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-041737_execute-P003.log:3199:1349:               activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-041737_execute-P003.log:4103:2026-06-24T20:21:49.787345Z ERROR codex_core::tools::router: error={"output":"Total output lines: 222\n\ndiff --git a/src/loopService.js b/src/loopService.js\r\nindex 7d17bb9..5be1ea2 100644\r\n--- a/src/loopService.js\r\n+++ b/src/loopService.js\r\n@@ -8,6 +8,51 @@ const { CodexActivityPrinter } = require('./codexActivity');\r\n \r\n const ACTIVE_RUNTIME_PHASES = new Set(['running', 'scan', 'generate-plan', 'execute-task', 'validate']);\r\n const ACTIVE_RUNTIME_PHASE_SQL = \"('running','scan','generate-plan','execute-task','validate')\";\r\n+const MAX_PARALLEL_TASKS = 2;\r\n+const PARALLEL_BLOCKING_TASK_RE = /(全量|回归|验证|验收|测试|记录|整理|发布|部署|test|validate|regression|release|deploy)/i;\r\n+const TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';\r\n+const TASK_SCOPE_RE = new RegExp(`${TASK_SCOPE_LABEL_RE}\\\\s*[:=：]\\\\s*([^>\\\\]\\\\n]+)`, 'i');\r\n+const TASK_SCOPE_COMMENT_RE = new RegExp(`\\\\s*<!--\\\\s*${TASK_SCOPE_LABEL_RE}\\\\s*[:=：]\\\\s*([^>]*?)\\\\s*-->\\\\s*`, 'i');\r\n+const TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;\r\n+const TASK_PATH_RE = /[\\w./\\\\-]+\\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;\r\n+\r\n+const TASK_EVENT_TYPES = Object.freeze({\r\n+  STARTED: 'task.started',\r\n+  SUCCEEDED: 'task.succeeded',\r\n+  FAILED: 'task.failed',\r\n+  STOP_REQUESTED: 'task.stop.requested',\r\n+  STOPPED: 'task.stopped',\r\n+  INTERRUPTED: 'task.interrupted',\r\n+});\r\n+\r\n+const LEGACY_TASK_EVENT_TYPES = Object.freeze({\r\n+  EXECUTED: 'task.executed',\r\n+  STOPPING: 'task.stopping',\r\n+});\r\n+\r\n+const TASK_EVENT_STATUS = Object.freeze({\r\n+  PENDING: 'pending',\r\n+  RUNNING: 'running',\r\n+  COMPLETED: 'completed',\r\n+  FAILED: 'failed',\r\n+  STOPPING: 'stopping',\r\n+  STOPPED: 'stopped',\r\n+  INTERRUPTED: 'interrupted',\r\n+});\r\n+\r\n+const TASK_EVENT_SEMANTICS = Object.freeze({\r\n+  [TASK_EVENT_TYPES.STARTED]: Object.freeze({ status: TASK_EVENT_STATUS.RUNNING, label: '开始了任务' }),\r\n+  [TASK_EVENT_TYPES.SUCCEEDED]: Object.freeze({ status: TASK_EVENT_STATUS.COMPLETED, label: '结束了任务' }),\r\n+  [TASK_EVENT_TYPES.FAILED]: Object.freeze({ status: TASK_EVENT_STATUS.FAILED, label: '任务失败' }),\r\n+  [TASK_EVENT_TYPES.STOP_REQUESTED]: Object.freeze({ status: TASK_EVENT_STATUS.STOPPING, label: '请求停止任务' }),\r\n+  [TASK_EVENT_TYPES.STOPPED]: Object.freeze({ status: TASK_EVENT_STATUS.STOPPED, label: '已停止任务' }),\r\n+  [TASK_EVENT_TYPES.INTERRUPTED]: Object.freeze({ status: TASK_EVENT_STATUS.INTERRUPTED, label: '已中断任务' }),\r\n+});\r\n+\r\n+const TASK_EVENT_COMPATIBILITY = Object.freeze({\r\n+  [LEGACY_TASK_EVENT_TYPES.EXECUTED]: TASK_EVENT_TYPES.SUCCEEDED,\r\n+  [LEGACY_TASK_EVENT_TYPES.STOPPING]: TASK_EVENT_TYPES.STOPPED,\r\n+});\r\n \r\n class LoopService extends EventEmitter {\r\n   constructor(db) {\r\n@@ -210,17 +255,25 @@ class LoopService extends EventEmitter {\r\n       runtime.timer = null;\r\n       runtime.running = false;\r\n     }\r\n-    if (runtime?.activeChild) {\r\n-      const activeTaskId = runtime.activeOperation?.taskId || null;\r\n-      killChildProcess(runtime.activeChild);\r\n-      if (activeTaskId) {\r\n-        this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', [\r\n-          'pending',\r\n-          nowIso(),\r\n-          activeTaskId,\r\n-        ]);\r\n+    if (runtime?.activeOperations?.size) {\r\n+      for (const [operationKey, operation] of Array.from(runtime.activeOperations.entries())) {\r\n+        const child = runtime.activeChildren.get(operationKey);\r\n+        const activeTaskId = operation?.taskId || null;\r\n+        const finishedAt = nowIso();\r\n+        killChildProcess(child);\r\n+        const activeTask = activeTaskId ? this.taskForProject(projectId, activeTaskId) : null;\r\n+        const stoppedTask = activeTaskId\r\n+          ? this.finishTaskRun(activeTaskId, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true })\r\n+          : null;\r\n+        this.addEvent(\r\n+          projectId,\r\n+          activeTaskId ? LEGACY_TASK_EVENT_TYPES.STOPPING : 'operation.stopping',\r\n+          operation?.label || '',\r\n+          stoppedTask || activeTask\r\n+            ? taskEventMeta(stoppedTask || activeTask, { status: TASK_EVENT_STATUS.STOPPED, finishedAt })\r\n+            : null,\r\n+        );\r\n       }\r\n-      this.addEvent(projectId, activeTaskId ? 'task.stopping' : 'operation.stopping', runtime.activeOperation?.label || '');\r\n     }\r\n     this.db.run(\r\n       'UPDATE project_states SET running = 0, phase = ?, updated_at = ? WHERE project_id = ?',\r\n@@ -314,10 +367,12 @@ class LoopService extends EventEmitter {\r\n \r\n     runtime.busy = true;\r\n     try {\r\n-      this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['running', nowIso(), taskId]);\r\n+      this.startTaskRun(taskId);\r\n       this.emitUpdate(projectId);\r\n-      await this.executeTask(workspace, plan, task);\r\n-      this.syncPlanTasks(plan.id, path.join(workspace, plan.file_path));\r\n+      const result = await this.executeTask(workspace, plan, task);\r\n+      if (result.exitCode === 0) {\r\n+        this.completeTask(workspace, plan, task, result);\r\n+      }\r\n       if (runtime.running) {\r\n         …368 chars truncated…activeOperation?.taskId) === Number(taskId)) {\r\n-      killChildProcess(runtime.activeChild);\r\n-      this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['pending', nowIso(), taskId]);\r\n+    const activeEntry = findRuntimeOperation(runtime, (operation) => Number(operation?.taskId) === Number(taskId));\r\n+    if (activeEntry) {\r\n+      killChildProcess(activeEntry.child);\r\n+      const finishedAt = nowIso();\r\n+      const stoppedTask = runtime?.running\r\n+        ? task\r\n+        : this.finishTaskRun(taskId, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true }) || task;\r\n       if (!runtime.running) {\r\n-        this.addEvent(projectId, 'task.stopping', task.title);\r\n+        this.addEvent(\r\n+          projectId,\r\n+          LEGACY_TASK_EVENT_TYPES.STOPPING,\r\n+          task.title,\r\n+          taskEventMeta(stoppedTask, { status: TASK_EVENT_STATUS.STOPPED, finishedAt }),\r\n+        );\r\n       }\r\n     } else {\r\n-      this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ? AND status = ?', [\r\n-        'pending',\r\n-        nowIso(),\r\n-        taskId,\r\n-        'running',\r\n-      ]);\r\n-      this.addEvent(projectId, 'task.stop.requested', task.title);\r\n+      const finishedAt = nowIso();\r\n+      const stoppedTask = this.finishTaskRun(taskId, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true }) || task;\r\n+      this.addEvent(\r\n+        projectId,\r\n+        TASK_EVENT_TYPES.STOP_REQUESTED,\r\n+        task.title,\r\n+        taskEventMeta(stoppedTask, { status: TASK_EVENT_STATUS.STOPPING, finishedAt }),\r\n+      );\r\n     }\r\n \r\n     if (runtime?.running) this.stop(projectId);\r\n@@ -364,19 +429,73 @@ class LoopService extends EventEmitter {\r\n     );\r\n   }\r\n \r\n+  startTaskRun(taskId, startedAt = nowIso()) {\r\n+    this.db.run(\r\n+      `UPDATE plan_tasks\r\n+       SET status = ?,\r\n+           started_at = CASE WHEN status = ? AND started_at IS NOT NULL THEN started_at ELSE ? END,\r\n+           finished_at = NULL,\r\n+           updated_at = ?\r\n+       WHERE id = ?`,\r\n+      [TASK_EVENT_STATUS.RUNNING, TASK_EVENT_STATUS.RUNNING, startedAt, startedAt, taskId],\r\n+    );\r\n+    return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);\r\n+  }\r\n+\r\n+  finishTaskRun(taskId, status, finishedAt = nowIso(), options = {}) {\r\n+    const task = this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);\r\n+    if (!task) return null;\r\n+    const isRunning = task.status === TASK_EVENT_STATUS.RUNNING;\r\n+    if (options.onlyIfRunning && !isRunning) return withTaskDurationMeta(task);\r\n+\r\n+    const runDurationMs = isRunning ? taskRunDurationMs(task.started_at, finishedAt) : undefined;\r\n+    const durationMs = normalizeDurationMs(task.duration_ms) + (runDurationMs || 0);\r\n+    this.db.run(\r\n+      `UPDATE plan_tasks\r\n+       SET status = ?, duration_ms = ?, finished_at = ?, updated_at = ?\r\n+       WHERE id = ?`,\r\n+      [status, durationMs, finishedAt, finishedAt, taskId],\r\n+    );\r\n+    return withTaskDurationMeta(\r\n+      {\r\n+        ...task,\r\n+        status,\r\n+        duration_ms: durationMs,\r\n+        finished_at: finishedAt,\r\n+        updated_at: finishedAt,\r\n+      },\r\n+      runDurationMs,\r\n+    );\r\n+  }\r\n+\r\n   /** 中断某个 plan：停止正在执行的 codex 进程，未完成任务标记为 blocked，plan 标记为 interrupted */\r\n   interruptPlan(projectId, planId) {\r\n     const plan = this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId]);\r\n     if (!plan) return;\r\n     // 若当前正在执行该 plan 的任务，kill 进程\r\n     const runtime = this.runtime(projectId);\r\n-    if (runtime?.activeChild && Number(runtime.activeOperation?.planId) === Number(planId)) {\r\n-      killChildProcess(runtime.activeChild);\r\n-      const activeTaskId = runtime.activeOperation?.taskId;\r\n-      if (activeTaskId) {\r\n-        this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['blocked', nowIso(), activeTaskId]);\r\n-      }\r\n-      this.addEvent(projectId, 'task.stopping', `plan #${planId} 的任务被中断`);\r\n+    const activePlanOperations = runtime\r\n+      ? findRuntimeOperations(runtime, (operation) => Number(operation?.planId) === Number(planId))\r\n+      : [];\r\n+    for (const activeEntry of activePlanOperations) {\r\n+      const finishedAt = nowIso();\r\n+      killChildProcess(activeEntry.child);\r\n+      const activeTaskId = activeEntry.operation?.taskId;\r\n+      const activeTask = activeTaskId ? this.taskForProject(projectId, activeTaskId) : null;\r\n+      const interruptedTask = activeTaskId\r\n+        ? this.finishTaskRun(activeTaskId, 'blocked', finishedAt, { onlyIfRunning: true })\r\n+        : null;\r\n+      this.addEvent(\r\n+        projectId,\r\n+        LEGACY_TASK_EVENT_TYPES.STOPPING,\r\nwarning: in the working copy of 'src/loopService.js', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/renderer/types.ts', LF will be replaced by CRLF the next time Git touches it\n","metadata":{"exit_code":1,"duration_seconds":0.3}}
+.\docs\progress\logs\20260625-041737_execute-P003.log:4109:@@ -8,6 +8,51 @@ const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-040736_execute-P002.log:1041:1096:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-040736_execute-P002.log:1096:1151:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-040736_execute-P002.log:1227:1282:             activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-040736_execute-P002.log:1240:1295:               activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-040736_execute-P002.log:2034:   7: const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-040736_execute-P002.log:2586:1041:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-040736_execute-P002.log:2641:1096:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-040736_execute-P002.log:2696:1151:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-040736_execute-P002.log:7037:1336:             activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-040736_execute-P002.log:7050:1349:               activity: operation.activity ? operation.activity.getLines() : [],
+.\src\codexActivity.js:2: * 移植自 run_advanced_plan_with_codex.dart 的 CodexActivityPrinter。
+.\src\codexActivity.js:9: * offer(rawChunk) 喂入原始流（可能含多行），getLines() 返回当前活动行列表。
+.\src\codexActivity.js:32:class CodexActivityPrinter {
+.\src\codexActivity.js:151:  getLines() {
+.\src\codexActivity.js:156:module.exports = { CodexActivityPrinter };
+.\src\loopService.js:7:const { CodexActivityPrinter } = require('./codexActivity');
+.\src\loopService.js:1134:        activity: op.activity ? op.activity.getLines() : [],
+.\src\loopService.js:1185:      activity: new CodexActivityPrinter(200),
+.\src\loopService.js:1341:      activity: new CodexActivityPrinter(200),
+.\src\loopService.js:1597:      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-031550_execute-P001.log:110:const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-031550_execute-P001.log:1014:        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:1069:      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:1124:      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:1255:            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:1268:              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:1914:    7: const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-031550_execute-P001.log:3077:const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-031550_execute-P001.log:11896:-const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-031550_execute-P001.log:12800:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:12855:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:12910:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:13041:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:13054:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:13300:+const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-031550_execute-P001.log:14300:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:14355:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:14410:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:14541:+            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:14554:+              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:15477:-const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-031550_execute-P001.log:16381:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:16436:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:16491:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:16622:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:16635:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:16881:+const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-031550_execute-P001.log:17881:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:17936:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:17991:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:18122:+            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:18135:+              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:19035:2026-06-24T19:24:24.430263Z ERROR codex_core::tools::router: error={"output":"Total output lines: 220\n\ndiff --git a/src/loopService.js b/src/loopService.js\r\nindex 7d17bb9..a215c25 100644\r\n--- a/src/loopService.js\r\n+++ b/src/loopService.js\r\n@@ -8,6 +8,51 @@ const { CodexActivityPrinter } = require('./codexActivity');\r\n \r\n const ACTIVE_RUNTIME_PHASES = new Set(['running', 'scan', 'generate-plan', 'execute-task', 'validate']);\r\n const ACTIVE_RUNTIME_PHASE_SQL = \"('running','scan','generate-plan','execute-task','validate')\";\r\n+const MAX_PARALLEL_TASKS = 2;\r\n+const PARALLEL_BLOCKING_TASK_RE = /(全量|回归|验证|验收|测试|记录|整理|发布|部署|test|validate|regression|release|deploy)/i;\r\n+const TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';\r\n+const TASK_SCOPE_RE = new RegExp(`${TASK_SCOPE_LABEL_RE}\\\\s*[:=：]\\\\s*([^>\\\\]\\\\n]+)`, 'i');\r\n+const TASK_SCOPE_COMMENT_RE = new RegExp(`\\\\s*<!--\\\\s*${TASK_SCOPE_LABEL_RE}\\\\s*[:=：]\\\\s*([^>]*?)\\\\s*-->\\\\s*`, 'i');\r\n+const TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;\r\n+const TASK_PATH_RE = /[\\w./\\\\-]+\\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;\r\n+\r\n+const TASK_EVENT_TYPES = Object.freeze({\r\n+  STARTED: 'task.started',\r\n+  SUCCEEDED: 'task.succeeded',\r\n+  FAILED: 'task.failed',\r\n+  STOP_REQUESTED: 'task.stop.requested',\r\n+  STOPPED: 'task.stopped',\r\n+  INTERRUPTED: 'task.interrupted',\r\n+});\r\n+\r\n+const LEGACY_TASK_EVENT_TYPES = Object.freeze({\r\n+  EXECUTED: 'task.executed',\r\n+  STOPPING: 'task.stopping',\r\n+});\r\n+\r\n+const TASK_EVENT_STATUS = Object.freeze({\r\n+  PENDING: 'pending',\r\n+  RUNNING: 'running',\r\n+  COMPLETED: 'completed',\r\n+  FAILED: 'failed',\r\n+  STOPPING: 'stopping',\r\n+  STOPPED: 'stopped',\r\n+  INTERRUPTED: 'interrupted',\r\n+});\r\n+\r\n+const TASK_EVENT_SEMANTICS = Object.freeze({\r\n+  [TASK_EVENT_TYPES.STARTED]: Object.freeze({ status: TASK_EVENT_STATUS.RUNNING, label: '开始了任务' }),\r\n+  [TASK_EVENT_TYPES.SUCCEEDED]: Object.freeze({ status: TASK_EVENT_STATUS.COMPLETED, label: '结束了任务' }),\r\n+  [TASK_EVENT_TYPES.FAILED]: Object.freeze({ status: TASK_EVENT_STATUS.FAILED, label: '任务失败' }),\r\n+  [TASK_EVENT_TYPES.STOP_REQUESTED]: Object.freeze({ status: TASK_EVENT_STATUS.STOPPING, label: '请求停止任务' }),\r\n+  [TASK_EVENT_TYPES.STOPPED]: Object.freeze({ status: TASK_EVENT_STATUS.STOPPED, label: '已停止任务' }),\r\n+  [TASK_EVENT_TYPES.INTERRUPTED]: Object.freeze({ status: TASK_EVENT_STATUS.INTERRUPTED, label: '已中断任务' }),\r\n+});\r\n+\r\n+const TASK_EVENT_COMPATIBILITY = Object.freeze({\r\n+  [LEGACY_TASK_EVENT_TYPES.EXECUTED]: TASK_EVENT_TYPES.SUCCEEDED,\r\n+  [LEGACY_TASK_EVENT_TYPES.STOPPING]: TASK_EVENT_TYPES.STOPPED,\r\n+});\r\n \r\n class LoopService extends EventEmitter {\r\n   constructor(db) {\r\n@@ -210,17 +255,28 @@ class LoopService extends EventEmitter {\r\n       runtime.timer = null;\r\n       runtime.running = false;\r\n     }\r\n-    if (runtime?.activeChild) {\r\n-      const activeTaskId = runtime.activeOperation?.taskId || null;\r\n-      killChildProcess(runtime.activeChild);\r\n-      if (activeTaskId) {\r\n-        this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', [\r\n-          'pending',\r\n-          nowIso(),\r\n-          activeTaskId,\r\n-        ]);\r\n+    if (runtime?.activeOperations?.size) {\r\n+      for (const [operationKey, operation] of Array.from(runtime.activeOperations.entries())) {\r\n+        const child = runtime.activeChildren.get(operationKey);\r\n+        const activeTaskId = operation?.taskId || null;\r\n+        killChildProcess(child);\r\n+        const activeTask = activeTaskId ? this.taskForProject(projectId, activeTaskId) : null;\r\n+        if (activeTaskId) {\r\n+          this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', [\r\n+            'pending',\r\n+            nowIso(),\r\n+            activeTaskId,\r\n+          ]);\r\n+        }\r\n+        this.addEvent(\r\n+          projectId,\r\n+          activeTaskId ? LEGACY_TASK_EVENT_TYPES.STOPPING : 'operation.stopping',\r\n+          operation?.label || '',\r\n+          activeTask\r\n+            ? taskEventMeta(activeTask, { status: TASK_EVENT_STATUS.STOPPED, finishedAt: nowIso() })\r\n+            : null,\r\n+        );\r\n       }\r\n-      this.addEvent(projectId, activeTaskId ? 'task.stopping' : 'operation.stopping', runtime.activeOperation?.label || '');\r\n     }\r\n     this.db.run(\r\n       'UPDATE project_states SET running = 0, phase = ?, updated_at = ? WHERE project_id = ?',\r\n@@ -316,8 +372,10 @@ class LoopService extends EventEmitter {\r\n     try {\r\n       this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['running', nowIso(), taskId]);\r\n       this.emitUpdate(projectId);\r\n-      await this.executeTask(workspace, plan, task);\r\n-      this.syncPlanTasks(plan.id, path.join(workspace, plan.file_path));\r\n+      const result = await this.executeTask(workspace, plan, task);\r\n+      if (result.exitCode === 0) {\r\n+        this.completeTask(workspace, plan, task, result);\r\n+      }\r\n       if (runtime.running) {\r\n         this.setPhase(projectId, 'waiting');\r\n       } else if (this.db.get('SELE…306 chars truncated…tion?.taskId) === Number(taskId)) {\r\n-      killChildProcess(runtime.activeChild);\r\n+    const activeEntry = findRuntimeOperation(runtime, (operation) => Number(operation?.taskId) === Number(taskId));\r\n+    if (activeEntry) {\r\n+      killChildProcess(activeEntry.child);\r\n       this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['pending', nowIso(), taskId]);\r\n       if (!runtime.running) {\r\n-        this.addEvent(projectId, 'task.stopping', task.title);\r\n+        this.addEvent(\r\n+          projectId,\r\n+          LEGACY_TASK_EVENT_TYPES.STOPPING,\r\n+          task.title,\r\n+          taskEventMeta(task, { status: TASK_EVENT_STATUS.STOPPED, finishedAt: nowIso() }),\r\n+        );\r\n       }\r\n     } else {\r\n       this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ? AND status = ?', [\r\n@@ -347,7 +411,12 @@ class LoopService extends EventEmitter {\r\n         taskId,\r\n         'running',\r\n       ]);\r\n-      this.addEvent(projectId, 'task.stop.requested', task.title);\r\n+      this.addEvent(\r\n+        projectId,\r\n+        TASK_EVENT_TYPES.STOP_REQUESTED,\r\n+        task.title,\r\n+        taskEventMeta(task, { status: TASK_EVENT_STATUS.STOPPING }),\r\n+      );\r\n     }\r\n \r\n     if (runtime?.running) this.stop(projectId);\r\n@@ -370,13 +439,27 @@ class LoopService extends EventEmitter {\r\n     if (!plan) return;\r\n     // 若当前正在执行该 plan 的任务，kill 进程\r\n     const runtime = this.runtime(projectId);\r\n-    if (runtime?.activeChild && Number(runtime.activeOperation?.planId) === Number(planId)) {\r\n-      killChildProcess(runtime.activeChild);\r\n-      const activeTaskId = runtime.activeOperation?.taskId;\r\n+    const activePlanOperations = runtime\r\n+      ? findRuntimeOperations(runtime, (operation) => Number(operation?.planId) === Number(planId))\r\n+      : [];\r\n+    for (const activeEntry of activePlanOperations) {\r\n+      killChildProcess(activeEntry.child);\r\n+      const activeTaskId = activeEntry.operation?.taskId;\r\n+      const activeTask = activeTaskId ? this.taskForProject(projectId, activeTaskId) : null;\r\n       if (activeTaskId) {\r\n         this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['blocked', nowIso(), activeTaskId]);\r\n       }\r\n-      this.addEvent(projectId, 'task.stopping', `plan #${planId} 的任务被中断`);\r\n+      this.addEvent(\r\n+        projectId,\r\n+        LEGACY_TASK_EVENT_TYPES.STOPPING,\r\n+        `plan #${planId} 的任务被中断`,\r\n+        taskEventMeta(activeTask, {\r\n+          planId,\r\n+          taskId: activeTaskId || undefined,\r\n+          status: TASK_EVENT_STATUS.INTERRUPTED,\r\n+          finishedAt: nowIso(),\r\n+        }),\r\n+      );\r\n     }\r\n     // 其余未完成任务 → blocked\r\n     this.db.run(\r\n@@ -425,7 +508,7 @@ class LoopService extends EventEmitter {\r\n \r\n     // 追加到 plan 文件的\"## 任务计划\"段末尾\r\n     let content = fs.readFileSync(planFile, 'utf8');\r\n-    const line = `- [ ] ${taskKey}: ${cleanTitle}`;\r\n+    const line = ensureTaskScopeComment(`- [ ] ${taskKey}: ${cleanTitle}`);\r\n     const taskSectionIdx = content.search(/##\\s*任务计划/);\r\n     if (taskSectionIdx === -1) {\r\n       content = `${content.trim()}\\n\\n## 任务计划\\n${line}\\n`;\r\n@@ -440,7 +523,18 @@ class LoopService extends EventEmitter {\r\n     }\r\n     // 重新解析任务入库\r\n     this.syncPlanTasks(planId, planFile);\r\n-    this.addEvent(projectId, 'task.appended', `追加 ${taskKey}: ${cleanTitle}`, { planId });\r\n+    const task = this.db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, taskKey]);\r\n+    this.addEvent(\r\n+      projectId,\r\n+      'task.appended',\r\n+      `追加 ${taskKey}: ${cleanTitle}`,\r\n+      taskEventMeta(task, {\r\n+        planId,\r\n+        taskKey,\r\n+        taskTitle: cleanTitle,\r\n+        status: TASK_EVENT_STATUS.PENDING,\r\n+      }),\r\n+    );\r\n     this.emitUpdate(projectId);\r\n \r\n     // 循环在运行则立即拾取\r\n@@ -535,7 +629,8 @@ class LoopService extends EventEmitter {\r\n       `输出文件：${planFile}`,\r\n       '',\r\n       '格式要求：',\r\n-      '- 任务必须使用 Markdown checkbox：- [ ] P001: 任务标题',\r\n+      '- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->',\r\n+      '- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行',\r\n       '- 每个任务要有验收要点',\r\n       '- 必须包含总体验收标准和进度区',\r\n       '- 只写 plan 文件，不要改业务代码',\r\n@@ -592,7 +687,8 @@ class LoopService extends EventEmitter {\r\n       `输出文件：${planFile}`,\r\n       '',\r\n       '格式要求：',\r\n-      '- 任务必须使用 Markdown checkbox：- [ ] P001: 任务标题',\r\n+      '- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->',\r\n","metadata":{"exit_code":1,"duration_seconds":0.3}}
+.\docs\progress\logs\20260625-031550_execute-P001.log:19041:@@ -8,6 +8,51 @@ const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-031550_execute-P001.log:19269:-const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-031550_execute-P001.log:20173:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:20228:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:20283:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:20414:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:20427:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:20673:+const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-031550_execute-P001.log:21673:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:21728:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:21783:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:21914:+            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:21927:+              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:22841:-const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-031550_execute-P001.log:23745:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:23800:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:23855:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:23986:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:23999:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:24245:+const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-031550_execute-P001.log:25245:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:25300:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:25355:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:25486:+            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:25499:+              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:26409:-const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-031550_execute-P001.log:27313:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:27368:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:27423:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:27554:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:27567:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:27813:+const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-031550_execute-P001.log:28813:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:28868:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:28923:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:29054:+            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:29067:+              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:29985:-const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-031550_execute-P001.log:30889:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:30944:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:30999:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:31130:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:31143:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:31389:+const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-031550_execute-P001.log:32389:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:32444:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:32499:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-031550_execute-P001.log:32630:+            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-031550_execute-P001.log:32643:+              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-042833_execute-P002.log:121:const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-042833_execute-P002.log:686:    7: const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-042833_execute-P002.log:1355: 1095:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-042833_execute-P002.log:1402: 1150:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:2957: 1095:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-042833_execute-P002.log:3014: 1150:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:3069: 1205:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:4138:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:4147:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:4460:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:4469:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:4787:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:4796:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:5154:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:5163:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:5526:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:5535:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:5944:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:5953:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:6232: 1161:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:6586:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:6595:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:7123:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:7132:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:7498:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:7507:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:7868:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:7877:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:8365:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:8374:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:8743:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:8752:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:9356:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:10137:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:10921:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-042833_execute-P002.log:11706:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-044209_execute-P005.log:1592:1349:             activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-044209_execute-P005.log:1605:1362:               activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-044209_execute-P005.log:1849:1214:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-044209_execute-P005.log:1962:   7: const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-043619_execute-P003.log:494:7: const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-043619_execute-P003.log:1460:1362:               activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-043619_execute-P003.log:2094:1104:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-043619_execute-P003.log:2113:1161:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-043619_execute-P003.log:2168:1216:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-043619_execute-P003.log:2449:1104:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-043619_execute-P003.log:2498:1161:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-043619_execute-P003.log:2555:1216:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-043619_execute-P003.log:2880:> @@ -8,6 +8,52 @@ const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-043619_execute-P003.log:2935:           activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-043619_execute-P003.log:2953:               activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-051637_execute-P004.log:497:1157:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-051637_execute-P004.log:915:1157:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-051637_execute-P004.log:1135:1157:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-051637_execute-P004.log:1790:7: const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-051637_execute-P004.log:2193:1109:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-051637_execute-P004.log:2210:1422:             activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-051637_execute-P004.log:2223:1435:               activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-050902_execute-P003.log:146:const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-050902_execute-P003.log:411:src/loopService.js:7:const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-050902_execute-P003.log:445:const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-050902_execute-P003.log:676:        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-050902_execute-P003.log:733:      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:2205:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:2261:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:2431:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:2487:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:2662:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:2718:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:2959:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:3015:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:3264:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:3320:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:3564:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:3620:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:3955:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:4011:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:4271:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:4327:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:4573:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:4629:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:4896:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:4952:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:5207:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:5263:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:5519:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-050902_execute-P003.log:5575:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-053329_execute-P006.log:568:src\loopService.js:7:const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-053329_execute-P006.log:1752:1134:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-053329_execute-P006.log:1972:1185:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-053329_execute-P006.log:2203:1134:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-055911_execute-P006.log:4380:1341:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:96:const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-052248_execute-P005.log:933:1125:        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:938:1173:      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:974:1303:      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:1001:1438:            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:1005:1451:              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:1316: 1125:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:1364: 1173:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:1494: 1303:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:2043: 1125:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:2280: 1173:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:2410: 1303:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:2558: 1173:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:2711: 1173:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:2870: 1438:             activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:2883: 1451:               activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:4554:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:4565:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:4608:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:4621:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:4739:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:4750:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:4793:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:4806:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:4929:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:4940:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:4954:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:5063:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:5076:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:5194:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:5205:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:5219:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:5328:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:5341:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:5464:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:5475:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:5489:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:5598:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:5611:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:5817:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:5828:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:5842:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:5951:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:5964:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:6175:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:6186:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:6200:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:6309:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:6322:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:6465:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:6669:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:6680:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:6694:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:6803:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:6816:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:6959:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:7168:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:7179:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:7193:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:7302:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:7315:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:7458:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:7720:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:7731:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:7745:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:7854:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:7867:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:8010:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:8277:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:8288:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:8302:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:8411:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:8424:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:8567:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:8912:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:8923:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:8937:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:9046:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:9059:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:9202:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:9552:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:9563:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:9577:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:9686:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:9699:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:9842:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:10214:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:10225:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:10239:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:10348:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:10361:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:10504:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:10881:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:10892:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:10906:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:11014:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:11027:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:11170:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:11542:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:11553:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:11567:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:11675:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:11688:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:11831:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:12247:-        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:12258:+        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:12272:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:12380:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:12393:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:12536:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:13042:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:13070:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:13203:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:13376:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:13393:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:13445:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:15941:2026-06-24T21:30:58.790949Z ERROR codex_core::tools::router: error={"output":"diff --git a/src/loopService.js b/src/loopService.js\r\nindex 7d17bb9..772d0c2 100644\r\n--- a/src/loopService.js\r\n+++ b/src/loopService.js\r\n@@ -8,6 +8,59 @@ const { CodexActivityPrinter } = require('./codexActivity');\r\n \r\n const ACTIVE_RUNTIME_PHASES = new Set(['running', 'scan', 'generate-plan', 'execute-task', 'validate']);\r\n const ACTIVE_RUNTIME_PHASE_SQL = \"('running','scan','generate-plan','execute-task','validate')\";\r\n+const MAX_PARALLEL_TASKS = 2;\r\n+const PARALLEL_BLOCKING_TASK_RE = /(全量|回归|验证|验收|测试|记录|整理|发布|部署|test|validate|regression|release|deploy)/i;\r\n+const TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';\r\n+const TASK_SCOPE_RE = new RegExp(`${TASK_SCOPE_LABEL_RE}\\\\s*[:=：]\\\\s*([^>\\\\]\\\\n]+)`, 'i');\r\n+const TASK_SCOPE_COMMENT_RE = new RegExp(`\\\\s*<!--\\\\s*${TASK_SCOPE_LABEL_RE}\\\\s*[:=：]\\\\s*([^>]*?)\\\\s*-->\\\\s*`, 'i');\r\n+const TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;\r\n+const TASK_PATH_RE = /[\\w./\\\\-]+\\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;\r\n+const TASK_LIFECYCLE_EVENT_RECORDED = Symbol('taskLifecycleEventRecorded');\r\n+const CODEX_SESSION_UUID_RE_SOURCE = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';\r\n+const CODEX_SESSION_ID_RES = Object.freeze([\r\n+  new RegExp(`\\\\bsession\\\\s+id:\\\\s*(${CODEX_SESSION_UUID_RE_SOURCE})\\\\b`, 'i'),\r\n+  new RegExp(`\"(?:session_id|sessionId)\"\\\\s*:\\\\s*\"(${CODEX_SESSION_UUID_RE_SOURCE})\"`, 'i'),\r\n+  new RegExp(`\\\\b(?:session_id|sessionId)\\\\s*[:=]\\\\s*(${CODEX_SESSION_UUID_RE_SOURCE})\\\\b`, 'i'),\r\n+]);\r\n+const CODEX_RESUME_FAILURE_RE = /(?:thread\\/resume|resume failed|no rollout found|session\\s+(?:not\\s+found|missing)|conversation\\s+not\\s+found|unknown\\s+session|invalid\\s+session)/i;\r\n+\r\n+const TASK_EVENT_TYPES = Object.freeze({\r\n+  STARTED: 'task.started',\r\n+  SUCCEEDED: 'task.succeeded',\r\n+  FAILED: 'task.failed',\r\n+  STOP_REQUESTED: 'task.stop.requested',\r\n+  STOPPED: 'task.stopped',\r\n+  INTERRUPTED: 'task.interrupted',\r\n+});\r\n+\r\n+const LEGACY_TASK_EVENT_TYPES = Object.freeze({\r\n+  EXECUTED: 'task.executed',\r\n+  STOPPING: 'task.stopping',\r\n+});\r\n+\r\n+const TASK_EVENT_STATUS = Object.freeze({\r\n+  PENDING: 'pending',\r\n+  RUNNING: 'running',\r\n+  COMPLETED: 'completed',\r\n+  FAILED: 'failed',\r\n+  STOPPING: 'stopping',\r\n+  STOPPED: 'stopped',\r\n+  INTERRUPTED: 'interrupted',\r\n+});\r\n+\r\n+const TASK_EVENT_SEMANTICS = Object.freeze({\r\n+  [TASK_EVENT_TYPES.STARTED]: Object.freeze({ status: TASK_EVENT_STATUS.RUNNING, label: '开始了任务' }),\r\n+  [TASK_EVENT_TYPES.SUCCEEDED]: Object.freeze({ status: TASK_EVENT_STATUS.COMPLETED, label: '结束了任务' }),\r\n+  [TASK_EVENT_TYPES.FAILED]: Object.freeze({ status: TASK_EVENT_STATUS.FAILED, label: '任务失败' }),\r\n+  [TASK_EVENT_TYPES.STOP_REQUESTED]: Object.freeze({ status: TASK_EVENT_STATUS.STOPPING, label: '请求停止任务' }),\r\n+  [TASK_EVENT_TYPES.STOPPED]: Object.freeze({ status: TASK_EVENT_STATUS.STOPPED, label: '已停止任务' }),\r\n+  [TASK_EVENT_TYPES.INTERRUPTED]: Object.freeze({ status: TASK_EVENT_STATUS.INTERRUPTED, label: '已中断任务' }),\r\n+});\r\n+\r\n+const TASK_EVENT_COMPATIBILITY = Object.freeze({\r\n+  [LEGACY_TASK_EVENT_TYPES.EXECUTED]: TASK_EVENT_TYPES.SUCCEEDED,\r\n+  [LEGACY_TASK_EVENT_TYPES.STOPPING]: TASK_EVENT_TYPES.STOPPED,\r\n+});\r\n \r\n class LoopService extends EventEmitter {\r\n   constructor(db) {\r\n@@ -210,17 +263,28 @@ class LoopService extends EventEmitter {\r\n       runtime.timer = null;\r\n       runtime.running = false;\r\n     }\r\n-    if (runtime?.activeChild) {\r\n-      const activeTaskId = runtime.activeOperation?.taskId || null;\r\n-      killChildProcess(runtime.activeChild);\r\n-      if (activeTaskId) {\r\n-        this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', [\r\n-          'pending',\r\n-          nowIso(),\r\n-          activeTaskId,\r\n-        ]);\r\n+    if (runtime?.activeOperations?.size) {\r\n+      for (const [operationKey, operation] of Array.from(runtime.activeOperations.entries())) {\r\n+        const child = runtime.activeChildren.get(operationKey);\r\n+        const activeTaskId = operation?.taskId || null;\r\n+        const finishedAt = nowIso();\r\n+        killChildProcess(child);\r\n+        const activeTask = activeTaskId ? this.taskForProject(projectId, activeTaskId) : null;\r\n+        const stoppedTask = activeTaskId\r\n+          ? this.finishTaskRun(activeTaskId, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true })\r\n+          : null;\r\n+        const eventTask = stoppedTask || activeTask || (activeTaskId ? { id: activeTaskId, plan_id: operation?.planId } : null);\r\n+        if (eventTask) {\r\n+          this.addTaskLifecycleEvent(projectId, TASK_EVENT_TYPES.STOPPED, eventTask, {\r\n+            status: TASK_EVENT_STATUS.STOPPED,\r\n+            finishedAt,\r\n+            log: operation?.logFile,\r\n+            exitCode: typeof operation?.exitCode === 'number' ? operation.exitCode : undefined,\r\n+          });\r\n+        } else {\r\n+          this.addEvent(projectId, 'operation.stopping', operation?.label || '');\r\n+        }\r\n       }\r\n-      this.addEvent(projectId, activeTaskId ? 'task.stopping' : 'operation.stopping', runtime.activeOperation?.label || '');\r\n     }\r\n     this.db.run(\r\n       'UPDATE project_states SET running = 0, phase = ?, updated_at = ? WHERE project_id = ?',\r\n@@ -314,10 +378,10 @@ class LoopService extends EventEmitter {\r\n \r\n     runtime.busy = true;\r\n     try {\r\n-      this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['running', nowIso(), taskId]);\r\n-      this.emitUpdate(projectId);\r\n-      await this.executeTask(workspace, plan, task);\r\n-      this.syncPlanTasks(plan.id, path.join(workspace, plan.file_path));\r\n+      const result = await this.executeTask(workspace, plan, task);\r\n+      if (result.exitCode === 0) {\r\n+        this.completeTask(workspace, plan, task, result);\r\n+      }\r\n       if (runtime.running) {\r\n         this.setPhase(projectId, 'waiting');\r\n       } else if (this.db.get('SELECT phase FROM project_states WHERE project_id = ?', [projectId])?.phase !== 'stopped') {\r\n@@ -334,20 +398,28 @@ class LoopService extends EventEmitter {\r\n     if (!task) throw new Error('任务不存在');\r\n","metadata":{"exit_code":1,"duration_seconds":0.3}}
+.\docs\progress\logs\20260625-052248_execute-P005.log:15947:@@ -8,6 +8,59 @@ const { CodexActivityPrinter } = require('./codexActivity');
+.\docs\progress\logs\20260625-052248_execute-P005.log:16289:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:16317:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:16450:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:16623:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:16640:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:16692:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:19294: 1185:       activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:19531: 1597:       ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:20044:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:20072:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:20205:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:20378:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:20395:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:20447:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:23170:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:23198:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:23331:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:23504:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:23521:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:23573:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:26290:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:26318:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:26451:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:26624:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:26641:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:26693:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:29421:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:29449:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:29582:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:29755:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:29772:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:29824:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:32544:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:32572:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:32705:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:32878:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:32895:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:32947:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:35699:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:35727:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:35860:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:36033:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:36050:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:36102:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:38824:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:38852:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:38985:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:39158:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:39175:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:39227:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:41943:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:41971:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:42104:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:42277:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:42294:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:42346:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:45067:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:45095:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:45228:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:45401:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:45418:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:45470:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:48187:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:48215:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:48348:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:48521:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:48538:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:48590:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:51312:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:51340:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:51473:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:51646:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:51663:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:51715:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:54470:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:54498:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:54631:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:54804:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:54821:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:54873:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-052248_execute-P005.log:57601:         activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:57629:-      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:57762:+      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-052248_execute-P005.log:57935:-            activity: runtime.activeOperation.activity ? runtime.activeOperation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:57952:-              activity: operation.activity ? operation.activity.getLines() : [],
+.\docs\progress\logs\20260625-052248_execute-P005.log:58004:+      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-060952_execute-P004.log:2494:src\codexActivity.js:2: * 移植自 run_advanced_plan_with_codex.dart 的 CodexActivityPrinter。
+.\docs\progress\logs\20260625-055036_execute-P005.log:5333:docs\progress\logs\20260625-041737_execute-P003.log:4103:2026-06-24T20:21:49.787345Z ERROR codex_core::tools::router: error={"output":"Total output lines: 222\n\ndiff --git a/src/loopService.js b/src/loopService.js\r\nindex 7d17bb9..5be1ea2 100644\r\n--- a/src/loopService.js\r\n+++ b/src/loopService.js\r\n@@ -8,6 +8,51 @@ const { CodexActivityPrinter } = require('./codexActivity');\r\n \r\n const ACTIVE_RUNTIME_PHASES = new Set(['running', 'scan', 'generate-plan', 'execute-task', 'validate']);\r\n const ACTIVE_RUNTIME_PHASE_SQL = \"('running','scan','generate-plan','execute-task','validate')\";\r\n+const MAX_PARALLEL_TASKS = 2;\r\n+const PARALLEL_BLOCKING_TASK_RE = /(全量|回归|验证|验收|测试|记录|整理|发布|部署|test|validate|regression|release|deploy)/i;\r\n+const TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';\r\n+const TASK_SCOPE_RE = new RegExp(`${TASK_SCOPE_LABEL_RE}\\\\s*[:=：]\\\\s*([^>\\\\]\\\\n]+)`, 'i');\r\n+const TASK_SCOPE_COMMENT_RE = new RegExp(`\\\\s*<!--\\\\s*${TASK_SCOPE_LABEL_RE}\\\\s*[:=：]\\\\s*([^>]*?)\\\\s*-->\\\\s*`, 'i');\r\n+const TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;\r\n+const TASK_PATH_RE = /[\\w./\\\\-]+\\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;\r\n+\r\n+const TASK_EVENT_TYPES = Object.freeze({\r\n+  STARTED: 'task.started',\r\n+  SUCCEEDED: 'task.succeeded',\r\n+  FAILED: 'task.failed',\r\n+  STOP_REQUESTED: 'task.stop.requested',\r\n+  STOPPED: 'task.stopped',\r\n+  INTERRUPTED: 'task.interrupted',\r\n+});\r\n+\r\n+const LEGACY_TASK_EVENT_TYPES = Object.freeze({\r\n+  EXECUTED: 'task.executed',\r\n+  STOPPING: 'task.stopping',\r\n+});\r\n+\r\n+const TASK_EVENT_STATUS = Object.freeze({\r\n+  PENDING: 'pending',\r\n+  RUNNING: 'running',\r\n+  COMPLETED: 'completed',\r\n+  FAILED: 'failed',\r\n+  STOPPING: 'stopping',\r\n+  STOPPED: 'stopped',\r\n+  INTERRUPTED: 'interrupted',\r\n+});\r\n+\r\n+const TASK_EVENT_SEMANTICS = Object.freeze({\r\n+  [TASK_EVENT_TYPES.STARTED]: Object.freeze({ status: TASK_EVENT_STATUS.RUNNING, label: '开始了任务' }),\r\n+  [TASK_EVENT_TYPES.SUCCEEDED]: Object.freeze({ status: TASK_EVENT_STATUS.COMPLETED, label: '结束了任务' }),\r\n+  [TASK_EVENT_TYPES.FAILED]: Object.freeze({ status: TASK_EVENT_STATUS.FAILED, label: '任务失败' }),\r\n+  [TASK_EVENT_TYPES.STOP_REQUESTED]: Object.freeze({ status: TASK_EVENT_STATUS.STOPPING, label: '请求停止任务' }),\r\n+  [TASK_EVENT_TYPES.STOPPED]: Object.freeze({ status: TASK_EVENT_STATUS.STOPPED, label: '已停止任务' }),\r\n+  [TASK_EVENT_TYPES.INTERRUPTED]: Object.freeze({ status: TASK_EVENT_STATUS.INTERRUPTED, label: '已中断任务' }),\r\n+});\r\n+\r\n+const TASK_EVENT_COMPATIBILITY = Object.freeze({\r\n+  [LEGACY_TASK_EVENT_TYPES.EXECUTED]: TASK_EVENT_TYPES.SUCCEEDED,\r\n+  [LEGACY_TASK_EVENT_TYPES.STOPPING]: TASK_EVENT_TYPES.STOPPED,\r\n+});\r\n \r\n class LoopService extends EventEmitter {\r\n   constructor(db) {\r\n@@ -210,17 +255,25 @@ class LoopService extends EventEmitter {\r\n       runtime.timer = null;\r\n       runtime.running = false;\r\n     }\r\n-    if (runtime?.activeChild) {\r\n-      const activeTaskId = runtime.activeOperation?.taskId || null;\r\n-      killChildProcess(runtime.activeChild);\r\n-      if (activeTaskId) {\r\n-        this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', [\r\n-          'pending',\r\n-          nowIso(),\r\n-          activeTaskId,\r\n-        ]);\r\n+    if (runtime?.activeOperations?.size) {\r\n+      for (const [operationKey, operation] of Array.from(runtime.activeOperations.entries())) {\r\n+        const child = runtime.activeChildren.get(operationKey);\r\n+        const activeTaskId = operation?.taskId || null;\r\n+        const finishedAt = nowIso();\r\n+        killChildProcess(child);\r\n+        const activeTask = activeTaskId ? this.taskForProject(projectId, activeTaskId) : null;\r\n+        const stoppedTask = activeTaskId\r\n+          ? this.finishTaskRun(activeTaskId, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true })\r\n+          : null;\r\n+        this.addEvent(\r\n+          projectId,\r\n+          activeTaskId ? LEGACY_TASK_EVENT_TYPES.STOPPING : 'operation.stopping',\r\n+          operation?.label || '',\r\n+          stoppedTask || activeTask\r\n+            ? taskEventMeta(stoppedTask || activeTask, { status: TASK_EVENT_STATUS.STOPPED, finishedAt })\r\n+            : null,\r\n+        );\r\n       }\r\n-      this.addEvent(projectId, activeTaskId ? 'task.stopping' : 'operation.stopping', runtime.activeOperation?.label || '');\r\n     }\r\n     this.db.run(\r\n       'UPDATE project_states SET running = 0, phase = ?, updated_at = ? WHERE project_id = ?',\r\n@@ -314,10 +367,12 @@ class LoopService extends EventEmitter {\r\n \r\n     runtime.busy = true;\r\n     try {\r\n-      this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['running', nowIso(), taskId]);\r\n+      this.startTaskRun(taskId);\r\n       this.emitUpdate(projectId);\r\n-      await this.executeTask(workspace, plan, task);\r\n-      this.syncPlanTasks(plan.id, path.join(workspace, plan.file_path));\r\n+      const result = await this.executeTask(workspace, plan, task);\r\n+      if (result.exitCode === 0) {\r\n+        this.completeTask(workspace, plan, task, result);\r\n+      }\r\n       if (runtime.running) {\r\n         …368 chars truncated…activeOperation?.taskId) === Number(taskId)) {\r\n-      killChildProcess(runtime.activeChild);\r\n-      this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['pending', nowIso(), taskId]);\r\n+    const activeEntry = findRuntimeOperation(runtime, (operation) => Number(operation?.taskId) === Number(taskId));\r\n+    if (activeEntry) {\r\n+      killChildProcess(activeEntry.child);\r\n+      const finishedAt = nowIso();\r\n+      const stoppedTask = runtime?.running\r\n+        ? task\r\n+        : this.finishTaskRun(taskId, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true }) || task;\r\n       if (!runtime.running) {\r\n-        this.addEvent(projectId, 'task.stopping', task.title);\r\n+        this.addEvent(\r\n+          projectId,\r\n+          LEGACY_TASK_EVENT_TYPES.STOPPING,\r\n+          task.title,\r\n+          taskEventMeta(stoppedTask, { status: TASK_EVENT_STATUS.STOPPED, finishedAt }),\r\n+        );\r\n       }\r\n     } else {\r\n-      this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ? AND status = ?', [\r\n-        'pending',\r\n-        nowIso(),\r\n-        taskId,\r\n-        'running',\r\n-      ]);\r\n-      this.addEvent(projectId, 'task.stop.requested', task.title);\r\n+      const finishedAt = nowIso();\r\n+      const stoppedTask = this.finishTaskRun(taskId, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true }) || task;\r\n+      this.addEvent(\r\n+        projectId,\r\n+        TASK_EVENT_TYPES.STOP_REQUESTED,\r\n+        task.title,\r\n+        taskEventMeta(stoppedTask, { status: TASK_EVENT_STATUS.STOPPING, finishedAt }),\r\n+      );\r\n     }\r\n \r\n     if (runtime?.running) this.stop(projectId);\r\n@@ -364,19 +429,73 @@ class LoopService extends EventEmitter {\r\n     );\r\n   }\r\n \r\n+  startTaskRun(taskId, startedAt = nowIso()) {\r\n+    this.db.run(\r\n+      `UPDATE plan_tasks\r\n+       SET status = ?,\r\n+           started_at = CASE WHEN status = ? AND started_at IS NOT NULL THEN started_at ELSE ? END,\r\n+           finished_at = NULL,\r\n+           updated_at = ?\r\n+       WHERE id = ?`,\r\n+      [TASK_EVENT_STATUS.RUNNING, TASK_EVENT_STATUS.RUNNING, startedAt, startedAt, taskId],\r\n+    );\r\n+    return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);\r\n+  }\r\n+\r\n+  finishTaskRun(taskId, status, finishedAt = nowIso(), options = {}) {\r\n+    const task = this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);\r\n+    if (!task) return null;\r\n+    const isRunning = task.status === TASK_EVENT_STATUS.RUNNING;\r\n+    if (options.onlyIfRunning && !isRunning) return withTaskDurationMeta(task);\r\n+\r\n+    const runDurationMs = isRunning ? taskRunDurationMs(task.started_at, finishedAt) : undefined;\r\n+    const durationMs = normalizeDurationMs(task.duration_ms) + (runDurationMs || 0);\r\n+    this.db.run(\r\n+      `UPDATE plan_tasks\r\n+       SET status = ?, duration_ms = ?, finished_at = ?, updated_at = ?\r\n+       WHERE id = ?`,\r\n+      [status, durationMs, finishedAt, finishedAt, taskId],\r\n+    );\r\n+    return withTaskDurationMeta(\r\n+      {\r\n+        ...task,\r\n+        status,\r\n+        duration_ms: durationMs,\r\n+        finished_at: finishedAt,\r\n+        updated_at: finishedAt,\r\n+      },\r\n+      runDurationMs,\r\n+    );\r\n+  }\r\n+\r\n   /** 中断某个 plan：停止正在执行的 codex 进程，未完成任务标记为 blocked，plan 标记为 interrupted */\r\n   interruptPlan(projectId, planId) {\r\n     const plan = this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId]);\r\n     if (!plan) return;\r\n     // 若当前正在执行该 plan 的任务，kill 进程\r\n     const runtime = this.runtime(projectId);\r\n-    if (runtime?.activeChild && Number(runtime.activeOperation?.planId) === Number(planId)) {\r\n-      killChildProcess(runtime.activeChild);\r\n-      const activeTaskId = runtime.activeOperation?.taskId;\r\n-      if (activeTaskId) {\r\n-        this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['blocked', nowIso(), activeTaskId]);\r\n-      }\r\n-      this.addEvent(projectId, 'task.stopping', `plan #${planId} 的任务被中断`);\r\n+    const activePlanOperations = runtime\r\n+      ? findRuntimeOperations(runtime, (operation) => Number(operation?.planId) === Number(planId))\r\n+      : [];\r\n+    for (const activeEntry of activePlanOperations) {\r\n+      const finishedAt = nowIso();\r\n+      killChildProcess(activeEntry.child);\r\n+      const activeTaskId = activeEntry.operation?.taskId;\r\n+      const activeTask = activeTaskId ? this.taskForProject(projectId, activeTaskId) : null;\r\n+      const interruptedTask = activeTaskId\r\n+        ? this.finishTaskRun(activeTaskId, 'blocked', finishedAt, { onlyIfRunning: true })\r\n+        : null;\r\n+      this.addEvent(\r\n+        projectId,\r\n+        LEGACY_TASK_EVENT_TYPES.STOPPING,\r\nwarning: in the working copy of 'src/loopService.js', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/renderer/types.ts', LF will be replaced by CRLF the next time Git touches it\n","metadata":{"exit_code":1,"duration_seconds":0.3}}
+.\docs\progress\logs\20260625-055036_execute-P005.log:5821:docs\progress\logs\20260625-031550_execute-P001.log:19035:2026-06-24T19:24:24.430263Z ERROR codex_core::tools::router: error={"output":"Total output lines: 220\n\ndiff --git a/src/loopService.js b/src/loopService.js\r\nindex 7d17bb9..a215c25 100644\r\n--- a/src/loopService.js\r\n+++ b/src/loopService.js\r\n@@ -8,6 +8,51 @@ const { CodexActivityPrinter } = require('./codexActivity');\r\n \r\n const ACTIVE_RUNTIME_PHASES = new Set(['running', 'scan', 'generate-plan', 'execute-task', 'validate']);\r\n const ACTIVE_RUNTIME_PHASE_SQL = \"('running','scan','generate-plan','execute-task','validate')\";\r\n+const MAX_PARALLEL_TASKS = 2;\r\n+const PARALLEL_BLOCKING_TASK_RE = /(全量|回归|验证|验收|测试|记录|整理|发布|部署|test|validate|regression|release|deploy)/i;\r\n+const TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';\r\n+const TASK_SCOPE_RE = new RegExp(`${TASK_SCOPE_LABEL_RE}\\\\s*[:=：]\\\\s*([^>\\\\]\\\\n]+)`, 'i');\r\n+const TASK_SCOPE_COMMENT_RE = new RegExp(`\\\\s*<!--\\\\s*${TASK_SCOPE_LABEL_RE}\\\\s*[:=：]\\\\s*([^>]*?)\\\\s*-->\\\\s*`, 'i');\r\n+const TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;\r\n+const TASK_PATH_RE = /[\\w./\\\\-]+\\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;\r\n+\r\n+const TASK_EVENT_TYPES = Object.freeze({\r\n+  STARTED: 'task.started',\r\n+  SUCCEEDED: 'task.succeeded',\r\n+  FAILED: 'task.failed',\r\n+  STOP_REQUESTED: 'task.stop.requested',\r\n+  STOPPED: 'task.stopped',\r\n+  INTERRUPTED: 'task.interrupted',\r\n+});\r\n+\r\n+const LEGACY_TASK_EVENT_TYPES = Object.freeze({\r\n+  EXECUTED: 'task.executed',\r\n+  STOPPING: 'task.stopping',\r\n+});\r\n+\r\n+const TASK_EVENT_STATUS = Object.freeze({\r\n+  PENDING: 'pending',\r\n+  RUNNING: 'running',\r\n+  COMPLETED: 'completed',\r\n+  FAILED: 'failed',\r\n+  STOPPING: 'stopping',\r\n+  STOPPED: 'stopped',\r\n+  INTERRUPTED: 'interrupted',\r\n+});\r\n+\r\n+const TASK_EVENT_SEMANTICS = Object.freeze({\r\n+  [TASK_EVENT_TYPES.STARTED]: Object.freeze({ status: TASK_EVENT_STATUS.RUNNING, label: '开始了任务' }),\r\n+  [TASK_EVENT_TYPES.SUCCEEDED]: Object.freeze({ status: TASK_EVENT_STATUS.COMPLETED, label: '结束了任务' }),\r\n+  [TASK_EVENT_TYPES.FAILED]: Object.freeze({ status: TASK_EVENT_STATUS.FAILED, label: '任务失败' }),\r\n+  [TASK_EVENT_TYPES.STOP_REQUESTED]: Object.freeze({ status: TASK_EVENT_STATUS.STOPPING, label: '请求停止任务' }),\r\n+  [TASK_EVENT_TYPES.STOPPED]: Object.freeze({ status: TASK_EVENT_STATUS.STOPPED, label: '已停止任务' }),\r\n+  [TASK_EVENT_TYPES.INTERRUPTED]: Object.freeze({ status: TASK_EVENT_STATUS.INTERRUPTED, label: '已中断任务' }),\r\n+});\r\n+\r\n+const TASK_EVENT_COMPATIBILITY = Object.freeze({\r\n+  [LEGACY_TASK_EVENT_TYPES.EXECUTED]: TASK_EVENT_TYPES.SUCCEEDED,\r\n+  [LEGACY_TASK_EVENT_TYPES.STOPPING]: TASK_EVENT_TYPES.STOPPED,\r\n+});\r\n \r\n class LoopService extends EventEmitter {\r\n   constructor(db) {\r\n@@ -210,17 +255,28 @@ class LoopService extends EventEmitter {\r\n       runtime.timer = null;\r\n       runtime.running = false;\r\n     }\r\n-    if (runtime?.activeChild) {\r\n-      const activeTaskId = runtime.activeOperation?.taskId || null;\r\n-      killChildProcess(runtime.activeChild);\r\n-      if (activeTaskId) {\r\n-        this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', [\r\n-          'pending',\r\n-          nowIso(),\r\n-          activeTaskId,\r\n-        ]);\r\n+    if (runtime?.activeOperations?.size) {\r\n+      for (const [operationKey, operation] of Array.from(runtime.activeOperations.entries())) {\r\n+        const child = runtime.activeChildren.get(operationKey);\r\n+        const activeTaskId = operation?.taskId || null;\r\n+        killChildProcess(child);\r\n+        const activeTask = activeTaskId ? this.taskForProject(projectId, activeTaskId) : null;\r\n+        if (activeTaskId) {\r\n+          this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', [\r\n+            'pending',\r\n+            nowIso(),\r\n+            activeTaskId,\r\n+          ]);\r\n+        }\r\n+        this.addEvent(\r\n+          projectId,\r\n+          activeTaskId ? LEGACY_TASK_EVENT_TYPES.STOPPING : 'operation.stopping',\r\n+          operation?.label || '',\r\n+          activeTask\r\n+            ? taskEventMeta(activeTask, { status: TASK_EVENT_STATUS.STOPPED, finishedAt: nowIso() })\r\n+            : null,\r\n+        );\r\n       }\r\n-      this.addEvent(projectId, activeTaskId ? 'task.stopping' : 'operation.stopping', runtime.activeOperation?.label || '');\r\n     }\r\n     this.db.run(\r\n       'UPDATE project_states SET running = 0, phase = ?, updated_at = ? WHERE project_id = ?',\r\n@@ -316,8 +372,10 @@ class LoopService extends EventEmitter {\r\n     try {\r\n       this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['running', nowIso(), taskId]);\r\n       this.emitUpdate(projectId);\r\n-      await this.executeTask(workspace, plan, task);\r\n-      this.syncPlanTasks(plan.id, path.join(workspace, plan.file_path));\r\n+      const result = await this.executeTask(workspace, plan, task);\r\n+      if (result.exitCode === 0) {\r\n+        this.completeTask(workspace, plan, task, result);\r\n+      }\r\n       if (runtime.running) {\r\n         this.setPhase(projectId, 'waiting');\r\n       } else if (this.db.get('SELE…306 chars truncated…tion?.taskId) === Number(taskId)) {\r\n-      killChildProcess(runtime.activeChild);\r\n+    const activeEntry = findRuntimeOperation(runtime, (operation) => Number(operation?.taskId) === Number(taskId));\r\n+    if (activeEntry) {\r\n+      killChildProcess(activeEntry.child);\r\n       this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['pending', nowIso(), taskId]);\r\n       if (!runtime.running) {\r\n-        this.addEvent(projectId, 'task.stopping', task.title);\r\n+        this.addEvent(\r\n+          projectId,\r\n+          LEGACY_TASK_EVENT_TYPES.STOPPING,\r\n+          task.title,\r\n+          taskEventMeta(task, { status: TASK_EVENT_STATUS.STOPPED, finishedAt: nowIso() }),\r\n+        );\r\n       }\r\n     } else {\r\n       this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ? AND status = ?', [\r\n@@ -347,7 +411,12 @@ class LoopService extends EventEmitter {\r\n         taskId,\r\n         'running',\r\n       ]);\r\n-      this.addEvent(projectId, 'task.stop.requested', task.title);\r\n+      this.addEvent(\r\n+        projectId,\r\n+        TASK_EVENT_TYPES.STOP_REQUESTED,\r\n+        task.title,\r\n+        taskEventMeta(task, { status: TASK_EVENT_STATUS.STOPPING }),\r\n+      );\r\n     }\r\n \r\n     if (runtime?.running) this.stop(projectId);\r\n@@ -370,13 +439,27 @@ class LoopService extends EventEmitter {\r\n     if (!plan) return;\r\n     // 若当前正在执行该 plan 的任务，kill 进程\r\n     const runtime = this.runtime(projectId);\r\n-    if (runtime?.activeChild && Number(runtime.activeOperation?.planId) === Number(planId)) {\r\n-      killChildProcess(runtime.activeChild);\r\n-      const activeTaskId = runtime.activeOperation?.taskId;\r\n+    const activePlanOperations = runtime\r\n+      ? findRuntimeOperations(runtime, (operation) => Number(operation?.planId) === Number(planId))\r\n+      : [];\r\n+    for (const activeEntry of activePlanOperations) {\r\n+      killChildProcess(activeEntry.child);\r\n+      const activeTaskId = activeEntry.operation?.taskId;\r\n+      const activeTask = activeTaskId ? this.taskForProject(projectId, activeTaskId) : null;\r\n       if (activeTaskId) {\r\n         this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['blocked', nowIso(), activeTaskId]);\r\n       }\r\n-      this.addEvent(projectId, 'task.stopping', `plan #${planId} 的任务被中断`);\r\n+      this.addEvent(\r\n+        projectId,\r\n+        LEGACY_TASK_EVENT_TYPES.STOPPING,\r\n+        `plan #${planId} 的任务被中断`,\r\n+        taskEventMeta(activeTask, {\r\n+          planId,\r\n+          taskId: activeTaskId || undefined,\r\n+          status: TASK_EVENT_STATUS.INTERRUPTED,\r\n+          finishedAt: nowIso(),\r\n+        }),\r\n+      );\r\n     }\r\n     // 其余未完成任务 → blocked\r\n     this.db.run(\r\n@@ -425,7 +508,7 @@ class LoopService extends EventEmitter {\r\n \r\n     // 追加到 plan 文件的\"## 任务计划\"段末尾\r\n     let content = fs.readFileSync(planFile, 'utf8');\r\n-    const line = `- [ ] ${taskKey}: ${cleanTitle}`;\r\n+    const line = ensureTaskScopeComment(`- [ ] ${taskKey}: ${cleanTitle}`);\r\n     const taskSectionIdx = content.search(/##\\s*任务计划/);\r\n     if (taskSectionIdx === -1) {\r\n       content = `${content.trim()}\\n\\n## 任务计划\\n${line}\\n`;\r\n@@ -440,7 +523,18 @@ class LoopService extends EventEmitter {\r\n     }\r\n     // 重新解析任务入库\r\n     this.syncPlanTasks(planId, planFile);\r\n-    this.addEvent(projectId, 'task.appended', `追加 ${taskKey}: ${cleanTitle}`, { planId });\r\n+    const task = this.db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, taskKey]);\r\n+    this.addEvent(\r\n+      projectId,\r\n+      'task.appended',\r\n+      `追加 ${taskKey}: ${cleanTitle}`,\r\n+      taskEventMeta(task, {\r\n+        planId,\r\n+        taskKey,\r\n+        taskTitle: cleanTitle,\r\n+        status: TASK_EVENT_STATUS.PENDING,\r\n+      }),\r\n+    );\r\n     this.emitUpdate(projectId);\r\n \r\n     // 循环在运行则立即拾取\r\n@@ -535,7 +629,8 @@ class LoopService extends EventEmitter {\r\n       `输出文件：${planFile}`,\r\n       '',\r\n       '格式要求：',\r\n-      '- 任务必须使用 Markdown checkbox：- [ ] P001: 任务标题',\r\n+      '- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->',\r\n+      '- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行',\r\n       '- 每个任务要有验收要点',\r\n       '- 必须包含总体验收标准和进度区',\r\n       '- 只写 plan 文件，不要改业务代码',\r\n@@ -592,7 +687,8 @@ class LoopService extends EventEmitter {\r\n       `输出文件：${planFile}`,\r\n       '',\r\n       '格式要求：',\r\n-      '- 任务必须使用 Markdown checkbox：- [ ] P001: 任务标题',\r\n+      '- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->',\r\n","metadata":{"exit_code":1,"duration_seconds":0.3}}
+.\docs\progress\logs\20260625-055036_execute-P005.log:7064:docs\progress\logs\20260625-052248_execute-P005.log:15941:2026-06-24T21:30:58.790949Z ERROR codex_core::tools::router: error={"output":"diff --git a/src/loopService.js b/src/loopService.js\r\nindex 7d17bb9..772d0c2 100644\r\n--- a/src/loopService.js\r\n+++ b/src/loopService.js\r\n@@ -8,6 +8,59 @@ const { CodexActivityPrinter } = require('./codexActivity');\r\n \r\n const ACTIVE_RUNTIME_PHASES = new Set(['running', 'scan', 'generate-plan', 'execute-task', 'validate']);\r\n const ACTIVE_RUNTIME_PHASE_SQL = \"('running','scan','generate-plan','execute-task','validate')\";\r\n+const MAX_PARALLEL_TASKS = 2;\r\n+const PARALLEL_BLOCKING_TASK_RE = /(全量|回归|验证|验收|测试|记录|整理|发布|部署|test|validate|regression|release|deploy)/i;\r\n+const TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';\r\n+const TASK_SCOPE_RE = new RegExp(`${TASK_SCOPE_LABEL_RE}\\\\s*[:=：]\\\\s*([^>\\\\]\\\\n]+)`, 'i');\r\n+const TASK_SCOPE_COMMENT_RE = new RegExp(`\\\\s*<!--\\\\s*${TASK_SCOPE_LABEL_RE}\\\\s*[:=：]\\\\s*([^>]*?)\\\\s*-->\\\\s*`, 'i');\r\n+const TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;\r\n+const TASK_PATH_RE = /[\\w./\\\\-]+\\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;\r\n+const TASK_LIFECYCLE_EVENT_RECORDED = Symbol('taskLifecycleEventRecorded');\r\n+const CODEX_SESSION_UUID_RE_SOURCE = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';\r\n+const CODEX_SESSION_ID_RES = Object.freeze([\r\n+  new RegExp(`\\\\bsession\\\\s+id:\\\\s*(${CODEX_SESSION_UUID_RE_SOURCE})\\\\b`, 'i'),\r\n+  new RegExp(`\"(?:session_id|sessionId)\"\\\\s*:\\\\s*\"(${CODEX_SESSION_UUID_RE_SOURCE})\"`, 'i'),\r\n+  new RegExp(`\\\\b(?:session_id|sessionId)\\\\s*[:=]\\\\s*(${CODEX_SESSION_UUID_RE_SOURCE})\\\\b`, 'i'),\r\n+]);\r\n+const CODEX_RESUME_FAILURE_RE = /(?:thread\\/resume|resume failed|no rollout found|session\\s+(?:not\\s+found|missing)|conversation\\s+not\\s+found|unknown\\s+session|invalid\\s+session)/i;\r\n+\r\n+const TASK_EVENT_TYPES = Object.freeze({\r\n+  STARTED: 'task.started',\r\n+  SUCCEEDED: 'task.succeeded',\r\n+  FAILED: 'task.failed',\r\n+  STOP_REQUESTED: 'task.stop.requested',\r\n+  STOPPED: 'task.stopped',\r\n+  INTERRUPTED: 'task.interrupted',\r\n+});\r\n+\r\n+const LEGACY_TASK_EVENT_TYPES = Object.freeze({\r\n+  EXECUTED: 'task.executed',\r\n+  STOPPING: 'task.stopping',\r\n+});\r\n+\r\n+const TASK_EVENT_STATUS = Object.freeze({\r\n+  PENDING: 'pending',\r\n+  RUNNING: 'running',\r\n+  COMPLETED: 'completed',\r\n+  FAILED: 'failed',\r\n+  STOPPING: 'stopping',\r\n+  STOPPED: 'stopped',\r\n+  INTERRUPTED: 'interrupted',\r\n+});\r\n+\r\n+const TASK_EVENT_SEMANTICS = Object.freeze({\r\n+  [TASK_EVENT_TYPES.STARTED]: Object.freeze({ status: TASK_EVENT_STATUS.RUNNING, label: '开始了任务' }),\r\n+  [TASK_EVENT_TYPES.SUCCEEDED]: Object.freeze({ status: TASK_EVENT_STATUS.COMPLETED, label: '结束了任务' }),\r\n+  [TASK_EVENT_TYPES.FAILED]: Object.freeze({ status: TASK_EVENT_STATUS.FAILED, label: '任务失败' }),\r\n+  [TASK_EVENT_TYPES.STOP_REQUESTED]: Object.freeze({ status: TASK_EVENT_STATUS.STOPPING, label: '请求停止任务' }),\r\n+  [TASK_EVENT_TYPES.STOPPED]: Object.freeze({ status: TASK_EVENT_STATUS.STOPPED, label: '已停止任务' }),\r\n+  [TASK_EVENT_TYPES.INTERRUPTED]: Object.freeze({ status: TASK_EVENT_STATUS.INTERRUPTED, label: '已中断任务' }),\r\n+});\r\n+\r\n+const TASK_EVENT_COMPATIBILITY = Object.freeze({\r\n+  [LEGACY_TASK_EVENT_TYPES.EXECUTED]: TASK_EVENT_TYPES.SUCCEEDED,\r\n+  [LEGACY_TASK_EVENT_TYPES.STOPPING]: TASK_EVENT_TYPES.STOPPED,\r\n+});\r\n \r\n class LoopService extends EventEmitter {\r\n   constructor(db) {\r\n@@ -210,17 +263,28 @@ class LoopService extends EventEmitter {\r\n       runtime.timer = null;\r\n       runtime.running = false;\r\n     }\r\n-    if (runtime?.activeChild) {\r\n-      const activeTaskId = runtime.activeOperation?.taskId || null;\r\n-      killChildProcess(runtime.activeChild);\r\n-      if (activeTaskId) {\r\n-        this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', [\r\n-          'pending',\r\n-          nowIso(),\r\n-          activeTaskId,\r\n-        ]);\r\n+    if (runtime?.activeOperations?.size) {\r\n+      for (const [operationKey, operation] of Array.from(runtime.activeOperations.entries())) {\r\n+        const child = runtime.activeChildren.get(operationKey);\r\n+        const activeTaskId = operation?.taskId || null;\r\n+        const finishedAt = nowIso();\r\n+        killChildProcess(child);\r\n+        const activeTask = activeTaskId ? this.taskForProject(projectId, activeTaskId) : null;\r\n+        const stoppedTask = activeTaskId\r\n+          ? this.finishTaskRun(activeTaskId, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true })\r\n+          : null;\r\n+        const eventTask = stoppedTask || activeTask || (activeTaskId ? { id: activeTaskId, plan_id: operation?.planId } : null);\r\n+        if (eventTask) {\r\n+          this.addTaskLifecycleEvent(projectId, TASK_EVENT_TYPES.STOPPED, eventTask, {\r\n+            status: TASK_EVENT_STATUS.STOPPED,\r\n+            finishedAt,\r\n+            log: operation?.logFile,\r\n+            exitCode: typeof operation?.exitCode === 'number' ? operation.exitCode : undefined,\r\n+          });\r\n+        } else {\r\n+          this.addEvent(projectId, 'operation.stopping', operation?.label || '');\r\n+        }\r\n       }\r\n-      this.addEvent(projectId, activeTaskId ? 'task.stopping' : 'operation.stopping', runtime.activeOperation?.label || '');\r\n     }\r\n     this.db.run(\r\n       'UPDATE project_states SET running = 0, phase = ?, updated_at = ? WHERE project_id = ?',\r\n@@ -314,10 +378,10 @@ class LoopService extends EventEmitter {\r\n \r\n     runtime.busy = true;\r\n     try {\r\n-      this.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', ['running', nowIso(), taskId]);\r\n-      this.emitUpdate(projectId);\r\n-      await this.executeTask(workspace, plan, task);\r\n-      this.syncPlanTasks(plan.id, path.join(workspace, plan.file_path));\r\n+      const result = await this.executeTask(workspace, plan, task);\r\n+      if (result.exitCode === 0) {\r\n+        this.completeTask(workspace, plan, task, result);\r\n+      }\r\n       if (runtime.running) {\r\n         this.setPhase(projectId, 'waiting');\r\n       } else if (this.db.get('SELECT phase FROM project_states WHERE project_id = ?', [projectId])?.phase !== 'stopped') {\r\n@@ -334,20 +398,28 @@ class LoopService extends EventEmitter {\r\n     if (!task) throw new Error('任务不存在');\r\n","metadata":{"exit_code":1,"duration_seconds":0.3}}
+.\docs\progress\logs\20260625-063350_execute-P003.log:359:src\loopService.js:1134:        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-063350_execute-P003.log:363:src\loopService.js:1185:      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-063350_execute-P003.log:386:src\loopService.js:1341:      activity: new CodexActivityPrinter(200),
+.\docs\progress\logs\20260625-063350_execute-P003.log:406:src\loopService.js:1597:      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-063350_execute-P003.log:456:      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-063350_execute-P003.log:480:powershell.exe -Command '$ErrorActionPreference='"'Stop'; Select-String -Path 'src\\loopService.js' -Pattern 'class CodexActivityPrinter|function CodexActivityPrinter|getLines|offer\\(' -Context 2,5 -Encoding UTF8" in D:\project\GitHub\autoplan
+.\docs\progress\logs\20260625-063350_execute-P003.log:485:> src\loopService.js:1134:        activity: op.activity ? op.activity.getLines() : [],
+.\docs\progress\logs\20260625-063350_execute-P003.log:510:> src\loopService.js:1597:      ? operation.activity.getLines()
+.\docs\progress\logs\20260625-063350_execute-P003.log:520:还需要定位 `CodexActivityPrinter` 定义，保证模式判断稳定。
+.\docs\progress\logs\20260625-063350_execute-P003.log:522:powershell.exe -Command '$ErrorActionPreference='"'Stop'; if (Get-Command rg -ErrorAction SilentlyContinue) { rg -n \"CodexActivityPrinter|getLines\\(\" . -S } else { Get-ChildItem -Recurse -File | Select-String -Pattern 'CodexActivityPrinter|getLines\\(' }" in D:\project\GitHub\autoplan
+
+codex
+上次搜索包含了日志目录；我收窄到 `src`。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; rg -n \"CodexActivityPrinter|getLines\\(\" src -S" in D:\project\GitHub\autoplan
+ succeeded in 168ms:
+src\loopService.js:7:const { CodexActivityPrinter } = require('./codexActivity');
+src\loopService.js:1134:        activity: op.activity ? op.activity.getLines() : [],
+src\loopService.js:1185:      activity: new CodexActivityPrinter(200),
+src\loopService.js:1341:      activity: new CodexActivityPrinter(200),
+src\loopService.js:1597:      ? operation.activity.getLines()
+src\codexActivity.js:2: * 移植自 run_advanced_plan_with_codex.dart 的 CodexActivityPrinter。
+src\codexActivity.js:9: * offer(rawChunk) 喂入原始流（可能含多行），getLines() 返回当前活动行列表。
+src\codexActivity.js:32:class CodexActivityPrinter {
+src\codexActivity.js:151:  getLines() {
+src\codexActivity.js:156:module.exports = { CodexActivityPrinter };
+
+codex
+我会只读 `codexActivity` 的返回方法，看是否每次返回新数组。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; Get-Content -Path 'src\\codexActivity.js' -Encoding UTF8 | Select-Object -Skip 140 -First 18" in D:\project\GitHub\autoplan
+ succeeded in 210ms:
+    if (/^(lib|test|docs|tool|scripts|example)[/\\].+/i.test(line)) return true;
+    // 代码标点密度
+    const punct = (line.match(/[{}();=<>]/g) || []).length;
+    if (punct >= 6) return true;
+    // Dart/代码特征
+    if (/(=>|;\s*$|\$\{|Widget|BuildContext|StringBuffer)/.test(line)) return true;
+    return false;
+  }
+
+  /** 返回当前活动行（供 snapshot） */
+  getLines() {
+    return this.lines.slice(-120);
+  }
+}
+
+module.exports = { CodexActivityPrinter };
+
+**Evaluating execution logs and hooks**
+
+I'm considering checking the prior execution log generated by the run, but it seems like the current session log isn't useful. I might want to look into implementing a robust hook, perhaps `useLayoutEffect` to prevent flickering, but I'm a bit hesitant since `useEffect` is already imported. I need to derive some values like `hasActivity` and the `activitySignature`. Also, I need to think about how to handle the log when it grows.
+**Thinking about rendering behavior**
+
+I’m working on setting up my rendering key based on whether there's activity or not, using `useRef` for tracking mode changes. I’m considering applying `useEffect` to monitor dependencies like `displayMode` and `renderedContentKey`. There’s the potential issue of switching modes; if the user isn’t at the bottom of the screen when switching to activity, they might need to be forced to scroll down. But if they’re in activity mode already and not at the bottom, no scroll should happen. Dealing with context changes while also managing scroll behavior might need careful thought.
+**Ensuring content clarity**
+
+I’m thinking about ensuring that when the activity clears or if there’s a new operation, if the user isn’t at the bottom, I should scroll them to the bottom, especially if `switchedMode` is true. But if the raw content is short, I might not need to force that scroll. It seems crucial to make sure that there’s only one content source to avoid confusion and maintain a clear flow for the user.
+**Evaluating useEffect adjustments**
+
+I’m considering how the `useEffect` hook works with changing text content. The dependencies can include strings, but maybe I don't even need `useMemo`. I have a few key assignments, such as `const renderedMode`, which determines the mode based on whether there are lines, and I’m using a ref for tracking the rendered mode. I also need to be mindful of ESLint's exhaustive-deps to make sure I'm not missing any important dependencies in the function. It’s all a bit subtle, but it helps smooth out the rendering process.
+**Exploring patch application**
+
+I’m reflecting on the need to preserve role styles. That seems good! I might need to check the case in the user scope, particularly if it's lower, while the path itself is in uppercase. Alright, I’ll need to apply the patch. Should I use PowerShell for that? I think I’ll go with the `apply_patch` command, but I’ll also need to include a preamble for clarity.
+codex
+我将改成“当前渲染来源”驱动滚动，避免两种模式互相干扰。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\CodexLog.tsx
+diff --git a/src/renderer/components/CodexLog.tsx b/src/renderer/components/CodexLog.tsx
+index 7b39c85f458065b24fb5792673b9ff66df84c5de..b06a7738518074b8bfc59f4f9c6f377af1e6d85c
+--- a/src/renderer/components/CodexLog.tsx
++++ b/src/renderer/components/CodexLog.tsx
+@@ -1,4 +1,4 @@
+-import { useEffect, useRef } from 'react';
++import { useLayoutEffect, useRef } from 'react';
+ import type { ActivityLine, CodexSessionInfo } from '../types';
+ import { formatChinaTime } from '../utils/time';
+ 
+@@ -32,25 +32,34 @@
+   activity?: ActivityLine[];
+   context?: CodexSessionInfo | null;
+ }) {
+-  const scrollRef = useRef<HTMLDivElement>(null);
+-  const isAtBottomRef = useRef(true);
+-  const lines = activity && activity.length > 0 ? activity : null;
+-  const contextLabel = codexContextLabel(context);
++  const scrollRef = useRef<HTMLDivElement>(null);
++  const isAtBottomRef = useRef(true);
++  const lines = activity && activity.length > 0 ? activity : null;
++  const displayMode = lines ? 'activity' : 'raw';
++  const lastDisplayModeRef = useRef(displayMode);
++  const rawLogText = log ? log.slice(-4000) : '等待 Codex 输出…';
++  const activityContentKey = lines
++    ? lines.map((line) => `${line.at}\u0000${line.role}\u0000${line.text}`).join('\u0001')
++    : '';
++  const renderedContentKey = lines ? activityContentKey : rawLogText;
++  const contextLabel = codexContextLabel(context);
+ 
+   const updateBottomState = () => {
+     const el = scrollRef.current;
+     isAtBottomRef.current = el ? isNearLogBottom(el) : true;
+   };
+ 
+-  useEffect(() => {
++  useLayoutEffect(() => {
+     const el = scrollRef.current;
+     if (el) {
+-      if (isAtBottomRef.current) {
++      const displayModeChanged = lastDisplayModeRef.current !== displayMode;
++      if (displayModeChanged || isAtBottomRef.current) {
+         el.scrollTop = el.scrollHeight;
+       }
++      lastDisplayModeRef.current = displayMode;
+       updateBottomState();
+     }
+-  }, [log, activity, contextLabel]);
++  }, [displayMode, renderedContentKey, contextLabel]);
+ 
+   const contextLine = contextLabel ? (
+     <div className="act-line act-info">
+@@ -60,31 +69,28 @@
+     </div>
+   ) : null;
+ 
+-  if (!lines) {
+-    return (
+-      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-        {contextLine}
+-        <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+-      </div>
+-    );
+-  }
+-
+-  return (
+-    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-      {contextLine}
+-      {lines.map((line, index) => {
+-        const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+-        return (
+-          <div className={`act-line ${config.cls}`} key={index}>
++  const content = lines ? (
++    lines.map((line, index) => {
++        const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
++        return (
++          <div className={`act-line ${config.cls}`} key={index}>
+             <span className="act-time">{formatChinaTime(line.at)}</span>
+             <span className="act-tag">{config.label}</span>
+             <span className="act-text">{line.text}</span>
+-          </div>
+-        );
+-      })}
+-    </div>
+-  );
+-}
++          </div>
++        );
++      })
++  ) : (
++    <pre className="codex-raw">{rawLogText}</pre>
++  );
++
++  return (
++    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
++      {contextLine}
++      {content}
++    </div>
++  );
++}
+ 
+ function codexContextLabel(context?: CodexSessionInfo | null) {
+   if (!context) return '';
+
+diff --git a/src/renderer/components/CodexLog.tsx b/src/renderer/components/CodexLog.tsx
+index 7b39c85f458065b24fb5792673b9ff66df84c5de..b06a7738518074b8bfc59f4f9c6f377af1e6d85c
+--- a/src/renderer/components/CodexLog.tsx
++++ b/src/renderer/components/CodexLog.tsx
+@@ -1,4 +1,4 @@
+-import { useEffect, useRef } from 'react';
++import { useLayoutEffect, useRef } from 'react';
+ import type { ActivityLine, CodexSessionInfo } from '../types';
+ import { formatChinaTime } from '../utils/time';
+ 
+@@ -32,25 +32,34 @@
+   activity?: ActivityLine[];
+   context?: CodexSessionInfo | null;
+ }) {
+-  const scrollRef = useRef<HTMLDivElement>(null);
+-  const isAtBottomRef = useRef(true);
+-  const lines = activity && activity.length > 0 ? activity : null;
+-  const contextLabel = codexContextLabel(context);
++  const scrollRef = useRef<HTMLDivElement>(null);
++  const isAtBottomRef = useRef(true);
++  const lines = activity && activity.length > 0 ? activity : null;
++  const displayMode = lines ? 'activity' : 'raw';
++  const lastDisplayModeRef = useRef(displayMode);
++  const rawLogText = log ? log.slice(-4000) : '等待 Codex 输出…';
++  const activityContentKey = lines
++    ? lines.map((line) => `${line.at}\u0000${line.role}\u0000${line.text}`).join('\u0001')
++    : '';
++  const renderedContentKey = lines ? activityContentKey : rawLogText;
++  const contextLabel = codexContextLabel(context);
+ 
+   const updateBottomState = () => {
+     const el = scrollRef.current;
+     isAtBottomRef.current = el ? isNearLogBottom(el) : true;
+   };
+ 
+-  useEffect(() => {
++  useLayoutEffect(() => {
+     const el = scrollRef.current;
+     if (el) {
+-      if (isAtBottomRef.current) {
++      const displayModeChanged = lastDisplayModeRef.current !== displayMode;
++      if (displayModeChanged || isAtBottomRef.current) {
+         el.scrollTop = el.scrollHeight;
+       }
++      lastDisplayModeRef.current = displayMode;
+       updateBottomState();
+     }
+-  }, [log, activity, contextLabel]);
++  }, [displayMode, renderedContentKey, contextLabel]);
+ 
+   const contextLine = contextLabel ? (
+     <div className="act-line act-info">
+@@ -60,31 +69,28 @@
+     </div>
+   ) : null;
+ 
+-  if (!lines) {
+-    return (
+-      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-        {contextLine}
+-        <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+-      </div>
+-    );
+-  }
+-
+-  return (
+-    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-      {contextLine}
+-      {lines.map((line, index) => {
+-        const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+-        return (
+-          <div className={`act-line ${config.cls}`} key={index}>
++  const content = lines ? (
++    lines.map((line, index) => {
++        const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
++        return (
++          <div className={`act-line ${config.cls}`} key={index}>
+             <span className="act-time">{formatChinaTime(line.at)}</span>
+             <span className="act-tag">{config.label}</span>
+             <span className="act-text">{line.text}</span>
+-          </div>
+-        );
+-      })}
+-    </div>
+-  );
+-}
++          </div>
++        );
++      })
++  ) : (
++    <pre className="codex-raw">{rawLogText}</pre>
++  );
++
++  return (
++    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
++      {contextLine}
++      {content}
++    </div>
++  );
++}
+ 
+ function codexContextLabel(context?: CodexSessionInfo | null) {
+   if (!context) return '';
+
+**Reviewing patch application**
+
+I applied the patch using the shell and, despite some warnings from the developer, it seems to have been successful, thank goodness! I don’t think we need to do that again. Now, I should inspect the file to ensure everything looks good. It might be wise to check the syntax and indentation, so I'll use Get-Content for that. Just need to make sure everything is in order before moving forward!
+codex
+改动已落在目标文件；我检查语法形态和实际差异。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; Get-Content -Path 'src\\renderer\\components\\CodexLog.tsx' -Encoding UTF8; Write-Host '--- diff ---'; git diff -- src/renderer/components/CodexLog.tsx" in D:\project\GitHub\autoplan
+ succeeded in 249ms:
+import { useLayoutEffect, useRef } from 'react';
+import type { ActivityLine, CodexSessionInfo } from '../types';
+import { formatChinaTime } from '../utils/time';
+
+const LOG_BOTTOM_THRESHOLD_PX = 24;
+
+const ROLE_CONFIG: Record<string, { label: string; cls: string }> = {
+  codex: { label: 'Codex', cls: 'act-codex' },
+  exec: { label: '执行', cls: 'act-exec' },
+  thinking: { label: '思考', cls: 'act-thinking' },
+  error: { label: '错误', cls: 'act-error' },
+  system: { label: '系统', cls: 'act-system' },
+  user: { label: '用户', cls: 'act-user' },
+  info: { label: '信息', cls: 'act-info' },
+};
+
+function isNearLogBottom(el: HTMLDivElement) {
+  const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+  return maxScrollTop - el.scrollTop <= LOG_BOTTOM_THRESHOLD_PX;
+}
+
+/**
+ * 以活动时间线显示 codex 执行过程（参考 run_advanced_plan_with_codex.dart 的 Activity 输出）。
+ * 优先用过滤后的 activity 行；若为空则回退到 logTail 原始尾部。
+ */
+export function CodexLog({
+  log,
+  activity,
+  context,
+}: {
+  log: string;
+  activity?: ActivityLine[];
+  context?: CodexSessionInfo | null;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const isAtBottomRef = useRef(true);
+  const lines = activity && activity.length > 0 ? activity : null;
+  const displayMode = lines ? 'activity' : 'raw';
+  const lastDisplayModeRef = useRef(displayMode);
+  const rawLogText = log ? log.slice(-4000) : '等待 Codex 输出…';
+  const activityContentKey = lines
+    ? lines.map((line) => `${line.at}\u0000${line.role}\u0000${line.text}`).join('\u0001')
+    : '';
+  const renderedContentKey = lines ? activityContentKey : rawLogText;
+  const contextLabel = codexContextLabel(context);
+
+  const updateBottomState = () => {
+    const el = scrollRef.current;
+    isAtBottomRef.current = el ? isNearLogBottom(el) : true;
+  };
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el) {
+      const displayModeChanged = lastDisplayModeRef.current !== displayMode;
+      if (displayModeChanged || isAtBottomRef.current) {
+        el.scrollTop = el.scrollHeight;
+      }
+      lastDisplayModeRef.current = displayMode;
+      updateBottomState();
+    }
+  }, [displayMode, renderedContentKey, contextLabel]);
+
+  const contextLine = contextLabel ? (
+    <div className="act-line act-info">
+      <span className="act-time">上下文</span>
+      <span className="act-tag">会话</span>
+      <span className="act-text">{contextLabel}</span>
+    </div>
+  ) : null;
+
+  const content = lines ? (
+    lines.map((line, index) => {
+        const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+        return (
+          <div className={`act-line ${config.cls}`} key={index}>
+            <span className="act-time">{formatChinaTime(line.at)}</span>
+            <span className="act-tag">{config.label}</span>
+            <span className="act-text">{line.text}</span>
+          </div>
+        );
+      })
+  ) : (
+    <pre className="codex-raw">{rawLogText}</pre>
+  );
+
+  return (
+    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+      {contextLine}
+      {content}
+    </div>
+  );
+}
+
+function codexContextLabel(context?: CodexSessionInfo | null) {
+  if (!context) return '';
+  const explicit = context.codexSessionLabel?.trim();
+  if (explicit) return explicit;
+  const requested = context.codexSessionRequestedShortId || shortCodexSessionId(context.codexSessionRequestedId);
+  const current = context.codexSessionShortId || shortCodexSessionId(context.codexSessionId);
+  if (context.codexSessionFallback || context.codexSessionState === 'fallback-new') {
+    if (current && requested) return `回退新建会话 ${current}（原 ${requested}）`;
+    if (current) return `回退新建会话 ${current}`;
+    return requested ? `回退新建会话（原 ${requested}）` : '回退新建会话';
+  }
+  if (context.codexSessionMode === 'resume') return current ? `恢复会话 ${current}` : '恢复会话';
+  if (context.codexSessionMode === 'new') return current ? `新建会话 ${current}` : '新建会话';
+  return current ? `会话 ${current}` : '';
+}
+
+function shortCodexSessionId(sessionId?: string | null) {
+  const text = sessionId?.trim();
+  if (!text) return '';
+  if (text.length <= 13) return text;
+  return `${text.slice(0, 8)}…${text.slice(-4)}`;
+}
+--- diff ---
+diff --git a/src/renderer/components/CodexLog.tsx b/src/renderer/components/CodexLog.tsx
+index fc1049b..b06a773 100644
+--- a/src/renderer/components/CodexLog.tsx
++++ b/src/renderer/components/CodexLog.tsx
+@@ -1,4 +1,4 @@
+-import { useEffect, useRef } from 'react';
++import { useLayoutEffect, useRef } from 'react';
+ import type { ActivityLine, CodexSessionInfo } from '../types';
+ import { formatChinaTime } from '../utils/time';
+ 
+@@ -35,6 +35,13 @@ export function CodexLog({
+   const scrollRef = useRef<HTMLDivElement>(null);
+   const isAtBottomRef = useRef(true);
+   const lines = activity && activity.length > 0 ? activity : null;
++  const displayMode = lines ? 'activity' : 'raw';
++  const lastDisplayModeRef = useRef(displayMode);
++  const rawLogText = log ? log.slice(-4000) : '等待 Codex 输出…';
++  const activityContentKey = lines
++    ? lines.map((line) => `${line.at}\u0000${line.role}\u0000${line.text}`).join('\u0001')
++    : '';
++  const renderedContentKey = lines ? activityContentKey : rawLogText;
+   const contextLabel = codexContextLabel(context);
+ 
+   const updateBottomState = () => {
+@@ -42,13 +49,17 @@ export function CodexLog({
+     isAtBottomRef.current = el ? isNearLogBottom(el) : true;
+   };
+ 
+-  useEffect(() => {
++  useLayoutEffect(() => {
+     const el = scrollRef.current;
+     if (el) {
+-      el.scrollTop = el.scrollHeight;
++      const displayModeChanged = lastDisplayModeRef.current !== displayMode;
++      if (displayModeChanged || isAtBottomRef.current) {
++        el.scrollTop = el.scrollHeight;
++      }
++      lastDisplayModeRef.current = displayMode;
+       updateBottomState();
+     }
+-  }, [log, activity, contextLabel]);
++  }, [displayMode, renderedContentKey, contextLabel]);
+ 
+   const contextLine = contextLabel ? (
+     <div className="act-line act-info">
+@@ -58,19 +69,8 @@ export function CodexLog({
+     </div>
+   ) : null;
+ 
+-  if (!lines) {
+-    return (
+-      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-        {contextLine}
+-        <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+-      </div>
+-    );
+-  }
+-
+-  return (
+-    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-      {contextLine}
+-      {lines.map((line, index) => {
++  const content = lines ? (
++    lines.map((line, index) => {
+         const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+         return (
+           <div className={`act-line ${config.cls}`} key={index}>
+@@ -79,7 +79,15 @@ export function CodexLog({
+             <span className="act-text">{line.text}</span>
+           </div>
+         );
+-      })}
++      })
++  ) : (
++    <pre className="codex-raw">{rawLogText}</pre>
++  );
++
++  return (
++    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
++      {contextLine}
++      {content}
+     </div>
+   );
+ }
+warning: in the working copy of 'src/renderer/components/CodexLog.tsx', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/components/CodexLog.tsx b/src/renderer/components/CodexLog.tsx
+index 7b39c85f458065b24fb5792673b9ff66df84c5de..b06a7738518074b8bfc59f4f9c6f377af1e6d85c
+--- a/src/renderer/components/CodexLog.tsx
++++ b/src/renderer/components/CodexLog.tsx
+@@ -1,4 +1,4 @@
+-import { useEffect, useRef } from 'react';
++import { useLayoutEffect, useRef } from 'react';
+ import type { ActivityLine, CodexSessionInfo } from '../types';
+ import { formatChinaTime } from '../utils/time';
+ 
+@@ -32,25 +32,34 @@
+   activity?: ActivityLine[];
+   context?: CodexSessionInfo | null;
+ }) {
+-  const scrollRef = useRef<HTMLDivElement>(null);
+-  const isAtBottomRef = useRef(true);
+-  const lines = activity && activity.length > 0 ? activity : null;
+-  const contextLabel = codexContextLabel(context);
++  const scrollRef = useRef<HTMLDivElement>(null);
++  const isAtBottomRef = useRef(true);
++  const lines = activity && activity.length > 0 ? activity : null;
++  const displayMode = lines ? 'activity' : 'raw';
++  const lastDisplayModeRef = useRef(displayMode);
++  const rawLogText = log ? log.slice(-4000) : '等待 Codex 输出…';
++  const activityContentKey = lines
++    ? lines.map((line) => `${line.at}\u0000${line.role}\u0000${line.text}`).join('\u0001')
++    : '';
++  const renderedContentKey = lines ? activityContentKey : rawLogText;
++  const contextLabel = codexContextLabel(context);
+ 
+   const updateBottomState = () => {
+     const el = scrollRef.current;
+     isAtBottomRef.current = el ? isNearLogBottom(el) : true;
+   };
+ 
+-  useEffect(() => {
++  useLayoutEffect(() => {
+     const el = scrollRef.current;
+     if (el) {
+-      if (isAtBottomRef.current) {
++      const displayModeChanged = lastDisplayModeRef.current !== displayMode;
++      if (displayModeChanged || isAtBottomRef.current) {
+         el.scrollTop = el.scrollHeight;
+       }
++      lastDisplayModeRef.current = displayMode;
+       updateBottomState();
+     }
+-  }, [log, activity, contextLabel]);
++  }, [displayMode, renderedContentKey, contextLabel]);
+ 
+   const contextLine = contextLabel ? (
+     <div className="act-line act-info">
+@@ -60,31 +69,28 @@
+     </div>
+   ) : null;
+ 
+-  if (!lines) {
+-    return (
+-      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-        {contextLine}
+-        <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+-      </div>
+-    );
+-  }
+-
+-  return (
+-    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-      {contextLine}
+-      {lines.map((line, index) => {
+-        const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+-        return (
+-          <div className={`act-line ${config.cls}`} key={index}>
++  const content = lines ? (
++    lines.map((line, index) => {
++        const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
++        return (
++          <div className={`act-line ${config.cls}`} key={index}>
+             <span className="act-time">{formatChinaTime(line.at)}</span>
+             <span className="act-tag">{config.label}</span>
+             <span className="act-text">{line.text}</span>
+-          </div>
+-        );
+-      })}
+-    </div>
+-  );
+-}
++          </div>
++        );
++      })
++  ) : (
++    <pre className="codex-raw">{rawLogText}</pre>
++  );
++
++  return (
++    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
++      {contextLine}
++      {content}
++    </div>
++  );
++}
+ 
+ function codexContextLabel(context?: CodexSessionInfo | null) {
+   if (!context) return '';
+
+**Considering patch options**
+
+I’m thinking about the next patch and whether to stick with shell. Using PowerShell's Set-Content is an option, but “Use apply_patch” seems strict. I’m considering using the shell’s `apply_patch`, since it warns but still works. However, there's no dedicated tool available for this task, so that's something to consider. I also need to keep in mind the patch indentation to ensure everything functions correctly!
+codex
+发现 `map` 块缩进不够整洁，我马上整理到项目风格。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\CodexLog.tsx
+diff --git a/src/renderer/components/CodexLog.tsx b/src/renderer/components/CodexLog.tsx
+index 7b39c85f458065b24fb5792673b9ff66df84c5de..0e07a72f729af73ae20adc23d567534e868c660b
+--- a/src/renderer/components/CodexLog.tsx
++++ b/src/renderer/components/CodexLog.tsx
+@@ -1,4 +1,4 @@
+-import { useEffect, useRef } from 'react';
++import { useLayoutEffect, useRef } from 'react';
+ import type { ActivityLine, CodexSessionInfo } from '../types';
+ import { formatChinaTime } from '../utils/time';
+ 
+@@ -32,25 +32,34 @@
+   activity?: ActivityLine[];
+   context?: CodexSessionInfo | null;
+ }) {
+-  const scrollRef = useRef<HTMLDivElement>(null);
+-  const isAtBottomRef = useRef(true);
+-  const lines = activity && activity.length > 0 ? activity : null;
+-  const contextLabel = codexContextLabel(context);
++  const scrollRef = useRef<HTMLDivElement>(null);
++  const isAtBottomRef = useRef(true);
++  const lines = activity && activity.length > 0 ? activity : null;
++  const displayMode = lines ? 'activity' : 'raw';
++  const lastDisplayModeRef = useRef(displayMode);
++  const rawLogText = log ? log.slice(-4000) : '等待 Codex 输出…';
++  const activityContentKey = lines
++    ? lines.map((line) => `${line.at}\u0000${line.role}\u0000${line.text}`).join('\u0001')
++    : '';
++  const renderedContentKey = lines ? activityContentKey : rawLogText;
++  const contextLabel = codexContextLabel(context);
+ 
+   const updateBottomState = () => {
+     const el = scrollRef.current;
+     isAtBottomRef.current = el ? isNearLogBottom(el) : true;
+   };
+ 
+-  useEffect(() => {
++  useLayoutEffect(() => {
+     const el = scrollRef.current;
+     if (el) {
+-      if (isAtBottomRef.current) {
++      const displayModeChanged = lastDisplayModeRef.current !== displayMode;
++      if (displayModeChanged || isAtBottomRef.current) {
+         el.scrollTop = el.scrollHeight;
+       }
++      lastDisplayModeRef.current = displayMode;
+       updateBottomState();
+     }
+-  }, [log, activity, contextLabel]);
++  }, [displayMode, renderedContentKey, contextLabel]);
+ 
+   const contextLine = contextLabel ? (
+     <div className="act-line act-info">
+@@ -60,31 +69,28 @@
+     </div>
+   ) : null;
+ 
+-  if (!lines) {
+-    return (
+-      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-        {contextLine}
+-        <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+-      </div>
+-    );
+-  }
+-
+-  return (
+-    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-      {contextLine}
+-      {lines.map((line, index) => {
+-        const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+-        return (
+-          <div className={`act-line ${config.cls}`} key={index}>
+-            <span className="act-time">{formatChinaTime(line.at)}</span>
+-            <span className="act-tag">{config.label}</span>
+-            <span className="act-text">{line.text}</span>
+-          </div>
+-        );
+-      })}
+-    </div>
+-  );
+-}
++  const content = lines ? (
++    lines.map((line, index) => {
++      const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
++      return (
++        <div className={`act-line ${config.cls}`} key={index}>
++          <span className="act-time">{formatChinaTime(line.at)}</span>
++          <span className="act-tag">{config.label}</span>
++          <span className="act-text">{line.text}</span>
++        </div>
++      );
++    })
++  ) : (
++    <pre className="codex-raw">{rawLogText}</pre>
++  );
++
++  return (
++    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
++      {contextLine}
++      {content}
++    </div>
++  );
++}
+ 
+ function codexContextLabel(context?: CodexSessionInfo | null) {
+   if (!context) return '';
+
+diff --git a/src/renderer/components/CodexLog.tsx b/src/renderer/components/CodexLog.tsx
+index 7b39c85f458065b24fb5792673b9ff66df84c5de..0e07a72f729af73ae20adc23d567534e868c660b
+--- a/src/renderer/components/CodexLog.tsx
++++ b/src/renderer/components/CodexLog.tsx
+@@ -1,4 +1,4 @@
+-import { useEffect, useRef } from 'react';
++import { useLayoutEffect, useRef } from 'react';
+ import type { ActivityLine, CodexSessionInfo } from '../types';
+ import { formatChinaTime } from '../utils/time';
+ 
+@@ -32,25 +32,34 @@
+   activity?: ActivityLine[];
+   context?: CodexSessionInfo | null;
+ }) {
+-  const scrollRef = useRef<HTMLDivElement>(null);
+-  const isAtBottomRef = useRef(true);
+-  const lines = activity && activity.length > 0 ? activity : null;
+-  const contextLabel = codexContextLabel(context);
++  const scrollRef = useRef<HTMLDivElement>(null);
++  const isAtBottomRef = useRef(true);
++  const lines = activity && activity.length > 0 ? activity : null;
++  const displayMode = lines ? 'activity' : 'raw';
++  const lastDisplayModeRef = useRef(displayMode);
++  const rawLogText = log ? log.slice(-4000) : '等待 Codex 输出…';
++  const activityContentKey = lines
++    ? lines.map((line) => `${line.at}\u0000${line.role}\u0000${line.text}`).join('\u0001')
++    : '';
++  const renderedContentKey = lines ? activityContentKey : rawLogText;
++  const contextLabel = codexContextLabel(context);
+ 
+   const updateBottomState = () => {
+     const el = scrollRef.current;
+     isAtBottomRef.current = el ? isNearLogBottom(el) : true;
+   };
+ 
+-  useEffect(() => {
++  useLayoutEffect(() => {
+     const el = scrollRef.current;
+     if (el) {
+-      if (isAtBottomRef.current) {
++      const displayModeChanged = lastDisplayModeRef.current !== displayMode;
++      if (displayModeChanged || isAtBottomRef.current) {
+         el.scrollTop = el.scrollHeight;
+       }
++      lastDisplayModeRef.current = displayMode;
+       updateBottomState();
+     }
+-  }, [log, activity, contextLabel]);
++  }, [displayMode, renderedContentKey, contextLabel]);
+ 
+   const contextLine = contextLabel ? (
+     <div className="act-line act-info">
+@@ -60,31 +69,28 @@
+     </div>
+   ) : null;
+ 
+-  if (!lines) {
+-    return (
+-      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-        {contextLine}
+-        <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+-      </div>
+-    );
+-  }
+-
+-  return (
+-    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-      {contextLine}
+-      {lines.map((line, index) => {
+-        const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+-        return (
+-          <div className={`act-line ${config.cls}`} key={index}>
+-            <span className="act-time">{formatChinaTime(line.at)}</span>
+-            <span className="act-tag">{config.label}</span>
+-            <span className="act-text">{line.text}</span>
+-          </div>
+-        );
+-      })}
+-    </div>
+-  );
+-}
++  const content = lines ? (
++    lines.map((line, index) => {
++      const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
++      return (
++        <div className={`act-line ${config.cls}`} key={index}>
++          <span className="act-time">{formatChinaTime(line.at)}</span>
++          <span className="act-tag">{config.label}</span>
++          <span className="act-text">{line.text}</span>
++        </div>
++      );
++    })
++  ) : (
++    <pre className="codex-raw">{rawLogText}</pre>
++  );
++
++  return (
++    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
++      {contextLine}
++      {content}
++    </div>
++  );
++}
+ 
+ function codexContextLabel(context?: CodexSessionInfo | null) {
+   if (!context) return '';
+
+**Updating plan progress**
+
+I should probably consider updating my plan progress. It's always good to reflect on where I am with things and what needs attention. I wonder if I have covered all necessary elements in my progress—maybe it requires a thorough examination. I want to ensure I’m on the right path and address any concerns. Let's take a step back and assess what adjustments might be necessary moving forward!
+codex
+实现已完成，接下来做最小 TypeScript 验证。
+  ✓ 读取任务上下文
+  ✓ 定位组件逻辑
+  ✓ 实现模式覆盖
+  → 运行最小验证
+diff --git a/src/renderer/components/CodexLog.tsx b/src/renderer/components/CodexLog.tsx
+index 7b39c85f458065b24fb5792673b9ff66df84c5de..0e07a72f729af73ae20adc23d567534e868c660b
+--- a/src/renderer/components/CodexLog.tsx
++++ b/src/renderer/components/CodexLog.tsx
+@@ -1,4 +1,4 @@
+-import { useEffect, useRef } from 'react';
++import { useLayoutEffect, useRef } from 'react';
+ import type { ActivityLine, CodexSessionInfo } from '../types';
+ import { formatChinaTime } from '../utils/time';
+ 
+@@ -32,25 +32,34 @@
+   activity?: ActivityLine[];
+   context?: CodexSessionInfo | null;
+ }) {
+-  const scrollRef = useRef<HTMLDivElement>(null);
+-  const isAtBottomRef = useRef(true);
+-  const lines = activity && activity.length > 0 ? activity : null;
+-  const contextLabel = codexContextLabel(context);
++  const scrollRef = useRef<HTMLDivElement>(null);
++  const isAtBottomRef = useRef(true);
++  const lines = activity && activity.length > 0 ? activity : null;
++  const displayMode = lines ? 'activity' : 'raw';
++  const lastDisplayModeRef = useRef(displayMode);
++  const rawLogText = log ? log.slice(-4000) : '等待 Codex 输出…';
++  const activityContentKey = lines
++    ? lines.map((line) => `${line.at}\u0000${line.role}\u0000${line.text}`).join('\u0001')
++    : '';
++  const renderedContentKey = lines ? activityContentKey : rawLogText;
++  const contextLabel = codexContextLabel(context);
+ 
+   const updateBottomState = () => {
+     const el = scrollRef.current;
+     isAtBottomRef.current = el ? isNearLogBottom(el) : true;
+   };
+ 
+-  useEffect(() => {
++  useLayoutEffect(() => {
+     const el = scrollRef.current;
+     if (el) {
+-      if (isAtBottomRef.current) {
++      const displayModeChanged = lastDisplayModeRef.current !== displayMode;
++      if (displayModeChanged || isAtBottomRef.current) {
+         el.scrollTop = el.scrollHeight;
+       }
++      lastDisplayModeRef.current = displayMode;
+       updateBottomState();
+     }
+-  }, [log, activity, contextLabel]);
++  }, [displayMode, renderedContentKey, contextLabel]);
+ 
+   const contextLine = contextLabel ? (
+     <div className="act-line act-info">
+@@ -60,31 +69,28 @@
+     </div>
+   ) : null;
+ 
+-  if (!lines) {
+-    return (
+-      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-        {contextLine}
+-        <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+-      </div>
+-    );
+-  }
+-
+-  return (
+-    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-      {contextLine}
+-      {lines.map((line, index) => {
+-        const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+-        return (
+-          <div className={`act-line ${config.cls}`} key={index}>
+-            <span className="act-time">{formatChinaTime(line.at)}</span>
+-            <span className="act-tag">{config.label}</span>
+-            <span className="act-text">{line.text}</span>
+-          </div>
+-        );
+-      })}
+-    </div>
+-  );
+-}
++  const content = lines ? (
++    lines.map((line, index) => {
++      const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
++      return (
++        <div className={`act-line ${config.cls}`} key={index}>
++          <span className="act-time">{formatChinaTime(line.at)}</span>
++          <span className="act-tag">{config.label}</span>
++          <span className="act-text">{line.text}</span>
++        </div>
++      );
++    })
++  ) : (
++    <pre className="codex-raw">{rawLogText}</pre>
++  );
++
++  return (
++    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
++      {contextLine}
++      {content}
++    </div>
++  );
++}
+ 
+ function codexContextLabel(context?: CodexSessionInfo | null) {
+   if (!context) return '';
+
+**Considering TypeScript commands**
+
+I’m thinking about how to run things minimally, maybe using `npx tsc --noEmit --pretty false`. It seems broad but could be relevant. I wonder if `npm run check` would work, but that doesn’t seem right. Perhaps running `npx tsc --noEmit --pretty false` for all TypeScript files is the way to go. I might want to check the `tsconfig` to see if it includes the `noEmit` option. Let's figure this out!
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; npx tsc --noEmit --pretty false" in D:\project\GitHub\autoplan
+ succeeded in 2459ms:
+diff --git a/src/renderer/components/CodexLog.tsx b/src/renderer/components/CodexLog.tsx
+index 7b39c85f458065b24fb5792673b9ff66df84c5de..0e07a72f729af73ae20adc23d567534e868c660b
+--- a/src/renderer/components/CodexLog.tsx
++++ b/src/renderer/components/CodexLog.tsx
+@@ -1,4 +1,4 @@
+-import { useEffect, useRef } from 'react';
++import { useLayoutEffect, useRef } from 'react';
+ import type { ActivityLine, CodexSessionInfo } from '../types';
+ import { formatChinaTime } from '../utils/time';
+ 
+@@ -32,25 +32,34 @@
+   activity?: ActivityLine[];
+   context?: CodexSessionInfo | null;
+ }) {
+-  const scrollRef = useRef<HTMLDivElement>(null);
+-  const isAtBottomRef = useRef(true);
+-  const lines = activity && activity.length > 0 ? activity : null;
+-  const contextLabel = codexContextLabel(context);
++  const scrollRef = useRef<HTMLDivElement>(null);
++  const isAtBottomRef = useRef(true);
++  const lines = activity && activity.length > 0 ? activity : null;
++  const displayMode = lines ? 'activity' : 'raw';
++  const lastDisplayModeRef = useRef(displayMode);
++  const rawLogText = log ? log.slice(-4000) : '等待 Codex 输出…';
++  const activityContentKey = lines
++    ? lines.map((line) => `${line.at}\u0000${line.role}\u0000${line.text}`).join('\u0001')
++    : '';
++  const renderedContentKey = lines ? activityContentKey : rawLogText;
++  const contextLabel = codexContextLabel(context);
+ 
+   const updateBottomState = () => {
+     const el = scrollRef.current;
+     isAtBottomRef.current = el ? isNearLogBottom(el) : true;
+   };
+ 
+-  useEffect(() => {
++  useLayoutEffect(() => {
+     const el = scrollRef.current;
+     if (el) {
+-      if (isAtBottomRef.current) {
++      const displayModeChanged = lastDisplayModeRef.current !== displayMode;
++      if (displayModeChanged || isAtBottomRef.current) {
+         el.scrollTop = el.scrollHeight;
+       }
++      lastDisplayModeRef.current = displayMode;
+       updateBottomState();
+     }
+-  }, [log, activity, contextLabel]);
++  }, [displayMode, renderedContentKey, contextLabel]);
+ 
+   const contextLine = contextLabel ? (
+     <div className="act-line act-info">
+@@ -60,31 +69,28 @@
+     </div>
+   ) : null;
+ 
+-  if (!lines) {
+-    return (
+-      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-        {contextLine}
+-        <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+-      </div>
+-    );
+-  }
+-
+-  return (
+-    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-      {contextLine}
+-      {lines.map((line, index) => {
+-        const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+-        return (
+-          <div className={`act-line ${config.cls}`} key={index}>
+-            <span className="act-time">{formatChinaTime(line.at)}</span>
+-            <span className="act-tag">{config.label}</span>
+-            <span className="act-text">{line.text}</span>
+-          </div>
+-        );
+-      })}
+-    </div>
+-  );
+-}
++  const content = lines ? (
++    lines.map((line, index) => {
++      const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
++      return (
++        <div className={`act-line ${config.cls}`} key={index}>
++          <span className="act-time">{formatChinaTime(line.at)}</span>
++          <span className="act-tag">{config.label}</span>
++          <span className="act-text">{line.text}</span>
++        </div>
++      );
++    })
++  ) : (
++    <pre className="codex-raw">{rawLogText}</pre>
++  );
++
++  return (
++    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
++      {contextLine}
++      {content}
++    </div>
++  );
++}
+ 
+ function codexContextLabel(context?: CodexSessionInfo | null) {
+   if (!context) return '';
+
+**Checking git status and diffs**
+
+I’m thinking about inspecting the final differences and checking the git status. It's important to ensure everything is good before finalizing my changes. I wonder if there are any updates or if something needs attention. It’s always a good idea to double-check everything to avoid surprises later on. I just want to make sure I'm not missing anything important! Let’s see what the status and diffs show.
+codex
+TypeScript 校验通过；我最后确认只触及目标业务文件。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; git status --short -- src/renderer/components/CodexLog.tsx docs/plan/plan_feedback_5_20260625-040346.md; Write-Host '--- target diff stat ---'; git diff --stat -- src/renderer/components/CodexLog.tsx; Write-Host '--- key lines ---'; Select-String -Path 'src\\renderer\\components\\CodexLog.tsx' -Pattern 'useLayoutEffect|displayMode|renderedContentKey|rawLogText|const content' -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 277ms:
+ M docs/plan/plan_feedback_5_20260625-040346.md
+ M src/renderer/components/CodexLog.tsx
+--- target diff stat ---
+ src/renderer/components/CodexLog.tsx | 52 +++++++++++++++++++++---------------
+ 1 file changed, 30 insertions(+), 22 deletions(-)
+--- key lines ---
+
+src\renderer\components\CodexLog.tsx:1:import { useLayoutEffect, useRef } from 'react';
+src\renderer\components\CodexLog.tsx:38:  const displayMode = lines ? 'activity' : 'raw';
+src\renderer\components\CodexLog.tsx:39:  const lastDisplayModeRef = useRef(displayMode);
+src\renderer\components\CodexLog.tsx:40:  const rawLogText = log ? log.slice(-4000) : '等待 Codex 输出…';
+src\renderer\components\CodexLog.tsx:44:  const renderedContentKey = lines ? activityContentKey : rawLogText;
+src\renderer\components\CodexLog.tsx:52:  useLayoutEffect(() => {
+src\renderer\components\CodexLog.tsx:55:      const displayModeChanged = lastDisplayModeRef.current !== displayMode;
+src\renderer\components\CodexLog.tsx:56:      if (displayModeChanged || isAtBottomRef.current) {
+src\renderer\components\CodexLog.tsx:59:      lastDisplayModeRef.current = displayMode;
+src\renderer\components\CodexLog.tsx:62:  }, [displayMode, renderedContentKey, contextLabel]);
+src\renderer\components\CodexLog.tsx:72:  const content = lines ? (
+src\renderer\components\CodexLog.tsx:84:    <pre className="codex-raw">{rawLogText}</pre>
+
+
+warning: in the working copy of 'src/renderer/components/CodexLog.tsx', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/components/CodexLog.tsx b/src/renderer/components/CodexLog.tsx
+index 7b39c85f458065b24fb5792673b9ff66df84c5de..0e07a72f729af73ae20adc23d567534e868c660b
+--- a/src/renderer/components/CodexLog.tsx
++++ b/src/renderer/components/CodexLog.tsx
+@@ -1,4 +1,4 @@
+-import { useEffect, useRef } from 'react';
++import { useLayoutEffect, useRef } from 'react';
+ import type { ActivityLine, CodexSessionInfo } from '../types';
+ import { formatChinaTime } from '../utils/time';
+ 
+@@ -32,25 +32,34 @@
+   activity?: ActivityLine[];
+   context?: CodexSessionInfo | null;
+ }) {
+-  const scrollRef = useRef<HTMLDivElement>(null);
+-  const isAtBottomRef = useRef(true);
+-  const lines = activity && activity.length > 0 ? activity : null;
+-  const contextLabel = codexContextLabel(context);
++  const scrollRef = useRef<HTMLDivElement>(null);
++  const isAtBottomRef = useRef(true);
++  const lines = activity && activity.length > 0 ? activity : null;
++  const displayMode = lines ? 'activity' : 'raw';
++  const lastDisplayModeRef = useRef(displayMode);
++  const rawLogText = log ? log.slice(-4000) : '等待 Codex 输出…';
++  const activityContentKey = lines
++    ? lines.map((line) => `${line.at}\u0000${line.role}\u0000${line.text}`).join('\u0001')
++    : '';
++  const renderedContentKey = lines ? activityContentKey : rawLogText;
++  const contextLabel = codexContextLabel(context);
+ 
+   const updateBottomState = () => {
+     const el = scrollRef.current;
+     isAtBottomRef.current = el ? isNearLogBottom(el) : true;
+   };
+ 
+-  useEffect(() => {
++  useLayoutEffect(() => {
+     const el = scrollRef.current;
+     if (el) {
+-      if (isAtBottomRef.current) {
++      const displayModeChanged = lastDisplayModeRef.current !== displayMode;
++      if (displayModeChanged || isAtBottomRef.current) {
+         el.scrollTop = el.scrollHeight;
+       }
++      lastDisplayModeRef.current = displayMode;
+       updateBottomState();
+     }
+-  }, [log, activity, contextLabel]);
++  }, [displayMode, renderedContentKey, contextLabel]);
+ 
+   const contextLine = contextLabel ? (
+     <div className="act-line act-info">
+@@ -60,31 +69,28 @@
+     </div>
+   ) : null;
+ 
+-  if (!lines) {
+-    return (
+-      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-        {contextLine}
+-        <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+-      </div>
+-    );
+-  }
+-
+-  return (
+-    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-      {contextLine}
+-      {lines.map((line, index) => {
+-        const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+-        return (
+-          <div className={`act-line ${config.cls}`} key={index}>
+-            <span className="act-time">{formatChinaTime(line.at)}</span>
+-            <span className="act-tag">{config.label}</span>
+-            <span className="act-text">{line.text}</span>
+-          </div>
+-        );
+-      })}
+-    </div>
+-  );
+-}
++  const content = lines ? (
++    lines.map((line, index) => {
++      const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
++      return (
++        <div className={`act-line ${config.cls}`} key={index}>
++          <span className="act-time">{formatChinaTime(line.at)}</span>
++          <span className="act-tag">{config.label}</span>
++          <span className="act-text">{line.text}</span>
++        </div>
++      );
++    })
++  ) : (
++    <pre className="codex-raw">{rawLogText}</pre>
++  );
++
++  return (
++    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
++      {contextLine}
++      {content}
++    </div>
++  );
++}
+ 
+ function codexContextLabel(context?: CodexSessionInfo | null) {
+   if (!context) return '';
+
+codex
+验证完成；我将任务计划标记为本轮完成。
+  ✓ 读取任务上下文
+  ✓ 定位组件逻辑
+  ✓ 实现模式覆盖
+  ✓ 运行最小验证
+diff --git a/src/renderer/components/CodexLog.tsx b/src/renderer/components/CodexLog.tsx
+index 7b39c85f458065b24fb5792673b9ff66df84c5de..0e07a72f729af73ae20adc23d567534e868c660b
+--- a/src/renderer/components/CodexLog.tsx
++++ b/src/renderer/components/CodexLog.tsx
+@@ -1,4 +1,4 @@
+-import { useEffect, useRef } from 'react';
++import { useLayoutEffect, useRef } from 'react';
+ import type { ActivityLine, CodexSessionInfo } from '../types';
+ import { formatChinaTime } from '../utils/time';
+ 
+@@ -32,25 +32,34 @@
+   activity?: ActivityLine[];
+   context?: CodexSessionInfo | null;
+ }) {
+-  const scrollRef = useRef<HTMLDivElement>(null);
+-  const isAtBottomRef = useRef(true);
+-  const lines = activity && activity.length > 0 ? activity : null;
+-  const contextLabel = codexContextLabel(context);
++  const scrollRef = useRef<HTMLDivElement>(null);
++  const isAtBottomRef = useRef(true);
++  const lines = activity && activity.length > 0 ? activity : null;
++  const displayMode = lines ? 'activity' : 'raw';
++  const lastDisplayModeRef = useRef(displayMode);
++  const rawLogText = log ? log.slice(-4000) : '等待 Codex 输出…';
++  const activityContentKey = lines
++    ? lines.map((line) => `${line.at}\u0000${line.role}\u0000${line.text}`).join('\u0001')
++    : '';
++  const renderedContentKey = lines ? activityContentKey : rawLogText;
++  const contextLabel = codexContextLabel(context);
+ 
+   const updateBottomState = () => {
+     const el = scrollRef.current;
+     isAtBottomRef.current = el ? isNearLogBottom(el) : true;
+   };
+ 
+-  useEffect(() => {
++  useLayoutEffect(() => {
+     const el = scrollRef.current;
+     if (el) {
+-      if (isAtBottomRef.current) {
++      const displayModeChanged = lastDisplayModeRef.current !== displayMode;
++      if (displayModeChanged || isAtBottomRef.current) {
+         el.scrollTop = el.scrollHeight;
+       }
++      lastDisplayModeRef.current = displayMode;
+       updateBottomState();
+     }
+-  }, [log, activity, contextLabel]);
++  }, [displayMode, renderedContentKey, contextLabel]);
+ 
+   const contextLine = contextLabel ? (
+     <div className="act-line act-info">
+@@ -60,31 +69,28 @@
+     </div>
+   ) : null;
+ 
+-  if (!lines) {
+-    return (
+-      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-        {contextLine}
+-        <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+-      </div>
+-    );
+-  }
+-
+-  return (
+-    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-      {contextLine}
+-      {lines.map((line, index) => {
+-        const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+-        return (
+-          <div className={`act-line ${config.cls}`} key={index}>
+-            <span className="act-time">{formatChinaTime(line.at)}</span>
+-            <span className="act-tag">{config.label}</span>
+-            <span className="act-text">{line.text}</span>
+-          </div>
+-        );
+-      })}
+-    </div>
+-  );
+-}
++  const content = lines ? (
++    lines.map((line, index) => {
++      const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
++      return (
++        <div className={`act-line ${config.cls}`} key={index}>
++          <span className="act-time">{formatChinaTime(line.at)}</span>
++          <span className="act-tag">{config.label}</span>
++          <span className="act-text">{line.text}</span>
++        </div>
++      );
++    })
++  ) : (
++    <pre className="codex-raw">{rawLogText}</pre>
++  );
++
++  return (
++    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
++      {contextLine}
++      {content}
++    </div>
++  );
++}
+ 
+ function codexContextLabel(context?: CodexSessionInfo | null) {
+   if (!context) return '';
+
+codex
+已完成 P003，仅修改 `src/renderer/components/CodexLog.tsx`。
+
+- `src/renderer/components/CodexLog.tsx:38` 增加当前展示模式 `activity/raw` 与可见内容 key，滚动逻辑只跟随当前实际渲染来源。
+- `src/renderer/components/CodexLog.tsx:52` 改为 `useLayoutEffect`，模式切换或粘底状态下更新滚动，避免活动行/原始日志互相干扰。
+- `src/renderer/components/CodexLog.tsx:72` 合并为单一日志容器渲染，仍保持活动行与原始 `logTail` 二选一展示，未改变文本、时间、角色样式和尾部截断策略。
+- 未修改 plan 文件，未勾选 checkbox。
+- 最小验证已通过：`npx tsc --noEmit --pretty false`。
+diff --git a/src/renderer/components/CodexLog.tsx b/src/renderer/components/CodexLog.tsx
+index 7b39c85f458065b24fb5792673b9ff66df84c5de..0e07a72f729af73ae20adc23d567534e868c660b
+--- a/src/renderer/components/CodexLog.tsx
++++ b/src/renderer/components/CodexLog.tsx
+@@ -1,4 +1,4 @@
+-import { useEffect, useRef } from 'react';
++import { useLayoutEffect, useRef } from 'react';
+ import type { ActivityLine, CodexSessionInfo } from '../types';
+ import { formatChinaTime } from '../utils/time';
+ 
+@@ -32,25 +32,34 @@
+   activity?: ActivityLine[];
+   context?: CodexSessionInfo | null;
+ }) {
+-  const scrollRef = useRef<HTMLDivElement>(null);
+-  const isAtBottomRef = useRef(true);
+-  const lines = activity && activity.length > 0 ? activity : null;
+-  const contextLabel = codexContextLabel(context);
++  const scrollRef = useRef<HTMLDivElement>(null);
++  const isAtBottomRef = useRef(true);
++  const lines = activity && activity.length > 0 ? activity : null;
++  const displayMode = lines ? 'activity' : 'raw';
++  const lastDisplayModeRef = useRef(displayMode);
++  const rawLogText = log ? log.slice(-4000) : '等待 Codex 输出…';
++  const activityContentKey = lines
++    ? lines.map((line) => `${line.at}\u0000${line.role}\u0000${line.text}`).join('\u0001')
++    : '';
++  const renderedContentKey = lines ? activityContentKey : rawLogText;
++  const contextLabel = codexContextLabel(context);
+ 
+   const updateBottomState = () => {
+     const el = scrollRef.current;
+     isAtBottomRef.current = el ? isNearLogBottom(el) : true;
+   };
+ 
+-  useEffect(() => {
++  useLayoutEffect(() => {
+     const el = scrollRef.current;
+     if (el) {
+-      if (isAtBottomRef.current) {
++      const displayModeChanged = lastDisplayModeRef.current !== displayMode;
++      if (displayModeChanged || isAtBottomRef.current) {
+         el.scrollTop = el.scrollHeight;
+       }
++      lastDisplayModeRef.current = displayMode;
+       updateBottomState();
+     }
+-  }, [log, activity, contextLabel]);
++  }, [displayMode, renderedContentKey, contextLabel]);
+ 
+   const contextLine = contextLabel ? (
+     <div className="act-line act-info">
+@@ -60,31 +69,28 @@
+     </div>
+   ) : null;
+ 
+-  if (!lines) {
+-    return (
+-      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-        {contextLine}
+-        <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
+-      </div>
+-    );
+-  }
+-
+-  return (
+-    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+-      {contextLine}
+-      {lines.map((line, index) => {
+-        const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+-        return (
+-          <div className={`act-line ${config.cls}`} key={index}>
+-            <span className="act-time">{formatChinaTime(line.at)}</span>
+-            <span className="act-tag">{config.label}</span>
+-            <span className="act-text">{line.text}</span>
+-          </div>
+-        );
+-      })}
+-    </div>
+-  );
+-}
++  const content = lines ? (
++    lines.map((line, index) => {
++      const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
++      return (
++        <div className={`act-line ${config.cls}`} key={index}>
++          <span className="act-time">{formatChinaTime(line.at)}</span>
++          <span className="act-tag">{config.label}</span>
++          <span className="act-text">{line.text}</span>
++        </div>
++      );
++    })
++  ) : (
++    <pre className="codex-raw">{rawLogText}</pre>
++  );
++
++  return (
++    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
++      {contextLine}
++      {content}
++    </div>
++  );
++}
+ 
+ function codexContextLabel(context?: CodexSessionInfo | null) {
+   if (!context) return '';
+
+tokens used
+91,612
+已完成 P003，仅修改 `src/renderer/components/CodexLog.tsx`。
+
+- `src/renderer/components/CodexLog.tsx:38` 增加当前展示模式 `activity/raw` 与可见内容 key，滚动逻辑只跟随当前实际渲染来源。
+- `src/renderer/components/CodexLog.tsx:52` 改为 `useLayoutEffect`，模式切换或粘底状态下更新滚动，避免活动行/原始日志互相干扰。
+- `src/renderer/components/CodexLog.tsx:72` 合并为单一日志容器渲染，仍保持活动行与原始 `logTail` 二选一展示，未改变文本、时间、角色样式和尾部截断策略。
+- 未修改 plan 文件，未勾选 checkbox。
+- 最小验证已通过：`npx tsc --noEmit --pretty false`。

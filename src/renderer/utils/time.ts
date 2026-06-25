@@ -23,6 +23,11 @@ function normalizeDurationMs(value?: number | null) {
   return duration;
 }
 
+export function getTimestampMs(value?: string | null) {
+  const date = parseTimestamp(value);
+  return date?.getTime() ?? 0;
+}
+
 function chinaParts(date: Date) {
   const parts = new Intl.DateTimeFormat('zh-CN', {
     timeZone: CHINA_TIME_ZONE,

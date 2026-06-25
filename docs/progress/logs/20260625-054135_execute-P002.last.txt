@@ -1,0 +1,10 @@
+已完成 P002，未修改 plan 文件或 checkbox，仅改动指定 scope 内文件。
+
+**变更**
+- `src/renderer/utils/search.ts:151` 增加查询解析、结果分组、排序和单值匹配辅助。
+- `src/renderer/utils/search.ts:191` 实现 `searchWorkspaceSnapshot`，覆盖标题、正文、状态、路径、任务 key、scope、事件类型/信息/meta 的大小写不敏感检索。
+- `src/renderer/utils/search.ts:191` 空查询返回空搜索状态，调用方可通过 `query.isEmpty` 自行决定是否展示原列表。
+- `src/renderer/utils/time.ts:26` 导出 `getTimestampMs`，用于按更新时间稳定排序。
+
+**验证**
+- 通过最小相关检查：`.\node_modules\.bin\tsc.cmd --ignoreConfig --noEmit --pretty false --target ES2020 --module ESNext --moduleResolution Bundler --skipLibCheck src/renderer/utils/search.ts src/renderer/utils/time.ts`

@@ -1,0 +1,7 @@
+已完成 P004，未修改 plan 文件/checkbox/进度区。
+
+- 在 `src/renderer/types.ts:188` 增加 `WorkspacePlanReadState`，统一描述当前阅读 Plan、结果、加载和错误状态。
+- 在 `src/renderer/pages/WorkspacePage.tsx:65` 接入工作区级阅读状态；`src/renderer/pages/WorkspacePage.tsx:108` 项目切换/离开时清理并取消旧请求。
+- 在 `src/renderer/pages/WorkspacePage.tsx:334` 实现 Plan 正文读取流程，支持竞态保护、错误回填、关闭和刷新；`src/renderer/pages/WorkspacePage.tsx:595` 传入受控状态给列表。
+- 在 `src/renderer/components/PlanLists.tsx:289` 将 `PlanList` 改为受控展示；读取中禁用重复触发，错误时提供“重试”，状态更新时提示“刷新读取”。
+- 已运行最小相关检查：`npx tsc --noEmit` 通过；`git diff --check -- src/renderer/pages/WorkspacePage.tsx src/renderer/components/PlanLists.tsx src/renderer/types.ts` 通过，仅有既有换行策略提示。

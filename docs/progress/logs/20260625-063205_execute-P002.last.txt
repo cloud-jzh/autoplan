@@ -1,0 +1,8 @@
+已完成 P002，仅修改任务 scope 内文件。
+
+- 在 `src/renderer/components/CodexLog.tsx:48` 增加粘底判断：只有 `isAtBottomRef.current` 为 true 时才自动滚到底部。
+- 用户手动向上滚动后，新日志追加不会强制拉回底部；仍在底部时保持自动跟随。
+- 未修改 plan 文件、未勾选 checkbox、未更新进度区。
+- 验证通过：`npx tsc --ignoreConfig --noEmit --pretty false ... src/renderer/components/CodexLog.tsx`
+
+另外，工作区里已有多处与本任务无关的未提交变更，我没有处理或回退它们。

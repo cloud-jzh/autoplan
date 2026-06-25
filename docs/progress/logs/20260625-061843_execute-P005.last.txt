@@ -1,0 +1,13 @@
+**完成情况**
+- 已完成 P005，未写入 `docs/plan/plan_requirement_11_20260625-035545.md`，未勾选 checkbox。
+- `src/renderer/components/MarkdownReader.tsx:44` 让 `scope` 等 HTML 注释在阅读模式中可见，并保留任务勾选的只读视觉。
+- `src/renderer/components/MarkdownReader.tsx:100` 为代码块和表格补充键盘可聚焦滚动区域。
+- `src/renderer/components/PlanLists.tsx:363` 增加弹窗 `Esc` 关闭、Tab 焦点循环和打开后焦点管理。
+- `src/renderer/components/PlanLists.tsx:455` 补齐 `aria-modal`、标题、描述、`aria-live` 状态与只读阅读区域标识。
+- `src/styles.css:56`、`src/styles.css:160`、`src/styles.css:502` 增强焦点可见性、表格/代码阅读和宽窄屏弹窗滚动布局。
+
+**验证**
+- 已通过最小相关验证：`npx tsc --noEmit --pretty false`
+- 未运行全量 `check` / `build`，以遵守 P005 的最小验证要求。
+
+注意：工作区本身已有其它未提交改动显示在 `git diff --name-only` 中，我没有处理或回退这些非 P005 文件。

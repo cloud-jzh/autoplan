@@ -1,0 +1,10 @@
+**完成**
+- 在 `scripts/smoke-test.js:279` 接入搜索回归 smoke 验证。
+- 在 `scripts/smoke-test.js:317` 覆盖标题命中、正文命中、任务 key 命中、事件元信息命中和无结果场景。
+- 在 `scripts/smoke-test.js:371` 通过轻量 TS 转译加载真实 `src/renderer/utils/search.ts`，避免复制搜索逻辑。
+- 未编辑 plan 文件，也未勾选 checkbox 或更新进度区。
+
+**验证**
+- `npm run smoke` 通过
+- `npm run check` 通过
+- `npm run build` 通过

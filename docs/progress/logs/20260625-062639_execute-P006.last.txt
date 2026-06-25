@@ -1,0 +1,13 @@
+**完成情况**
+- 已仅在 `scripts/smoke-test.js:147` 接入 P006 回归 smoke 调用，未修改 plan 文件或 checkbox。
+- 新增 `plans:read` 主进程 IPC 回归覆盖：存在 Plan、Plan 不存在、跨项目隔离、文件缺失、路径越界保护，见 `scripts/smoke-test.js:380`。
+- 通过 VM + fake Electron 加载 `src/main.js` 的真实 IPC handler，避免启动窗口，见 `scripts/smoke-test.js:441`。
+- 增加 smoke 专用 Plan 插入 helper，见 `scripts/smoke-test.js:575`。
+
+**验证**
+- `node --check scripts/smoke-test.js` 通过
+- `npm run smoke` 通过
+- `npm run check` 通过
+- `npm run build` 通过
+
+备注：工作区中已有一些 P006 scope 外的未提交改动/日志文件，我没有处理或回退它们。

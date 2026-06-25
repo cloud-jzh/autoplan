@@ -1,0 +1,7 @@
+已完成 P003，仅修改 `src/renderer/components/CodexLog.tsx`。
+
+- `src/renderer/components/CodexLog.tsx:38` 增加当前展示模式 `activity/raw` 与可见内容 key，滚动逻辑只跟随当前实际渲染来源。
+- `src/renderer/components/CodexLog.tsx:52` 改为 `useLayoutEffect`，模式切换或粘底状态下更新滚动，避免活动行/原始日志互相干扰。
+- `src/renderer/components/CodexLog.tsx:72` 合并为单一日志容器渲染，仍保持活动行与原始 `logTail` 二选一展示，未改变文本、时间、角色样式和尾部截断策略。
+- 未修改 plan 文件，未勾选 checkbox。
+- 最小验证已通过：`npx tsc --noEmit --pretty false`。

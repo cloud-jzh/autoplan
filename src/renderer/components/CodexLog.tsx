@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import type { ActivityLine, CodexSessionInfo } from '../types';
 import { formatChinaTime } from '../utils/time';
 
@@ -35,6 +35,13 @@ export function CodexLog({
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
   const lines = activity && activity.length > 0 ? activity : null;
+  const displayMode = lines ? 'activity' : 'raw';
+  const lastDisplayModeRef = useRef(displayMode);
+  const rawLogText = log ? log.slice(-4000) : '等待 Codex 输出…';
+  const activityContentKey = lines
+    ? lines.map((line) => `${line.at}\u0000${line.role}\u0000${line.text}`).join('\u0001')
+    : '';
+  const renderedContentKey = lines ? activityContentKey : rawLogText;
   const contextLabel = codexContextLabel(context);
 
   const updateBottomState = () => {
@@ -42,13 +49,17 @@ export function CodexLog({
     isAtBottomRef.current = el ? isNearLogBottom(el) : true;
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el) {
-      el.scrollTop = el.scrollHeight;
+      const displayModeChanged = lastDisplayModeRef.current !== displayMode;
+      if (displayModeChanged || isAtBottomRef.current) {
+        el.scrollTop = el.scrollHeight;
+      }
+      lastDisplayModeRef.current = displayMode;
       updateBottomState();
     }
-  }, [log, activity, contextLabel]);
+  }, [displayMode, renderedContentKey, contextLabel]);
 
   const contextLine = contextLabel ? (
     <div className="act-line act-info">
@@ -58,28 +69,25 @@ export function CodexLog({
     </div>
   ) : null;
 
-  if (!lines) {
-    return (
-      <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
-        {contextLine}
-        <pre className="codex-raw">{log ? log.slice(-4000) : '等待 Codex 输出…'}</pre>
-      </div>
-    );
-  }
+  const content = lines ? (
+    lines.map((line, index) => {
+      const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+      return (
+        <div className={`act-line ${config.cls}`} key={index}>
+          <span className="act-time">{formatChinaTime(line.at)}</span>
+          <span className="act-tag">{config.label}</span>
+          <span className="act-text">{line.text}</span>
+        </div>
+      );
+    })
+  ) : (
+    <pre className="codex-raw">{rawLogText}</pre>
+  );
 
   return (
     <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
       {contextLine}
-      {lines.map((line, index) => {
-        const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
-        return (
-          <div className={`act-line ${config.cls}`} key={index}>
-            <span className="act-time">{formatChinaTime(line.at)}</span>
-            <span className="act-tag">{config.label}</span>
-            <span className="act-text">{line.text}</span>
-          </div>
-        );
-      })}
+      {content}
     </div>
   );
 }

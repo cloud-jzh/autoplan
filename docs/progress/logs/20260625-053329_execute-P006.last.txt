@@ -1,0 +1,8 @@
+**完成**
+- 已在 `scripts/smoke-test.js:279` 接入上下文复用 smoke 回归用例。
+- 新增/确认 `scripts/smoke-test.js:344` 覆盖：失败后重试复用同一 session、同 plan 不同任务不串用 session、并发任务独立 session、`syncPlanTasks` 保留/不误继承上下文。
+- 未修改 plan 文件，未勾选 checkbox，未更新进度区。
+
+**验证**
+- 已运行 `node --check scripts/smoke-test.js`
+- 已运行 `npm run smoke`，通过。

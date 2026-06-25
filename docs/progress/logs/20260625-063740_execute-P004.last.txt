@@ -1,0 +1,8 @@
+P004 验证完成，未修改 plan 文件、未勾选 checkbox，也未对业务文件应用补丁。
+
+**验证结果**
+- `npm run check` 通过。
+- `npm run build` 通过。
+- 运行时交互验证通过：底部追加自动跟随、向上查看历史时不跳底、滚回底部后恢复跟随。
+- 验证覆盖了结构化活动行与原始日志两种展示路径，关联实现位于 `src/renderer/components/CodexLog.tsx:17`、调用点位于 `src/renderer/pages/WorkspacePage.tsx:901`。
+- 临时 Electron 验证脚本写在系统临时目录并已清理；`src/styles.css:405` 未改动。

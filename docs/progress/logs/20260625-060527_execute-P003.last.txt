@@ -1,0 +1,13 @@
+已完成 P003，仅改动当前 scope 内文件，未修改指定 plan 文件、未勾选 checkbox。
+
+**完成内容**
+- 在 `src/renderer/components/PlanLists.tsx:277` 为每个正式 Plan 卡片新增 `阅读全文` 入口。
+- 点击后通过已有 `window.autoplan.readPlan` 按需读取全文，并用 `MarkdownReader` 在弹窗中展示 Markdown。
+- 弹窗展示文件路径、状态、更新时间、哈希、加载态和错误态，关闭后会清理阅读状态。
+- 在 `src/styles.css:496` 增加 Plan 全文阅读弹窗、摘要区、正文区、加载/错误态样式。
+
+**验证**
+- 已运行最小相关校验：`npx tsc --noEmit`，通过。
+
+**备注**
+- `git diff --name-only` 中存在其它已修改文件，但不是本次任务改动；我未触碰或处理它们。

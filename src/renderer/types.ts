@@ -185,6 +185,13 @@ export interface ReadPlanResult {
   error: string | null;
 }
 
+export interface WorkspacePlanReadState {
+  plan: Plan | null;
+  result: ReadPlanResult | null;
+  loading: boolean;
+  error: string | null;
+}
+
 export type CodexSessionMode = 'new' | 'resume';
 
 export type CodexSessionState = CodexSessionMode | 'fallback-new' | string;

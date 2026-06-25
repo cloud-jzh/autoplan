@@ -1,0 +1,13 @@
+已完成 P004，未修改 plan 文件、未勾选 checkbox。
+
+**变更**
+- `src/renderer/pages/WorkspacePage.tsx:56` 接入统一过滤结果，覆盖需求、反馈、草稿、Plan、任务和事件。
+- `src/renderer/pages/WorkspacePage.tsx:384` 搜索时各模块空态显示“没有匹配结果。”，空查询保持原列表和原空态。
+- `src/renderer/pages/WorkspacePage.tsx:492` 任务与计划页新增计划草稿列表，并过滤 Plan/任务/事件侧栏。
+- `src/renderer/components/PlanLists.tsx:193` 增加事件搜索文本，包含格式化展示、事件类型和元信息。
+- `src/renderer/components/PlanLists.tsx:268` Plan/任务/事件列表支持自定义空态，并保留任务执行/停止和耗时展示。
+
+**验证**
+- 已运行 `git diff --check -- src/renderer/pages/WorkspacePage.tsx src/renderer/components/PlanLists.tsx src/renderer/components/IntakePanel.tsx`
+- 已运行 `npm exec tsc -- --noEmit --pretty false`
+- 两项均通过；仅有 Git 行尾提示，无校验错误。

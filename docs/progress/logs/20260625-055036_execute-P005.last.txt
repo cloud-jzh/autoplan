@@ -1,0 +1,11 @@
+已完成 P005，仅改动任务 scope 内文件；未勾选 checkbox，也未写入 plan。
+
+- `src/renderer/pages/WorkspacePage.tsx:57` 改为使用统一 `searchWorkspaceSnapshot` 状态驱动命中数与过滤。
+- `src/renderer/pages/WorkspacePage.tsx:374` 接入统一搜索结果概览，点击结果/分组会切换到目标 tab 并保留过滤。
+- `src/renderer/components/SearchResults.tsx:29` 新增按来源分组的结果概览、摘要、状态、时间与无结果清空入口。
+- `src/styles.css:291` 新增概览、来源统计、结果卡片与响应式样式，长文本做截断防溢出。
+
+验证：
+- `npx tsc --noEmit --pretty false` 通过。
+- 本任务 scope 尾随空白检查通过。
+- 未运行全量 `npm run check` / `npm run build`，避免提前执行 P006 范围。

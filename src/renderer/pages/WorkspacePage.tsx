@@ -1,19 +1,27 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { WORKSPACE_SEARCH_SOURCE_TYPES } from '../types';
 import type {
   AppSnapshot,
   IntakeType,
   PendingAttachment,
+  Plan,
   Project,
   ProjectState,
+  WorkspacePlanReadState,
+  WorkspaceSearchGroup,
+  WorkspaceSearchSourceType,
+  WorkspaceSearchState,
   WorkspaceTab,
 } from '../types';
 import { useSnapshot } from '../hooks/useSnapshot';
 import { IntakePanel } from '../components/IntakePanel';
-import { EventList, PlanList, TaskList } from '../components/PlanLists';
+import { EventList, PlanDraftList, PlanList, TaskList } from '../components/PlanLists';
+import { SearchResults } from '../components/SearchResults';
 import { CodexLog } from '../components/CodexLog';
 import { Icon, type IconName } from '../components/icons';
 import { getFilePath } from '../components/shared';
+import { searchWorkspaceSnapshot } from '../utils/search';
 import { formatChinaTime } from '../utils/time';
 
 const emptyPendingAttachments: Record<IntakeType, PendingAttachment[]> = {
@@ -29,6 +37,20 @@ const tabs: Array<{ id: WorkspaceTab; label: string; icon: IconName }> = [
   { id: 'events', label: '事件流', icon: 'events' },
 ];
 
+const searchNoMatchText = '没有匹配结果。';
+
+type WorkspaceFilterableItems = Pick<AppSnapshot, 'requirements' | 'feedback' | 'planDrafts' | 'plans' | 'tasks' | 'events'>;
+
+function createEmptyPlanReadState(): WorkspacePlanReadState {
+  return { plan: null, result: null, loading: false, error: null };
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error.trim()) return error.trim();
+  return fallback;
+}
+
 export function WorkspacePage() {
   const params = useParams<{ projectId: string }>();
   const navigate = useNavigate();
@@ -38,17 +60,31 @@ export function WorkspacePage() {
   const [pendingAttachments, setPendingAttachments] =
     useState<Record<IntakeType, PendingAttachment[]>>(emptyPendingAttachments);
   const [loopForm, setLoopForm] = useState({ workspacePath: '', intervalSeconds: '5', validationCommand: '' });
+  const [draftTextById, setDraftTextById] = useState<Record<number, string>>({});
   const [searchQuery, setSearchQuery] = useState('');
+  const [planReadState, setPlanReadState] = useState<WorkspacePlanReadState>(() => createEmptyPlanReadState());
+  const planReadRequestRef = useRef(0);
 
   const project = snapshot?.activeProject || null;
   const state = snapshot?.state || null;
   const projects = snapshot?.projects || [];
-  const normalizedSearchQuery = useMemo(() => normalizeSearchQuery(searchQuery), [searchQuery]);
+  const workspaceSearch = useMemo(() => searchWorkspaceSnapshot(snapshot, searchQuery), [snapshot, searchQuery]);
   const searchableItemCount = useMemo(() => (snapshot ? countSearchableItems(snapshot) : 0), [snapshot]);
-  const searchHitCount = useMemo(
-    () => (snapshot && normalizedSearchQuery ? countWorkspaceSearchMatches(snapshot, normalizedSearchQuery) : 0),
-    [snapshot, normalizedSearchQuery],
+  const searchHitCount = workspaceSearch.total;
+  const isSearching = !workspaceSearch.query.isEmpty;
+  const filteredItems = useMemo(
+    () => createFilteredWorkspaceItems(snapshot, workspaceSearch),
+    [snapshot, workspaceSearch],
   );
+  const filteredEmptyText = isSearching ? searchNoMatchText : undefined;
+  const latestReadingPlan = useMemo(() => {
+    if (!planReadState.plan) return null;
+    return (
+      snapshot?.plans.find(
+        (plan) => plan.id === planReadState.plan?.id && plan.project_id === planReadState.plan?.project_id,
+      ) || planReadState.plan
+    );
+  }, [planReadState.plan, snapshot?.plans]);
 
   const showError = useCallback((e: unknown) => {
     const msg = e instanceof Error ? e.message : String(e);
@@ -67,6 +103,14 @@ export function WorkspacePage() {
 
   useEffect(() => {
     setSearchQuery('');
+  }, [projectId]);
+
+  useEffect(() => {
+    planReadRequestRef.current += 1;
+    setPlanReadState(createEmptyPlanReadState());
+    return () => {
+      planReadRequestRef.current += 1;
+    };
   }, [projectId]);
 
   const addPendingFiles = useCallback((type: IntakeType, files: FileList | File[] | null) => {
@@ -196,6 +240,32 @@ export function WorkspacePage() {
     [projectId, setSnapshot, setError, showError],
   );
 
+  const changePlanDraft = useCallback((id: number, markdown: string) => {
+    setDraftTextById((current) => ({ ...current, [id]: markdown }));
+  }, []);
+
+  const savePlanDraft = useCallback(
+    async (draft: AppSnapshot['planDrafts'][number]) => {
+      try {
+        const next = await window.autoplan.updatePlanDraft({
+          id: draft.id,
+          markdown: draftTextById[draft.id] ?? draft.markdown ?? '',
+        });
+        setSnapshot(next);
+        setDraftTextById((current) => {
+          if (!(draft.id in current)) return current;
+          const nextDraftText = { ...current };
+          delete nextDraftText[draft.id];
+          return nextDraftText;
+        });
+        setError(null);
+      } catch (e) {
+        showError(e);
+      }
+    },
+    [draftTextById, setSnapshot, setError, showError],
+  );
+
   const submitLoopConfig = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     try {
@@ -260,6 +330,60 @@ export function WorkspacePage() {
     },
     [projectId, setSnapshot, setError, showError],
   );
+
+  const readPlanForReader = useCallback(async (plan: Plan) => {
+    const requestId = planReadRequestRef.current + 1;
+    planReadRequestRef.current = requestId;
+    setPlanReadState({ plan, result: null, loading: true, error: null });
+
+    try {
+      const result = await window.autoplan.readPlan({ projectId: plan.project_id, planId: plan.id });
+      if (planReadRequestRef.current !== requestId) return;
+
+      setPlanReadState({
+        plan: {
+          ...plan,
+          file_path: result.file_path || plan.file_path,
+          hash: result.hash || plan.hash,
+          updated_at: result.updated_at || plan.updated_at,
+        },
+        result,
+        loading: false,
+        error: result.ok ? null : result.error || '读取 Plan 全文失败',
+      });
+    } catch (e) {
+      if (planReadRequestRef.current !== requestId) return;
+      setPlanReadState({
+        plan,
+        result: null,
+        loading: false,
+        error: getErrorMessage(e, '读取 Plan 全文失败'),
+      });
+    }
+  }, []);
+
+  const openPlanReader = useCallback(
+    (plan: Plan) => {
+      const currentPlan = planReadState.plan;
+      if (planReadState.loading && currentPlan && currentPlan.id === plan.id && currentPlan.project_id === plan.project_id) {
+        return;
+      }
+      void readPlanForReader(plan);
+    },
+    [planReadState.loading, planReadState.plan?.id, planReadState.plan?.project_id, readPlanForReader],
+  );
+
+  const closePlanReader = useCallback(() => {
+    planReadRequestRef.current += 1;
+    setPlanReadState(createEmptyPlanReadState());
+  }, []);
+
+  const refreshPlanReader = useCallback(() => {
+    if (planReadState.loading) return;
+    const plan = latestReadingPlan || planReadState.plan;
+    if (!plan) return;
+    void readPlanForReader(plan);
+  }, [latestReadingPlan, planReadState.loading, planReadState.plan, readPlanForReader]);
 
   const switchProject = (nextId: number) => {
     if (nextId && nextId !== projectId) navigate(`/projects/${nextId}`);
@@ -331,6 +455,13 @@ export function WorkspacePage() {
           </div>
         </header>
 
+        <SearchResults
+          onClear={() => setSearchQuery('')}
+          onSelectGroup={setActiveTab}
+          onSelectResult={(result) => setActiveTab(result.targetTab)}
+          searchState={workspaceSearch}
+        />
+
         <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
           {error ? <div className="error-banner">{error}</div> : null}
           <OverviewView snapshot={snapshot} state={state} onGoTasks={() => setActiveTab('tasks')} />
@@ -339,9 +470,9 @@ export function WorkspacePage() {
         <section className={`view ${activeTab === 'requirement' ? 'active' : ''}`}>
           {activeTab === 'requirement' ? (
             <IntakePanel
-              emptyText="暂无需求。也可以把需求文件放到工作区 docs/issues。"
+              emptyText={filteredEmptyText || '暂无需求。也可以把需求文件放到工作区 docs/issues。'}
               heading="需求记录"
-              items={snapshot.requirements}
+              items={filteredItems.requirements}
               pendingAttachments={pendingAttachments.requirement}
               placeholder="输入需求，Enter 发送，Shift+Enter 换行"
               submitLabel="发送需求"
@@ -363,9 +494,9 @@ export function WorkspacePage() {
         <section className={`view ${activeTab === 'feedback' ? 'active' : ''}`}>
           {activeTab === 'feedback' ? (
             <IntakePanel
-              emptyText="暂无反馈。"
+              emptyText={filteredEmptyText || '暂无反馈。'}
               heading="反馈记录"
-              items={snapshot.feedback}
+              items={filteredItems.feedback}
               pendingAttachments={pendingAttachments.feedback}
               placeholder="输入反馈，Enter 发送，Shift+Enter 换行"
               submitLabel="发送反馈"
@@ -437,7 +568,7 @@ export function WorkspacePage() {
                   <div className="card-head">
                     <h2>事件</h2>
                   </div>
-                  <EventList events={snapshot.events} />
+                  <EventList emptyText={filteredEmptyText} events={filteredItems.events} />
                 </section>
               </aside>
 
@@ -445,16 +576,39 @@ export function WorkspacePage() {
                 <div className="task-status-grid">
                   <section className="card">
                     <div className="card-head">
+                      <h2>计划草稿</h2>
+                    </div>
+                    <PlanDraftList
+                      drafts={filteredItems.planDrafts}
+                      draftTextById={draftTextById}
+                      emptyText={filteredEmptyText}
+                      onChange={changePlanDraft}
+                      onSave={savePlanDraft}
+                    />
+                  </section>
+                  <section className="card">
+                    <div className="card-head">
                       <h2>Plan</h2>
                     </div>
-                    <PlanList plans={snapshot.plans} tasks={snapshot.tasks} />
+                    <PlanList
+                      emptyText={filteredEmptyText}
+                      latestReadingPlan={latestReadingPlan}
+                      onCloseReader={closePlanReader}
+                      onOpenReader={openPlanReader}
+                      onRefreshReader={refreshPlanReader}
+                      plans={filteredItems.plans}
+                      readerState={planReadState}
+                      tasks={snapshot.tasks}
+                      totalPlanCount={snapshot.plans.length}
+                    />
                   </section>
                   <section className="card">
                     <div className="card-head">
                       <h2>任务</h2>
                     </div>
                     <TaskList
-                      tasks={snapshot.tasks}
+                      emptyText={filteredEmptyText}
+                      tasks={filteredItems.tasks}
                       onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
                       onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
                     />
@@ -472,7 +626,7 @@ export function WorkspacePage() {
                 <h2>事件流</h2>
                 <span className="hint">最近 80 条 · 实时更新</span>
               </div>
-              <EventList events={snapshot.events} />
+              <EventList emptyText={filteredEmptyText} events={filteredItems.events} />
             </section>
           ) : null}
         </section>
@@ -626,32 +780,52 @@ function countSearchableItems(snapshot: AppSnapshot) {
   );
 }
 
-function countWorkspaceSearchMatches(snapshot: AppSnapshot, normalizedQuery: string) {
-  const groups: unknown[][] = [
-    snapshot.requirements,
-    snapshot.feedback,
-    snapshot.planDrafts,
-    snapshot.plans,
-    snapshot.tasks,
-    snapshot.events,
-  ];
+function createFilteredWorkspaceItems(
+  snapshot: AppSnapshot | null | undefined,
+  searchState: WorkspaceSearchState,
+): WorkspaceFilterableItems {
+  if (!snapshot) {
+    return { requirements: [], feedback: [], planDrafts: [], plans: [], tasks: [], events: [] };
+  }
+  if (searchState.query.isEmpty) {
+    return {
+      requirements: snapshot.requirements,
+      feedback: snapshot.feedback,
+      planDrafts: snapshot.planDrafts,
+      plans: snapshot.plans,
+      tasks: snapshot.tasks,
+      events: snapshot.events,
+    };
+  }
 
-  return groups.reduce(
-    (count, group) => count + group.filter((item) => normalizeSearchQuery(toSearchText(item)).includes(normalizedQuery)).length,
-    0,
-  );
+  return {
+    requirements: filterItemsBySearchGroup(
+      snapshot.requirements,
+      searchState.groups,
+      WORKSPACE_SEARCH_SOURCE_TYPES.REQUIREMENT,
+    ),
+    feedback: filterItemsBySearchGroup(snapshot.feedback, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.FEEDBACK),
+    planDrafts: filterItemsBySearchGroup(
+      snapshot.planDrafts,
+      searchState.groups,
+      WORKSPACE_SEARCH_SOURCE_TYPES.PLAN_DRAFT,
+    ),
+    plans: filterItemsBySearchGroup(snapshot.plans, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.PLAN),
+    tasks: filterItemsBySearchGroup(snapshot.tasks, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.TASK),
+    events: filterItemsBySearchGroup(snapshot.events, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.EVENT),
+  };
 }
 
-function toSearchText(value: unknown, depth = 0): string {
-  if (value === null || value === undefined || depth > 6) return '';
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (Array.isArray(value)) return value.map((item) => toSearchText(item, depth + 1)).join(' ');
-  if (typeof value === 'object') {
-    return Object.values(value as Record<string, unknown>)
-      .map((item) => toSearchText(item, depth + 1))
-      .join(' ');
-  }
-  return '';
+function filterItemsBySearchGroup<T extends { id: number }>(
+  items: T[],
+  groups: WorkspaceSearchGroup[],
+  source: WorkspaceSearchSourceType,
+) {
+  const group = groups.find((item) => item.source === source);
+  if (!group?.results.length) return [];
+
+  const recordIds = new Set(group.results.map((result) => result.recordId));
+  return items.filter((item) => recordIds.has(item.id));
 }
 
 function OverviewView({

@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const vm = require('node:vm');
 const { saveAttachments } = require('../src/attachments');
 const { AppDatabase, nowIso } = require('../src/database');
 const { LoopService } = require('../src/loopService');
@@ -143,6 +144,15 @@ async function main() {
     fs.writeFileSync(fakeLogFile, 'fake ok', 'utf8');
     const originalRunCodex = loop.runCodex.bind(loop);
     const originalPlanText = fs.readFileSync(planFile, 'utf8');
+    await assertPlanReadRegression(db, loop, {
+      projectId,
+      otherProjectId,
+      otherWorkspace,
+      planId,
+      plan,
+      planFile,
+      originalPlanText,
+    });
     loop.runCodex = async (_workspace, prompt) => {
       assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
       assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
@@ -275,6 +285,7 @@ async function main() {
     snapshot = loop.snapshot(projectId);
     assert.equal(snapshot.plans[0].status, 'completed', '验收通过后 plan 应标记 completed');
     assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+    assertWorkspaceSearchRegression(snapshot);
 
     await assertCodexSessionReuseSmoke(db, loop, projectId, workspace);
 
@@ -306,10 +317,248 @@ async function main() {
     loop.stop(multiProjectB);
     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
 
-    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, task acceptance, task events, scan, validation, duration stats, codex session reuse, multi-loop');
+    console.log('smoke ok: projects, scoped snapshots, attachments, draft plan, plan reader, search, task acceptance, task events, scan, validation, duration stats, codex session reuse, multi-loop');
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
+}
+
+function assertWorkspaceSearchRegression(snapshot) {
+  const { searchWorkspaceSnapshot } = loadRendererTsModule(
+    path.join(__dirname, '..', 'src', 'renderer', 'utils', 'search.ts'),
+  );
+
+  assertSearchHit(
+    searchWorkspaceSnapshot(snapshot, '普通文本需求'),
+    'requirement',
+    'title',
+    /普通文本需求/,
+    '搜索应支持需求标题命中',
+  );
+  assertSearchHit(
+    searchWorkspaceSnapshot(snapshot, '重点内容'),
+    'feedback',
+    'body',
+    /重点内容/,
+    '搜索应支持反馈正文命中',
+  );
+  assertSearchHit(
+    searchWorkspaceSnapshot(snapshot, 'P002'),
+    'task',
+    'taskKey',
+    /P002/,
+    '搜索应支持任务 key 命中',
+  );
+  assertSearchHit(
+    searchWorkspaceSnapshot(snapshot, 'fake-execute.log'),
+    'event',
+    'eventMeta',
+    /fake-execute\.log/,
+    '搜索应支持事件元信息命中',
+  );
+
+  const emptySearch = searchWorkspaceSnapshot(snapshot, '没有任何匹配的搜索词');
+  assert.equal(emptySearch.total, 0, '搜索无结果时 total 应为 0');
+  assert.ok(emptySearch.groups.every((group) => group.count === 0), '搜索无结果时各分组计数应为 0');
+}
+
+function assertSearchHit(searchState, source, field, valuePattern, label) {
+  assert.ok(searchState.total > 0, `${label}：应返回搜索结果`);
+  const result = searchState.results.find(
+    (item) => item.source === source && item.matches.some((match) => match.field === field),
+  );
+  assert.ok(result, `${label}：应包含 ${source}/${field} 命中`);
+  const match = result.matches.find((item) => item.field === field);
+  assert.match(match.value, valuePattern, `${label}：命中值应包含关键字`);
+  assert.match(match.snippet, valuePattern, `${label}：摘要片段应包含关键字`);
+  assert.ok(
+    searchState.groups.some((group) => group.source === source && group.count > 0),
+    `${label}：来源分组应统计命中数量`,
+  );
+}
+
+async function assertPlanReadRegression(
+  db,
+  loop,
+  { projectId, otherProjectId, otherWorkspace, planId, plan, planFile, originalPlanText },
+) {
+  const readPlan = loadMainPlanReadHandler(db, loop);
+
+  const existingRead = await readPlan(null, { projectId, planId });
+  assert.equal(existingRead.ok, true, '读取存在的 Plan 文件应成功');
+  assert.equal(existingRead.id, planId, '读取存在的 Plan 应返回 plan id');
+  assert.equal(existingRead.project_id, projectId, '读取存在的 Plan 应返回项目 id');
+  assert.equal(existingRead.file_path, plan.file_path, '读取存在的 Plan 应返回相对路径');
+  assert.equal(existingRead.markdown, originalPlanText, '读取存在的 Plan 应返回完整 Markdown');
+  assert.equal(existingRead.error, null, '读取存在的 Plan 不应返回错误');
+
+  const unknownRead = await readPlan(null, { projectId, planId: planId + 99999 });
+  assert.equal(unknownRead.ok, false, '读取不存在的 Plan 应失败');
+  assert.equal(unknownRead.markdown, '', '读取不存在的 Plan 不应返回正文');
+  assert.equal(unknownRead.error, '计划不存在', '读取不存在的 Plan 应提示计划不存在');
+
+  const otherPlanRel = path.join('docs', 'plan', 'other-project-readable.md');
+  const otherPlanFile = path.join(otherWorkspace, otherPlanRel);
+  fs.mkdirSync(path.dirname(otherPlanFile), { recursive: true });
+  fs.writeFileSync(otherPlanFile, '# Other Project Plan\n\n- [ ] O001: 仅属于其它项目\n', 'utf8');
+  const otherPlanId = insertPlan(db, otherProjectId, otherPlanRel, 'smoke-plan-read-other');
+
+  const crossProjectRead = await readPlan(null, { projectId, planId: otherPlanId });
+  assert.equal(crossProjectRead.ok, false, '当前项目不应读取其它项目 Plan');
+  assert.equal(crossProjectRead.markdown, '', '跨项目读取不应泄漏 Markdown 正文');
+  assert.equal(crossProjectRead.error, '计划不存在', '跨项目读取应按当前项目隔离为计划不存在');
+
+  const reverseCrossProjectRead = await readPlan(null, { projectId: otherProjectId, planId });
+  assert.equal(reverseCrossProjectRead.ok, false, '其它项目不应读取当前项目 Plan');
+  assert.equal(reverseCrossProjectRead.markdown, '', '反向跨项目读取不应泄漏 Markdown 正文');
+  assert.equal(reverseCrossProjectRead.error, '计划不存在', '反向跨项目读取应按项目隔离为计划不存在');
+
+  const missingPlanId = insertPlan(
+    db,
+    otherProjectId,
+    path.join('docs', 'plan', 'missing-plan.md'),
+    'smoke-plan-read-missing',
+  );
+  const missingRead = await readPlan(null, { projectId: otherProjectId, planId: missingPlanId });
+  assert.equal(missingRead.ok, false, '读取缺失的 Plan 文件应失败');
+  assert.equal(missingRead.markdown, '', '读取缺失的 Plan 文件不应返回正文');
+  assert.equal(missingRead.error, '计划文件不存在', '读取缺失的 Plan 文件应提示文件不存在');
+
+  const outsidePlanId = insertPlan(
+    db,
+    otherProjectId,
+    path.join('..', 'outside-plan.md'),
+    'smoke-plan-read-outside',
+  );
+  const outsideRead = await readPlan(null, { projectId: otherProjectId, planId: outsidePlanId });
+  assert.equal(outsideRead.ok, false, '读取越界 Plan 路径应失败');
+  assert.equal(outsideRead.markdown, '', '读取越界 Plan 路径不应返回正文');
+  assert.equal(outsideRead.error, '计划文件路径超出项目工作区', '读取越界 Plan 路径应提示越界');
+
+  assert.equal(fs.readFileSync(planFile, 'utf8'), originalPlanText, 'Plan 阅读 smoke 不应修改正式 Plan 文件');
+}
+
+function loadMainPlanReadHandler(db, loop) {
+  const mainPath = path.join(__dirname, '..', 'src', 'main.js');
+  const handlers = new Map();
+  const module = { exports: {} };
+  const source = `${fs.readFileSync(mainPath, 'utf8')}\nmodule.exports.__setSmokeState = (state) => { db = state.db; loop = state.loop; };\nmodule.exports.__smokeIpcHandlers = __smokeIpcHandlers;\n`;
+  const fakeElectron = {
+    app: {
+      getPath: () => path.join(os.tmpdir(), 'autoplan-smoke-user-data'),
+      on: () => {},
+      quit: () => {},
+      whenReady: () => ({ then: () => undefined }),
+    },
+    BrowserWindow: function SmokeBrowserWindow() {
+      throw new Error('smoke 不应创建 Electron 窗口');
+    },
+    ipcMain: {
+      handle: (channel, handler) => handlers.set(channel, handler),
+    },
+    Menu: {
+      setApplicationMenu: () => {},
+    },
+  };
+  const localRequire = (request) => {
+    if (request === 'electron') return fakeElectron;
+    if (request.startsWith('./')) return require(path.join(path.dirname(mainPath), request));
+    return require(request);
+  };
+
+  vm.runInNewContext(
+    source,
+    {
+      require: localRequire,
+      module,
+      exports: module.exports,
+      __dirname: path.dirname(mainPath),
+      __filename: mainPath,
+      __smokeIpcHandlers: handlers,
+      Buffer,
+      clearTimeout,
+      console,
+      process,
+      setTimeout,
+    },
+    { filename: mainPath },
+  );
+  module.exports.__setSmokeState({ db, loop });
+  const handler = handlers.get('plans:read');
+  assert.equal(typeof handler, 'function', '主进程应注册 plans:read IPC handler');
+  return handler;
+}
+
+function loadRendererTsModule(modulePath, cache = new Map()) {
+  const absolutePath = path.resolve(modulePath);
+  const cachedModule = cache.get(absolutePath);
+  if (cachedModule) return cachedModule.exports;
+
+  const ts = require('typescript');
+  const module = { exports: {} };
+  cache.set(absolutePath, module);
+
+  const source = fs.readFileSync(absolutePath, 'utf8');
+  const transpiled = ts.transpileModule(source, {
+    fileName: absolutePath,
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+      jsx: ts.JsxEmit.ReactJSX,
+      esModuleInterop: true,
+    },
+    reportDiagnostics: true,
+  });
+  const diagnostics = (transpiled.diagnostics || []).filter(
+    (diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error,
+  );
+  assert.deepEqual(
+    diagnostics.map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')),
+    [],
+    `${absolutePath} 应能被 TypeScript 转译`,
+  );
+
+  const rendererRoot = path.join(__dirname, '..', 'src', 'renderer');
+  const localRequire = (request) => {
+    if (request.startsWith('.') || path.isAbsolute(request)) {
+      return loadRendererTsModule(resolveRendererModule(path.dirname(absolutePath), request, rendererRoot), cache);
+    }
+    return require(request);
+  };
+
+  const script = new vm.Script(transpiled.outputText, { filename: absolutePath });
+  script.runInNewContext({
+    require: localRequire,
+    module,
+    exports: module.exports,
+    __dirname: path.dirname(absolutePath),
+    __filename: absolutePath,
+    console,
+  });
+  return module.exports;
+}
+
+function resolveRendererModule(fromDir, request, rendererRoot) {
+  const basePath = path.resolve(fromDir, request);
+  const candidates = [
+    basePath,
+    `${basePath}.ts`,
+    `${basePath}.tsx`,
+    `${basePath}.js`,
+    `${basePath}.jsx`,
+    path.join(basePath, 'index.ts'),
+    path.join(basePath, 'index.tsx'),
+    path.join(basePath, 'index.js'),
+  ];
+  const resolvedPath = candidates.find((candidate) => fs.existsSync(candidate) && fs.statSync(candidate).isFile());
+  assert.ok(resolvedPath, `应能解析前端模块 ${request}`);
+
+  const relativePath = path.relative(rendererRoot, resolvedPath);
+  assert.ok(
+    relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath),
+    `前端 smoke 模块应限制在 renderer 目录内：${request}`,
+  );
+  return resolvedPath;
 }
 
 function insertProject(db, loop, name, workspacePath) {
@@ -321,6 +570,15 @@ function insertProject(db, loop, name, workspacePath) {
   );
   loop.ensureProjectState(id);
   return id;
+}
+
+function insertPlan(db, projectId, filePath, issueHash) {
+  const now = nowIso();
+  return db.insert(
+    `INSERT INTO plans (project_id, issue_hash, file_path, hash, status, total_tasks, completed_tasks, validation_passed, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [projectId, issueHash, filePath, `${issueHash}-hash`, 'running', 0, 0, 0, now, now],
+  );
 }
 
 function insertRequirement(db, projectId) {

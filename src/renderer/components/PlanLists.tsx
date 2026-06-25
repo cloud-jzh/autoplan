@@ -1,6 +1,6 @@
 import type { KeyboardEvent } from 'react';
 import { useEffect, useId, useRef } from 'react';
-import type { AppEvent, Plan, PlanDraft, PlanTask, WorkspacePlanReadState } from '../types';
+import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
 import { RecordCard } from './IntakePanel';
 import { MarkdownReader } from './MarkdownReader';
 import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
@@ -208,65 +208,6 @@ export function getEventSearchText(event: AppEvent) {
   ]
     .filter(Boolean)
     .join(' ');
-}
-
-export function PlanDraftList({
-  drafts,
-  draftTextById,
-  emptyText = '暂无计划草稿。发送需求或反馈后会自动生成。',
-  onAccept,
-  onChange,
-  onSave,
-}: {
-  drafts: PlanDraft[];
-  draftTextById: Record<number, string>;
-  emptyText?: string;
-  onAccept?: (draft: PlanDraft) => void;
-  onChange: (id: number, markdown: string) => void;
-  onSave: (draft: PlanDraft) => void;
-}) {
-  if (!drafts.length) {
-    return <div className="empty">{emptyText}</div>;
-  }
-
-  return (
-    <div className="list compact">
-      {drafts.map((draft) => {
-        const accepted = draft.status === 'accepted';
-        return (
-          <article className="item plan-draft" key={draft.id}>
-            <div className="item-title">
-              <span>
-                草稿 #{draft.id} · {draft.source_type === 'feedback' ? '反馈' : '需求'} #{draft.source_id}
-              </span>
-              <span className={`chip ${accepted ? 'chip-accepted' : 'chip-waiting'}`}>{draft.status}</span>
-            </div>
-            <textarea
-              readOnly={accepted}
-              value={draftTextById[draft.id] ?? draft.markdown ?? ''}
-              onChange={(event) => onChange(draft.id, event.target.value)}
-            />
-            <div className="button-row">
-              {accepted ? (
-                <span className="draft-note">已加入任务系统：Plan #{draft.linked_plan_id || ''}</span>
-              ) : (
-                <>
-                  <button type="button" onClick={() => onSave(draft)}>
-                    保存调整
-                  </button>
-                  {onAccept ? (
-                    <button className="btn-primary" type="button" onClick={() => onAccept(draft)}>
-                      确认加入任务系统
-                    </button>
-                  ) : null}
-                </>
-              )}
-            </div>
-          </article>
-        );
-      })}
-    </div>
-  );
 }
 
 function hasPlanReaderUpdate(

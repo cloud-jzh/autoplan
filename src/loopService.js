@@ -23,6 +23,33 @@ const CODEX_SESSION_ID_RES = Object.freeze([
   new RegExp(`\\b(?:session_id|sessionId)\\s*[:=]\\s*(${CODEX_SESSION_UUID_RE_SOURCE})\\b`, 'i'),
 ]);
 const CODEX_RESUME_FAILURE_RE = /(?:thread\/resume|resume failed|no rollout found|session\s+(?:not\s+found|missing)|conversation\s+not\s+found|unknown\s+session|invalid\s+session)/i;
+const DEFAULT_AGENT_CLI_PROVIDER = 'codex';
+const AGENT_CLI_PROVIDERS = new Set([DEFAULT_AGENT_CLI_PROVIDER, 'claude']);
+const AGENT_CLI_PROVIDER_COLUMNS = Object.freeze(['agent_cli_provider', 'cli_provider', 'cli_backend']);
+const AGENT_CLI_COMMAND_COLUMNS = Object.freeze(['agent_cli_command', 'cli_command', 'cli_path']);
+const AGENT_CLI_PROVIDER_INPUT_KEYS = Object.freeze([
+  'agentCliProvider',
+  'agent_cli_provider',
+  'cliProvider',
+  'cli_provider',
+  'cliBackend',
+  'cli_backend',
+]);
+const AGENT_CLI_COMMAND_INPUT_KEYS = Object.freeze([
+  'agentCliCommand',
+  'agent_cli_command',
+  'cliCommand',
+  'cli_command',
+  'cliPath',
+  'cli_path',
+]);
+const LOOP_CONFIG_INPUT_KEYS = Object.freeze([
+  'workspacePath',
+  'intervalSeconds',
+  'validationCommand',
+  ...AGENT_CLI_PROVIDER_INPUT_KEYS,
+  ...AGENT_CLI_COMMAND_INPUT_KEYS,
+]);
 
 const TASK_EVENT_TYPES = Object.freeze({
   STARTED: 'task.started',
@@ -94,10 +121,11 @@ class LoopService extends EventEmitter {
   withProjectRuntimeSummary(project) {
     const state =
       this.db.get(
-        'SELECT phase, interval_seconds, validation_command FROM project_states WHERE project_id = ?',
+        'SELECT * FROM project_states WHERE project_id = ?',
         [project.id],
       ) || {};
     const runtime = this.existingRuntime(project.id);
+    const agentCliConfig = normalizeAgentCliConfig(state);
     const running = runtime?.running ? 1 : 0;
     let phase = state.phase || 'idle';
     if (!running && !runtime?.busy && ACTIVE_RUNTIME_PHASES.has(String(phase || ''))) {
@@ -109,6 +137,8 @@ class LoopService extends EventEmitter {
       phase,
       interval_seconds: Number(state.interval_seconds || 5),
       validation_command: state.validation_command || '',
+      agent_cli_provider: agentCliConfig.provider,
+      agent_cli_command: agentCliConfig.command,
     };
   }
 
@@ -129,6 +159,10 @@ class LoopService extends EventEmitter {
        VALUES (?, 0, 'idle', 5, 'flutter analyze', ?)`,
       [projectId, nowIso()],
     );
+  }
+
+  hasRuntimeConfigInput(input = {}) {
+    return hasAnyOwnProperty(input, LOOP_CONFIG_INPUT_KEYS);
   }
 
   resetRuntimeState() {
@@ -162,9 +196,12 @@ class LoopService extends EventEmitter {
     if (!state) return null;
     const runtime = this.existingRuntime(projectId);
     const runtimeRunning = Boolean(runtime?.running);
+    const agentCliConfig = normalizeAgentCliConfig(state);
     const normalized = {
       ...state,
       running: runtimeRunning ? 1 : 0,
+      agent_cli_provider: agentCliConfig.provider,
+      agent_cli_command: agentCliConfig.command,
     };
 
     if (!runtimeRunning && !runtime?.busy && ACTIVE_RUNTIME_PHASES.has(String(normalized.phase || ''))) {
@@ -174,7 +211,8 @@ class LoopService extends EventEmitter {
     return normalized;
   }
 
-  configure(projectId, { workspacePath, intervalSeconds, validationCommand }) {
+  configure(projectId, config = {}) {
+    const { workspacePath, intervalSeconds, validationCommand } = config;
     const current = this.status(projectId);
     const project = this.project(projectId);
     const runtime = this.existingRuntime(projectId);
@@ -192,19 +230,28 @@ class LoopService extends EventEmitter {
       [nextWorkspace, nowIso(), projectId],
     );
     const nextInterval = Number(intervalSeconds || current.interval_seconds || 5);
+    const agentCliConfig = nextAgentCliConfig(current, config);
+    const stateUpdates = [
+      ['interval_seconds', nextInterval],
+      ['validation_command', validationCommand ?? current.validation_command],
+      ...agentCliStateUpdates(this.projectStateColumns(), agentCliConfig),
+      ['updated_at', nowIso()],
+    ];
     this.db.run(
       `UPDATE project_states
-       SET interval_seconds = ?, validation_command = ?, updated_at = ?
+       SET ${stateUpdates.map(([column]) => `${column} = ?`).join(', ')}
        WHERE project_id = ?`,
-      [
-        nextInterval,
-        validationCommand ?? current.validation_command,
-        nowIso(),
-        projectId,
-      ],
+      [...stateUpdates.map(([, value]) => value), projectId],
     );
     if (runtime?.running) this.scheduleProject(projectId, nextInterval);
     this.emitUpdate(projectId);
+  }
+
+  projectStateColumns() {
+    if (!this._projectStateColumns) {
+      this._projectStateColumns = new Set(this.db.all('PRAGMA table_info(project_states)').map((column) => column.name));
+    }
+    return this._projectStateColumns;
   }
 
   scheduleProject(projectId, intervalSeconds) {
@@ -1165,18 +1212,24 @@ class LoopService extends EventEmitter {
     const projectIdForEmit = operation.projectId;
     const runtime = this.runtime(projectIdForEmit);
     if (!runtime) throw new Error('projectId is required for codex operations');
+    const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+    const agentCliProvider = normalizeAgentCliProvider(projectStatus?.agent_cli_provider);
+    const agentCliCommand = normalizeAgentCliCommand(projectStatus?.agent_cli_command);
+    const isCodexProvider = agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER;
     const logDir = path.join(workspace, 'docs', 'progress', 'logs');
     fs.mkdirSync(logDir, { recursive: true });
     const prefix = `${timestampForPath()}_${safePart(label)}`;
     const logFile = path.join(logDir, `${prefix}.log`);
     const lastFile = path.join(logDir, `${prefix}.last.txt`);
-    const hasSessionOption = hasCodexSessionOption(operation);
-    const requestedSessionId = operationCodexSessionId(operation);
+    const hasSessionOption = isCodexProvider && hasCodexSessionOption(operation);
+    const requestedSessionId = isCodexProvider ? operationCodexSessionId(operation) : '';
     const activeOperation = {
       ...operation,
       label,
       logFile,
       lastFile,
+      agentCliProvider,
+      agentCliCommand,
       codexSessionId: requestedSessionId || null,
       codexSessionRequestedId: requestedSessionId || null,
       codexSessionMode: requestedSessionId ? 'resume' : 'new',
@@ -1217,7 +1270,16 @@ class LoopService extends EventEmitter {
       };
     };
     const runAttempt = async (args, mode) => {
-      const child = spawn('codex', args, { shell: process.platform === 'win32', cwd: workspace });
+      const spawnSpec = agentCliSpawnSpec(
+        activeOperation.agentCliProvider,
+        activeOperation.agentCliCommand,
+        lastFile,
+        args,
+      );
+      const child = spawn(spawnSpec.command, spawnSpec.args, {
+        shell: process.platform === 'win32' && spawnSpec.useShell,
+        cwd: workspace,
+      });
       activeOperation.codexSessionMode = mode;
       activeOperation.codexSessionState = activeOperation.codexSessionFallback ? 'fallback-new' : mode;
       activeOperation.codexSessionId = mode === 'resume' ? requestedSessionId || null : capturedSessionId || null;
@@ -1446,9 +1508,6 @@ class LoopService extends EventEmitter {
         'SELECT * FROM attachments WHERE project_id = ? ORDER BY created_at DESC, id DESC',
         [projectId],
       ),
-      planDrafts: this.db.all('SELECT * FROM plan_drafts WHERE project_id = ? ORDER BY updated_at DESC, id DESC', [
-        projectId,
-      ]),
       plans: this.db.all('SELECT * FROM plans WHERE project_id = ? ORDER BY created_at DESC', [projectId]),
       tasks: this.db
         .all(
@@ -1568,6 +1627,56 @@ function compactEventMeta(meta) {
   return result;
 }
 
+function hasAnyOwnProperty(source, keys) {
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(source || {}, key));
+}
+
+function readFirstOwnValue(source, keys) {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(source || {}, key)) return source[key];
+  }
+  return undefined;
+}
+
+function normalizeAgentCliConfig(source = {}) {
+  return {
+    provider: normalizeAgentCliProvider(readFirstOwnValue(source, AGENT_CLI_PROVIDER_COLUMNS)),
+    command: normalizeAgentCliCommand(readFirstOwnValue(source, AGENT_CLI_COMMAND_COLUMNS)),
+  };
+}
+
+function nextAgentCliConfig(current = {}, input = {}) {
+  const currentConfig = normalizeAgentCliConfig(current);
+  return {
+    provider: hasAnyOwnProperty(input, AGENT_CLI_PROVIDER_INPUT_KEYS)
+      ? normalizeAgentCliProvider(readFirstOwnValue(input, AGENT_CLI_PROVIDER_INPUT_KEYS))
+      : currentConfig.provider,
+    command: hasAnyOwnProperty(input, AGENT_CLI_COMMAND_INPUT_KEYS)
+      ? normalizeAgentCliCommand(readFirstOwnValue(input, AGENT_CLI_COMMAND_INPUT_KEYS))
+      : currentConfig.command,
+  };
+}
+
+function normalizeAgentCliProvider(value) {
+  const provider = String(value || '').trim().toLowerCase();
+  return AGENT_CLI_PROVIDERS.has(provider) ? provider : DEFAULT_AGENT_CLI_PROVIDER;
+}
+
+function normalizeAgentCliCommand(value) {
+  return String(value || '').trim();
+}
+
+function agentCliStateUpdates(columns, config) {
+  const updates = [];
+  for (const column of AGENT_CLI_PROVIDER_COLUMNS) {
+    if (columns.has(column)) updates.push([column, config.provider]);
+  }
+  for (const column of AGENT_CLI_COMMAND_COLUMNS) {
+    if (columns.has(column)) updates.push([column, config.command]);
+  }
+  return updates;
+}
+
 function normalizeOptionalNumber(value) {
   if (value === undefined || value === null || value === '') return undefined;
   const number = Number(value);
@@ -1601,6 +1710,7 @@ function operationSnapshotRow(operation) {
     projectId: operation.projectId || null,
     planId: operation.planId || null,
     taskId: operation.taskId || null,
+    agentCliProvider: normalizeAgentCliProvider(operation.agentCliProvider),
     startedAt: operation.startedAt || null,
     ...(operation.finishedAt ? { finishedAt: operation.finishedAt } : {}),
     ...(typeof operation.exitCode === 'number' ? { exitCode: operation.exitCode } : {}),
@@ -1730,7 +1840,6 @@ function emptySnapshot(projects) {
     requirements: [],
     feedback: [],
     attachments: [],
-    planDrafts: [],
     plans: [],
     tasks: [],
     events: [],
@@ -1819,6 +1928,42 @@ function codexResumeSessionArgs(sessionId, lastFile) {
     sessionId,
     '-',
   ];
+}
+
+function claudeCliArgs(lastFile) {
+  return [
+    '-p',
+    '--output-format',
+    'text',
+    '--verbose',
+    '--dangerously-skip-permissions',
+    '-a',
+    'print',
+    '--output-file',
+    lastFile,
+    '-',
+  ];
+}
+
+/**
+ * 按后端 provider 选择 spawn 的命令与参数。
+ * - codex：原样透传上层组装好的 codex exec 参数
+ * - claude：忽略 codex 参数，使用 Claude CLI 非交互 print 模式（prompt 经 stdin 传入，避免命令注入）
+ * 命令名优先取项目配置 agent_cli_command，留空时用各后端默认（codex / claude）。
+ */
+function agentCliSpawnSpec(provider, command, lastFile, codexArgs) {
+  const normalizedProvider = AGENT_CLI_PROVIDERS.has(provider)
+    ? provider
+    : DEFAULT_AGENT_CLI_PROVIDER;
+  const resolvedCommand = String(command || '').trim() || normalizedProvider;
+  if (normalizedProvider === 'claude') {
+    return {
+      command: resolvedCommand,
+      args: claudeCliArgs(lastFile),
+      useShell: false,
+    };
+  }
+  return { command: resolvedCommand, args: codexArgs || [], useShell: true };
 }
 
 function registerRuntimeOperation(runtime, child, operation) {

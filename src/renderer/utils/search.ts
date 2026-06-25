@@ -69,11 +69,6 @@ export const WORKSPACE_SEARCH_SOURCE_CONFIGS: WorkspaceSearchSourceConfig[] = [
     targetTab: 'feedback',
   },
   {
-    type: WORKSPACE_SEARCH_SOURCE_TYPES.PLAN_DRAFT,
-    label: '计划草稿',
-    targetTab: 'tasks',
-  },
-  {
     type: WORKSPACE_SEARCH_SOURCE_TYPES.PLAN,
     label: 'Plan',
     targetTab: 'tasks',
@@ -208,7 +203,6 @@ export function searchWorkspaceSnapshot(
     ...(snapshot.feedback ?? []).map((feedback) =>
       createFeedbackCandidate(feedback, getOwnerAttachments(attachmentLookup, 'feedback', feedback.id)),
     ),
-    ...(snapshot.planDrafts ?? []).map(createPlanDraftCandidate),
     ...(snapshot.plans ?? []).map(createPlanCandidate),
     ...(snapshot.tasks ?? []).map(createTaskCandidate),
     ...(snapshot.events ?? []).map(createEventCandidate),
@@ -281,24 +275,6 @@ function createFeedbackCandidate(
     summary: summarizeSearchText(feedback.body || feedback.status, '暂无正文'),
     status: nullableSearchText(feedback.status),
     updatedAt: feedback.updated_at,
-    fields,
-  };
-}
-
-function createPlanDraftCandidate(
-  draft: AppSnapshot['planDrafts'][number],
-): WorkspaceSearchCandidate {
-  const fields: WorkspaceSearchField[] = [];
-  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.MARKDOWN, 'Markdown', draft.markdown);
-  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', draft.status);
-
-  return {
-    source: WORKSPACE_SEARCH_SOURCE_TYPES.PLAN_DRAFT,
-    recordId: draft.id,
-    title: `计划草稿 #${draft.id}`,
-    summary: summarizeSearchText(draft.markdown || draft.status, '暂无内容'),
-    status: nullableSearchText(draft.status),
-    updatedAt: draft.updated_at,
     fields,
   };
 }

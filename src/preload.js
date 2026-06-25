@@ -19,7 +19,6 @@ contextBridge.exposeInMainWorld('autoplan', {
   createFeedback: (input) => ipcRenderer.invoke('feedback:create', input),
   updateFeedback: (input) => ipcRenderer.invoke('feedback:update', input),
   deleteFeedback: (input) => ipcRenderer.invoke('feedback:delete', input),
-  updatePlanDraft: (input) => ipcRenderer.invoke('planDrafts:update', input),
   interruptIntake: (input) => ipcRenderer.invoke('intake:interrupt', input),
   resumeIntake: (input) => ipcRenderer.invoke('intake:resume', input),
   appendIntakeTask: (input) => ipcRenderer.invoke('intake:appendTask', input),

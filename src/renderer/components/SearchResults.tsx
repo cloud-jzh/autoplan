@@ -13,7 +13,6 @@ const GROUP_RESULT_LIMIT = 4;
 const sourceIconNames: Record<WorkspaceSearchSourceType, IconName> = {
   requirement: 'requirement',
   feedback: 'feedback',
-  planDraft: 'plan',
   plan: 'plan',
   task: 'tasks',
   event: 'events',

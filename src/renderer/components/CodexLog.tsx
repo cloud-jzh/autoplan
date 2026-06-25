@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from 'react';
 import type { ActivityLine, CodexSessionInfo } from '../types';
+import { agentCliProviderLabel } from './shared';
 import { formatChinaTime } from '../utils/time';
 
 const LOG_BOTTOM_THRESHOLD_PX = 24;
@@ -27,17 +28,20 @@ export function CodexLog({
   log,
   activity,
   context,
+  provider,
 }: {
   log: string;
   activity?: ActivityLine[];
   context?: CodexSessionInfo | null;
+  provider?: string | null;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
   const lines = activity && activity.length > 0 ? activity : null;
   const displayMode = lines ? 'activity' : 'raw';
   const lastDisplayModeRef = useRef(displayMode);
-  const rawLogText = log ? log.slice(-4000) : '等待 Codex 输出…';
+  const providerLabel = agentCliProviderLabel(provider);
+  const rawLogText = log ? log.slice(-4000) : `等待 ${providerLabel} 输出…`;
   const activityContentKey = lines
     ? lines.map((line) => `${line.at}\u0000${line.role}\u0000${line.text}`).join('\u0001')
     : '';

@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Dispatch, FormEvent, SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { WORKSPACE_SEARCH_SOURCE_TYPES } from '../types';
 import type {
@@ -16,11 +16,11 @@ import type {
 } from '../types';
 import { useSnapshot } from '../hooks/useSnapshot';
 import { IntakePanel } from '../components/IntakePanel';
-import { EventList, PlanDraftList, PlanList, TaskList } from '../components/PlanLists';
+import { EventList, PlanList, TaskList } from '../components/PlanLists';
 import { SearchResults } from '../components/SearchResults';
 import { CodexLog } from '../components/CodexLog';
 import { Icon, type IconName } from '../components/icons';
-import { getFilePath } from '../components/shared';
+import { getFilePath, agentCliProviderLabel } from '../components/shared';
 import { searchWorkspaceSnapshot } from '../utils/search';
 import { formatChinaTime } from '../utils/time';
 
@@ -35,11 +35,20 @@ const tabs: Array<{ id: WorkspaceTab; label: string; icon: IconName }> = [
   { id: 'feedback', label: '反馈', icon: 'feedback' },
   { id: 'tasks', label: '任务与计划', icon: 'tasks' },
   { id: 'events', label: '事件流', icon: 'events' },
+  { id: 'settings', label: '设置', icon: 'settings' },
 ];
 
 const searchNoMatchText = '没有匹配结果。';
 
-type WorkspaceFilterableItems = Pick<AppSnapshot, 'requirements' | 'feedback' | 'planDrafts' | 'plans' | 'tasks' | 'events'>;
+type LoopFormState = {
+  workspacePath: string;
+  intervalSeconds: string;
+  validationCommand: string;
+  agentCliProvider: string;
+  agentCliCommand: string;
+};
+
+type WorkspaceFilterableItems = Pick<AppSnapshot, 'requirements' | 'feedback' | 'plans' | 'tasks' | 'events'>;
 
 function createEmptyPlanReadState(): WorkspacePlanReadState {
   return { plan: null, result: null, loading: false, error: null };
@@ -59,8 +68,13 @@ export function WorkspacePage() {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('overview');
   const [pendingAttachments, setPendingAttachments] =
     useState<Record<IntakeType, PendingAttachment[]>>(emptyPendingAttachments);
-  const [loopForm, setLoopForm] = useState({ workspacePath: '', intervalSeconds: '5', validationCommand: '' });
-  const [draftTextById, setDraftTextById] = useState<Record<number, string>>({});
+  const [loopForm, setLoopForm] = useState<LoopFormState>({
+    workspacePath: '',
+    intervalSeconds: '5',
+    validationCommand: '',
+    agentCliProvider: 'codex',
+    agentCliCommand: '',
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [planReadState, setPlanReadState] = useState<WorkspacePlanReadState>(() => createEmptyPlanReadState());
   const planReadRequestRef = useRef(0);
@@ -98,8 +112,10 @@ export function WorkspacePage() {
       workspacePath: state.workspace_path || '',
       intervalSeconds: String(state.interval_seconds || 5),
       validationCommand: state.validation_command || '',
+      agentCliProvider: state.agent_cli_provider || 'codex',
+      agentCliCommand: state.agent_cli_command || '',
     });
-  }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state]);
+  }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state]);
 
   useEffect(() => {
     setSearchQuery('');
@@ -240,32 +256,6 @@ export function WorkspacePage() {
     [projectId, setSnapshot, setError, showError],
   );
 
-  const changePlanDraft = useCallback((id: number, markdown: string) => {
-    setDraftTextById((current) => ({ ...current, [id]: markdown }));
-  }, []);
-
-  const savePlanDraft = useCallback(
-    async (draft: AppSnapshot['planDrafts'][number]) => {
-      try {
-        const next = await window.autoplan.updatePlanDraft({
-          id: draft.id,
-          markdown: draftTextById[draft.id] ?? draft.markdown ?? '',
-        });
-        setSnapshot(next);
-        setDraftTextById((current) => {
-          if (!(draft.id in current)) return current;
-          const nextDraftText = { ...current };
-          delete nextDraftText[draft.id];
-          return nextDraftText;
-        });
-        setError(null);
-      } catch (e) {
-        showError(e);
-      }
-    },
-    [draftTextById, setSnapshot, setError, showError],
-  );
-
   const submitLoopConfig = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     try {
@@ -274,6 +264,8 @@ export function WorkspacePage() {
         workspacePath: loopForm.workspacePath,
         intervalSeconds: Number(loopForm.intervalSeconds || 5),
         validationCommand: loopForm.validationCommand,
+        agentCliProvider: loopForm.agentCliProvider || 'codex',
+        agentCliCommand: loopForm.agentCliCommand.trim(),
       });
       setSnapshot(next);
       setError(null);
@@ -517,105 +509,55 @@ export function WorkspacePage() {
 
         <section className={`view ${activeTab === 'tasks' ? 'active' : ''}`}>
           {activeTab === 'tasks' ? (
-            <div className="task-layout">
-              <aside className="task-sidebar">
-                <form className="editor card" onSubmit={submitLoopConfig}>
+            <div className="task-main">
+              <div className="task-status-grid">
+                <section className="card">
                   <div className="card-head">
-                    <h2>循环控制</h2>
+                    <h2>Plan</h2>
                   </div>
-                  <label className="field">
-                    工作区路径
-                    <input
-                      value={loopForm.workspacePath}
-                      onChange={(event) => setLoopForm((current) => ({ ...current, workspacePath: event.target.value }))}
-                      placeholder="D:\project\GitHub\my-app"
-                    />
-                  </label>
-                  <label className="field">
-                    间隔秒数
-                    <input
-                      min="1"
-                      type="number"
-                      value={loopForm.intervalSeconds}
-                      onChange={(event) => setLoopForm((current) => ({ ...current, intervalSeconds: event.target.value }))}
-                    />
-                  </label>
-                  <label className="field">
-                    验收命令（留空则不校验）
-                    <input
-                      value={loopForm.validationCommand}
-                      onChange={(event) => setLoopForm((current) => ({ ...current, validationCommand: event.target.value }))}
-                      placeholder="flutter analyze"
-                    />
-                  </label>
-                  <div className="button-row">
-                    <button type="submit">保存配置</button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        runLoopAction(() =>
-                          state?.running
-                            ? window.autoplan.stopLoop({ projectId, manual: true })
-                            : window.autoplan.startLoop({ projectId, manual: true }),
-                        )
-                      }
-                    >
-                      {state?.running ? '停止' : '启动'}
-                    </button>
-                  </div>
-                </form>
-                <section className="side-section card">
-                  <div className="card-head">
-                    <h2>事件</h2>
-                  </div>
-                  <EventList emptyText={filteredEmptyText} events={filteredItems.events} />
+                  <PlanList
+                    emptyText={filteredEmptyText}
+                    latestReadingPlan={latestReadingPlan}
+                    onCloseReader={closePlanReader}
+                    onOpenReader={openPlanReader}
+                    onRefreshReader={refreshPlanReader}
+                    plans={filteredItems.plans}
+                    readerState={planReadState}
+                    tasks={snapshot.tasks}
+                    totalPlanCount={snapshot.plans.length}
+                  />
                 </section>
-              </aside>
-
-              <div className="task-main">
-                <div className="task-status-grid">
-                  <section className="card">
-                    <div className="card-head">
-                      <h2>计划草稿</h2>
-                    </div>
-                    <PlanDraftList
-                      drafts={filteredItems.planDrafts}
-                      draftTextById={draftTextById}
-                      emptyText={filteredEmptyText}
-                      onChange={changePlanDraft}
-                      onSave={savePlanDraft}
-                    />
-                  </section>
-                  <section className="card">
-                    <div className="card-head">
-                      <h2>Plan</h2>
-                    </div>
-                    <PlanList
-                      emptyText={filteredEmptyText}
-                      latestReadingPlan={latestReadingPlan}
-                      onCloseReader={closePlanReader}
-                      onOpenReader={openPlanReader}
-                      onRefreshReader={refreshPlanReader}
-                      plans={filteredItems.plans}
-                      readerState={planReadState}
-                      tasks={snapshot.tasks}
-                      totalPlanCount={snapshot.plans.length}
-                    />
-                  </section>
-                  <section className="card">
-                    <div className="card-head">
-                      <h2>任务</h2>
-                    </div>
-                    <TaskList
-                      emptyText={filteredEmptyText}
-                      tasks={filteredItems.tasks}
-                      onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
-                      onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
-                    />
-                  </section>
-                </div>
+                <section className="card">
+                  <div className="card-head">
+                    <h2>任务</h2>
+                  </div>
+                  <TaskList
+                    emptyText={filteredEmptyText}
+                    tasks={filteredItems.tasks}
+                    onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+                    onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+                  />
+                </section>
               </div>
             </div>
+          ) : null}
+        </section>
+
+        <section className={`view ${activeTab === 'settings' ? 'active' : ''}`}>
+          {activeTab === 'settings' ? (
+            <SettingsView
+              loopForm={loopForm}
+              setLoopForm={setLoopForm}
+              onSubmit={submitLoopConfig}
+              onToggleRun={() =>
+                runLoopAction(() =>
+                  state?.running
+                    ? window.autoplan.stopLoop({ projectId, manual: true })
+                    : window.autoplan.startLoop({ projectId, manual: true }),
+                )
+              }
+              running={Boolean(state?.running)}
+            />
           ) : null}
         </section>
 
@@ -708,7 +650,8 @@ function WorkspaceSidebar({
           </span>
         </div>
         <div className="loop-config mono">
-          间隔 {state?.interval_seconds || 5}s
+          {agentCliProviderLabel(state?.agent_cli_provider)}
+          {' · '}间隔 {state?.interval_seconds || 5}s
           {state?.validation_command ? ` · ${state.validation_command}` : ' · 无验收命令'}
         </div>
       </div>
@@ -773,7 +716,6 @@ function countSearchableItems(snapshot: AppSnapshot) {
   return (
     snapshot.requirements.length +
     snapshot.feedback.length +
-    snapshot.planDrafts.length +
     snapshot.plans.length +
     snapshot.tasks.length +
     snapshot.events.length
@@ -785,13 +727,12 @@ function createFilteredWorkspaceItems(
   searchState: WorkspaceSearchState,
 ): WorkspaceFilterableItems {
   if (!snapshot) {
-    return { requirements: [], feedback: [], planDrafts: [], plans: [], tasks: [], events: [] };
+    return { requirements: [], feedback: [], plans: [], tasks: [], events: [] };
   }
   if (searchState.query.isEmpty) {
     return {
       requirements: snapshot.requirements,
       feedback: snapshot.feedback,
-      planDrafts: snapshot.planDrafts,
       plans: snapshot.plans,
       tasks: snapshot.tasks,
       events: snapshot.events,
@@ -805,11 +746,6 @@ function createFilteredWorkspaceItems(
       WORKSPACE_SEARCH_SOURCE_TYPES.REQUIREMENT,
     ),
     feedback: filterItemsBySearchGroup(snapshot.feedback, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.FEEDBACK),
-    planDrafts: filterItemsBySearchGroup(
-      snapshot.planDrafts,
-      searchState.groups,
-      WORKSPACE_SEARCH_SOURCE_TYPES.PLAN_DRAFT,
-    ),
     plans: filterItemsBySearchGroup(snapshot.plans, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.PLAN),
     tasks: filterItemsBySearchGroup(snapshot.tasks, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.TASK),
     events: filterItemsBySearchGroup(snapshot.events, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.EVENT),
@@ -826,6 +762,84 @@ function filterItemsBySearchGroup<T extends { id: number }>(
 
   const recordIds = new Set(group.results.map((result) => result.recordId));
   return items.filter((item) => recordIds.has(item.id));
+}
+
+function SettingsView({
+  loopForm,
+  setLoopForm,
+  onSubmit,
+  onToggleRun,
+  running,
+}: {
+  loopForm: LoopFormState;
+  setLoopForm: Dispatch<SetStateAction<LoopFormState>>;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onToggleRun: () => void;
+  running: boolean;
+}) {
+  return (
+    <div className="settings-layout">
+      <form className="editor card settings-card" onSubmit={onSubmit}>
+        <div className="card-head">
+          <h2>循环控制</h2>
+          <span className="hint">工作区路径、循环间隔、验收命令与 CLI 后端</span>
+        </div>
+        <label className="field">
+          工作区路径
+          <input
+            value={loopForm.workspacePath}
+            onChange={(event) => setLoopForm((current) => ({ ...current, workspacePath: event.target.value }))}
+            placeholder="D:\project\GitHub\my-app"
+          />
+        </label>
+        <label className="field">
+          间隔秒数
+          <input
+            min="1"
+            type="number"
+            value={loopForm.intervalSeconds}
+            onChange={(event) => setLoopForm((current) => ({ ...current, intervalSeconds: event.target.value }))}
+          />
+        </label>
+        <label className="field">
+          验收命令（留空则不校验）
+          <input
+            value={loopForm.validationCommand}
+            onChange={(event) => setLoopForm((current) => ({ ...current, validationCommand: event.target.value }))}
+            placeholder="flutter analyze"
+          />
+        </label>
+        <label className="field">
+          CLI 后端
+          <select
+            value={loopForm.agentCliProvider}
+            onChange={(event) => setLoopForm((current) => ({ ...current, agentCliProvider: event.target.value }))}
+          >
+            <option value="codex">Codex CLI</option>
+            <option value="claude">Claude CLI</option>
+          </select>
+          {loopForm.agentCliProvider === 'claude' ? (
+            <small className="field-hint">需本机已安装 claude CLI 并完成认证</small>
+          ) : null}
+        </label>
+        <label className="field">
+          CLI 命令路径（留空用默认）
+          <input
+            className="mono"
+            value={loopForm.agentCliCommand}
+            onChange={(event) => setLoopForm((current) => ({ ...current, agentCliCommand: event.target.value }))}
+            placeholder={loopForm.agentCliProvider === 'claude' ? 'claude' : 'codex'}
+          />
+        </label>
+        <div className="button-row">
+          <button type="submit">保存配置</button>
+          <button type="button" onClick={onToggleRun}>
+            {running ? '停止' : '启动'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
 }
 
 function OverviewView({
@@ -888,17 +902,22 @@ function OverviewView({
               </div>
               <div className="log-summary">
                 <span>
-                  计划草稿 <b>{snapshot.planDrafts.length}</b>
-                </span>
-                <span>
-                  待确认草稿 <b>{snapshot.planDrafts.filter((draft) => draft.status !== 'accepted').length}</b>
+                  需求 <b>{snapshot.requirements.length}</b>
                 </span>
                 <span>
                   反馈 <b>{snapshot.feedback.length}</b>
                 </span>
+                <span>
+                  Plan <b>{snapshot.plans.length}</b>
+                </span>
               </div>
             </div>
-            <CodexLog log={operation?.logTail || ''} activity={operation?.activity || []} context={operation || null} />
+            <CodexLog
+              log={operation?.logTail || ''}
+              activity={operation?.activity || []}
+              context={operation || null}
+              provider={operation?.agentCliProvider || state?.agent_cli_provider}
+            />
           </section>
         </div>
 
@@ -977,16 +996,17 @@ function StatCard({
 }
 
 function tabTitle(tab: WorkspaceTab) {
-  return { overview: '概览', requirement: '需求模块', feedback: '反馈模块', tasks: '任务与计划', events: '事件流' }[tab];
+  return { overview: '概览', requirement: '需求模块', feedback: '反馈模块', tasks: '任务与计划', events: '事件流', settings: '设置' }[tab];
 }
 
 function tabSubtitle(tab: WorkspaceTab, project: Project | null) {
   const base = {
     overview: '循环状态、阶段流水线与各模块一览',
-    requirement: '收集需求，发送后自动生成计划草稿',
-    feedback: '收集反馈，关联需求并生成计划草稿',
-    tasks: '循环控制、计划草稿、Plan 与任务进度',
+    requirement: '收集需求，发送后由循环自动生成开发计划',
+    feedback: '收集反馈，关联需求并由循环生成开发计划',
+    tasks: 'Plan 与任务进度',
     events: '循环运行日志与任务执行记录',
+    settings: '工作区路径、循环间隔、验收命令与 CLI 后端',
   }[tab];
   return project ? `${base} · ${project.name}` : base;
 }

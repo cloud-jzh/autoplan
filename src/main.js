@@ -4,7 +4,6 @@ const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const { saveAttachments } = require('./attachments');
 const { AppDatabase, nowIso } = require('./database');
 const { LoopService } = require('./loopService');
-const { updatePlanDraft } = require('./planDrafts');
 
 let mainWindow;
 let db;
@@ -60,14 +59,17 @@ ipcMain.handle('projects:create', (_event, input = {}) => {
     [name, input.workspacePath || '', input.description || '', now, now],
   );
   loop.ensureProjectState(id);
+  if (loop.hasRuntimeConfigInput(input)) {
+    loop.configure(id, input);
+  }
   return loop.snapshot(id);
 });
 
 ipcMain.handle('projects:update', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   const current = loop.project(projectId);
-  if (input.workspacePath !== undefined) {
-    loop.configure(projectId, { workspacePath: input.workspacePath });
+  if (loop.hasRuntimeConfigInput(input)) {
+    loop.configure(projectId, input);
   }
   db.run(
     `UPDATE projects
@@ -92,7 +94,7 @@ ipcMain.handle('projects:delete', (_event, input = {}) => {
   const taskIds = db
     .all('SELECT id FROM plans WHERE project_id = ?', [projectId])
     .map((row) => row.id);
-  for (const table of ['requirements', 'feedback', 'attachments', 'plan_drafts', 'events', 'scan_files']) {
+  for (const table of ['requirements', 'feedback', 'attachments', 'events', 'scan_files']) {
     db.run(`DELETE FROM ${table} WHERE project_id = ?`, [projectId]);
   }
   if (taskIds.length) {
@@ -152,7 +154,6 @@ ipcMain.handle('requirements:create', (_event, input = {}) => {
     [projectId, titleFromBody(input.body, '未命名需求'), input.body || '', input.status || 'open', now, now],
   );
   saveAttachments(db, attachmentsRoot(), 'requirement', id, input.attachments, projectId);
-  // 计划生成交给循环扫描（runOnce）自动处理，不再走草稿中间态
   loop.addEvent(projectId, 'requirement.created', `需求 #${id} 已创建，等待循环扫描生成计划`);
   return loop.snapshot(projectId);
 });
@@ -204,7 +205,6 @@ ipcMain.handle('feedback:create', (_event, input = {}) => {
     ],
   );
   saveAttachments(db, attachmentsRoot(), 'feedback', id, input.attachments, projectId);
-  // 计划生成交给循环扫描（runOnce）自动处理，不再走草稿中间态
   loop.addEvent(projectId, 'feedback.created', `反馈 #${id} 已创建，等待循环扫描生成计划`);
   return loop.snapshot(projectId);
 });
@@ -240,12 +240,6 @@ ipcMain.handle('feedback:delete', (_event, input = {}) => {
   if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
   deleteIntakeRecord('feedback', 'feedback', projectId, id);
   return loop.snapshot(projectId);
-});
-
-ipcMain.handle('planDrafts:update', (_event, input = {}) => {
-  updatePlanDraft(db, input.id, input.markdown);
-  const draft = db.get('SELECT project_id FROM plan_drafts WHERE id = ?', [input.id]);
-  return loop.snapshot(draft?.project_id || null);
 });
 
 // 中断需求/反馈关联的计划任务
@@ -412,7 +406,6 @@ function deleteIntakeRecord(table, ownerType, projectId, id) {
   }
 
   db.run('DELETE FROM attachments WHERE project_id = ? AND owner_type = ? AND owner_id = ?', [projectId, ownerType, id]);
-  db.run('DELETE FROM plan_drafts WHERE project_id = ? AND source_type = ? AND source_id = ?', [projectId, ownerType, id]);
   db.run(`DELETE FROM ${table} WHERE id = ? AND project_id = ?`, [id, projectId]);
 }
 

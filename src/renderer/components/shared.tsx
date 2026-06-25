@@ -24,6 +24,13 @@ export function sourceTypeName(type: 'requirement' | 'feedback') {
   return type === 'feedback' ? '反馈' : '需求';
 }
 
+/** CLI 后端 → 语义化显示名（默认 Codex） */
+export function agentCliProviderLabel(provider?: string | null): string {
+  const value = String(provider || '').trim().toLowerCase();
+  if (value === 'claude') return 'Claude';
+  return 'Codex';
+}
+
 /** 状态 → 语义化 chip class */
 export function statusChipClass(status: string): string {
   const s = status.toLowerCase();

@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { Icon } from '../components/icons';
 import type { CreateProjectInput, Project } from '../types';
 import { useSnapshot } from '../hooks/useSnapshot';
+import { agentCliProviderLabel } from '../components/shared';
 import { formatChinaDateTime } from '../utils/time';
 
 type Draft = CreateProjectInput & { id?: number };
 
-const emptyDraft: Draft = { name: '', workspacePath: '', description: '' };
+const emptyDraft: Draft = { name: '', workspacePath: '', description: '', agentCliProvider: 'codex' };
 
 export function ProjectsPage() {
   const navigate = useNavigate();
@@ -40,7 +41,14 @@ export function ProjectsPage() {
   };
 
   const openEdit = (project: Project) => {
-    setDraft({ id: project.id, name: project.name, workspacePath: project.workspace_path, description: project.description });
+    setDraft({
+      id: project.id,
+      name: project.name,
+      workspacePath: project.workspace_path,
+      description: project.description,
+      agentCliProvider: project.agent_cli_provider || 'codex',
+      agentCliCommand: project.agent_cli_command || '',
+    });
     setModalOpen(true);
   };
 
@@ -49,17 +57,23 @@ export function ProjectsPage() {
     if (!draft.name.trim()) return;
     try {
       const description = (draft.description || '').trim();
+      const agentCliProvider = draft.agentCliProvider || 'codex';
+      const agentCliCommand = (draft.agentCliCommand || '').trim();
       const next = draft.id
         ? await window.autoplan.updateProject({
             id: draft.id,
             name: draft.name.trim(),
             workspacePath: draft.workspacePath.trim(),
             description,
+            agentCliProvider,
+            agentCliCommand,
           })
         : await window.autoplan.createProject({
             name: draft.name.trim(),
             workspacePath: draft.workspacePath.trim(),
             description,
+            agentCliProvider,
+            agentCliCommand,
           });
       setSnapshot(next);
       setModalOpen(false);
@@ -183,6 +197,7 @@ export function ProjectsPage() {
                 <div className="project-loop-status">
                   <span className={`led ${project.running ? 'running' : 'stopped'}`} />
                   <span>{projectStatusText(project)}</span>
+                  <span className="project-cli-badge">{agentCliProviderLabel(project.agent_cli_provider)}</span>
                   <span className="project-loop-interval">{project.interval_seconds || 5}s</span>
                 </div>
                 <div className="project-meta">#{project.id} · 更新于 {formatChinaDateTime(project.updated_at)}</div>
@@ -229,6 +244,19 @@ export function ProjectsPage() {
                   onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
                   placeholder="一句话描述这个项目"
                 />
+              </label>
+              <label className="field">
+                CLI 后端
+                <select
+                  value={draft.agentCliProvider}
+                  onChange={(event) => setDraft((current) => ({ ...current, agentCliProvider: event.target.value }))}
+                >
+                  <option value="codex">Codex CLI</option>
+                  <option value="claude">Claude CLI</option>
+                </select>
+                {draft.agentCliProvider === 'claude' ? (
+                  <small className="field-hint">需本机已安装 claude CLI 并完成认证</small>
+                ) : null}
               </label>
               <div className="modal-foot">
                 <button type="button" className="btn" onClick={() => setModalOpen(false)}>

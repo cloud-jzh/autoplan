@@ -1,10 +1,9 @@
 export type IntakeType = 'requirement' | 'feedback';
-export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'tasks' | 'events';
+export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'tasks' | 'events' | 'settings';
 
 export const WORKSPACE_SEARCH_SOURCE_TYPES = {
   REQUIREMENT: 'requirement',
   FEEDBACK: 'feedback',
-  PLAN_DRAFT: 'planDraft',
   PLAN: 'plan',
   TASK: 'task',
   EVENT: 'event',
@@ -89,6 +88,8 @@ export interface Project {
   phase?: string;
   interval_seconds?: number;
   validation_command?: string;
+  agent_cli_provider?: string;
+  agent_cli_command?: string;
 }
 
 export interface ProjectState {
@@ -99,6 +100,8 @@ export interface ProjectState {
   validation_command: string;
   last_issue_hash?: string | null;
   last_error?: string | null;
+  agent_cli_provider?: string;
+  agent_cli_command?: string;
   updated_at: string;
   /** 由 snapshot 合并自 project.workspace_path */
   workspace_path?: string;
@@ -146,18 +149,6 @@ export interface Attachment {
   size: number;
   hash: string;
   created_at: string;
-}
-
-export interface PlanDraft {
-  id: number;
-  project_id: number;
-  source_type: IntakeType;
-  source_id: number;
-  markdown: string;
-  status: string;
-  linked_plan_id?: number | null;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface Plan {
@@ -319,7 +310,6 @@ export interface AppSnapshot {
   requirements: Requirement[];
   feedback: Feedback[];
   attachments: Attachment[];
-  planDrafts: PlanDraft[];
   plans: Plan[];
   tasks: PlanTask[];
   events: AppEvent<AppEventMeta | null>[];
@@ -340,6 +330,7 @@ export interface ActiveOperation extends CodexSessionInfo {
   projectId: number | null;
   planId: number | null;
   taskId: number | null;
+  agentCliProvider?: string;
   startedAt: string | null;
   finishedAt?: string | null;
   exitCode?: number | null;
@@ -368,6 +359,8 @@ export interface CreateProjectInput {
   name: string;
   workspacePath: string;
   description?: string;
+  agentCliProvider?: string;
+  agentCliCommand?: string;
 }
 
 export interface UpdateProjectInput extends CreateProjectInput {
@@ -379,6 +372,8 @@ export interface LoopConfigInput {
   workspacePath?: string;
   intervalSeconds?: number;
   validationCommand?: string;
+  agentCliProvider?: string;
+  agentCliCommand?: string;
 }
 
 export interface ProjectIdInput {
@@ -433,7 +428,6 @@ export interface AutoplanApi {
   createFeedback: (input: CreateIntakeInput) => Promise<AppSnapshot>;
   updateFeedback: (input: UpdateFeedbackInput) => Promise<AppSnapshot>;
   deleteFeedback: (input: RecordIdInput) => Promise<AppSnapshot>;
-  updatePlanDraft: (input: { id: number; markdown: string }) => Promise<AppSnapshot>;
   interruptIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
   resumeIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
   appendIntakeTask: (input: IntakeActionInput) => Promise<AppSnapshot>;

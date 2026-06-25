@@ -1,0 +1,7 @@
+已生成计划文件：`docs/plan/plan_requirement_12_20260625-202919.md:1`
+
+- 包含 8 个待办任务，任务行均符合固定格式与 `scope` 要求：`docs/plan/plan_requirement_12_20260625-202919.md:17`
+- 每个任务都包含验收要点，并覆盖配置、执行器、Claude 调用、日志 UI、设置入口、smoke 验证和文档说明
+- 已包含总体验收标准：`docs/plan/plan_requirement_12_20260625-202919.md:65`
+- 已包含进度区：`docs/plan/plan_requirement_12_20260625-202919.md:74`
+- 未修改业务代码；当前 `git status` 里还显示其他既有/外部变更，我没有纳入本次编辑

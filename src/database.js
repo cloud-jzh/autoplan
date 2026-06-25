@@ -88,21 +88,6 @@ class AppDatabase {
       CREATE INDEX IF NOT EXISTS idx_attachments_owner
       ON attachments (owner_type, owner_id);
 
-      CREATE TABLE IF NOT EXISTS plan_drafts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_id INTEGER,
-        source_type TEXT NOT NULL,
-        source_id INTEGER NOT NULL,
-        markdown TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'draft',
-        linked_plan_id INTEGER,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_plan_drafts_source
-      ON plan_drafts (source_type, source_id);
-
       CREATE TABLE IF NOT EXISTS scan_files (
         project_id INTEGER NOT NULL DEFAULT 1,
         scan_type TEXT NOT NULL,
@@ -176,7 +161,6 @@ class AppDatabase {
     this.ensureColumn('feedback', 'project_id', 'INTEGER');
     this.ensureColumn('feedback', 'linked_plan_id', 'INTEGER');
     this.ensureColumn('attachments', 'project_id', 'INTEGER');
-    this.ensureColumn('plan_drafts', 'project_id', 'INTEGER');
     this.ensureColumn('plans', 'project_id', 'INTEGER');
     this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
@@ -184,6 +168,8 @@ class AppDatabase {
     this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
     this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
     this.ensureColumn('events', 'project_id', 'INTEGER');
+    this.ensureColumn('project_states', 'agent_cli_provider', "TEXT NOT NULL DEFAULT 'codex'");
+    this.ensureColumn('project_states', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
 
     const defaultProjectId = this.ensureDefaultProject();
     this.migrateScanFilesTable(defaultProjectId);
@@ -224,7 +210,7 @@ class AppDatabase {
   }
 
   assignLegacyRows(projectId) {
-    for (const table of ['requirements', 'feedback', 'attachments', 'plan_drafts', 'plans', 'events', 'scan_files']) {
+    for (const table of ['requirements', 'feedback', 'attachments', 'plans', 'events', 'scan_files']) {
       this.db.run(`UPDATE ${table} SET project_id = ? WHERE project_id IS NULL`, [projectId]);
     }
   }

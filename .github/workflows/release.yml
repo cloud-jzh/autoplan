@@ -57,7 +57,9 @@ jobs:
         run: npm ci
 
       - name: Package ${{ matrix.platform }}
-        run: npm run ${{ matrix.package_script }}
+        run: npm run ${{ matrix.package_script }} -- --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Upload ${{ matrix.platform }} artifacts
         uses: actions/upload-artifact@v4

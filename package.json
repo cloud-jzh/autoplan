@@ -30,6 +30,9 @@
     "asarUnpack": [
       "node_modules/sql.js/dist/*.wasm"
     ],
+    "toolsets": {
+      "appimage": "1.0.3"
+    },
     "win": {
       "icon": "assets/icon.ico",
       "target": [

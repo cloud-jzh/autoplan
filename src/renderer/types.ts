@@ -494,6 +494,7 @@ export interface LoopConfigInput {
   workspacePath?: string;
   intervalSeconds?: number;
   validationCommand?: string;
+  validation_command?: string;
   agentCliProvider?: AgentCliProvider;
   agentCliCommand?: string;
   codexReasoningEffort?: CodexReasoningEffort;

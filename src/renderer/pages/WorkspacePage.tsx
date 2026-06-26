@@ -7,6 +7,7 @@ import type {
   AppSnapshot,
   CodexReasoningEffort,
   IntakeType,
+  LoopConfigInput,
   PendingAttachment,
   Plan,
   PlanTask,
@@ -25,7 +26,14 @@ import { EventList, PlanList, TaskList } from '../components/PlanLists';
 import { SearchResults } from '../components/SearchResults';
 import { CodexLog } from '../components/CodexLog';
 import { Icon, type IconName } from '../components/icons';
-import { getFilePath, agentCliProviderLabel, codexReasoningEffortLabel } from '../components/shared';
+import {
+  getFilePath,
+  toSafeFileUrl,
+  agentCliProviderLabel,
+  codexReasoningEffortLabel,
+  readAgentCliProvider,
+  readCodexReasoningEffort,
+} from '../components/shared';
 import { searchWorkspaceSnapshot } from '../utils/search';
 import { formatChinaTime } from '../utils/time';
 
@@ -110,7 +118,7 @@ function createPendingPathAttachment(file: File): PendingAttachment | null {
     name,
     size: file.size,
     type,
-    previewUrl: window.autoplan.toFileUrl(path),
+    previewUrl: toSafeFileUrl(path),
   };
 }
 
@@ -191,6 +199,41 @@ function normalizeCodexReasoningEffort(value?: string | null): CodexReasoningEff
   return defaultCodexReasoningEffort;
 }
 
+function loopFormFromProjectState(state: ProjectState): LoopFormState {
+  return {
+    workspacePath: state.workspace_path || '',
+    intervalSeconds: String(state.interval_seconds || 5),
+    validationCommand: state.validation_command ?? '',
+    agentCliProvider: state.agent_cli_provider || 'codex',
+    agentCliCommand: state.agent_cli_command || '',
+    codexReasoningEffort: normalizeCodexReasoningEffort(state.codex_reasoning_effort),
+  };
+}
+
+function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigInput {
+  const payload: LoopConfigInput = {
+    projectId,
+    workspacePath: form.workspacePath,
+    intervalSeconds: Number(form.intervalSeconds || 5),
+    validationCommand: form.validationCommand,
+    agentCliProvider: form.agentCliProvider || 'codex',
+    agentCliCommand: form.agentCliCommand.trim(),
+  };
+  if (form.agentCliProvider !== 'claude') {
+    payload.codexReasoningEffort = form.codexReasoningEffort;
+  }
+  return payload;
+}
+
+function loopFormsEqual(left: LoopFormState, right: LoopFormState) {
+  return left.workspacePath === right.workspacePath
+    && left.intervalSeconds === right.intervalSeconds
+    && left.validationCommand === right.validationCommand
+    && left.agentCliProvider === right.agentCliProvider
+    && left.agentCliCommand === right.agentCliCommand
+    && left.codexReasoningEffort === right.codexReasoningEffort;
+}
+
 export function WorkspacePage() {
   const params = useParams<{ projectId: string }>();
   const navigate = useNavigate();
@@ -213,6 +256,7 @@ export function WorkspacePage() {
     agentCliCommand: '',
     codexReasoningEffort: defaultCodexReasoningEffort,
   });
+  const [loopFormDirty, setLoopFormDirty] = useState(false);
   const [scopeFileOpenSettings, setScopeFileOpenSettings] = useState<ScopeFileOpenSettings>(() => {
     try {
       const parsed = JSON.parse(window.localStorage.getItem('autoplan.scopeFileOpenSettings') || 'null');
@@ -259,19 +303,20 @@ export function WorkspacePage() {
     window.alert(msg);
   }, [setError]);
 
+  const updateLoopForm: Dispatch<SetStateAction<LoopFormState>> = useCallback((action) => {
+    setLoopFormDirty(true);
+    setLoopForm(action);
+  }, []);
+
   useEffect(() => {
-    if (!state) return;
-    const defaultProvider = state.agent_cli_provider || 'codex';
-    const defaultReasoning = normalizeCodexReasoningEffort(state.codex_reasoning_effort);
-    setLoopForm({
-      workspacePath: state.workspace_path || '',
-      intervalSeconds: String(state.interval_seconds || 5),
-      validationCommand: state.validation_command || '',
-      agentCliProvider: defaultProvider,
-      agentCliCommand: state.agent_cli_command || '',
-      codexReasoningEffort: defaultReasoning,
-    });
-  }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
+    if (!state || Number(state.project_id) !== Number(projectId)) return;
+    const nextForm = loopFormFromProjectState(state);
+    setLoopForm((current) => (loopFormDirty || loopFormsEqual(current, nextForm) ? current : nextForm));
+  }, [projectId, loopFormDirty, state?.project_id, state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
+
+  useEffect(() => {
+    setLoopFormDirty(false);
+  }, [projectId]);
 
   useEffect(() => {
     const defaultProvider = state?.agent_cli_provider || 'codex';
@@ -475,17 +520,11 @@ export function WorkspacePage() {
   const submitLoopConfig = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     try {
-      const next = await window.autoplan.configureLoop({
-        projectId,
-        workspacePath: loopForm.workspacePath,
-        intervalSeconds: Number(loopForm.intervalSeconds || 5),
-        validationCommand: loopForm.validationCommand,
-        agentCliProvider: loopForm.agentCliProvider || 'codex',
-        agentCliCommand: loopForm.agentCliCommand.trim(),
-        ...(loopForm.agentCliProvider === 'claude'
-          ? {}
-          : { codexReasoningEffort: loopForm.codexReasoningEffort }),
-      });
+      const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
+      if (next.state && Number(next.state.project_id) === Number(projectId)) {
+        setLoopForm(loopFormFromProjectState(next.state));
+      }
+      setLoopFormDirty(false);
       setSnapshot(next);
       setError(null);
     } catch (e) {
@@ -802,7 +841,7 @@ export function WorkspacePage() {
             <SettingsView
               loopForm={loopForm}
               scopeFileOpenSettings={scopeFileOpenSettings}
-              setLoopForm={setLoopForm}
+              setLoopForm={updateLoopForm}
               setScopeFileOpenSettings={setScopeFileOpenSettings}
               onSubmit={submitLoopConfig}
               onToggleRun={() =>
@@ -1042,16 +1081,16 @@ function filterTasksBySearchGroups(
 }
 
 function withTaskCliProviderTitle(task: PlanTask, fallbackProvider?: string | null): PlanTask {
-  const providerLabel = agentCliProviderLabel(task.agentCliProvider || fallbackProvider);
+  const providerLabel = agentCliProviderLabel(readAgentCliProvider({ agentCliProvider: task.agentCliProvider || fallbackProvider }));
   if (!providerLabel || task.title.startsWith(`[${providerLabel}] `)) return task;
   return { ...task, title: `[${providerLabel}] ${task.title}` };
 }
 
 function agentCliConfigSummary(state?: ProjectState | null) {
-  const provider = state?.agent_cli_provider || 'codex';
+  const provider = readAgentCliProvider(state);
   const providerLabel = agentCliProviderLabel(provider);
   if (provider === 'claude') return providerLabel;
-  return `${providerLabel} · 思考${codexReasoningEffortLabel(state?.codex_reasoning_effort)}`;
+  return `${providerLabel} · 思考${codexReasoningEffortLabel(readCodexReasoningEffort(state))}`;
 }
 
 function SettingsView({
@@ -1214,10 +1253,16 @@ function OverviewView({
   const activeIndex = phases.indexOf(currentPhase);
   const operation = snapshot.activeOperation || snapshot.lastOperation;
   const operationActive = Boolean(snapshot.activeOperation);
-  const operationProvider = operation?.agentCliProvider || state?.agent_cli_provider;
+  const operationCliSource = operation
+    ? {
+        agentCliProvider: operation.agentCliProvider || state?.agent_cli_provider,
+        codexReasoningEffort: operation.codexReasoningEffort || state?.codex_reasoning_effort,
+      }
+    : state;
+  const operationProvider = readAgentCliProvider(operationCliSource);
   const operationProviderLabel = agentCliProviderLabel(operationProvider);
   const operationReasoningLabel = operationProvider !== 'claude'
-    ? `思考${codexReasoningEffortLabel(operation?.codexReasoningEffort || state?.codex_reasoning_effort)}`
+    ? `思考${codexReasoningEffortLabel(readCodexReasoningEffort(operationCliSource))}`
     : '';
   const operationSessionLabel = operationProviderLabel === 'Codex' ? operation?.codexSessionLabel : '';
   const operationTime = operation?.startedAt ? `开始于 ${formatChinaTime(operation.startedAt)}` : '';
@@ -1231,6 +1276,9 @@ function OverviewView({
   const operationTitle = operation
     ? `${operationActive ? '执行日志' : '最近执行'} · ${operationProviderLabel} · ${operation.label}`
     : `执行日志 · ${operationProviderLabel}`;
+  const stateProvider = readAgentCliProvider(state);
+  const stateProviderLabel = agentCliProviderLabel(stateProvider);
+  const stateReasoningLabel = codexReasoningEffortLabel(readCodexReasoningEffort(state));
 
   return (
     <>
@@ -1246,9 +1294,9 @@ function OverviewView({
         <StatCard icon="tasks" value={`${doneTasks}/${totalTasks}`} label="任务进度" accent="success" />
         <StatCard
           icon="settings"
-          value={agentCliProviderLabel(state?.agent_cli_provider)}
+          value={stateProviderLabel}
           label="CLI 后端"
-          sub={state?.agent_cli_provider === 'claude' ? `间隔 ${state?.interval_seconds || 5}s` : `思考${codexReasoningEffortLabel(state?.codex_reasoning_effort)} · 间隔 ${state?.interval_seconds || 5}s`}
+          sub={stateProvider === 'claude' ? `间隔 ${state?.interval_seconds || 5}s` : `思考${stateReasoningLabel} · 间隔 ${state?.interval_seconds || 5}s`}
           accent="warning"
         />
       </div>

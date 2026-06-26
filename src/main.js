@@ -1,19 +1,28 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const { app, BrowserWindow, ipcMain, Menu, shell } = require('electron');
+const { pathToFileURL } = require('node:url');
+const { app, BrowserWindow, ipcMain, Menu, net, protocol, shell } = require('electron');
 const { saveAttachments } = require('./attachments');
 const { AppDatabase, nowIso } = require('./database');
 const { LoopService, nextIntakeAgentCliConfig } = require('./loopService');
 
+if (protocol?.registerSchemesAsPrivileged) {
+  protocol.registerSchemesAsPrivileged([
+    { scheme: 'autoplan-file', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  ]);
+}
+
 let mainWindow;
 let db;
 let loop;
+let fileProtocolRegistered = false;
 
 async function createApp() {
   Menu.setApplicationMenu(null);
   db = new AppDatabase(path.join(app.getPath('userData'), 'data', 'autoplan.sqlite'));
   await db.init();
+  registerFileProtocol();
   loop = new LoopService(db);
   loop.on('update', (snapshot) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -318,6 +327,29 @@ ipcMain.handle('intake:appendTask', (_event, input = {}) => {
 
 function attachmentsRoot() {
   return path.join(app.getPath('userData'), 'data', 'attachments');
+}
+
+function registerFileProtocol() {
+  if (fileProtocolRegistered || !protocol?.handle || !net?.fetch) return;
+  fileProtocolRegistered = true;
+  protocol.handle('autoplan-file', async (request) => {
+    try {
+      const filePath = decodeAttachmentFileUrl(request.url);
+      const root = attachmentsRoot();
+      if (!isInsidePath(root, filePath)) return new Response('Forbidden', { status: 403 });
+      const stat = await fs.promises.stat(filePath);
+      if (!stat.isFile()) return new Response('Not found', { status: 404 });
+      return net.fetch(pathToFileURL(filePath).toString());
+    } catch {
+      return new Response('Not found', { status: 404 });
+    }
+  });
+}
+
+function decodeAttachmentFileUrl(url) {
+  const parsed = new URL(url);
+  if (parsed.hostname !== 'attachment') throw new Error('Invalid attachment URL');
+  return decodeURIComponent(parsed.pathname.slice(1));
 }
 
 function loadRenderer(window) {

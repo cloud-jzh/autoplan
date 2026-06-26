@@ -1,0 +1,12 @@
+已完成 P002，未修改 plan 文件、未勾选 checkbox，且按要求未运行测试/构建/lint。
+
+**改动**
+- 在 `src/database.js:47` 补齐新建 `project_states` 表的 CLI 配置字段，并在 `src/database.js:49` 加入 `codex_reasoning_effort` 持久化列。
+- 在 `src/database.js:197` 增加迁移兜底，确保旧数据库也会补上 `project_states.codex_reasoning_effort`。
+- 在 `src/loopService.js:74` 支持 `validation_command` 作为配置输入键，避免字段命名不一致。
+- 在 `src/loopService.js:263` 明确区分“未传验收命令”和“显式保存空字符串”，`''` 会写入 `validation_command`，不会回退旧值。
+- 在 `src/loopService.js:268` 继续通过快照返回数据库最新配置；Codex 思考深度非法值仍按现有归一化写入默认值。
+
+**说明**
+- `src/main.js` 的 `loop:configure` 已经是 `configure` 后立即 `snapshot`，本次未对其做额外业务修改。
+- 工作区里存在与本任务无关的既有改动，我没有处理或回退。

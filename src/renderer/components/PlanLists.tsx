@@ -3,7 +3,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
 import { RecordCard } from './IntakePanel';
 import { MarkdownReader } from './MarkdownReader';
-import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
+import { planCliSummaryLabel } from './shared';
 import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
 
 type TimedPlanTask = PlanTask & {
@@ -300,22 +300,12 @@ function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): TaskEventDispl
   const planId = readMetaText(meta, ['planId', 'plan_id']);
   const status = readMetaText(meta, ['status', 'taskStatus', 'task_status']);
   const agentCliProvider = readMetaText(meta, ['agentCliProvider', 'agent_cli_provider']);
-  const codexReasoningEffort = readMetaText(meta, [
-    'codexReasoningEffort',
-    'codex_reasoning_effort',
-    'codexThinkingDepth',
-    'codex_thinking_depth',
-    'reasoningEffort',
-    'reasoning_effort',
-    'thinkingDepth',
-    'thinking_depth',
-  ]);
+  const cliSummary = agentCliProvider ? planCliSummaryLabel(meta) : '';
   const durationMs = readMetaNumber(meta, ['durationMs', 'duration_ms']);
   const metaParts = [
     formatChinaDateTime(event.created_at),
     planId ? `Plan #${planId}` : '',
-    agentCliProvider ? agentCliProviderLabel(agentCliProvider) : '',
-    agentCliProvider !== 'claude' && codexReasoningEffort ? `思考深度 ${codexReasoningEffortLabel(codexReasoningEffort)}` : '',
+    cliSummary,
     status ? `状态 ${status}` : '',
     durationMs !== null ? `耗时 ${formatDuration(durationMs, '0秒')}` : '',
   ].filter(Boolean);

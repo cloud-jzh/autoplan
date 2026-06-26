@@ -1,5 +1,34 @@
-const { pathToFileURL } = require('node:url');
+const nodeUrl = require('node:url');
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
+
+function toFileUrl(filePath) {
+  const value = String(filePath || '').trim();
+  if (!value || /^file:\/\//i.test(value)) return value;
+  if (isPersistedAttachmentPath(value)) return `autoplan-file://attachment/${encodeURIComponent(value)}`;
+  if (typeof nodeUrl.pathToFileURL === 'function') {
+    return nodeUrl.pathToFileURL(value).toString();
+  }
+  return fallbackPathToFileUrl(value);
+}
+
+function isPersistedAttachmentPath(filePath) {
+  return /[\\/]data[\\/]attachments[\\/]/i.test(filePath);
+}
+
+function fallbackPathToFileUrl(filePath) {
+  const normalized = filePath.replace(/\\/g, '/');
+  if (normalized.startsWith('//')) {
+    const [host, ...segments] = normalized.replace(/^\/+/, '').split('/');
+    return `file://${encodeURIComponent(host)}/${segments.map(encodeURIComponent).join('/')}`;
+  }
+
+  const pathname = normalized.startsWith('/') ? normalized : `/${normalized}`;
+  const encodedPath = pathname
+    .split('/')
+    .map((segment, index) => (index === 1 && /^[A-Za-z]:$/.test(segment) ? segment : encodeURIComponent(segment)))
+    .join('/');
+  return `file://${encodedPath}`;
+}
 
 contextBridge.exposeInMainWorld('autoplan', {
   snapshot: (projectId) => ipcRenderer.invoke('snapshot', { projectId }),
@@ -25,7 +54,7 @@ contextBridge.exposeInMainWorld('autoplan', {
   resumeIntake: (input) => ipcRenderer.invoke('intake:resume', input),
   appendIntakeTask: (input) => ipcRenderer.invoke('intake:appendTask', input),
   getDroppedFilePath: (file) => webUtils.getPathForFile(file),
-  toFileUrl: (filePath) => pathToFileURL(filePath).toString(),
+  toFileUrl,
   onLoopUpdate: (handler) => {
     const listener = (_event, snapshot) => handler(snapshot);
     ipcRenderer.on('loop:update', listener);

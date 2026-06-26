@@ -44,6 +44,9 @@ class AppDatabase {
         phase TEXT NOT NULL DEFAULT 'idle',
         interval_seconds INTEGER NOT NULL DEFAULT 5,
         validation_command TEXT NOT NULL DEFAULT '',
+        agent_cli_provider TEXT NOT NULL DEFAULT 'codex',
+        agent_cli_command TEXT NOT NULL DEFAULT '',
+        codex_reasoning_effort TEXT,
         last_issue_hash TEXT,
         last_error TEXT,
         updated_at TEXT NOT NULL
@@ -191,6 +194,7 @@ class AppDatabase {
     this.ensureColumn('events', 'project_id', 'INTEGER');
     this.ensureColumn('project_states', 'agent_cli_provider', "TEXT NOT NULL DEFAULT 'codex'");
     this.ensureColumn('project_states', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('project_states', 'codex_reasoning_effort', 'TEXT');
 
     const defaultProjectId = this.ensureDefaultProject();
     this.migrateScanFilesTable(defaultProjectId);

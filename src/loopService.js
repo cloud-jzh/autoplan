@@ -71,10 +71,12 @@ const LOOP_CONFIG_INPUT_KEYS = Object.freeze([
   'workspacePath',
   'intervalSeconds',
   'validationCommand',
+  'validation_command',
   ...AGENT_CLI_PROVIDER_INPUT_KEYS,
   ...AGENT_CLI_COMMAND_INPUT_KEYS,
   ...CODEX_REASONING_EFFORT_COLUMNS,
 ]);
+const VALIDATION_COMMAND_INPUT_KEYS = Object.freeze(['validationCommand', 'validation_command']);
 
 const TASK_EVENT_TYPES = Object.freeze({
   STARTED: 'task.started',
@@ -239,7 +241,7 @@ class LoopService extends EventEmitter {
   }
 
   configure(projectId, config = {}) {
-    const { workspacePath, intervalSeconds, validationCommand } = config;
+    const { workspacePath, intervalSeconds } = config;
     const current = this.status(projectId);
     const project = this.project(projectId);
     const runtime = this.existingRuntime(projectId);
@@ -258,9 +260,12 @@ class LoopService extends EventEmitter {
     );
     const nextInterval = Number(intervalSeconds || current.interval_seconds || 5);
     const agentCliConfig = nextAgentCliConfig(current, config);
+    const nextValidationCommand = hasAnyOwnProperty(config, VALIDATION_COMMAND_INPUT_KEYS)
+      ? String(readFirstOwnValue(config, VALIDATION_COMMAND_INPUT_KEYS) ?? '')
+      : current.validation_command;
     const stateUpdates = [
       ['interval_seconds', nextInterval],
-      ['validation_command', validationCommand ?? current.validation_command],
+      ['validation_command', nextValidationCommand],
       ...agentCliStateUpdates(this.projectStateColumns(), agentCliConfig),
       ['updated_at', nowIso()],
     ];
@@ -897,12 +902,7 @@ class LoopService extends EventEmitter {
   }
 
   planSnapshotAgentCliConfig(plan) {
-    const eventSnapshot = this.planAgentCliEventSnapshot(plan.project_id, plan.id);
-    const sourceSnapshot = this.planSourceAgentCliSnapshot(plan.project_id, plan.id);
-    if (hasAgentCliOverride(plan)) return effectiveAgentCliConfig({}, plan);
-    if (eventSnapshot) return effectiveAgentCliConfig({}, eventSnapshot);
-    if (sourceSnapshot) return effectiveAgentCliConfig({}, sourceSnapshot);
-    return effectiveAgentCliConfig({});
+    return this.planAgentCliConfig(plan);
   }
 
   planAgentCliEventSnapshot(projectId, planId) {

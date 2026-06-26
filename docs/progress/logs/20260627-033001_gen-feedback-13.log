@@ -1,0 +1,917 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f0569-1d5f-7883-87da-df1ed1020b14
+--------
+user
+你是需求整理与开发计划生成者。
+请根据以下反馈，生成一个开发计划和验收标准。
+
+输出文件：D:\project\GitHub\autoplan\docs\plan\plan_feedback_13_20260627-033001.md
+
+格式要求：
+- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->
+- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行
+- 每个任务要有验收要点
+- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收
+- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准
+- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试
+- 必须包含总体验收标准和进度区
+- 只写 plan 文件，不要改业务代码
+
+反馈 #13 内容：
+思考深度修改无效；验收命令修改无效；修改后会自动 刷新回去；
+**Planning file creation**
+
+I need to create a file, and I should probably inspect the repository first. It seems like I need to have a plan in place; although, maybe I won't need to rely on the web for this. I'll need to utilize the shell to execute my tasks effectively. Checking things out first will definitely help me ensure everything goes smoothly!
+codex
+我会先快速查看现有计划文档风格，然后只写入指定 plan 文件。
+exec
+powershell.exe -Command "Get-ChildItem -Force; if (Test-Path AGENTS.md) { Get-Content AGENTS.md }; if (Test-Path docs\\plan) { Get-ChildItem docs\\plan | Select-Object -First 5 | Format-Table -AutoSize }" in D:\project\GitHub\autoplan
+ succeeded in 351ms:
+
+
+    目录: D:\project\GitHub\autoplan
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+d-----         2026/6/26     13:21                .autoplan-runtime                                                    
+d-----         2026/6/25     22:13                .claude                                                              
+d--h--         2026/6/26     20:59                .git                                                                 
+d-----         2026/6/26     13:26                .github                                                              
+d-----         2026/6/24     23:46                assets                                                               
+d-----         2026/6/26     16:36                dist                                                                 
+d-----         2026/6/26     13:34                docs                                                                 
+d-----         2026/6/26     20:37                node_modules                                                         
+d-----         2026/6/26     16:36                release                                                              
+d-----         2026/6/24     23:36                release-test                                                         
+d-----         2026/6/26     13:29                scripts                                                              
+d-----         2026/6/26      2:32                src                                                                  
+d-----         2026/6/25     21:00                ui                                                                   
+-a----         2026/6/24     23:18         109404 .codex-autoplan-overview-final.png                                   
+-a----         2026/6/24     23:17         108438 .codex-autoplan-overview-left-log.png                                
+-a----         2026/6/24     23:21          79462 .codex-autoplan-overview-merged-log.png                              
+-a----         2026/6/24     23:14         102400 .codex-autoplan-overview.png                                         
+-a----         2026/6/24     22:52            288 .codex-dev-20260624-225246.log                                       
+-a----         2026/6/24     22:57            546 .codex-dev-20260624-225652.log                                       
+-a----         2026/6/24     23:01            686 .codex-dev-20260624-225837.log                                       
+-a----         2026/6/25     21:01          35405 .codex-dev-20260624-230150.log                                       
+-a----         2026/6/24     22:48            419 .codex-dev.log                                                       
+-a----         2026/6/25      0:11             66 .gitattributes                                                       
+-a----         2026/6/25      5:37             42 .gitignore                                                           
+-a----         2026/6/24     19:10            307 index.html                                                           
+-a----         2026/6/25      5:38          11524 LICENSE                                                              
+-a----         2026/6/26     16:01         233037 package-lock.json                                                    
+-a----         2026/6/26     16:35           2962 package.json                                                         
+-a----         2026/6/26     15:27           8845 README.md                                                            
+-a----         2026/6/24     23:45           7191 System.Drawing.Drawing2D.GraphicsPath                                
+-a----         2026/6/24     19:10            555 tsconfig.json                                                        
+-a----         2026/6/24     23:41            287 vite.config.ts                                                       
+
+
+
+
+    目录: D:\project\GitHub\autoplan\docs\plan
+
+
+Mode          LastWriteTime Length Name                                  
+----          ------------- ------ ----                                  
+-a----  2026/6/26      6:11   8118 plan_feedback_10_20260626-034659.md   
+-a----  2026/6/25      6:42   4730 plan_feedback_5_20260625-040346.md    
+-a----  2026/6/25      6:31   7767 plan_requirement_11_20260625-035545.md
+-a----  2026/6/26      4:18   9360 plan_requirement_12_20260625-202919.md
+-a----  2026/6/26      4:42   9227 plan_requirement_21_20260626-033033.md
+
+
+
+codex
+找到了既有 plan 目录；接下来参考最近反馈文档格式并生成新文件。
+exec
+powershell.exe -Command "Get-Content docs\\plan\\plan_feedback_10_20260626-034659.md -TotalCount 220" in D:\project\GitHub\autoplan
+ succeeded in 224ms:
+# 反馈 #10 开发计划：验收命令默认空、单条需求/反馈 CLI 配置与 Codex 思考深度
+
+## 背景
+
+当前 AutoPlan 已支持项目级 CLI 后端选择，并通过验收命令完成任务闭环。但反馈 #10 指出三个需要细化到输入与执行链路的行为：验收命令默认应为空；每条需求、每条反馈在输入框下方都应能单独选择 CLI 后端（Codex/Claude）；Codex 后端还应支持切换思考模式深度。目标是在不破坏项目级默认配置的前提下，为单条需求/反馈提供可覆盖的执行配置，并让计划生成、任务执行、修复与验收能稳定使用该配置。
+
+## 设计约束
+
+- 验收命令默认值必须为空字符串；历史已有命令的项目不应被清空，新建项目与初始化状态不再自动填入示例命令。
+- 项目级 CLI 配置仍作为默认值；需求/反馈未单独配置时继承项目级配置，单独配置后优先使用单条记录配置。
+- 需求输入框与反馈输入框下方都要展示 CLI 选择控件，交互位置、样式和保存行为保持一致。
+- CLI 后端至少支持 `codex` 与 `claude`；非法值需要归一化为默认 Codex，避免进入执行链路。
+- Codex 思考深度仅对 Codex CLI 生效；选择 Claude 时该控件应隐藏、禁用或明确提示不适用。
+- 思考深度需要有明确枚举值与默认值，执行命令参数、日志展示和快照数据保持一致。
+- 不应影响附件、粘贴图片、正文提交、计划任务 scope 解析、任务并发与 existing progress 更新链路。
+
+## 任务拆解
+
+- [x] P001: 调整验收命令默认值为空 <!-- scope: src/database.js,src/loopService.js,src/renderer/pages/WorkspacePage.tsx,src/renderer/types.ts,README.md -->
+  - 验收要点：新建项目、首次进入循环控制状态、未填写验收命令时，`validation_command` 均保存和展示为空字符串，不再出现默认 `npm run check`、`npm test` 或其他占位命令。
+  - 验收要点：已有项目已经保存的验收命令在升级后保持原值，不被迁移逻辑或状态初始化覆盖为空。
+  - 验收要点：执行计划验收时，空验收命令保持当前“跳过/不执行外部验收命令”的安全行为，并有可读事件或日志说明。
+  - 验收要点：循环控制表单、项目状态快照和 TypeScript 类型对空字符串处理一致，不出现 `undefined` 与空字符串混用导致的 UI 抖动。
+
+- [x] P002: 扩展需求反馈执行配置模型 <!-- scope: src/database.js,src/main.js,src/preload.js,src/renderer/types.ts,src/loopService.js -->
+  - 验收要点：`requirements` 与 `feedback` 记录均支持保存单条 `agent_cli_provider`、`agent_cli_command` 和 Codex 思考深度字段，数据库升级对历史数据兼容。
+  - 验收要点：创建、更新、查询需求/反馈的 IPC 入参与返回值包含新增配置字段，字段缺省时不会破坏旧版调用。
+  - 验收要点：非法 CLI provider、空命令路径、非法思考深度在主进程边界被归一化，避免脏数据写入或执行失败。
+  - 验收要点：快照中的需求/反馈列表能返回单条配置，后续计划生成可直接读取，不需要额外查询。
+
+- [ ] P003: 在输入框下方添加 CLI 选择 <!-- scope: src/renderer/components/Composer.tsx,src/renderer/pages/WorkspacePage.tsx,src/renderer/types.ts,src/styles.css -->
+  - 验收要点：需求输入框与反馈输入框下方均显示 CLI 后端选择控件，支持选择 Codex CLI 或 Claude CLI。
+  - 验收要点：默认选项继承当前项目级 CLI 配置；用户在单条输入中修改后，该条需求/反馈提交时携带所选配置。
+  - 验收要点：控件不影响正文输入、Enter 发送、附件选择、拖拽上传、粘贴图片和提交后清空等现有交互。
+  - 验收要点：输入框区域在窄屏、附件列表过长和按钮禁用状态下布局稳定，选择控件不遮挡发送按钮与附件预览。
+
+- [x] P004: 支持 Codex 思考深度配置 <!-- scope: src/agentCli.js,src/loopService.js,src/renderer/components/Composer.tsx,src/renderer/pages/WorkspacePage.tsx,src/renderer/types.ts,src/styles.css -->
+  - 验收要点：Codex CLI 配置支持至少三档思考深度（如 low/medium/high），并有明确默认值；UI 文案使用用户可理解的“思考深度/模式”表达。
+  - 验收要点：选择 Codex 时可编辑思考深度，切换为 Claude 时该配置不参与提交或执行，并在切回 Codex 时保持合理默认值。
+  - 验收要点：调用 Codex CLI 时将思考深度转换为当前项目使用的 Codex 参数格式；未配置时不生成非法参数。
+  - 验收要点：运行日志、事件元数据或任务详情能体现实际使用的思考深度，便于排查执行效果。
+
+- [x] P005: 应用单条配置到计划生成执行 <!-- scope: src/loopService.js,src/agentCli.js,src/codexActivity.js,src/renderer/components/PlanLists.tsx,src/renderer/components/shared.tsx -->
+  - 验收要点：针对某条需求/反馈生成计划时，优先使用该条记录的 CLI provider、命令路径和 Codex 思考深度；未配置时继承项目级配置。
+  - 验收要点：同一项目内不同需求/反馈可以分别使用 Codex 或 Claude 生成计划，不互相污染会话、日志和计划状态。
+  - 验收要点：Codex 会话复用仍只在 Codex 后端启用；Claude 后端不接收 Codex session id，切换后端时上下文隔离。
+  - 验收要点：任务执行、失败修复、验收重试等后续步骤使用计划来源对应的 CLI 配置，不因项目默认值变化而中途切换。
+
+- [x] P006: 补充回归验证与文档说明 <!-- scope: README.md,package.json,scripts,docs/plan/plan_feedback_10_20260626-034659.md -->
+  - 验收要点：补充或更新 smoke/check 覆盖空验收命令、单条需求/反馈 CLI 覆盖、Codex 思考深度参数转换三类关键路径。
+  - 验收要点：README 说明项目级配置与单条需求/反馈配置的优先级，以及 Claude 与 Codex 思考深度的适用差异。
+  - 验收要点：手动验证至少覆盖“需求用 Codex high、反馈用 Claude、项目默认 Codex 且验收命令为空”的组合场景。
+  - 验收要点：完成实现后 `npm run check`、`npm run build` 与已有 smoke 脚本通过；如本机缺少真实 Claude CLI，使用 stub 或明确记录跳过原因。
+
+## 总体验收标准
+
+- 验收命令默认空：新建项目和初始项目状态不自动填入任何验收命令，空命令不会触发外部命令执行失败。
+- 单条配置优先：每条需求、每条反馈都可以在输入框下方选择 Codex/Claude，提交后计划生成与后续任务执行优先使用该条配置。
+- 默认继承稳定：单条需求/反馈未配置 CLI 时继承项目级默认配置，项目级配置变化不会破坏历史计划的执行一致性。
+- Codex 深度生效：Codex 后端可切换思考深度，执行命令实际携带正确参数，日志可追踪实际深度。
+- 后端隔离明确：Codex session 仅用于 Codex，Claude 调用不复用 Codex 会话；不同记录的 CLI 配置不会交叉污染。
+- UI 交互无回归：正文、附件、粘贴图片、发送按钮、列表刷新和计划卡片展示均保持现有可用性。
+- 构建验证通过：实现完成后 `npm run check`、`npm run build` 和关键 smoke/手动场景验证通过。
+
+## 进度区
+
+- 2026-06-26 AutoPlan 生成：反馈 #10 开发计划已创建，待执行。
+- P001 AutoPlan 完成：2026-06-25T20:02:14.671Z；日志：docs/progress/logs/20260626-035035_execute-P001.log
+- P002 AutoPlan 完成：2026-06-25T21:01:06.313Z；日志：docs/progress/logs/20260626-044215_execute-P002.log
+- P005 AutoPlan 完成：2026-06-25T21:39:53.034Z；日志：docs/progress/logs/20260626-050107_execute-P005.log
+- P004 AutoPlan 完成：2026-06-25T21:58:04.086Z；日志：docs/progress/logs/20260626-053955_execute-P004.log
+- P006 AutoPlan 完成：2026-06-25T22:11:45.804Z；日志：docs/progress/logs/20260626-055807_execute-P006.log
+
+**Evaluating plan for feedback**
+
+I'm working on a plan for feedback #13. I’m noticing that my attempts to modify thinking depth and validation commands haven’t been effective. There seems to be an issue since, after modifications, everything auto-refreshes back. I think I might need to inspect the code to ensure my scopes are accurate. I'll also consider using rg to assist in this process. This feels like a good direction to explore further.
+codex
+问题指向“保存后被刷新覆盖”，我先定位相关状态与持久化模块来确定 scope。
+exec
+powershell.exe -Command 'rg -n "thinking|reasoning|validation_command|validationCommand|agent_cli|codex" src ui scripts package.json README.md' in D:\project\GitHub\autoplan
+ succeeded in 1027ms:
+README.md:21:| **Codex CLI**（默认） | `codex` | 通过 `codex exec` 非交互执行，支持会话（session）复用，失败任务重试时延续上下文 |
+README.md:27:- **Codex 思考深度**：Codex 支持 `low`、`medium`、`high` 三档思考深度，默认 `medium`，执行时转换为 Codex CLI 的 `model_reasoning_effort` 配置；Claude 不使用该参数，选择 Claude 时思考深度不会参与提交或执行。
+README.md:32:- **会话隔离**：Codex 的会话复用仅在 Codex 后端启用；切换到 Claude 不会把历史 `codex_session_id` 传给 Claude，两类上下文物理隔离。
+README.md:40:- 项目默认 Codex 时，单条需求可覆盖为 Codex + `high` 思考深度，生成计划时携带 `model_reasoning_effort="high"`。
+src\agentCli.js:5:const DEFAULT_AGENT_CLI_PROVIDER = 'codex';
+src\agentCli.js:10:  codex: 'Codex',
+src\agentCli.js:32:function codexReasoningConfigArgs(reasoningEffort) {
+src\agentCli.js:33:  return ['-c', `model_reasoning_effort="${normalizeCodexReasoningEffort(reasoningEffort)}"`];
+src\agentCli.js:36:function codexNewSessionArgs(workspace, lastFile, options = {}) {
+src\agentCli.js:39:    ...codexReasoningConfigArgs(options.reasoningEffort),
+src\agentCli.js:52:function codexResumeSessionArgs(sessionId, lastFile, options = {}) {
+src\agentCli.js:56:    ...codexReasoningConfigArgs(options.reasoningEffort),
+src\agentCli.js:73:function agentCliSpawnSpec(provider, command, lastFile, codexArgs) {
+src\agentCli.js:90:    args: codexArgs || [],
+src\agentCli.js:111:    codexArgs,
+src\agentCli.js:117:  const spawnSpec = agentCliSpawnSpec(provider, command, lastFile, codexArgs);
+src\agentCli.js:356:  codexNewSessionArgs,
+src\agentCli.js:357:  codexResumeSessionArgs,
+ui\README.md:45:- Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
+scripts\smoke-test.js:70:      validationCommand: 'node -e "process.exit(0)"',
+scripts\smoke-test.js:90:      provider: 'codex',
+scripts\smoke-test.js:310:    loop.configure(multiProjectA, { workspacePath: multiWorkspaceA, intervalSeconds: 60, validationCommand: '' });
+scripts\smoke-test.js:311:    loop.configure(multiProjectB, { workspacePath: multiWorkspaceB, intervalSeconds: 60, validationCommand: '' });
+scripts\smoke-test.js:312:    loop.configure(sameWorkspaceProject, { workspacePath: multiWorkspaceB, intervalSeconds: 60, validationCommand: '' });
+scripts\smoke-test.js:333:    console.log('smoke ok: projects, scoped snapshots, attachments, attachment prompts, plan reader, scope concurrency, scope file open, search, task acceptance, task events, scan, validation, duration stats, codex session reuse, multi-backend, multi-loop');
+scripts\smoke-test.js:403:  let codexCalled = false;
+scripts\smoke-test.js:406:      codexCalled = true;
+scripts\smoke-test.js:407:      return { exitCode: 1, output: 'unexpected codex execution' };
+scripts\smoke-test.js:414:  assert.equal(codexCalled, false, 'final acceptance task should run validation directly instead of Codex');
+scripts\smoke-test.js:712:  loop.configure(projectId, { workspacePath: workspace, intervalSeconds: 5, validationCommand: '' });
+scripts\smoke-test.js:1064:      assert.equal(operation.codexSessionId, undefined, '首次执行不应传入已有 session id');
+scripts\smoke-test.js:1070:        codexSessionId: retrySessionId,
+scripts\smoke-test.js:1071:        codexSessionMode: 'new',
+scripts\smoke-test.js:1078:    assert.equal(failedTask.codex_session_id, retrySessionId, '失败后应保存首次捕获的 session id');
+scripts\smoke-test.js:1086:      assert.equal(operation.codexSessionId, retrySessionId, '失败后再次执行应传入同一个 session id');
+scripts\smoke-test.js:1092:        codexSessionId: retrySessionId,
+scripts\smoke-test.js:1093:        codexSessionMode: 'resume',
+scripts\smoke-test.js:1101:    assert.equal(retriedTask.codex_session_id, retrySessionId, '重试成功后应保留同一个 session id');
+scripts\smoke-test.js:1111:      assert.equal(operation.codexSessionId, retrySessionId, '同一 plan 后续串行任务应继承前序 session id');
+scripts\smoke-test.js:1117:        codexSessionId: retrySessionId,
+scripts\smoke-test.js:1118:        codexSessionMode: 'resume',
+scripts\smoke-test.js:1126:    assert.equal(completedSerialTask.codex_session_id, retrySessionId, '串行继承任务应保存同一个 session id');
+scripts\smoke-test.js:1141:      assert.equal(operation.codexSessionId, undefined, '同一 plan 的不同任务首次执行不应复用其它 session id');
+scripts\smoke-test.js:1148:        codexSessionId: parallelSessions.get(currentTask.id),
+scripts\smoke-test.js:1149:        codexSessionMode: 'new',
+scripts\smoke-test.js:1161:    assert.equal(parallelTaskA.codex_session_id, parallelSessionA, '并发任务 A 应保存自己的 session id');
+scripts\smoke-test.js:1162:    assert.equal(parallelTaskB.codex_session_id, parallelSessionB, '并发任务 B 应保存自己的 session id');
+scripts\smoke-test.js:1163:    assert.notEqual(parallelTaskA.codex_session_id, parallelTaskB.codex_session_id, '并发任务 session id 应彼此独立');
+scripts\smoke-test.js:1164:    assert.notEqual(parallelTaskA.codex_session_id, retrySessionId, '并发任务 A 不应复用重试任务 session id');
+scripts\smoke-test.js:1165:    assert.notEqual(parallelTaskB.codex_session_id, retrySessionId, '并发任务 B 不应复用重试任务 session id');
+scripts\smoke-test.js:1191:    assert.equal(keptAfterSync.codex_session_id, syncKeptSessionId, 'sync 后同一 task_key 应保留上下文');
+scripts\smoke-test.js:1195:    assert.equal(renamedAfterSync.codex_session_id, null, '改名任务不应继承旧 session id');
+scripts\smoke-test.js:1197:    assert.equal(addedAfterSync.codex_session_id, null, '新增任务不应继承任何 session id');
+scripts\smoke-test.js:1212:  // 默认后端兼容性：历史项目升级后应为 codex
+scripts\smoke-test.js:1213:  const defaultProvider = loop.snapshot(projectId).state.agent_cli_provider;
+scripts\smoke-test.js:1214:  assert.equal(defaultProvider, 'codex', '未配置的项目应默认使用 codex 后端');
+scripts\smoke-test.js:1216:  // 非法 provider 被规范化为 codex
+scripts\smoke-test.js:1218:  assert.equal(loop.snapshot(projectId).state.agent_cli_provider, 'codex', '非法后端应被规范化为 codex');
+scripts\smoke-test.js:1223:  assert.equal(claudeState.agent_cli_provider, 'claude', '应能切换到 claude 后端');
+scripts\smoke-test.js:1230:  assert.equal(ipcConfiguredSnapshot.state.agent_cli_provider, 'claude', 'IPC 配置应保存 claude 后端');
+scripts\smoke-test.js:1231:  assert.equal(ipcConfiguredSnapshot.state.agent_cli_command, 'claude-smoke', 'IPC 配置应保存自定义 CLI 命令');
+scripts\smoke-test.js:1233:  assert.equal(ipcReadBackSnapshot.state.agent_cli_provider, 'claude', '快照应返回 IPC 保存的后端');
+scripts\smoke-test.js:1234:  assert.equal(ipcReadBackSnapshot.state.agent_cli_command, 'claude-smoke', '快照应返回 IPC 保存的 CLI 命令');
+scripts\smoke-test.js:1238:  // - claude 后端即便任务带 codex_session_id，也不会进入 resume 分支，spawn 的是 claude 命令
+scripts\smoke-test.js:1239:  // - 切回 codex 后，spawn 的是 codex 命令且会尝试 resume 传入的 session
+scripts\smoke-test.js:1244:  const codexFreshSessionIds = [fallbackNewSessionId, freshSessionId];
+scripts\smoke-test.js:1249:      const isCodexResume = commandName(command) === 'codex' && args.includes('resume');
+scripts\smoke-test.js:1251:      const isCodexFresh = commandName(command) === 'codex' && !isCodexResume;
+scripts\smoke-test.js:1257:            ? `Session ID: ${codexFreshSessionIds.shift() || freshSessionId}\n`
+scripts\smoke-test.js:1302:    'Claude 计划生成不应回退到 codex 命令',
+scripts\smoke-test.js:1330:  assert.ok(spawned.every((entry) => commandName(entry.command) === 'claude'), 'Claude 任务执行不应回退到 codex 命令');
+scripts\smoke-test.js:1331:  assertNoSpawnArg(spawned, '00000000-0000-4000-8000-000000000000', 'Claude 任务执行不应传入 codexSessionId');
+scripts\smoke-test.js:1333:  assert.equal(claudeTaskResult.codexSessionId, undefined, 'Claude 任务执行结果不应包含 Codex session');
+scripts\smoke-test.js:1335:  // 任务预先持有一个 codex session id，模拟历史上下文
+scripts\smoke-test.js:1354:    codexSessionId: '00000000-0000-4000-8000-000000000000',
+scripts\smoke-test.js:1361:    'claude 后端不应回退到 codex 命令',
+scripts\smoke-test.js:1363:  // claude 后端不应返回 codex 会话信息
+scripts\smoke-test.js:1364:  assert.equal(claudeResult.codexSessionId, undefined, 'claude 后端不应产出 codex session id');
+scripts\smoke-test.js:1366:  // 切回 codex：同一个 session id 应触发 resume（spawn 命令为 codex 且只 spawn 一次）
+scripts\smoke-test.js:1367:  loop.configure(projectId, { agentCliProvider: 'codex' });
+scripts\smoke-test.js:1368:  assert.equal(loop.snapshot(projectId).state.agent_cli_provider, 'codex', '应能切回 codex 后端');
+scripts\smoke-test.js:1370:  const codexResult = await patchedLoop.runCodex(workspace, '执行 codex 任务', 'execute-B001', {
+scripts\smoke-test.js:1374:    codexSessionId: '00000000-0000-4000-8000-000000000000',
+scripts\smoke-test.js:1376:  assert.equal(codexResult.exitCode, 0, 'codex 后端执行应成功');
+scripts\smoke-test.js:1377:  assert.equal(spawned.length, 1, 'codex 后端带 session id 应只 resume 一次');
+scripts\smoke-test.js:1378:  assert.equal(commandName(spawned[0].command), 'codex', 'codex 后端应调用 codex 命令');
+scripts\smoke-test.js:1379:  assert.ok(spawned[0].args.includes('resume'), 'codex 后端应使用 resume 参数复用 session');
+scripts\smoke-test.js:1380:  assert.equal(codexResult.resumed, true, 'codex 后端应复用传入的 session');
+scripts\smoke-test.js:1383:  const fallbackResult = await patchedLoop.runCodex(workspace, '执行 codex fallback 任务', 'execute-B002', {
+scripts\smoke-test.js:1387:    codexSessionId: fallbackSessionId,
+scripts\smoke-test.js:1389:  assert.equal(fallbackResult.exitCode, 0, 'codex resume 失败后应回退新建成功');
+scripts\smoke-test.js:1390:  assert.equal(spawned.length, 2, 'codex resume 失败后应先 resume 再新建');
+scripts\smoke-test.js:1393:    ['codex', 'codex'],
+scripts\smoke-test.js:1394:    'codex fallback 全程应使用 codex 命令',
+scripts\smoke-test.js:1396:  assert.ok(spawned[0].args.includes('resume'), 'codex fallback 第一次应尝试 resume');
+scripts\smoke-test.js:1397:  assert.ok(!spawned[1].args.includes('resume'), 'codex fallback 第二次应新建会话');
+scripts\smoke-test.js:1398:  assert.equal(fallbackResult.codexSessionId, fallbackNewSessionId, 'codex fallback 应记录新建 session id');
+scripts\smoke-test.js:1399:  assert.equal(fallbackResult.codexSessionFallback, true, 'codex fallback 结果应标记回退新建');
+scripts\smoke-test.js:1402:  const freshResult = await patchedLoop.runCodex(workspace, '执行 codex new 任务', 'execute-B003', {
+scripts\smoke-test.js:1407:  assert.equal(freshResult.exitCode, 0, 'codex 无 session 时应新建成功');
+scripts\smoke-test.js:1408:  assert.equal(spawned.length, 1, 'codex 无 session 时应只 spawn 一次');
+scripts\smoke-test.js:1409:  assert.equal(commandName(spawned[0].command), 'codex', 'codex 新建会话应调用 codex 命令');
+scripts\smoke-test.js:1410:  assert.ok(!spawned[0].args.includes('resume'), 'codex 无 session 时不应尝试 resume');
+scripts\smoke-test.js:1411:  assert.equal(freshResult.codexSessionId, freshSessionId, 'codex 新建会话应记录新 session id');
+scripts\smoke-test.js:1412:  assert.equal(freshResult.codexSessionMode, 'new', 'codex 新建会话应标记 new 模式');
+scripts\smoke-test.js:1421:    validationCommand: '',
+scripts\smoke-test.js:1422:    agentCliProvider: 'codex',
+scripts\smoke-test.js:1424:    codexReasoningEffort: 'medium',
+scripts\smoke-test.js:1429:  assert.equal(regressionState.agent_cli_provider, 'codex', 'P006 回归项目默认后端应为 codex');
+scripts\smoke-test.js:1430:  assert.equal(regressionState.validation_command, '', 'P006 回归项目验收命令应保持为空字符串');
+scripts\smoke-test.js:1481:  loop.configure(regressionProjectId, { validationCommand: 'flutter test' });
+scripts\smoke-test.js:1500:    loop.configure(regressionProjectId, { validationCommand: '' });
+scripts\smoke-test.js:1524:    agentCliProvider: 'codex',
+scripts\smoke-test.js:1526:    codexReasoningEffort: 'high',
+scripts\smoke-test.js:1532:  assert.equal(requirement.agent_cli_provider, 'codex', '需求单条配置应保存 codex 后端');
+scripts\smoke-test.js:1533:  assert.equal(requirement.codex_reasoning_effort, 'high', '需求单条配置应保存 Codex high 思考深度');
+scripts\smoke-test.js:1541:    codexReasoningEffort: 'high',
+scripts\smoke-test.js:1547:  assert.equal(feedback.agent_cli_provider, 'claude', '反馈单条配置应保存 claude 后端');
+scripts\smoke-test.js:1548:  assert.equal(feedback.codex_reasoning_effort, null, '反馈选择 Claude 时应忽略 Codex 思考深度');
+scripts\smoke-test.js:1551:  const codexSessionId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+scripts\smoke-test.js:1557:        output: commandName(command) === 'codex' ? `Session ID: ${codexSessionId}\n` : 'fake claude output\n',
+scripts\smoke-test.js:1589:  assert.equal(commandName(spawned[0].command), 'codex', 'Codex high 需求应调用 codex 命令');
+scripts\smoke-test.js:1594:  assert.equal(requirementEventMeta.agentCliProvider, 'codex', 'Codex high 需求事件应记录 codex 后端');
+scripts\smoke-test.js:1595:  assert.equal(requirementEventMeta.codexReasoningEffort, 'high', 'Codex high 需求事件应记录思考深度');
+scripts\smoke-test.js:1597:    provider: 'codex',
+scripts\smoke-test.js:1598:    command: 'codex',
+scripts\smoke-test.js:1603:    provider: 'codex',
+scripts\smoke-test.js:1604:    command: 'codex',
+scripts\smoke-test.js:1618:  assertNoSpawnArg(spawned, 'model_reasoning_effort', 'Claude 反馈不应携带 Codex 思考深度参数');
+scripts\smoke-test.js:1623:  assert.equal(feedbackEventMeta.codexReasoningEffort, undefined, 'Claude 反馈事件不应记录 Codex 思考深度');
+scripts\smoke-test.js:1640:  assert.match(typeSource, /interface Project[\s\S]*agent_cli_provider\?: AgentCliProvider;/, 'Project 类型应包含后端字段');
+scripts\smoke-test.js:1641:  assert.match(typeSource, /interface Project[\s\S]*codex_reasoning_effort\?: CodexReasoningEffort \| null;/, 'Project 类型应包含 Codex 思考深度字段');
+scripts\smoke-test.js:1642:  assert.match(typeSource, /interface ProjectState[\s\S]*agent_cli_provider\?: AgentCliProvider;/, 'ProjectState 类型应包含后端字段');
+scripts\smoke-test.js:1643:  assert.match(typeSource, /interface Plan[\s\S]*agent_cli_provider\?: AgentCliProvider \| null;/, 'Plan 类型应包含计划级后端字段');
+scripts\smoke-test.js:1644:  assert.match(typeSource, /interface Plan[\s\S]*codex_reasoning_effort\?: CodexReasoningEffort \| null;/, 'Plan 类型应包含计划级 Codex 思考深度字段');
+scripts\smoke-test.js:1647:  assert.match(typeSource, /interface CreateIntakeInput[\s\S]*codexReasoningEffort\?: CodexReasoningEffort;/, '创建需求/反馈输入类型应允许设置 Codex 思考深度');
+scripts\smoke-test.js:1650:  assert.match(typeSource, /interface LoopConfigInput[\s\S]*codexReasoningEffort\?: CodexReasoningEffort;/, '循环配置输入类型应允许设置 Codex 思考深度');
+scripts\smoke-test.js:1651:  assert.equal(formatPlanCliSummary({ agentCliProvider: 'codex', codexReasoningEffort: 'high' }), 'Codex CLI · 思考深度 high', '计划 CLI 文案应兼容驼峰字段');
+scripts\smoke-test.js:1652:  assert.equal(formatPlanCliSummary({ agent_cli_provider: 'claude', codex_reasoning_effort: 'high' }), 'Claude CLI', 'Claude 计划 CLI 文案不应展示 Codex 思考深度');
+scripts\smoke-test.js:1658:  assert.equal(plan.agent_cli_provider, expected.provider, `${label} 应记录 CLI 后端`);
+scripts\smoke-test.js:1659:  assert.equal(plan.agent_cli_command || '', expected.command || '', `${label} 应记录 CLI 命令快照`);
+scripts\smoke-test.js:1660:  assert.equal(plan.codex_reasoning_effort ?? null, expected.effort, `${label} 应记录 Codex 思考深度快照`);
+scripts\smoke-test.js:1682:    `model_reasoning_effort="${effort}"`,
+scripts\smoke-test.js:1683:    `${label} 应把思考深度转换为 Codex model_reasoning_effort 参数`,
+scripts\smoke-test.js:1716:    if (request === './codexActivity') return require('../src/codexActivity');
+src\codexActivity.js:2: * 移植自 run_advanced_plan_with_codex.dart 的 CodexActivityPrinter。
+src\codexActivity.js:3: * 从 codex 的 stdout 原始流中提取**人类可读的活动时间线**：
+src\codexActivity.js:5: * - 识别 codex/exec/thinking 等段落
+src\codexActivity.js:17:  'thinking', 'plan', 'running', 'exec', 'command', 'test', 'analyze',
+src\codexActivity.js:25:  'openai codex', 'workdir:', 'model:', 'provider:', 'approval:', 'sandbox:',
+src\codexActivity.js:26:  'reasoning effort:', 'reasoning summaries:', 'session id:', 'usage:',
+src\codexActivity.js:30:const MODEL_START_RE = /^(codex|exec|assistant|\*\*|Planning |我|正在|我会|先|接下来|完成|修改|运行)/;
+src\codexActivity.js:64:    if (['user', 'codex', 'exec', 'assistant', 'thinking', 'system', 'error'].includes(trimmed)) {
+src\codexActivity.js:70:      this.currentRole = trimmed === 'assistant' ? 'codex' : trimmed;
+src\codexActivity.js:120:    if (line === 'codex' || line === 'exec' || line === 'user') return true;
+src\database.js:46:        validation_command TEXT NOT NULL DEFAULT '',
+src\database.js:58:        agent_cli_provider TEXT,
+src\database.js:59:        agent_cli_command TEXT NOT NULL DEFAULT '',
+src\database.js:60:        codex_reasoning_effort TEXT,
+src\database.js:74:        agent_cli_provider TEXT,
+src\database.js:75:        agent_cli_command TEXT NOT NULL DEFAULT '',
+src\database.js:76:        codex_reasoning_effort TEXT,
+src\database.js:118:        agent_cli_provider TEXT,
+src\database.js:119:        agent_cli_command TEXT NOT NULL DEFAULT '',
+src\database.js:120:        codex_reasoning_effort TEXT,
+src\database.js:137:        codex_session_id TEXT,
+src\database.js:160:        validation_command TEXT NOT NULL DEFAULT '',
+src\database.js:167:        id, running, phase, workspace_path, interval_seconds, validation_command, updated_at
+src\database.js:173:    this.ensureColumn('requirements', 'agent_cli_provider', 'TEXT');
+src\database.js:174:    this.ensureColumn('requirements', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+src\database.js:175:    this.ensureColumn('requirements', 'codex_reasoning_effort', 'TEXT');
+src\database.js:178:    this.ensureColumn('feedback', 'agent_cli_provider', 'TEXT');
+src\database.js:179:    this.ensureColumn('feedback', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+src\database.js:180:    this.ensureColumn('feedback', 'codex_reasoning_effort', 'TEXT');
+src\database.js:183:    this.ensureColumn('plans', 'agent_cli_provider', 'TEXT');
+src\database.js:184:    this.ensureColumn('plans', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+src\database.js:185:    this.ensureColumn('plans', 'codex_reasoning_effort', 'TEXT');
+src\database.js:190:    this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+src\database.js:192:    this.ensureColumn('project_states', 'agent_cli_provider', "TEXT NOT NULL DEFAULT 'codex'");
+src\database.js:193:    this.ensureColumn('project_states', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+src\database.js:219:       (project_id, running, phase, interval_seconds, validation_command, last_issue_hash, last_error, updated_at)
+src\database.js:225:        legacyState.validation_command ?? '',
+src\loopService.js:7:const { CodexActivityPrinter } = require('./codexActivity');
+src\loopService.js:10:  codexNewSessionArgs,
+src\loopService.js:11:  codexResumeSessionArgs,
+src\loopService.js:38:const AGENT_CLI_PROVIDER_COLUMNS = Object.freeze(['agent_cli_provider', 'cli_provider', 'cli_backend']);
+src\loopService.js:39:const AGENT_CLI_COMMAND_COLUMNS = Object.freeze(['agent_cli_command', 'cli_command', 'cli_path']);
+src\loopService.js:41:  'codex_reasoning_effort',
+src\loopService.js:42:  'codexReasoningEffort',
+src\loopService.js:43:  'codex_thinking_depth',
+src\loopService.js:44:  'codexThinkingDepth',
+src\loopService.js:45:  'reasoning_effort',
+src\loopService.js:46:  'reasoningEffort',
+src\loopService.js:47:  'thinking_depth',
+src\loopService.js:48:  'thinkingDepth',
+src\loopService.js:54:  'agent_cli_provider',
+src\loopService.js:62:  'agent_cli_command',
+src\loopService.js:73:  'validationCommand',
+src\loopService.js:164:      validation_command: state.validation_command || '',
+src\loopService.js:165:      agent_cli_provider: agentCliConfig.provider,
+src\loopService.js:166:      agent_cli_command: agentCliConfig.command,
+src\loopService.js:183:       (project_id, running, phase, interval_seconds, validation_command, updated_at)
+src\loopService.js:228:      validation_command: state.validation_command ?? '',
+src\loopService.js:229:      agent_cli_provider: agentCliConfig.provider,
+src\loopService.js:230:      agent_cli_command: agentCliConfig.command,
+src\loopService.js:231:      codex_reasoning_effort: agentCliConfig.codexReasoningEffort,
+src\loopService.js:242:    const { workspacePath, intervalSeconds, validationCommand } = config;
+src\loopService.js:263:      ['validation_command', validationCommand ?? current.validation_command],
+src\loopService.js:413:      // 一次只生成一个计划（保持串行，避免 codex 并发），剩余等下一轮 timer
+src\loopService.js:630:       SET codex_session_id = ?, updated_at = ?
+src\loopService.js:681:  /** 中断某个 plan：停止正在执行的 codex 进程，未完成任务标记为 blocked，plan 标记为 interrupted */
+src\loopService.js:1003:  /** 为单条需求/反馈生成计划（调 codex），并回写 linked_plan_id。失败返回 null，下轮重试。 */
+src\loopService.js:1160:      `SELECT codex_session_id
+src\loopService.js:1164:         AND codex_session_id IS NOT NULL
+src\loopService.js:1165:         AND codex_session_id != ''
+src\loopService.js:1171:    return normalizeCodexSessionId(previousTask?.codex_session_id);
+src\loopService.js:1242:      ? codexSessionContextFields({
+src\loopService.js:1243:          codexSessionId: existingSessionId,
+src\loopService.js:1244:          codexSessionMode: existingSessionId ? 'resume' : 'new',
+src\loopService.js:1245:          codexSessionState: inheritedPlanSession ? 'plan-resume' : undefined,
+src\loopService.js:1292:        ...(isTaskCodexProvider && existingSessionId ? { codexSessionId: existingSessionId } : {}),
+src\loopService.js:1293:        ...(inheritedPlanSession ? { codexSessionState: 'plan-resume' } : {}),
+src\loopService.js:1320:        ...(result.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionContextFields(result) : {}),
+src\loopService.js:1338:      ...(result?.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionContextFields(result) : {}),
+src\loopService.js:1430:    const command = String(this.status(plan.project_id)?.validation_command || '').trim();
+src\loopService.js:1614:        ...(op.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionContextFields(op) : {}),
+src\loopService.js:1647:    if (!runtime) throw new Error('projectId is required for codex operations');
+src\loopService.js:1652:    const codexReasoningEffort = agentCliConfig.codexReasoningEffort;
+src\loopService.js:1668:      ...(isCodexProvider ? { codexReasoningEffort } : {}),
+src\loopService.js:1671:            codexSessionId: requestedSessionId || null,
+src\loopService.js:1672:            codexSessionRequestedId: requestedSessionId || null,
+src\loopService.js:1673:            codexSessionMode: requestedSessionId ? 'resume' : 'new',
+src\loopService.js:1674:            codexSessionState: requestedSessionId ? 'resume' : 'new',
+src\loopService.js:1700:      const codexSessionFields = isCodexProvider
+src\loopService.js:1701:        ? codexSessionContextFields({
+src\loopService.js:1702:            codexSessionId: sessionId,
+src\loopService.js:1703:            codexSessionRequestedId: requestedSessionId,
+src\loopService.js:1704:            codexSessionMode: mode,
+src\loopService.js:1705:            codexSessionFallback: mode === 'new' && Boolean(requestedSessionId),
+src\loopService.js:1716:        ...(isCodexProvider ? { codexReasoningEffort: activeOperation.codexReasoningEffort } : {}),
+src\loopService.js:1725:              codexSessionId: sessionId || null,
+src\loopService.js:1726:              codexSessionMode: mode,
+src\loopService.js:1730:        ...codexSessionFields,
+src\loopService.js:1735:        activeOperation.codexSessionMode = mode;
+src\loopService.js:1736:        activeOperation.codexSessionState = activeOperation.codexSessionFallback ? 'fallback-new' : mode;
+src\loopService.js:1737:        activeOperation.codexSessionId = mode === 'resume' ? requestedSessionId || null : capturedSessionId || null;
+src\loopService.js:1755:        codexArgs: args,
+src\loopService.js:1763:            activeOperation.codexSessionId = parsedSessionId;
+src\loopService.js:1778:        this.addEvent(projectIdForEmit, 'codex.session.resume.started', `尝试恢复 Codex 会话 ${shortCodexSessionId(requestedSessionId)}`, {
+src\loopService.js:1779:          ...codexSessionContextFields({
+src\loopService.js:1780:            codexSessionId: requestedSessionId,
+src\loopService.js:1781:            codexSessionRequestedId: requestedSessionId,
+src\loopService.js:1782:            codexSessionMode: 'resume',
+src\loopService.js:1789:        const resume = await runAttempt(codexResumeSessionArgs(requestedSessionId, lastFile, { reasoningEffort: codexReasoningEffort }), 'resume');
+src\loopService.js:1793:        this.addEvent(projectIdForEmit, 'codex.session.resume.failed', `恢复 Codex 会话失败，已回退新建：${shortCodexSessionId(requestedSessionId)}`, {
+src\loopService.js:1794:          ...codexSessionContextFields({
+src\loopService.js:1795:            codexSessionRequestedId: requestedSessionId,
+src\loopService.js:1796:            codexSessionMode: 'new',
+src\loopService.js:1797:            codexSessionState: 'fallback-new',
+src\loopService.js:1798:            codexSessionFallback: true,
+src\loopService.js:1807:        activeOperation.codexSessionFallback = true;
+src\loopService.js:1808:        activeOperation.codexSessionRequestedId = requestedSessionId;
+src\loopService.js:1809:        activeOperation.codexSessionId = null;
+src\loopService.js:1810:        activeOperation.codexSessionMode = 'new';
+src\loopService.js:1811:        activeOperation.codexSessionState = 'fallback-new';
+src\loopService.js:1814:        this.addEvent(projectIdForEmit, 'codex.session.resume.skipped', 'Codex session id 为空，已新建会话', {
+src\loopService.js:1815:          ...codexSessionContextFields({ codexSessionMode: 'new' }),
+src\loopService.js:1824:      const fresh = await runAttempt(codexNewSessionArgs(workspace, lastFile, { reasoningEffort: codexReasoningEffort }), 'new');
+src\loopService.js:2045:      ? codexSessionContextFields({
+src\loopService.js:2046:          codexSessionId: meta.codexSessionId ?? meta.codex_session_id ?? meta.sessionId ?? task?.codex_session_id,
+src\loopService.js:2047:          codexSessionRequestedId: meta.codexSessionRequestedId,
+src\loopService.js:2048:          codexSessionMode: meta.codexSessionMode,
+src\loopService.js:2049:          codexSessionState: meta.codexSessionState,
+src\loopService.js:2050:          codexSessionFallback: meta.codexSessionFallback,
+src\loopService.js:2063:  meta.codexReasoningEffort = meta.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER
+src\loopService.js:2064:    ? normalizeOptionalCodexReasoningEffort(meta.codexReasoningEffort)
+src\loopService.js:2086:  const codexContext = meta?.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionReadableLabel(meta) : '';
+src\loopService.js:2087:  const reasoningContext = meta?.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER && meta?.codexReasoningEffort
+src\loopService.js:2088:    ? `思考深度 ${meta.codexReasoningEffort}`
+src\loopService.js:2090:  const contexts = [providerContext, reasoningContext, codexContext].filter(Boolean).join(' · ');
+src\loopService.js:2140:    codexReasoningEffort: provider === DEFAULT_AGENT_CLI_PROVIDER
+src\loopService.js:2165:  const codexReasoningEffort = provider === 'claude'
+src\loopService.js:2171:    codexReasoningEffort,
+src\loopService.js:2180:  const codexReasoningEffort = provider === DEFAULT_AGENT_CLI_PROVIDER
+src\loopService.js:2181:    ? overrideConfig.codexReasoningEffort || defaultConfig.codexReasoningEffort || DEFAULT_CODEX_REASONING_EFFORT
+src\loopService.js:2183:  return { provider, command, codexReasoningEffort };
+src\loopService.js:2202:    codexReasoningEffort: config.provider === DEFAULT_AGENT_CLI_PROVIDER ? config.codexReasoningEffort : undefined,
+src\loopService.js:2214:  const codexReasoningEffort = provider === DEFAULT_AGENT_CLI_PROVIDER || (!provider && hasAnyOwnProperty(input, CODEX_REASONING_EFFORT_COLUMNS))
+src\loopService.js:2221:  return { provider, command, codexReasoningEffort };
+src\loopService.js:2228:    agent_cli_provider: config.provider,
+src\loopService.js:2229:    agent_cli_command: config.command,
+src\loopService.js:2230:    codex_reasoning_effort: config.codexReasoningEffort,
+src\loopService.js:2242:  const codexReasoningEffort = provider === DEFAULT_AGENT_CLI_PROVIDER
+src\loopService.js:2246:          : currentConfig.codexReasoningEffort,
+src\loopService.js:2249:  return { provider, command, codexReasoningEffort };
+src\loopService.js:2261:    if (columns.has(column)) updates.push([column, config.codexReasoningEffort]);
+src\loopService.js:2276:    if (columns.has(column)) values.push([column, fields.codexReasoningEffort || null]);
+src\loopService.js:2301:    codexReasoningEffort: provider === DEFAULT_AGENT_CLI_PROVIDER
+src\loopService.js:2341:    ...codexSessionContextFields(operation),
+src\loopService.js:2361:    ...(agentContext.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionContextFields(operation) : {}),
+src\loopService.js:2365:function codexSessionContextFields(source = {}) {
+src\loopService.js:2367:  const requestedSessionId = normalizeCodexSessionId(source.codexSessionRequestedId ?? source.requestedSessionId);
+src\loopService.js:2368:  const mode = normalizeCodexSessionMode(source.codexSessionMode);
+src\loopService.js:2369:  const fallback = Boolean(source.codexSessionFallback);
+src\loopService.js:2370:  const state = normalizeOptionalString(source.codexSessionState) || (fallback ? 'fallback-new' : mode);
+src\loopService.js:2371:  const label = codexSessionReadableLabel({
+src\loopService.js:2372:    codexSessionId: sessionId,
+src\loopService.js:2373:    codexSessionRequestedId: requestedSessionId,
+src\loopService.js:2374:    codexSessionMode: mode,
+src\loopService.js:2375:    codexSessionState: state,
+src\loopService.js:2376:    codexSessionFallback: fallback,
+src\loopService.js:2379:    codexSessionId: sessionId || undefined,
+src\loopService.js:2380:    codexSessionShortId: sessionId ? shortCodexSessionId(sessionId) : undefined,
+src\loopService.js:2381:    codexSessionMode: mode || undefined,
+src\loopService.js:2382:    codexSessionState: state || undefined,
+src\loopService.js:2383:    codexSessionLabel: label || undefined,
+src\loopService.js:2384:    codexSessionRequestedId: requestedSessionId || undefined,
+src\loopService.js:2385:    codexSessionRequestedShortId: requestedSessionId ? shortCodexSessionId(requestedSessionId) : undefined,
+src\loopService.js:2386:    codexSessionFallback: fallback || undefined,
+src\loopService.js:2392:    'codexSessionId',
+src\loopService.js:2394:    'codex_session_id',
+src\loopService.js:2395:    'codexSessionRequestedId',
+src\loopService.js:2397:    'codexSessionMode',
+src\loopService.js:2398:    'codexSessionState',
+src\loopService.js:2399:    'codexSessionFallback',
+src\loopService.js:2411:function codexSessionReadableLabel(source = {}) {
+src\loopService.js:2412:  const explicit = normalizeOptionalString(source.codexSessionLabel);
+src\loopService.js:2415:  const requestedSessionId = normalizeCodexSessionId(source.codexSessionRequestedId ?? source.requestedSessionId);
+src\loopService.js:2418:  const mode = normalizeCodexSessionMode(source.codexSessionMode);
+src\loopService.js:2419:  const state = normalizeOptionalString(source.codexSessionState);
+src\loopService.js:2420:  if (state === 'fallback-new' || source.codexSessionFallback) {
+src\loopService.js:2437:  const providerForSession = agentContext.agentCliProvider || (task.codex_session_id ? DEFAULT_AGENT_CLI_PROVIDER : undefined);
+src\loopService.js:2440:    : codexSessionContextFields({
+src\loopService.js:2441:        codexSessionId: operationContext?.codexSessionId ?? task.codex_session_id,
+src\loopService.js:2442:        codexSessionRequestedId: operationContext?.codexSessionRequestedId,
+src\loopService.js:2443:        codexSessionMode: operationContext?.codexSessionMode,
+src\loopService.js:2444:        codexSessionState: operationContext?.codexSessionState,
+src\loopService.js:2445:        codexSessionFallback: operationContext?.codexSessionFallback,
+src\loopService.js:2530:    agent_cli_provider: planAgentCliConfig.provider,
+src\loopService.js:2531:    agent_cli_command: planAgentCliConfig.command,
+src\loopService.js:2532:    codex_reasoning_effort: planAgentCliConfig.codexReasoningEffort,
+src\loopService.js:2686:  return ['codexSessionId', 'sessionId', 'codex_session_id'].some((key) => Object.prototype.hasOwnProperty.call(operation, key));
+src\loopService.js:2690:  return normalizeCodexSessionId(operation.codexSessionId ?? operation.sessionId ?? operation.codex_session_id);
+src\main.js:173:       project_id, title, body, status, agent_cli_provider, agent_cli_command, codex_reasoning_effort, created_at, updated_at
+src\main.js:182:      agentCliConfig.codexReasoningEffort,
+src\main.js:201:     SET title = ?, body = ?, status = ?, agent_cli_provider = ?, agent_cli_command = ?, codex_reasoning_effort = ?, updated_at = ?
+src\main.js:209:      agentCliConfig.codexReasoningEffort,
+src\main.js:234:       project_id, requirement_id, title, body, status, agent_cli_provider, agent_cli_command, codex_reasoning_effort, created_at, updated_at
+src\main.js:244:      agentCliConfig.codexReasoningEffort,
+src\main.js:263:     SET requirement_id = ?, title = ?, body = ?, status = ?, agent_cli_provider = ?, agent_cli_command = ?, codex_reasoning_effort = ?, updated_at = ?
+src\main.js:272:      agentCliConfig.codexReasoningEffort,
+src\styles.css:457:.overview-main-column > .live-log-card .codex-log { flex: 1 1 auto; min-height: 0; max-height: none; }
+src\styles.css:472:.codex-log {
+src\styles.css:479:.codex-raw { margin: 0; white-space: pre-wrap; word-break: break-word; color: #8a96b0; padding: 8px; }
+src\styles.css:495:.act-codex .act-tag { background: rgba(109,93,252,0.3); color: #c4b8ff; }
+src\styles.css:496:.act-codex .act-text { color: #e0e6ff; }
+src\styles.css:499:.act-thinking .act-tag { background: rgba(224,134,0,0.3); color: #ffc878; }
+src\styles.css:500:.act-thinking .act-text { color: #d8b878; font-style: italic; }
+src\renderer\types.ts:3:export type AgentCliProvider = 'codex' | 'claude' | string;
+src\renderer\types.ts:12:  agent_cli_provider?: AgentCliProvider | null;
+src\renderer\types.ts:19:  agent_cli_command?: string | null;
+src\renderer\types.ts:26:  codex_reasoning_effort?: CodexReasoningEffort | null;
+src\renderer\types.ts:27:  codexReasoningEffort?: CodexReasoningEffort | null;
+src\renderer\types.ts:28:  codex_thinking_depth?: CodexReasoningEffort | null;
+src\renderer\types.ts:29:  codexThinkingDepth?: CodexReasoningEffort | null;
+src\renderer\types.ts:30:  reasoning_effort?: CodexReasoningEffort | null;
+src\renderer\types.ts:31:  reasoningEffort?: CodexReasoningEffort | null;
+src\renderer\types.ts:32:  thinking_depth?: CodexReasoningEffort | null;
+src\renderer\types.ts:33:  thinkingDepth?: CodexReasoningEffort | null;
+src\renderer\types.ts:123:  validation_command?: string;
+src\renderer\types.ts:124:  agent_cli_provider?: AgentCliProvider;
+src\renderer\types.ts:125:  agent_cli_command?: string;
+src\renderer\types.ts:126:  codex_reasoning_effort?: CodexReasoningEffort | null;
+src\renderer\types.ts:134:  validation_command: string;
+src\renderer\types.ts:137:  agent_cli_provider?: AgentCliProvider;
+src\renderer\types.ts:138:  agent_cli_command?: string;
+src\renderer\types.ts:139:  codex_reasoning_effort?: CodexReasoningEffort | null;
+src\renderer\types.ts:153:  agent_cli_provider?: AgentCliProvider | null;
+src\renderer\types.ts:154:  agent_cli_command?: string;
+src\renderer\types.ts:155:  codex_reasoning_effort?: CodexReasoningEffort | null;
+src\renderer\types.ts:171:  agent_cli_provider?: AgentCliProvider | null;
+src\renderer\types.ts:172:  agent_cli_command?: string;
+src\renderer\types.ts:173:  codex_reasoning_effort?: CodexReasoningEffort | null;
+src\renderer\types.ts:206:  agent_cli_provider?: AgentCliProvider | null;
+src\renderer\types.ts:207:  agent_cli_command?: string;
+src\renderer\types.ts:208:  codex_reasoning_effort?: CodexReasoningEffort | null;
+src\renderer\types.ts:272:  codexSessionId?: string | null;
+src\renderer\types.ts:273:  codexSessionShortId?: string | null;
+src\renderer\types.ts:274:  codexSessionMode?: CodexSessionMode | null;
+src\renderer\types.ts:275:  codexSessionState?: CodexSessionState | null;
+src\renderer\types.ts:276:  codexSessionLabel?: string | null;
+src\renderer\types.ts:277:  codexSessionRequestedId?: string | null;
+src\renderer\types.ts:278:  codexSessionRequestedShortId?: string | null;
+src\renderer\types.ts:279:  codexSessionFallback?: boolean | null;
+src\renderer\types.ts:296:  codex_session_id: string | null;
+src\renderer\types.ts:299:  codexReasoningEffort?: CodexReasoningEffort | null;
+src\renderer\types.ts:369:  codexReasoningEffort?: CodexReasoningEffort | null;
+src\renderer\types.ts:425:  codexReasoningEffort?: CodexReasoningEffort | null;
+src\renderer\types.ts:476:  codexReasoningEffort?: CodexReasoningEffort;
+src\renderer\types.ts:485:  codexReasoningEffort?: CodexReasoningEffort;
+src\renderer\types.ts:496:  validationCommand?: string;
+src\renderer\types.ts:499:  codexReasoningEffort?: CodexReasoningEffort;
+src\renderer\types.ts:532:  codexReasoningEffort?: CodexReasoningEffort;
+src\renderer\components\CodexLog.tsx:9:  codex: { label: 'Codex', cls: 'act-codex' },
+src\renderer\components\CodexLog.tsx:11:  thinking: { label: '思考', cls: 'act-thinking' },
+src\renderer\components\CodexLog.tsx:54:  const contextLabel = providerLabel === 'Codex' ? codexContextLabel(context) : '';
+src\renderer\components\CodexLog.tsx:110:    <pre className="codex-raw">{rawLogText}</pre>
+src\renderer\components\CodexLog.tsx:114:    <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+src\renderer\components\CodexLog.tsx:124:  if (role === 'codex' || role === 'assistant') {
+src\renderer\components\CodexLog.tsx:125:    return { ...ROLE_CONFIG.codex, label: providerLabel };
+src\renderer\components\CodexLog.tsx:130:function codexContextLabel(context?: CodexSessionInfo | null) {
+src\renderer\components\CodexLog.tsx:132:  const explicit = context.codexSessionLabel?.trim();
+src\renderer\components\CodexLog.tsx:134:  const requested = context.codexSessionRequestedShortId || shortCodexSessionId(context.codexSessionRequestedId);
+src\renderer\components\CodexLog.tsx:135:  const current = context.codexSessionShortId || shortCodexSessionId(context.codexSessionId);
+src\renderer\components\CodexLog.tsx:136:  if (context.codexSessionFallback || context.codexSessionState === 'fallback-new') {
+src\renderer\components\CodexLog.tsx:141:  if (context.codexSessionMode === 'resume') return current ? `恢复会话 ${current}` : '恢复会话';
+src\renderer\components\CodexLog.tsx:142:  if (context.codexSessionMode === 'new') return current ? `新建会话 ${current}` : '新建会话';
+src\renderer\pages\ProjectsPage.tsx:11:const emptyDraft: Draft = { name: '', workspacePath: '', description: '', agentCliProvider: 'codex' };
+src\renderer\pages\ProjectsPage.tsx:49:      agentCliProvider: project.agent_cli_provider || 'codex',
+src\renderer\pages\ProjectsPage.tsx:50:      agentCliCommand: project.agent_cli_command || '',
+src\renderer\pages\ProjectsPage.tsx:60:      const agentCliProvider = draft.agentCliProvider || 'codex';
+src\renderer\pages\ProjectsPage.tsx:204:                  <span className="project-cli-badge">{agentCliProviderLabel(project.agent_cli_provider)}</span>
+src\renderer\pages\ProjectsPage.tsx:258:                  <option value="codex">Codex CLI</option>
+src\renderer\components\Composer.tsx:21:  reasoningOptions: AgentCliOption[];
+src\renderer\components\Composer.tsx:22:  reasoningByType: Record<IntakeType, CodexReasoningEffort>;
+src\renderer\components\Composer.tsx:181:                    value={cliSelection.reasoningByType[type] || cliSelection.reasoningOptions[1]?.value || 'medium'}
+src\renderer\components\Composer.tsx:184:                    {cliSelection.reasoningOptions.map((option) => (
+src\renderer\pages\WorkspacePage.tsx:28:import { getFilePath, toSafeFileUrl, agentCliProviderLabel, codexReasoningEffortLabel } from '../components/shared';
+src\renderer\pages\WorkspacePage.tsx:38:  { value: 'codex', label: 'Codex CLI' },
+src\renderer\pages\WorkspacePage.tsx:42:const codexReasoningOptions: AgentCliOption[] = [
+src\renderer\pages\WorkspacePage.tsx:51:  requirement: 'codex',
+src\renderer\pages\WorkspacePage.tsx:52:  feedback: 'codex',
+src\renderer\pages\WorkspacePage.tsx:74:  validationCommand: string;
+src\renderer\pages\WorkspacePage.tsx:77:  codexReasoningEffort: CodexReasoningEffort;
+src\renderer\pages\WorkspacePage.tsx:211:    validationCommand: '',
+src\renderer\pages\WorkspacePage.tsx:212:    agentCliProvider: 'codex',
+src\renderer\pages\WorkspacePage.tsx:214:    codexReasoningEffort: defaultCodexReasoningEffort,
+src\renderer\pages\WorkspacePage.tsx:243:    () => filteredItems.tasks.map((task) => withTaskCliProviderTitle(task, state?.agent_cli_provider)),
+src\renderer\pages\WorkspacePage.tsx:244:    [filteredItems.tasks, state?.agent_cli_provider],
+src\renderer\pages\WorkspacePage.tsx:264:    const defaultProvider = state.agent_cli_provider || 'codex';
+src\renderer\pages\WorkspacePage.tsx:265:    const defaultReasoning = normalizeCodexReasoningEffort(state.codex_reasoning_effort);
+src\renderer\pages\WorkspacePage.tsx:269:      validationCommand: state.validation_command || '',
+src\renderer\pages\WorkspacePage.tsx:271:      agentCliCommand: state.agent_cli_command || '',
+src\renderer\pages\WorkspacePage.tsx:272:      codexReasoningEffort: defaultReasoning,
+src\renderer\pages\WorkspacePage.tsx:274:  }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
+src\renderer\pages\WorkspacePage.tsx:277:    const defaultProvider = state?.agent_cli_provider || 'codex';
+src\renderer\pages\WorkspacePage.tsx:278:    const defaultReasoning = normalizeCodexReasoningEffort(state?.codex_reasoning_effort);
+src\renderer\pages\WorkspacePage.tsx:287:  }, [projectId, state?.agent_cli_provider, state?.codex_reasoning_effort]);
+src\renderer\pages\WorkspacePage.tsx:293:      reasoningOptions: codexReasoningOptions,
+src\renderer\pages\WorkspacePage.tsx:294:      reasoningByType: composerCodexReasoning,
+src\renderer\pages\WorkspacePage.tsx:372:            : { codexReasoningEffort: composerCodexReasoning.requirement }),
+src\renderer\pages\WorkspacePage.tsx:397:            : { codexReasoningEffort: composerCodexReasoning.feedback }),
+src\renderer\pages\WorkspacePage.tsx:482:        validationCommand: loopForm.validationCommand,
+src\renderer\pages\WorkspacePage.tsx:483:        agentCliProvider: loopForm.agentCliProvider || 'codex',
+src\renderer\pages\WorkspacePage.tsx:487:          : { codexReasoningEffort: loopForm.codexReasoningEffort }),
+src\renderer\pages\WorkspacePage.tsx:911:          {state?.validation_command ? ` · ${state.validation_command}` : ' · 无验收命令'}
+src\renderer\pages\WorkspacePage.tsx:1051:  const provider = state?.agent_cli_provider || 'codex';
+src\renderer\pages\WorkspacePage.tsx:1054:  return `${providerLabel} · 思考${codexReasoningEffortLabel(state?.codex_reasoning_effort)}`;
+src\renderer\pages\WorkspacePage.tsx:1103:            value={loopForm.validationCommand}
+src\renderer\pages\WorkspacePage.tsx:1104:            onChange={(event) => setLoopForm((current) => ({ ...current, validationCommand: event.target.value }))}
+src\renderer\pages\WorkspacePage.tsx:1114:            <option value="codex">Codex CLI</option>
+src\renderer\pages\WorkspacePage.tsx:1125:              value={loopForm.codexReasoningEffort}
+src\renderer\pages\WorkspacePage.tsx:1129:                  codexReasoningEffort: normalizeCodexReasoningEffort(event.target.value),
+src\renderer\pages\WorkspacePage.tsx:1133:              {codexReasoningOptions.map((option) => (
+src\renderer\pages\WorkspacePage.tsx:1153:            placeholder={loopForm.agentCliProvider === 'claude' ? 'claude' : 'codex'}
+src\renderer\pages\WorkspacePage.tsx:1217:  const operationProvider = operation?.agentCliProvider || state?.agent_cli_provider;
+src\renderer\pages\WorkspacePage.tsx:1220:    ? `思考${codexReasoningEffortLabel(operation?.codexReasoningEffort || state?.codex_reasoning_effort)}`
+src\renderer\pages\WorkspacePage.tsx:1222:  const operationSessionLabel = operationProviderLabel === 'Codex' ? operation?.codexSessionLabel : '';
+src\renderer\pages\WorkspacePage.tsx:1249:          value={agentCliProviderLabel(state?.agent_cli_provider)}
+src\renderer\pages\WorkspacePage.tsx:1251:          sub={state?.agent_cli_provider === 'claude' ? `间隔 ${state?.interval_seconds || 5}s` : `思考${codexReasoningEffortLabel(state?.codex_reasoning_effort)} · 间隔 ${state?.interval_seconds || 5}s`}
+src\renderer\components\PlanLists.tsx:6:import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
+src\renderer\components\PlanLists.tsx:302:  const agentCliProvider = readMetaText(meta, ['agentCliProvider', 'agent_cli_provider']);
+src\renderer\components\PlanLists.tsx:303:  const codexReasoningEffort = readMetaText(meta, [
+src\renderer\components\PlanLists.tsx:304:    'codexReasoningEffort',
+src\renderer\components\PlanLists.tsx:305:    'codex_reasoning_effort',
+src\renderer\components\PlanLists.tsx:306:    'codexThinkingDepth',
+src\renderer\components\PlanLists.tsx:307:    'codex_thinking_depth',
+src\renderer\components\PlanLists.tsx:308:    'reasoningEffort',
+src\renderer\components\PlanLists.tsx:309:    'reasoning_effort',
+src\renderer\components\PlanLists.tsx:310:    'thinkingDepth',
+src\renderer\components\PlanLists.tsx:311:    'thinking_depth',
+src\renderer\components\PlanLists.tsx:318:    agentCliProvider !== 'claude' && codexReasoningEffort ? `思考深度 ${codexReasoningEffortLabel(codexReasoningEffort)}` : '',
+src\renderer\components\shared.tsx:41:  if (value && value !== 'codex') return value;
+src\renderer\components\shared.tsx:45:export function codexReasoningEffortLabel(effort?: string | null): string {
+src\renderer\components\shared.tsx:57:  return `${providerLabel} · 思考深度 ${codexReasoningEffortLabel(effort)}`;
+src\renderer\components\shared.tsx:62:    'agent_cli_provider',
+src\renderer\components\shared.tsx:76:    'codex_reasoning_effort',
+src\renderer\components\shared.tsx:77:    'codexReasoningEffort',
+src\renderer\components\shared.tsx:78:    'codex_thinking_depth',
+src\renderer\components\shared.tsx:79:    'codexThinkingDepth',
+src\renderer\components\shared.tsx:80:    'reasoning_effort',
+src\renderer\components\shared.tsx:81:    'reasoningEffort',
+src\renderer\components\shared.tsx:82:    'thinking_depth',
+src\renderer\components\shared.tsx:83:    'thinkingDepth',
+src\renderer\components\shared.tsx:99:  if (value && value !== 'codex') return value;
+src\renderer\components\shared.tsx:100:  return 'codex';
+
+codex
+定位到配置表单和主进程链路了；再看关键片段，避免 scope 写偏。
+exec
+powershell.exe -Command "rg -n \"function configure|configure\\(|setLoopForm|loopForm|validationCommand|codexReasoningEffort|codex_reasoning_effort\" src\\main.js src\\database.js src\\loopService.js src\\renderer\\pages\\WorkspacePage.tsx src\\renderer\\types.ts src\\preload.js" in D:\project\GitHub\autoplan
+ succeeded in 196ms:
+src\database.js:60:        codex_reasoning_effort TEXT,
+src\database.js:76:        codex_reasoning_effort TEXT,
+src\database.js:120:        codex_reasoning_effort TEXT,
+src\database.js:175:    this.ensureColumn('requirements', 'codex_reasoning_effort', 'TEXT');
+src\database.js:180:    this.ensureColumn('feedback', 'codex_reasoning_effort', 'TEXT');
+src\database.js:185:    this.ensureColumn('plans', 'codex_reasoning_effort', 'TEXT');
+src\renderer\types.ts:26:  codex_reasoning_effort?: CodexReasoningEffort | null;
+src\renderer\types.ts:27:  codexReasoningEffort?: CodexReasoningEffort | null;
+src\renderer\types.ts:126:  codex_reasoning_effort?: CodexReasoningEffort | null;
+src\renderer\types.ts:139:  codex_reasoning_effort?: CodexReasoningEffort | null;
+src\renderer\types.ts:155:  codex_reasoning_effort?: CodexReasoningEffort | null;
+src\renderer\types.ts:173:  codex_reasoning_effort?: CodexReasoningEffort | null;
+src\renderer\types.ts:208:  codex_reasoning_effort?: CodexReasoningEffort | null;
+src\renderer\types.ts:299:  codexReasoningEffort?: CodexReasoningEffort | null;
+src\renderer\types.ts:369:  codexReasoningEffort?: CodexReasoningEffort | null;
+src\renderer\types.ts:425:  codexReasoningEffort?: CodexReasoningEffort | null;
+src\renderer\types.ts:476:  codexReasoningEffort?: CodexReasoningEffort;
+src\renderer\types.ts:485:  codexReasoningEffort?: CodexReasoningEffort;
+src\renderer\types.ts:496:  validationCommand?: string;
+src\renderer\types.ts:499:  codexReasoningEffort?: CodexReasoningEffort;
+src\renderer\types.ts:532:  codexReasoningEffort?: CodexReasoningEffort;
+src\renderer\pages\WorkspacePage.tsx:28:import { getFilePath, toSafeFileUrl, agentCliProviderLabel, codexReasoningEffortLabel } from '../components/shared';
+src\renderer\pages\WorkspacePage.tsx:74:  validationCommand: string;
+src\renderer\pages\WorkspacePage.tsx:77:  codexReasoningEffort: CodexReasoningEffort;
+src\renderer\pages\WorkspacePage.tsx:208:  const [loopForm, setLoopForm] = useState<LoopFormState>({
+src\renderer\pages\WorkspacePage.tsx:211:    validationCommand: '',
+src\renderer\pages\WorkspacePage.tsx:214:    codexReasoningEffort: defaultCodexReasoningEffort,
+src\renderer\pages\WorkspacePage.tsx:265:    const defaultReasoning = normalizeCodexReasoningEffort(state.codex_reasoning_effort);
+src\renderer\pages\WorkspacePage.tsx:266:    setLoopForm({
+src\renderer\pages\WorkspacePage.tsx:269:      validationCommand: state.validation_command || '',
+src\renderer\pages\WorkspacePage.tsx:272:      codexReasoningEffort: defaultReasoning,
+src\renderer\pages\WorkspacePage.tsx:274:  }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
+src\renderer\pages\WorkspacePage.tsx:278:    const defaultReasoning = normalizeCodexReasoningEffort(state?.codex_reasoning_effort);
+src\renderer\pages\WorkspacePage.tsx:287:  }, [projectId, state?.agent_cli_provider, state?.codex_reasoning_effort]);
+src\renderer\pages\WorkspacePage.tsx:372:            : { codexReasoningEffort: composerCodexReasoning.requirement }),
+src\renderer\pages\WorkspacePage.tsx:397:            : { codexReasoningEffort: composerCodexReasoning.feedback }),
+src\renderer\pages\WorkspacePage.tsx:480:        workspacePath: loopForm.workspacePath,
+src\renderer\pages\WorkspacePage.tsx:481:        intervalSeconds: Number(loopForm.intervalSeconds || 5),
+src\renderer\pages\WorkspacePage.tsx:482:        validationCommand: loopForm.validationCommand,
+src\renderer\pages\WorkspacePage.tsx:483:        agentCliProvider: loopForm.agentCliProvider || 'codex',
+src\renderer\pages\WorkspacePage.tsx:484:        agentCliCommand: loopForm.agentCliCommand.trim(),
+src\renderer\pages\WorkspacePage.tsx:485:        ...(loopForm.agentCliProvider === 'claude'
+src\renderer\pages\WorkspacePage.tsx:487:          : { codexReasoningEffort: loopForm.codexReasoningEffort }),
+src\renderer\pages\WorkspacePage.tsx:803:              loopForm={loopForm}
+src\renderer\pages\WorkspacePage.tsx:805:              setLoopForm={setLoopForm}
+src\renderer\pages\WorkspacePage.tsx:1054:  return `${providerLabel} · 思考${codexReasoningEffortLabel(state?.codex_reasoning_effort)}`;
+src\renderer\pages\WorkspacePage.tsx:1058:  loopForm,
+src\renderer\pages\WorkspacePage.tsx:1060:  setLoopForm,
+src\renderer\pages\WorkspacePage.tsx:1066:  loopForm: LoopFormState;
+src\renderer\pages\WorkspacePage.tsx:1068:  setLoopForm: Dispatch<SetStateAction<LoopFormState>>;
+src\renderer\pages\WorkspacePage.tsx:1074:  const isCodexProvider = loopForm.agentCliProvider !== 'claude';
+src\renderer\pages\WorkspacePage.tsx:1086:            value={loopForm.workspacePath}
+src\renderer\pages\WorkspacePage.tsx:1087:            onChange={(event) => setLoopForm((current) => ({ ...current, workspacePath: event.target.value }))}
+src\renderer\pages\WorkspacePage.tsx:1096:            value={loopForm.intervalSeconds}
+src\renderer\pages\WorkspacePage.tsx:1097:            onChange={(event) => setLoopForm((current) => ({ ...current, intervalSeconds: event.target.value }))}
+src\renderer\pages\WorkspacePage.tsx:1103:            value={loopForm.validationCommand}
+src\renderer\pages\WorkspacePage.tsx:1104:            onChange={(event) => setLoopForm((current) => ({ ...current, validationCommand: event.target.value }))}
+src\renderer\pages\WorkspacePage.tsx:1111:            value={loopForm.agentCliProvider}
+src\renderer\pages\WorkspacePage.tsx:1112:            onChange={(event) => setLoopForm((current) => ({ ...current, agentCliProvider: event.target.value }))}
+src\renderer\pages\WorkspacePage.tsx:1117:          {loopForm.agentCliProvider === 'claude' ? (
+src\renderer\pages\WorkspacePage.tsx:1125:              value={loopForm.codexReasoningEffort}
+src\renderer\pages\WorkspacePage.tsx:1127:                setLoopForm((current) => ({
+src\renderer\pages\WorkspacePage.tsx:1129:                  codexReasoningEffort: normalizeCodexReasoningEffort(event.target.value),
+src\renderer\pages\WorkspacePage.tsx:1151:            value={loopForm.agentCliCommand}
+src\renderer\pages\WorkspacePage.tsx:1152:            onChange={(event) => setLoopForm((current) => ({ ...current, agentCliCommand: event.target.value }))}
+src\renderer\pages\WorkspacePage.tsx:1153:            placeholder={loopForm.agentCliProvider === 'claude' ? 'claude' : 'codex'}
+src\renderer\pages\WorkspacePage.tsx:1220:    ? `思考${codexReasoningEffortLabel(operation?.codexReasoningEffort || state?.codex_reasoning_effort)}`
+src\renderer\pages\WorkspacePage.tsx:1251:          sub={state?.agent_cli_provider === 'claude' ? `间隔 ${state?.interval_seconds || 5}s` : `思考${codexReasoningEffortLabel(state?.codex_reasoning_effort)} · 间隔 ${state?.interval_seconds || 5}s`}
+src\loopService.js:41:  'codex_reasoning_effort',
+src\loopService.js:42:  'codexReasoningEffort',
+src\loopService.js:73:  'validationCommand',
+src\loopService.js:231:      codex_reasoning_effort: agentCliConfig.codexReasoningEffort,
+src\loopService.js:241:  configure(projectId, config = {}) {
+src\loopService.js:242:    const { workspacePath, intervalSeconds, validationCommand } = config;
+src\loopService.js:263:      ['validation_command', validationCommand ?? current.validation_command],
+src\loopService.js:1652:    const codexReasoningEffort = agentCliConfig.codexReasoningEffort;
+src\loopService.js:1668:      ...(isCodexProvider ? { codexReasoningEffort } : {}),
+src\loopService.js:1716:        ...(isCodexProvider ? { codexReasoningEffort: activeOperation.codexReasoningEffort } : {}),
+src\loopService.js:1789:        const resume = await runAttempt(codexResumeSessionArgs(requestedSessionId, lastFile, { reasoningEffort: codexReasoningEffort }), 'resume');
+src\loopService.js:1824:      const fresh = await runAttempt(codexNewSessionArgs(workspace, lastFile, { reasoningEffort: codexReasoningEffort }), 'new');
+src\loopService.js:2063:  meta.codexReasoningEffort = meta.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER
+src\loopService.js:2064:    ? normalizeOptionalCodexReasoningEffort(meta.codexReasoningEffort)
+src\loopService.js:2087:  const reasoningContext = meta?.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER && meta?.codexReasoningEffort
+src\loopService.js:2088:    ? `思考深度 ${meta.codexReasoningEffort}`
+src\loopService.js:2140:    codexReasoningEffort: provider === DEFAULT_AGENT_CLI_PROVIDER
+src\loopService.js:2165:  const codexReasoningEffort = provider === 'claude'
+src\loopService.js:2171:    codexReasoningEffort,
+src\loopService.js:2180:  const codexReasoningEffort = provider === DEFAULT_AGENT_CLI_PROVIDER
+src\loopService.js:2181:    ? overrideConfig.codexReasoningEffort || defaultConfig.codexReasoningEffort || DEFAULT_CODEX_REASONING_EFFORT
+src\loopService.js:2183:  return { provider, command, codexReasoningEffort };
+src\loopService.js:2202:    codexReasoningEffort: config.provider === DEFAULT_AGENT_CLI_PROVIDER ? config.codexReasoningEffort : undefined,
+src\loopService.js:2214:  const codexReasoningEffort = provider === DEFAULT_AGENT_CLI_PROVIDER || (!provider && hasAnyOwnProperty(input, CODEX_REASONING_EFFORT_COLUMNS))
+src\loopService.js:2221:  return { provider, command, codexReasoningEffort };
+src\loopService.js:2230:    codex_reasoning_effort: config.codexReasoningEffort,
+src\loopService.js:2242:  const codexReasoningEffort = provider === DEFAULT_AGENT_CLI_PROVIDER
+src\loopService.js:2246:          : currentConfig.codexReasoningEffort,
+src\loopService.js:2249:  return { provider, command, codexReasoningEffort };
+src\loopService.js:2261:    if (columns.has(column)) updates.push([column, config.codexReasoningEffort]);
+src\loopService.js:2276:    if (columns.has(column)) values.push([column, fields.codexReasoningEffort || null]);
+src\loopService.js:2301:    codexReasoningEffort: provider === DEFAULT_AGENT_CLI_PROVIDER
+src\loopService.js:2532:    codex_reasoning_effort: planAgentCliConfig.codexReasoningEffort,
+src\main.js:75:    loop.configure(id, input);
+src\main.js:84:    loop.configure(projectId, input);
+src\main.js:124:  loop.configure(projectId, config);
+src\main.js:173:       project_id, title, body, status, agent_cli_provider, agent_cli_command, codex_reasoning_effort, created_at, updated_at
+src\main.js:182:      agentCliConfig.codexReasoningEffort,
+src\main.js:201:     SET title = ?, body = ?, status = ?, agent_cli_provider = ?, agent_cli_command = ?, codex_reasoning_effort = ?, updated_at = ?
+src\main.js:209:      agentCliConfig.codexReasoningEffort,
+src\main.js:234:       project_id, requirement_id, title, body, status, agent_cli_provider, agent_cli_command, codex_reasoning_effort, created_at, updated_at
+src\main.js:244:      agentCliConfig.codexReasoningEffort,
+src\main.js:263:     SET requirement_id = ?, title = ?, body = ?, status = ?, agent_cli_provider = ?, agent_cli_command = ?, codex_reasoning_effort = ?, updated_at = ?
+src\main.js:272:      agentCliConfig.codexReasoningEffort,
+
+**Creating a plan**
+
+I need to come up with a plan, potentially using the update_plan function. It seems pretty straightforward. The user has asked for an instructed plan file with multiple steps, so I think using a structured plan will work well. I’ll focus on breaking things down into actionable steps for clarity and coherence. Let’s make sure to cover everything the user would need to get started effectively!
+  ✓ Review plan conventions
+  → Draft feedback plan
+  • Write requested file
+  • Verify file exists
+**Writing task file**
+
+I need to write a file and ensure that the tasks have a fixed format. The last task is to complete scope validation. I want to include total acceptance criteria and status tracking. I think it might be necessary to mark all statuses as unchecked for now. I won't need to run tests until the final task. Also, I don't need any business code, and I'll use a here-string for this.
+codex
+已确认问题集中在配置持久化和刷新同步；现在写入新的反馈计划。
+exec
+powershell.exe -Command "@'
+# 反馈 #13 开发计划：修复思考深度与验收命令修改后被刷新回退
+
+## 背景
+
+反馈 #13 指出：项目配置中的 Codex 思考深度修改无效，验收命令修改无效，修改后会被自动刷新回原值。该问题说明 UI 表单输入、保存 IPC、主进程持久化、状态快照刷新之间存在不同步或覆盖关系。目标是让用户在循环控制/项目配置中修改思考深度和验收命令后，保存结果立即进入持久化状态，并在后续自动刷新、快照轮询、页面切换和计划执行链路中保持一致。
+
+## 设计约束
+
+- 本计划只修复“项目级配置保存后被刷新回退”的根因，不扩展新的 CLI 后端或新的思考深度枚举。
+- 验收命令允许为空字符串；空字符串是有效保存值，不能被 "'`undefined`、旧值、默认值或快照归一化覆盖。
+- Codex 思考深度仅在 Codex provider 下生效；选择 Claude 时不能把旧 Codex 深度错误写回或展示为已生效。
+- 自动刷新、轮询快照、保存后 reload、跨组件 state 同步都必须以数据库/主进程持久化结果为准，不能用旧闭包状态覆盖用户刚保存的表单值。
+- 保存失败必须有明确错误提示或日志，不允许 UI 先显示成功再被刷新回退且无原因。
+- 不要把运行测试、构建、回归验证拆成普通开发任务；最终验证统一放到最后“完整验收”节点。
+
+## 任务拆解
+
+- [ ] P001: 梳理配置保存与刷新链路 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/main.js,src/preload.js,src/loopService.js,src/database.js -->
+  - 验收要点：明确验收命令和 Codex 思考深度从 UI 表单、IPC 入参、`loop.configure`、数据库更新到状态快照返回的完整字段映射。
+  - 验收要点：定位导致保存后自动刷新回旧值的覆盖点，例如 effect 依赖、快照轮询、空字符串合并、字段命名不一致或主进程未返回新值。
+  - 验收要点：形成修复边界，只覆盖项目级 `validation_command`、`agent_cli_provider`、`agent_cli_command`、`codex_reasoning_effort` 的保存同步问题。
+
+- [ ] P002: 修复主进程配置持久化 <!-- scope: src/loopService.js,src/database.js,src/main.js -->
+  - 验收要点：`validationCommand: '"''"'` 被视为显式保存空值，写入 `validation_command` 后不会被当前值、默认值或空值归一化逻辑替换。
+  - 验收要点：Codex provider 下保存 `codexReasoningEffort` 时，会规范化为合法枚举并写入 `codex_reasoning_effort`；非法值使用明确默认值而不是旧值。
+  - 验收要点：Claude provider 下保存配置时，对 `codex_reasoning_effort` 的处理与现有设计一致，不产生脏数据，也不影响切回 Codex 后的默认行为。
+  - 验收要点：`configure` IPC 调用完成后，后续项目状态查询和快照返回的配置字段与数据库最新值一致。
+
+- [ ] P003: 修复前端表单同步回退 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/types.ts -->
+  - 验收要点：用户编辑验收命令或思考深度期间，自动刷新不会用旧 `state` 覆盖尚未保存的表单输入。
+  - 验收要点：点击保存成功后，表单以主进程返回或刷新后的最新持久化值为准，不再短暂生效后回退。
+  - 验收要点：切换项目、重新进入页面、自动轮询更新时，表单初始化和已保存配置展示一致，避免 `undefined`、`null`、空字符串互相抖动。
+  - 验收要点：保存失败时保留用户当前输入，并展示或记录可定位失败原因的错误信息。
+
+- [ ] P004: 统一配置字段与展示来源 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/shared.tsx,src/renderer/components/PlanLists.tsx,src/loopService.js -->
+  - 验收要点：顶部状态卡片、循环控制表单、运行中操作摘要和计划元数据中展示的 CLI provider、思考深度、验收命令来源一致。
+  - 验收要点：保存思考深度后，新生成计划和后续任务执行读取同一个持久化字段，不再使用刷新前的旧配置。
+  - 验收要点：验收命令展示为“无验收命令”时仅代表持久化值为空字符串，不代表保存失败或被默认值覆盖。
+  - 验收要点：相关 TypeScript 类型覆盖前后端实际字段，避免驼峰/下划线字段遗漏导致 UI 读不到新值。
+
+- [ ] P005: 补充配置保存回归覆盖 <!-- scope: scripts/smoke-test.js,package.json -->
+  - 验收要点：新增或更新 smoke 覆盖“验收命令从非空改为空、从空改为非空、再次刷新后仍保持”的场景。
+  - 验收要点：新增或更新 smoke 覆盖“Codex 思考深度从默认改为 high/low，刷新快照后仍保持，并进入执行参数”的场景。
+  - 验收要点：新增或更新 smoke 覆盖“保存失败不吞错、不会把旧值误展示为成功保存”的关键路径。
+  - 验收要点：测试代码只描述和覆盖配置保存/刷新问题，不要求在本任务内执行完整验收命令。
+
+- [ ] P006: 完整验收 <!-- scope: validation -->
+  - 验收要点：执行最终验收命令 `npm run check`，范围覆盖 TypeScript/静态检查、主进程配置保存链路和 smoke 回归脚本中与配置刷新相关的场景。
+  - 验收要点：通过标准为命令退出码为 0，且日志中没有验收命令、Codex 思考深度保存后被旧值覆盖或自动刷新回退的失败断言。
+  - 验收要点：手动验收至少覆盖：修改验收命令后等待自动刷新仍保持新值；修改 Codex 思考深度后等待自动刷新仍保持新值；重新进入同一项目后展示仍与保存值一致。
+  - 验收要点：若本机环境缺少真实 Codex/Claude CLI，最终验收需使用现有 stub/smoke 能力验证参数传递，并在进度区记录真实 CLI 跳过原因。
+
+## 总体验收标准
+
+- 配置保存生效：项目级验收命令和 Codex 思考深度修改后能够持久化到主进程/数据库，并被快照读取到最新值。
+- 自动刷新不回退：保存后等待自动刷新、页面重新渲染、切换后返回项目，UI 不会恢复为修改前旧值。
+- 空命令语义正确：验收命令保存为空字符串时保持为空，并继续表示“不执行外部验收命令”，不会被默认命令或旧命令覆盖。
+- 思考深度执行一致：Codex 思考深度保存后，展示、计划生成元数据、任务执行参数中的值一致。
+- 错误可见：保存失败时有可见错误或日志，用户输入不被静默回滚。
+- 最终验收命令：执行 `npm run check`；验收范围为配置持久化、前端刷新同步、计划/任务读取配置和相关 smoke 覆盖；通过标准为命令退出码 0 且无配置回退相关断言失败。
+
+## 进度区
+
+- 2026-06-27 AutoPlan 生成：反馈 #13 开发计划已创建，待执行。
+'"'@ | Set-Content -Path docs\\plan\\plan_feedback_13_20260627-033001.md -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 223ms:
+codex
+计划文件已写入；我再做一次格式和文件存在性检查。
+  ✓ Review plan conventions
+  ✓ Draft feedback plan
+  ✓ Write requested file
+  → Verify file exists
+exec
+powershell.exe -Command '$p='"'docs\\plan\\plan_feedback_13_20260627-033001.md'; if ("'!(Test-Path $p)) { throw '"'missing plan file' }; Write-Output \"exists: "'$p"; Select-String -Path $p -Pattern '"'"'^- '"\\[ \\] P\\d{3}: .*<"'!-- scope: .+ -->$'"' | ForEach-Object { "'$_.Line }; Write-Output '"'--- last task ---'; Select-String -Path "'$p -Pattern '"'"'^- '"\\[ \\] P006: 完整验收 <"'!-- scope: validation -->$'"'" in D:\project\GitHub\autoplan
+ succeeded in 280ms:
+exists: docs\plan\plan_feedback_13_20260627-033001.md
+- [ ] P001: 梳理配置保存与刷新链路 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/main.js,src/preload.js,src/loopService.js,src/database.js -->
+- [ ] P002: 修复主进程配置持久化 <!-- scope: src/loopService.js,src/database.js,src/main.js -->
+- [ ] P003: 修复前端表单同步回退 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/types.ts -->
+- [ ] P004: 统一配置字段与展示来源 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/shared.tsx,src/renderer/components/PlanLists.tsx,src/loopService.js -->
+- [ ] P005: 补充配置保存回归覆盖 <!-- scope: scripts/smoke-test.js,package.json -->
+- [ ] P006: 完整验收 <!-- scope: validation -->
+--- last task ---
+
+docs\plan\plan_feedback_13_20260627-033001.md:47:- [ ] P006: 完整验收 <!-- scope: validation -->
+
+
+
+codex
+格式检查通过，最后把计划状态收尾。
+  ✓ Review plan conventions
+  ✓ Draft feedback plan
+  ✓ Write requested file
+  ✓ Verify file exists
+codex
+已按要求生成计划文件，未修改业务代码。
+
+- 文件：`docs/plan/plan_feedback_13_20260627-033001.md:1`
+- 已包含：固定格式任务、每任务验收要点、总体验收标准、进度区
+- 最后任务：`P006: 完整验收`，scope 为 `validation`
+- 已检查：任务行格式匹配，文件存在且最后验收节点在任务列表最后
+tokens used
+62,689
+已按要求生成计划文件，未修改业务代码。
+
+- 文件：`docs/plan/plan_feedback_13_20260627-033001.md:1`
+- 已包含：固定格式任务、每任务验收要点、总体验收标准、进度区
+- 最后任务：`P006: 完整验收`，scope 为 `validation`
+- 已检查：任务行格式匹配，文件存在且最后验收节点在任务列表最后

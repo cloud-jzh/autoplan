@@ -8,6 +8,16 @@ export function getFilePath(file: File) {
   }
 }
 
+export function toSafeFileUrl(filePath?: string | null) {
+  const path = String(filePath || '').trim();
+  if (!path) return '';
+  try {
+    return window.autoplan.toFileUrl(path);
+  } catch {
+    return '';
+  }
+}
+
 export function autoGrowTextarea(textarea: HTMLTextAreaElement) {
   textarea.style.height = 'auto';
   textarea.style.height = `${Math.min(textarea.scrollHeight, 220)}px`;
@@ -118,9 +128,9 @@ export function AttachmentGrid({ attachments }: { attachments: Attachment[] }) {
 }
 
 function AttachmentView({ attachment }: { attachment: Attachment }) {
-  const url = window.autoplan.toFileUrl(attachment.stored_path);
+  const url = toSafeFileUrl(attachment.stored_path);
   const name = attachment.original_name || attachment.stored_path;
-  if (String(attachment.mime_type || '').startsWith('image/')) {
+  if (url && String(attachment.mime_type || '').startsWith('image/')) {
     return (
       <a className="attachment-thumb" href={url} target="_blank" rel="noreferrer" title={name}>
         <img src={url} alt={name} />
@@ -129,7 +139,7 @@ function AttachmentView({ attachment }: { attachment: Attachment }) {
     );
   }
   return (
-    <a className="attachment-file" href={url} target="_blank" rel="noreferrer">
+    <a className="attachment-file" href={url || undefined} target="_blank" rel="noreferrer">
       <span>{name}</span>
       <small>{formatBytes(attachment.size)}</small>
     </a>

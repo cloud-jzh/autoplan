@@ -13,7 +13,7 @@ import {
 import { PENDING_ATTACHMENT_SOURCES } from '../types';
 import type { AgentCliOption, AgentCliProvider, CodexReasoningEffort, IntakeType, PendingAttachment } from '../types';
 import { Icon } from './icons';
-import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+import { autoGrowTextarea, formatBytes, getFilePath, toSafeFileUrl } from './shared';
 
 interface ComposerCliSelectionValue {
   options: AgentCliOption[];
@@ -245,7 +245,7 @@ function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachmen
       className="pending-thumb"
       src={
         attachment.source === PENDING_ATTACHMENT_SOURCES.PATH
-          ? window.autoplan.toFileUrl(attachment.path)
+          ? toSafeFileUrl(attachment.path)
           : attachment.previewUrl
       }
       alt={attachment.name || '附件'}

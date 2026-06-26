@@ -1,0 +1,12 @@
+已完成 P004，未修改 plan 文件、未勾选 checkbox，且按要求未运行测试/构建/lint。
+
+**改动**
+- 在 `src/renderer/pages/WorkspacePage.tsx:1090` 让顶部/事件区配置摘要通过 `readAgentCliProvider`、`readCodexReasoningEffort` 统一读取。
+- 在 `src/renderer/pages/WorkspacePage.tsx:1256` 统一运行中/最近操作摘要的 provider 与思考深度来源，优先操作快照，缺失时回退项目状态。
+- 在 `src/renderer/pages/WorkspacePage.tsx:1279` 统一状态卡片 CLI 展示来源，避免直接读 raw 字段造成显示不一致。
+- 在 `src/renderer/components/PlanLists.tsx:303` 让任务事件摘要复用 `planCliSummaryLabel`，不再单独维护一套 reasoning 字段列表。
+- 在 `src/loopService.js:904` 让 plan 快照展示配置直接复用 `planAgentCliConfig`，与后续任务执行读取同一套持久化/覆盖规则。
+
+**说明**
+- 验收命令为空仍展示为“无验收命令”，语义对应持久化空字符串。
+- 差异中可能仍显示前序任务和既有附件预览相关改动，我没有处理或回退。

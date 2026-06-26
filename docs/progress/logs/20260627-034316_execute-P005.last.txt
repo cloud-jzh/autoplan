@@ -1,0 +1,14 @@
+已完成 P005，未修改 plan 文件、未勾选 checkbox，且按要求未运行 smoke/测试/构建/lint。
+
+**改动**
+- 在 `scripts/smoke-test.js:66` 接入新的配置持久化回归 smoke。
+- 在 `scripts/smoke-test.js:503` 新增 `assertLoopConfigPersistenceSmoke`，覆盖验收命令非空→空、空→非空、刷新快照保持一致。
+- 在 `scripts/smoke-test.js:568` 覆盖非法 Codex 思考深度保存后明确回退 `medium`，避免旧值回灌。
+- 在 `scripts/smoke-test.js:580` 覆盖 Claude/Codex 切换后的 `codex_reasoning_effort` 语义。
+- 在 `scripts/smoke-test.js:595` 覆盖保存失败抛错且不把旧值误当成功。
+- 在 `scripts/smoke-test.js:628` 新增执行参数 smoke，断言 `high`/`low` 会进入 Codex `model_reasoning_effort` 参数。
+- 在 `scripts/smoke-test.js:1789` 补充 `LoopConfigInput.validation_command` 类型覆盖断言。
+
+**说明**
+- `package.json` 已有 `smoke` 和 `check` 入口，本任务无需修改。
+- 最终运行留给 P006/统一验收阶段。

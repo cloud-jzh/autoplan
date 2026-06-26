@@ -1,0 +1,2031 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f056a-a2c8-7093-9ec1-24f04c9862ed
+--------
+user
+你是开发执行者。
+请只执行指定任务 P003，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_13_20260627-033001.md
+指定任务：
+- [ ] P003: 修复前端表单同步回退 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/types.ts -->
+任务 scope：src/renderer/pages/workspacepage.tsx, src/renderer/types.ts
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Planning workspace tasks**
+
+I need to focus on P003 and check the WorkspacePage along with its types. There's no need for new tests; I can use the existing ones. I should inspect the types and the current file to understand better. Also, P001 modified WP, so I need to keep that in mind as I formulate my plan. This will help me ensure everything aligns correctly without any unnecessary duplication of effort.
+codex
+我会沿用前两步结论，只查看 P003 scope 的表单同步和类型定义。
+  → 确认前端同步状态
+  • 加入脏态保护逻辑
+  • 更新必要类型定义
+  • 检查差异不运行测试
+exec
+powershell.exe -Command 'git diff -- src/renderer/pages/WorkspacePage.tsx src/renderer/types.ts; function Show($f,$s,$e){ Write-Output (("`n--- {0}:{1}-{2} ---") -f $f,$s,$e); $lines=Get-Content -Encoding UTF8 $f; for($i=$s;$i -le $e -and $i -le $lines.Length;$i++){ '"'{0,4}: {1}' -f "'$i,$lines[$i-1] }}; Show '"'src/renderer/pages/WorkspacePage.tsx' 70 115; Show 'src/renderer/pages/WorkspacePage.tsx' 190 315; Show 'src/renderer/pages/WorkspacePage.tsx' 495 515; Show 'src/renderer/types.ts' 1 120" in D:\project\GitHub\autoplan
+ succeeded in 727ms:
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index b2b3330..c7043a0 100644
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -25,7 +25,7 @@ import { EventList, PlanList, TaskList } from '../components/PlanLists';
+ import { SearchResults } from '../components/SearchResults';
+ import { CodexLog } from '../components/CodexLog';
+ import { Icon, type IconName } from '../components/icons';
+-import { getFilePath, agentCliProviderLabel, codexReasoningEffortLabel } from '../components/shared';
++import { getFilePath, toSafeFileUrl, agentCliProviderLabel, codexReasoningEffortLabel } from '../components/shared';
+ import { searchWorkspaceSnapshot } from '../utils/search';
+ import { formatChinaTime } from '../utils/time';
+ 
+@@ -77,6 +77,16 @@ type LoopFormState = {
+   codexReasoningEffort: CodexReasoningEffort;
+ };
+ 
++type LoopConfigurePayload = {
++  projectId: number;
++  workspacePath: string;
++  intervalSeconds: number;
++  validationCommand: string;
++  agentCliProvider: string;
++  agentCliCommand: string;
++  codexReasoningEffort?: CodexReasoningEffort;
++};
++
+ type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+ 
+ type ScopeFileOpenSettings = {
+@@ -110,7 +120,7 @@ function createPendingPathAttachment(file: File): PendingAttachment | null {
+     name,
+     size: file.size,
+     type,
+-    previewUrl: window.autoplan.toFileUrl(path),
++    previewUrl: toSafeFileUrl(path),
+   };
+ }
+ 
+@@ -191,6 +201,32 @@ function normalizeCodexReasoningEffort(value?: string | null): CodexReasoningEff
+   return defaultCodexReasoningEffort;
+ }
+ 
++function loopFormFromProjectState(state: ProjectState): LoopFormState {
++  return {
++    workspacePath: state.workspace_path || '',
++    intervalSeconds: String(state.interval_seconds || 5),
++    validationCommand: state.validation_command ?? '',
++    agentCliProvider: state.agent_cli_provider || 'codex',
++    agentCliCommand: state.agent_cli_command || '',
++    codexReasoningEffort: normalizeCodexReasoningEffort(state.codex_reasoning_effort),
++  };
++}
++
++function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigurePayload {
++  const payload: LoopConfigurePayload = {
++    projectId,
++    workspacePath: form.workspacePath,
++    intervalSeconds: Number(form.intervalSeconds || 5),
++    validationCommand: form.validationCommand,
++    agentCliProvider: form.agentCliProvider || 'codex',
++    agentCliCommand: form.agentCliCommand.trim(),
++  };
++  if (form.agentCliProvider !== 'claude') {
++    payload.codexReasoningEffort = form.codexReasoningEffort;
++  }
++  return payload;
++}
++
+ export function WorkspacePage() {
+   const params = useParams<{ projectId: string }>();
+   const navigate = useNavigate();
+@@ -261,16 +297,7 @@ export function WorkspacePage() {
+ 
+   useEffect(() => {
+     if (!state) return;
+-    const defaultProvider = state.agent_cli_provider || 'codex';
+-    const defaultReasoning = normalizeCodexReasoningEffort(state.codex_reasoning_effort);
+-    setLoopForm({
+-      workspacePath: state.workspace_path || '',
+-      intervalSeconds: String(state.interval_seconds || 5),
+-      validationCommand: state.validation_command || '',
+-      agentCliProvider: defaultProvider,
+-      agentCliCommand: state.agent_cli_command || '',
+-      codexReasoningEffort: defaultReasoning,
+-    });
++    setLoopForm(loopFormFromProjectState(state));
+   }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
+ 
+   useEffect(() => {
+@@ -475,17 +502,7 @@ export function WorkspacePage() {
+   const submitLoopConfig = async (event: FormEvent<HTMLFormElement>) => {
+     event.preventDefault();
+     try {
+-      const next = await window.autoplan.configureLoop({
+-        projectId,
+-        workspacePath: loopForm.workspacePath,
+-        intervalSeconds: Number(loopForm.intervalSeconds || 5),
+-        validationCommand: loopForm.validationCommand,
+-        agentCliProvider: loopForm.agentCliProvider || 'codex',
+-        agentCliCommand: loopForm.agentCliCommand.trim(),
+-        ...(loopForm.agentCliProvider === 'claude'
+-          ? {}
+-          : { codexReasoningEffort: loopForm.codexReasoningEffort }),
+-      });
++      const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
+       setSnapshot(next);
+       setError(null);
+     } catch (e) {
+
+--- src/renderer/pages/WorkspacePage.tsx:70-115 ---
+  70: 
+  71: type LoopFormState = {
+  72:   workspacePath: string;
+  73:   intervalSeconds: string;
+  74:   validationCommand: string;
+  75:   agentCliProvider: string;
+  76:   agentCliCommand: string;
+  77:   codexReasoningEffort: CodexReasoningEffort;
+  78: };
+  79: 
+  80: type LoopConfigurePayload = {
+  81:   projectId: number;
+  82:   workspacePath: string;
+  83:   intervalSeconds: number;
+  84:   validationCommand: string;
+  85:   agentCliProvider: string;
+  86:   agentCliCommand: string;
+  87:   codexReasoningEffort?: CodexReasoningEffort;
+  88: };
+  89: 
+  90: type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+  91: 
+  92: type ScopeFileOpenSettings = {
+  93:   mode: ScopeFileOpenMode;
+  94:   command: string;
+  95: };
+  96: 
+  97: const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+  98: 
+  99: type WorkspaceFilterableItems = Pick<AppSnapshot, 'requirements' | 'feedback' | 'plans' | 'tasks' | 'events'>;
+ 100: 
+ 101: function createEmptyPlanReadState(): WorkspacePlanReadState {
+ 102:   return { plan: null, result: null, loading: false, error: null };
+ 103: }
+ 104: 
+ 105: function getErrorMessage(error: unknown, fallback: string) {
+ 106:   if (error instanceof Error && error.message) return error.message;
+ 107:   if (typeof error === 'string' && error.trim()) return error.trim();
+ 108:   return fallback;
+ 109: }
+ 110: 
+ 111: function createPendingPathAttachment(file: File): PendingAttachment | null {
+ 112:   const path = getFilePath(file);
+ 113:   if (!path) return null;
+ 114:   const name = file.name || path.split(/[\\/]/).pop() || '附件';
+ 115:   const type = file.type || 'application/octet-stream';
+
+--- src/renderer/pages/WorkspacePage.tsx:190-315 ---
+ 190:   }
+ 191:   return current.id === next.id;
+ 192: }
+ 193: 
+ 194: function resolveWorkspaceTab(tab: string | null): WorkspaceTab {
+ 195:   return tabs.some((item) => item.id === tab) ? (tab as WorkspaceTab) : 'overview';
+ 196: }
+ 197: 
+ 198: function normalizeCodexReasoningEffort(value?: string | null): CodexReasoningEffort {
+ 199:   const effort = String(value || '').trim().toLowerCase();
+ 200:   if (effort === 'low' || effort === 'high') return effort;
+ 201:   return defaultCodexReasoningEffort;
+ 202: }
+ 203: 
+ 204: function loopFormFromProjectState(state: ProjectState): LoopFormState {
+ 205:   return {
+ 206:     workspacePath: state.workspace_path || '',
+ 207:     intervalSeconds: String(state.interval_seconds || 5),
+ 208:     validationCommand: state.validation_command ?? '',
+ 209:     agentCliProvider: state.agent_cli_provider || 'codex',
+ 210:     agentCliCommand: state.agent_cli_command || '',
+ 211:     codexReasoningEffort: normalizeCodexReasoningEffort(state.codex_reasoning_effort),
+ 212:   };
+ 213: }
+ 214: 
+ 215: function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigurePayload {
+ 216:   const payload: LoopConfigurePayload = {
+ 217:     projectId,
+ 218:     workspacePath: form.workspacePath,
+ 219:     intervalSeconds: Number(form.intervalSeconds || 5),
+ 220:     validationCommand: form.validationCommand,
+ 221:     agentCliProvider: form.agentCliProvider || 'codex',
+ 222:     agentCliCommand: form.agentCliCommand.trim(),
+ 223:   };
+ 224:   if (form.agentCliProvider !== 'claude') {
+ 225:     payload.codexReasoningEffort = form.codexReasoningEffort;
+ 226:   }
+ 227:   return payload;
+ 228: }
+ 229: 
+ 230: export function WorkspacePage() {
+ 231:   const params = useParams<{ projectId: string }>();
+ 232:   const navigate = useNavigate();
+ 233:   const [searchParams, setSearchParams] = useSearchParams();
+ 234:   const projectId = Number(params.projectId);
+ 235:   const { snapshot, setSnapshot, error, setError } = useSnapshot(Number.isFinite(projectId) ? projectId : null);
+ 236:   const tabParam = searchParams.get('tab');
+ 237:   const [activeTab, setActiveTab] = useState<WorkspaceTab>(() => resolveWorkspaceTab(tabParam));
+ 238:   const [pendingAttachments, setPendingAttachments] =
+ 239:     useState<Record<IntakeType, PendingAttachment[]>>(emptyPendingAttachments);
+ 240:   const [composerCliProviders, setComposerCliProviders] =
+ 241:     useState<Record<IntakeType, AgentCliProvider>>(defaultComposerCliProviders);
+ 242:   const [composerCodexReasoning, setComposerCodexReasoning] =
+ 243:     useState<Record<IntakeType, CodexReasoningEffort>>(defaultComposerCodexReasoning);
+ 244:   const [loopForm, setLoopForm] = useState<LoopFormState>({
+ 245:     workspacePath: '',
+ 246:     intervalSeconds: '5',
+ 247:     validationCommand: '',
+ 248:     agentCliProvider: 'codex',
+ 249:     agentCliCommand: '',
+ 250:     codexReasoningEffort: defaultCodexReasoningEffort,
+ 251:   });
+ 252:   const [scopeFileOpenSettings, setScopeFileOpenSettings] = useState<ScopeFileOpenSettings>(() => {
+ 253:     try {
+ 254:       const parsed = JSON.parse(window.localStorage.getItem('autoplan.scopeFileOpenSettings') || 'null');
+ 255:       const mode = parsed?.mode === 'folder' || parsed?.mode === 'vscode' || parsed?.mode === 'command'
+ 256:         ? parsed.mode
+ 257:         : 'system';
+ 258:       return { mode, command: String(parsed?.command || '') };
+ 259:     } catch {
+ 260:       return defaultScopeFileOpenSettings;
+ 261:     }
+ 262:   });
+ 263:   const [searchQuery, setSearchQuery] = useState('');
+ 264:   const [planReadState, setPlanReadState] = useState<WorkspacePlanReadState>(() => createEmptyPlanReadState());
+ 265:   const planReadRequestRef = useRef(0);
+ 266: 
+ 267:   const project = snapshot?.activeProject || null;
+ 268:   const state = snapshot?.state || null;
+ 269:   const projects = snapshot?.projects || [];
+ 270:   const workspaceSearch = useMemo(() => searchWorkspaceSnapshot(snapshot, searchQuery), [snapshot, searchQuery]);
+ 271:   const searchableItemCount = useMemo(() => (snapshot ? countSearchableItems(snapshot) : 0), [snapshot]);
+ 272:   const searchHitCount = workspaceSearch.total;
+ 273:   const isSearching = !workspaceSearch.query.isEmpty;
+ 274:   const filteredItems = useMemo(
+ 275:     () => createFilteredWorkspaceItems(snapshot, workspaceSearch),
+ 276:     [snapshot, workspaceSearch],
+ 277:   );
+ 278:   const displayTasks = useMemo(
+ 279:     () => filteredItems.tasks.map((task) => withTaskCliProviderTitle(task, state?.agent_cli_provider)),
+ 280:     [filteredItems.tasks, state?.agent_cli_provider],
+ 281:   );
+ 282:   const filteredEmptyText = isSearching ? searchNoMatchText : undefined;
+ 283:   const latestReadingPlan = useMemo(() => {
+ 284:     if (!planReadState.plan) return null;
+ 285:     return (
+ 286:       snapshot?.plans.find(
+ 287:         (plan) => plan.id === planReadState.plan?.id && plan.project_id === planReadState.plan?.project_id,
+ 288:       ) || planReadState.plan
+ 289:     );
+ 290:   }, [planReadState.plan, snapshot?.plans]);
+ 291: 
+ 292:   const showError = useCallback((e: unknown) => {
+ 293:     const msg = e instanceof Error ? e.message : String(e);
+ 294:     setError(msg);
+ 295:     window.alert(msg);
+ 296:   }, [setError]);
+ 297: 
+ 298:   useEffect(() => {
+ 299:     if (!state) return;
+ 300:     setLoopForm(loopFormFromProjectState(state));
+ 301:   }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
+ 302: 
+ 303:   useEffect(() => {
+ 304:     const defaultProvider = state?.agent_cli_provider || 'codex';
+ 305:     const defaultReasoning = normalizeCodexReasoningEffort(state?.codex_reasoning_effort);
+ 306:     setComposerCliProviders({
+ 307:       requirement: defaultProvider,
+ 308:       feedback: defaultProvider,
+ 309:     });
+ 310:     setComposerCodexReasoning({
+ 311:       requirement: defaultReasoning,
+ 312:       feedback: defaultReasoning,
+ 313:     });
+ 314:   }, [projectId, state?.agent_cli_provider, state?.codex_reasoning_effort]);
+ 315: 
+
+--- src/renderer/pages/WorkspacePage.tsx:495-515 ---
+ 495:         showError(e);
+ 496:         return false;
+ 497:       }
+ 498:     },
+ 499:     [projectId, setSnapshot, setError, showError],
+ 500:   );
+ 501: 
+ 502:   const submitLoopConfig = async (event: FormEvent<HTMLFormElement>) => {
+ 503:     event.preventDefault();
+ 504:     try {
+ 505:       const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
+ 506:       setSnapshot(next);
+ 507:       setError(null);
+ 508:     } catch (e) {
+ 509:       showError(e);
+ 510:     }
+ 511:   };
+ 512: 
+ 513:   const runLoopAction = async (action: () => Promise<AppSnapshot>) => {
+ 514:     try {
+ 515:       const next = await action();
+
+--- src/renderer/types.ts:1-120 ---
+   1: export type IntakeType = 'requirement' | 'feedback';
+   2: export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'tasks' | 'events' | 'settings';
+   3: export type AgentCliProvider = 'codex' | 'claude' | string;
+   4: export type CodexReasoningEffort = 'low' | 'medium' | 'high' | string;
+   5: 
+   6: export interface AgentCliOption {
+   7:   value: AgentCliProvider;
+   8:   label: string;
+   9: }
+  10: 
+  11: export interface AgentCliDisplaySource {
+  12:   agent_cli_provider?: AgentCliProvider | null;
+  13:   agentCliProvider?: AgentCliProvider | null;
+  14:   cli_provider?: AgentCliProvider | null;
+  15:   cliProvider?: AgentCliProvider | null;
+  16:   cli_backend?: AgentCliProvider | null;
+  17:   cliBackend?: AgentCliProvider | null;
+  18:   provider?: AgentCliProvider | null;
+  19:   agent_cli_command?: string | null;
+  20:   agentCliCommand?: string | null;
+  21:   cli_command?: string | null;
+  22:   cliCommand?: string | null;
+  23:   cli_path?: string | null;
+  24:   cliPath?: string | null;
+  25:   command?: string | null;
+  26:   codex_reasoning_effort?: CodexReasoningEffort | null;
+  27:   codexReasoningEffort?: CodexReasoningEffort | null;
+  28:   codex_thinking_depth?: CodexReasoningEffort | null;
+  29:   codexThinkingDepth?: CodexReasoningEffort | null;
+  30:   reasoning_effort?: CodexReasoningEffort | null;
+  31:   reasoningEffort?: CodexReasoningEffort | null;
+  32:   thinking_depth?: CodexReasoningEffort | null;
+  33:   thinkingDepth?: CodexReasoningEffort | null;
+  34:   [key: string]: unknown;
+  35: }
+  36: 
+  37: export const WORKSPACE_SEARCH_SOURCE_TYPES = {
+  38:   REQUIREMENT: 'requirement',
+  39:   FEEDBACK: 'feedback',
+  40:   PLAN: 'plan',
+  41:   TASK: 'task',
+  42:   EVENT: 'event',
+  43: } as const;
+  44: 
+  45: export type WorkspaceSearchSourceType =
+  46:   (typeof WORKSPACE_SEARCH_SOURCE_TYPES)[keyof typeof WORKSPACE_SEARCH_SOURCE_TYPES];
+  47: 
+  48: export const WORKSPACE_SEARCH_HIT_FIELDS = {
+  49:   TITLE: 'title',
+  50:   BODY: 'body',
+  51:   STATUS: 'status',
+  52:   MARKDOWN: 'markdown',
+  53:   FILE_PATH: 'filePath',
+  54:   SOURCE_PATH: 'sourcePath',
+  55:   TASK_KEY: 'taskKey',
+  56:   SCOPE: 'scope',
+  57:   RAW_LINE: 'rawLine',
+  58:   EVENT_TYPE: 'eventType',
+  59:   EVENT_MESSAGE: 'eventMessage',
+  60:   EVENT_META: 'eventMeta',
+  61: } as const;
+  62: 
+  63: export type WorkspaceSearchHitField =
+  64:   (typeof WORKSPACE_SEARCH_HIT_FIELDS)[keyof typeof WORKSPACE_SEARCH_HIT_FIELDS];
+  65: 
+  66: export interface WorkspaceSearchQuery {
+  67:   raw: string;
+  68:   normalized: string;
+  69:   terms: string[];
+  70:   isEmpty: boolean;
+  71: }
+  72: 
+  73: export interface WorkspaceSearchSourceConfig {
+  74:   type: WorkspaceSearchSourceType;
+  75:   label: string;
+  76:   targetTab: WorkspaceTab;
+  77: }
+  78: 
+  79: export interface WorkspaceSearchMatch {
+  80:   field: WorkspaceSearchHitField;
+  81:   label: string;
+  82:   value: string;
+  83:   snippet?: string;
+  84: }
+  85: 
+  86: export interface WorkspaceSearchResult {
+  87:   id: string;
+  88:   source: WorkspaceSearchSourceType;
+  89:   targetTab: WorkspaceTab;
+  90:   recordId: number;
+  91:   title: string;
+  92:   summary: string;
+  93:   status: string | null;
+  94:   updatedAt: string;
+  95:   matches: WorkspaceSearchMatch[];
+  96: }
+  97: 
+  98: export interface WorkspaceSearchGroup {
+  99:   source: WorkspaceSearchSourceType;
+ 100:   label: string;
+ 101:   targetTab: WorkspaceTab;
+ 102:   count: number;
+ 103:   results: WorkspaceSearchResult[];
+ 104: }
+ 105: 
+ 106: export interface WorkspaceSearchState {
+ 107:   query: WorkspaceSearchQuery;
+ 108:   total: number;
+ 109:   results: WorkspaceSearchResult[];
+ 110:   groups: WorkspaceSearchGroup[];
+ 111: }
+ 112: 
+ 113: export interface Project {
+ 114:   id: number;
+ 115:   name: string;
+ 116:   workspace_path: string;
+ 117:   description: string;
+ 118:   created_at: string;
+ 119:   updated_at: string;
+ 120:   running?: number;
+warning: in the working copy of 'src/renderer/pages/WorkspacePage.tsx', LF will be replaced by CRLF the next time Git touches it
+
+**Considering project development**
+
+I think I need to dive deeper into different types related to ProjectState and globals. This will help ensure that I'm considering all possible states and their interactions properly. It's important to have a solid understanding of these components so they can work together smoothly. I'll make a list of types I might want to include or explore further. Okay, let’s get to it!
+codex
+已有 P001 映射函数在位；我继续看 ProjectState 和 window API 类型。
+exec
+powershell.exe -Command 'function Show($f,$s,$e){ Write-Output (("`n--- {0}:{1}-{2} ---") -f $f,$s,$e); $lines=Get-Content -Encoding UTF8 $f; for($i=$s;$i -le $e -and $i -le $lines.Length;$i++){ '"'{0,4}: {1}' -f "'$i,$lines[$i-1] }}; Show '"'src/renderer/types.ts' 113 220; Show 'src/renderer/types.ts' 300 420; rg -n \"autoplan|configureLoop|ProjectState|AppSnapshot\" src/renderer/types.ts src/renderer -g \"*.d.ts\" -g \"*.ts\" -g \"*.tsx\"" in D:\project\GitHub\autoplan
+2026-06-26T19:37:20.012339Z ERROR codex_core::tools::router: error={"output":"\n--- src/renderer/types.ts:113-220 ---\r\n 113: export interface Project {\r\n 114:   id: number;\r\n 115:   name: string;\r\n 116:   workspace_path: string;\r\n 117:   description: string;\r\n 118:   created_at: string;\r\n 119:   updated_at: string;\r\n 120:   running?: number;\r\n 121:   phase?: string;\r\n 122:   interval_seconds?: number;\r\n 123:   validation_command?: string;\r\n 124:   agent_cli_provider?: AgentCliProvider;\r\n 125:   agent_cli_command?: string;\r\n 126:   codex_reasoning_effort?: CodexReasoningEffort | null;\r\n 127: }\r\n 128: \r\n 129: export interface ProjectState {\r\n 130:   project_id: number;\r\n 131:   running: number;\r\n 132:   phase: string;\r\n 133:   interval_seconds: number;\r\n 134:   validation_command: string;\r\n 135:   last_issue_hash?: string | null;\r\n 136:   last_error?: string | null;\r\n 137:   agent_cli_provider?: AgentCliProvider;\r\n 138:   agent_cli_command?: string;\r\n 139:   codex_reasoning_effort?: CodexReasoningEffort | null;\r\n 140:   updated_at: string;\r\n 141:   /** 由 snapshot 合并自 project.workspace_path */\r\n 142:   workspace_path?: string;\r\n 143: }\r\n 144: \r\n 145: export interface Requirement {\r\n 146:   id: number;\r\n 147:   project_id: number;\r\n 148:   title: string;\r\n 149:   body: string;\r\n 150:   status: string;\r\n 151:   source_path?: string | null;\r\n 152:   source_hash?: string | null;\r\n 153:   agent_cli_provider?: AgentCliProvider | null;\r\n 154:   agent_cli_command?: string;\r\n 155:   codex_reasoning_effort?: CodexReasoningEffort | null;\r\n 156:   linked_plan_id?: number | null;\r\n 157:   plan_status?: string | null;\r\n 158:   plan_completed?: number | null;\r\n 159:   plan_total?: number | null;\r\n 160:   created_at: string;\r\n 161:   updated_at: string;\r\n 162: }\r\n 163: \r\n 164: export interface Feedback {\r\n 165:   id: number;\r\n 166:   project_id: number;\r\n 167:   requirement_id?: number | null;\r\n 168:   title: string;\r\n 169:   body: string;\r\n 170:   status: string;\r\n 171:   agent_cli_provider?: AgentCliProvider | null;\r\n 172:   agent_cli_command?: string;\r\n 173:   codex_reasoning_effort?: CodexReasoningEffort | null;\r\n 174:   linked_plan_id?: number | null;\r\n 175:   plan_status?: string | null;\r\n 176:   plan_completed?: number | null;\r\n 177:   plan_total?: number | null;\r\n 178:   created_at: string;\r\n 179:   updated_at: string;\r\n 180: }\r\n 181: \r\n 182: export interface Attachment {\r\n 183:   id: number;\r\n 184:   project_id: number;\r\n 185:   owner_type: IntakeType;\r\n 186:   owner_id: number;\r\n 187:   original_name: string;\r\n 188:   stored_path: string;\r\n 189:   mime_type?: string | null;\r\n 190:   size: number;\r\n 191:   hash: string;\r\n 192:   created_at: string;\r\n 193: }\r\n 194: \r\n 195: export interface Plan {\r\n 196:   id: number;\r\n 197:   project_id: number;\r\n 198:   issue_hash: string;\r\n 199:   file_path: string;\r\n 200:   title?: string | null;\r\n 201:   hash: string;\r\n 202:   status: string;\r\n 203:   total_tasks: number;\r\n 204:   completed_tasks: number;\r\n 205:   validation_passed: number;\r\n 206:   agent_cli_provider?: AgentCliProvider | null;\r\n 207:   agent_cli_command?: string;\r\n 208:   codex_reasoning_effort?: CodexReasoningEffort | null;\r\n 209:   concurrency_suggestion: PlanConcurrencySuggestion;\r\n 210:   created_at: string;\r\n 211:   updated_at: string;\r\n 212: }\r\n 213: \r\n 214: export interface PlanScopeFileInfo {\r\n 215:   path: string;\r\n 216:   exists: boolean;\r\n 217:   isDirectory: boolean;\r\n 218:   canOpen: boolean;\r\n 219:   isUnknown: boolean;\r\n 220:   isValidation: boolean;\r\n\n--- src/renderer/types.ts:300-420 ---\r\n 300:   updated_at: string;\r\n 301:   /** JOIN plans 得到 */\r\n 302:   file_path: string;\r\n 303:   /** JOIN plans 并读取计划 Markdown 标题得到 */\r\n 304:   plan_title: string;\r\n 305: }\r\n 306: \r\n 307: export const TASK_EVENT_TYPES = {\r\n 308:   STARTED: 'task.started',\r\n 309:   SUCCEEDED: 'task.succeeded',\r\n 310:   FAILED: 'task.failed',\r\n 311:   STOP_REQUESTED: 'task.stop.requested',\r\n 312:   STOPPED: 'task.stopped',\r\n 313:   INTERRUPTED: 'task.interrupted',\r\n 314: } as const;\r\n 315: \r\n 316: export const LEGACY_TASK_EVENT_TYPES = {\r\n 317:   EXECUTED: 'task.executed',\r\n 318:   STOPPING: 'task.stopping',\r\n 319: } as const;\r\n 320: \r\n 321: export const TASK_EVENT_STATUS = {\r\n 322:   PENDING: 'pending',\r\n 323:   RUNNING: 'running',\r\n 324:   COMPLETED: 'completed',\r\n 325:   FAILED: 'failed',\r\n 326:   STOPPING: 'stopping',\r\n 327:   STOPPED: 'stopped',\r\n 328:   INTERRUPTED: 'interrupted',\r\n 329: } as const;\r\n 330: \r\n 331: export type TaskEventType = (typeof TASK_EVENT_TYPES)[keyof typeof TASK_EVENT_TYPES];\r\n 332: export type LegacyTaskEventType = (typeof LEGACY_TASK_EVENT_TYPES)[keyof typeof LEGACY_TASK_EVENT_TYPES];\r\n 333: export type TaskEventStatus = (typeof TASK_EVENT_STATUS)[keyof typeof TASK_EVENT_STATUS];\r\n 334: \r\n 335: export interface TaskEventSemantics {\r\n 336:   status: TaskEventStatus;\r\n 337:   label: string;\r\n 338: }\r\n 339: \r\n 340: export const TASK_EVENT_SEMANTICS: Record<TaskEventType, TaskEventSemantics> = {\r\n 341:   [TASK_EVENT_TYPES.STARTED]: { status: TASK_EVENT_STATUS.RUNNING, label: '开始了任务' },\r\n 342:   [TASK_EVENT_TYPES.SUCCEEDED]: { status: TASK_EVENT_STATUS.COMPLETED, label: '结束了任务' },\r\n 343:   [TASK_EVENT_TYPES.FAILED]: { status: TASK_EVENT_STATUS.FAILED, label: '任务失败' },\r\n 344:   [TASK_EVENT_TYPES.STOP_REQUESTED]: { status: TASK_EVENT_STATUS.STOPPING, label: '请求停止任务' },\r\n 345:   [TASK_EVENT_TYPES.STOPPED]: { status: TASK_EVENT_STATUS.STOPPED, label: '已停止任务' },\r\n 346:   [TASK_EVENT_TYPES.INTERRUPTED]: { status: TASK_EVENT_STATUS.INTERRUPTED, label: '已中断任务' },\r\n 347: };\r\n 348: \r\n 349: export const TASK_EVENT_COMPATIBILITY: Record<LegacyTaskEventType, TaskEventType> = {\r\n 350:   [LEGACY_TASK_EVENT_TYPES.EXECUTED]: TASK_EVENT_TYPES.SUCCEEDED,\r\n 351:   [LEGACY_TASK_EVENT_TYPES.STOPPING]: TASK_EVENT_TYPES.STOPPED,\r\n 352: };\r\n 353: \r\n 354: export interface TaskEventMeta extends CodexSessionInfo {\r\n 355:   taskId?: number | null;\r\n 356:   taskKey?: string | null;\r\n 357:   taskTitle?: string | null;\r\n 358:   planId?: number | null;\r\n 359:   status?: TaskEventStatus | string | null;\r\n 360:   startedAt?: string | null;\r\n 361:   finishedAt?: string | null;\r\n 362:   durationMs?: number | null;\r\n 363:   runDurationMs?: number | null;\r\n 364:   exitCode?: number | null;\r\n 365:   log?: string | null;\r\n 366:   error?: string | null;\r\n 367:   agentCliProvider?: string | null;\r\n 368:   agentCliCommand?: string | null;\r\n 369:   codexReasoningEffort?: CodexReasoningEffort | null;\r\n 370:   [key: string]: unknown;\r\n 371: }\r\n 372: \r\n 373: export type AppEventStructuredMeta = TaskEventMeta | Record<string, unknown>;\r\n 374: export type AppEventMeta = string | AppEventStructuredMeta;\r\n 375: \r\n 376: export interface AppEvent<TMeta extends AppEventMeta | null = AppEventMeta | null> {\r\n 377:   id: number;\r\n 378:   project_id: number;\r\n 379:   type: string;\r\n 380:   message: string;\r\n 381:   meta?: TMeta;\r\n 382:   created_at: string;\r\n 383: }\r\n 384: \r\n 385: export interface ScanFile {\r\n 386:   project_id: number;\r\n 387:   scan_type: string;\r\n 388:   file_path: string;\r\n 389:   hash: string;\r\n 390:   size: number;\r\n 391:   modified_at: string;\r\n 392:   scanned_at: string;\r\n 393: }\r\n 394: \r\n 395: export interface AppSnapshot {\r\n 396:   activeProjectId: number | null;\r\n 397:   activeProject: Project | null;\r\n 398:   projects: Project[];\r\n 399:   state: ProjectState | null;\r\n 400:   requirements: Requirement[];\r\n 401:   feedback: Feedback[];\r\n 402:   attachments: Attachment[];\r\n 403:   plans: Plan[];\r\n 404:   tasks: PlanTask[];\r\n 405:   events: AppEvent<AppEventMeta | null>[];\r\n 406:   scans: ScanFile[];\r\n 407:   activeOperation: ActiveOperation | null;\r\n 408:   activeOperations: ActiveOperation[];\r\n 409:   lastOperation: ActiveOperation | null;\r\n 410: }\r\n 411: \r\n 412: export interface ActivityLine {\r\n 413:   role: string;\r\n 414:   text: string;\r\n 415:   at: string;\r\n 416: }\r\n 417: \r\n 418: export interface ActiveOperation extends CodexSessionInfo {\r\n 419:   label: string;\r\n 420:   projectId: number | null;\r\nrg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。\r\n所在位置 行:2 字符: 283\r\n+ ... r/types.ts' 113 220; Show 'src/renderer/types.ts' 300 420; rg -n \"aut ...\r\n+                                                                ~~\r\n    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException\r\n    + FullyQualifiedErrorId : CommandNotFoundException\r\n \r\n","metadata":{"exit_code":1,"duration_seconds":4.8}}
+ exited 1 in 4784ms:
+
+--- src/renderer/types.ts:113-220 ---
+ 113: export interface Project {
+ 114:   id: number;
+ 115:   name: string;
+ 116:   workspace_path: string;
+ 117:   description: string;
+ 118:   created_at: string;
+ 119:   updated_at: string;
+ 120:   running?: number;
+ 121:   phase?: string;
+ 122:   interval_seconds?: number;
+ 123:   validation_command?: string;
+ 124:   agent_cli_provider?: AgentCliProvider;
+ 125:   agent_cli_command?: string;
+ 126:   codex_reasoning_effort?: CodexReasoningEffort | null;
+ 127: }
+ 128: 
+ 129: export interface ProjectState {
+ 130:   project_id: number;
+ 131:   running: number;
+ 132:   phase: string;
+ 133:   interval_seconds: number;
+ 134:   validation_command: string;
+ 135:   last_issue_hash?: string | null;
+ 136:   last_error?: string | null;
+ 137:   agent_cli_provider?: AgentCliProvider;
+ 138:   agent_cli_command?: string;
+ 139:   codex_reasoning_effort?: CodexReasoningEffort | null;
+ 140:   updated_at: string;
+ 141:   /** 由 snapshot 合并自 project.workspace_path */
+ 142:   workspace_path?: string;
+ 143: }
+ 144: 
+ 145: export interface Requirement {
+ 146:   id: number;
+ 147:   project_id: number;
+ 148:   title: string;
+ 149:   body: string;
+ 150:   status: string;
+ 151:   source_path?: string | null;
+ 152:   source_hash?: string | null;
+ 153:   agent_cli_provider?: AgentCliProvider | null;
+ 154:   agent_cli_command?: string;
+ 155:   codex_reasoning_effort?: CodexReasoningEffort | null;
+ 156:   linked_plan_id?: number | null;
+ 157:   plan_status?: string | null;
+ 158:   plan_completed?: number | null;
+ 159:   plan_total?: number | null;
+ 160:   created_at: string;
+ 161:   updated_at: string;
+ 162: }
+ 163: 
+ 164: export interface Feedback {
+ 165:   id: number;
+ 166:   project_id: number;
+ 167:   requirement_id?: number | null;
+ 168:   title: string;
+ 169:   body: string;
+ 170:   status: string;
+ 171:   agent_cli_provider?: AgentCliProvider | null;
+ 172:   agent_cli_command?: string;
+ 173:   codex_reasoning_effort?: CodexReasoningEffort | null;
+ 174:   linked_plan_id?: number | null;
+ 175:   plan_status?: string | null;
+ 176:   plan_completed?: number | null;
+ 177:   plan_total?: number | null;
+ 178:   created_at: string;
+ 179:   updated_at: string;
+ 180: }
+ 181: 
+ 182: export interface Attachment {
+ 183:   id: number;
+ 184:   project_id: number;
+ 185:   owner_type: IntakeType;
+ 186:   owner_id: number;
+ 187:   original_name: string;
+ 188:   stored_path: string;
+ 189:   mime_type?: string | null;
+ 190:   size: number;
+ 191:   hash: string;
+ 192:   created_at: string;
+ 193: }
+ 194: 
+ 195: export interface Plan {
+ 196:   id: number;
+ 197:   project_id: number;
+ 198:   issue_hash: string;
+ 199:   file_path: string;
+ 200:   title?: string | null;
+ 201:   hash: string;
+ 202:   status: string;
+ 203:   total_tasks: number;
+ 204:   completed_tasks: number;
+ 205:   validation_passed: number;
+ 206:   agent_cli_provider?: AgentCliProvider | null;
+ 207:   agent_cli_command?: string;
+ 208:   codex_reasoning_effort?: CodexReasoningEffort | null;
+ 209:   concurrency_suggestion: PlanConcurrencySuggestion;
+ 210:   created_at: string;
+ 211:   updated_at: string;
+ 212: }
+ 213: 
+ 214: export interface PlanScopeFileInfo {
+ 215:   path: string;
+ 216:   exists: boolean;
+ 217:   isDirectory: boolean;
+ 218:   canOpen: boolean;
+ 219:   isUnknown: boolean;
+ 220:   isValidation: boolean;
+
+--- src/renderer/types.ts:300-420 ---
+ 300:   updated_at: string;
+ 301:   /** JOIN plans 得到 */
+ 302:   file_path: string;
+ 303:   /** JOIN plans 并读取计划 Markdown 标题得到 */
+ 304:   plan_title: string;
+ 305: }
+ 306: 
+ 307: export const TASK_EVENT_TYPES = {
+ 308:   STARTED: 'task.started',
+ 309:   SUCCEEDED: 'task.succeeded',
+ 310:   FAILED: 'task.failed',
+ 311:   STOP_REQUESTED: 'task.stop.requested',
+ 312:   STOPPED: 'task.stopped',
+ 313:   INTERRUPTED: 'task.interrupted',
+ 314: } as const;
+ 315: 
+ 316: export const LEGACY_TASK_EVENT_TYPES = {
+ 317:   EXECUTED: 'task.executed',
+ 318:   STOPPING: 'task.stopping',
+ 319: } as const;
+ 320: 
+ 321: export const TASK_EVENT_STATUS = {
+ 322:   PENDING: 'pending',
+ 323:   RUNNING: 'running',
+ 324:   COMPLETED: 'completed',
+ 325:   FAILED: 'failed',
+ 326:   STOPPING: 'stopping',
+ 327:   STOPPED: 'stopped',
+ 328:   INTERRUPTED: 'interrupted',
+ 329: } as const;
+ 330: 
+ 331: export type TaskEventType = (typeof TASK_EVENT_TYPES)[keyof typeof TASK_EVENT_TYPES];
+ 332: export type LegacyTaskEventType = (typeof LEGACY_TASK_EVENT_TYPES)[keyof typeof LEGACY_TASK_EVENT_TYPES];
+ 333: export type TaskEventStatus = (typeof TASK_EVENT_STATUS)[keyof typeof TASK_EVENT_STATUS];
+ 334: 
+ 335: export interface TaskEventSemantics {
+ 336:   status: TaskEventStatus;
+ 337:   label: string;
+ 338: }
+ 339: 
+ 340: export const TASK_EVENT_SEMANTICS: Record<TaskEventType, TaskEventSemantics> = {
+ 341:   [TASK_EVENT_TYPES.STARTED]: { status: TASK_EVENT_STATUS.RUNNING, label: '开始了任务' },
+ 342:   [TASK_EVENT_TYPES.SUCCEEDED]: { status: TASK_EVENT_STATUS.COMPLETED, label: '结束了任务' },
+ 343:   [TASK_EVENT_TYPES.FAILED]: { status: TASK_EVENT_STATUS.FAILED, label: '任务失败' },
+ 344:   [TASK_EVENT_TYPES.STOP_REQUESTED]: { status: TASK_EVENT_STATUS.STOPPING, label: '请求停止任务' },
+ 345:   [TASK_EVENT_TYPES.STOPPED]: { status: TASK_EVENT_STATUS.STOPPED, label: '已停止任务' },
+ 346:   [TASK_EVENT_TYPES.INTERRUPTED]: { status: TASK_EVENT_STATUS.INTERRUPTED, label: '已中断任务' },
+ 347: };
+ 348: 
+ 349: export const TASK_EVENT_COMPATIBILITY: Record<LegacyTaskEventType, TaskEventType> = {
+ 350:   [LEGACY_TASK_EVENT_TYPES.EXECUTED]: TASK_EVENT_TYPES.SUCCEEDED,
+ 351:   [LEGACY_TASK_EVENT_TYPES.STOPPING]: TASK_EVENT_TYPES.STOPPED,
+ 352: };
+ 353: 
+ 354: export interface TaskEventMeta extends CodexSessionInfo {
+ 355:   taskId?: number | null;
+ 356:   taskKey?: string | null;
+ 357:   taskTitle?: string | null;
+ 358:   planId?: number | null;
+ 359:   status?: TaskEventStatus | string | null;
+ 360:   startedAt?: string | null;
+ 361:   finishedAt?: string | null;
+ 362:   durationMs?: number | null;
+ 363:   runDurationMs?: number | null;
+ 364:   exitCode?: number | null;
+ 365:   log?: string | null;
+ 366:   error?: string | null;
+ 367:   agentCliProvider?: string | null;
+ 368:   agentCliCommand?: string | null;
+ 369:   codexReasoningEffort?: CodexReasoningEffort | null;
+ 370:   [key: string]: unknown;
+ 371: }
+ 372: 
+ 373: export type AppEventStructuredMeta = TaskEventMeta | Record<string, unknown>;
+ 374: export type AppEventMeta = string | AppEventStructuredMeta;
+ 375: 
+ 376: export interface AppEvent<TMeta extends AppEventMeta | null = AppEventMeta | null> {
+ 377:   id: number;
+ 378:   project_id: number;
+ 379:   type: string;
+ 380:   message: string;
+ 381:   meta?: TMeta;
+ 382:   created_at: string;
+ 383: }
+ 384: 
+ 385: export interface ScanFile {
+ 386:   project_id: number;
+ 387:   scan_type: string;
+ 388:   file_path: string;
+ 389:   hash: string;
+ 390:   size: number;
+ 391:   modified_at: string;
+ 392:   scanned_at: string;
+ 393: }
+ 394: 
+ 395: export interface AppSnapshot {
+ 396:   activeProjectId: number | null;
+ 397:   activeProject: Project | null;
+ 398:   projects: Project[];
+ 399:   state: ProjectState | null;
+ 400:   requirements: Requirement[];
+ 401:   feedback: Feedback[];
+ 402:   attachments: Attachment[];
+ 403:   plans: Plan[];
+ 404:   tasks: PlanTask[];
+ 405:   events: AppEvent<AppEventMeta | null>[];
+ 406:   scans: ScanFile[];
+ 407:   activeOperation: ActiveOperation | null;
+ 408:   activeOperations: ActiveOperation[];
+ 409:   lastOperation: ActiveOperation | null;
+ 410: }
+ 411: 
+ 412: export interface ActivityLine {
+ 413:   role: string;
+ 414:   text: string;
+ 415:   at: string;
+ 416: }
+ 417: 
+ 418: export interface ActiveOperation extends CodexSessionInfo {
+ 419:   label: string;
+ 420:   projectId: number | null;
+rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。
+所在位置 行:2 字符: 283
++ ... r/types.ts' 113 220; Show 'src/renderer/types.ts' 300 420; rg -n "aut ...
++                                                                ~~
+    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+
+**Troubleshooting implementation**
+
+I'm wondering why “rg” isn’t working now when it worked earlier. Maybe it has to do with the path, or perhaps it's not an issue at all. I haven't conducted any tests yet, so it's hard to tell. I think I need to implement a dirty guard to ensure everything is functioning as it should. Plus, I need to better understand how useSnapshot updates work to resolve this.
+codex
+ProjectState 类型已有目标字段；现在实现表单脏态保护，避免轮询覆盖未保存输入。
+exec
+powershell.exe -Command "Select-String -Path src\\renderer\\**\\*.ts,src\\renderer\\**\\*.tsx -Pattern \"declare global|interface Window|configureLoop|autoplan\" -SimpleMatch | Select-Object -First 80 | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }; function Show($f,$s,$e){ Write-Output (("`n--- {0}:{1}-{2} ---") -f $f,$s,$e); $lines=Get-Content -Encoding UTF8 $f; for($i=$s;$i -le $e -and $i -le $lines.Length;$i++){ '"'{0,4}: {1}' -f "'$i,$lines[$i-1] }}; Show '"'src/renderer/hooks/useSnapshot.ts' 1 120" in D:\project\GitHub\autoplan
+ succeeded in 572ms:
+
+--- src/renderer/hooks/useSnapshot.ts:1-120 ---
+   1: import { useEffect, useState } from 'react';
+   2: import type { AppSnapshot } from '../types';
+   3: 
+   4: /**
+   5:  * Subscribe to main-process snapshots.
+   6:  * Project pages ignore updates for other projects while keeping the project list fresh.
+   7:  */
+   8: export function useSnapshot(projectId: number | null) {
+   9:   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
+  10:   const [error, setError] = useState<string | null>(null);
+  11: 
+  12:   useEffect(() => {
+  13:     let disposed = false;
+  14:     const showError = (e: unknown) => {
+  15:       const msg = e instanceof Error ? e.message : String(e);
+  16:       if (!disposed) setError(msg);
+  17:     };
+  18: 
+  19:     const unsubscribe = window.autoplan.onLoopUpdate((next) => {
+  20:       if (disposed) return;
+  21:       if (projectId === null || Number(next.activeProjectId) === Number(projectId)) {
+  22:         setSnapshot(next);
+  23:         return;
+  24:       }
+  25:       setSnapshot((current) => (current ? { ...current, projects: next.projects } : current));
+  26:     });
+  27: 
+  28:     window.autoplan
+  29:       .snapshot(projectId)
+  30:       .then((next) => {
+  31:         if (!disposed) setSnapshot(next);
+  32:       })
+  33:       .catch(showError);
+  34: 
+  35:     return () => {
+  36:       disposed = true;
+  37:       unsubscribe();
+  38:     };
+  39:   }, [projectId]);
+  40: 
+  41:   return { snapshot, setSnapshot, error, setError };
+  42: }
+
+codex
+我会加入“本地编辑脏态 + 项目匹配”保护，保存成功后再用返回快照重置表单。
+exec
+powershell.exe -Command "Get-ChildItem -Recurse -Path src\\renderer -Include *.ts,*.tsx,*.d.ts | Select-String -Pattern 'interface Window|configureLoop|autoplan' | Select-Object -First 100 | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 505ms:
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:21: const scopeFileSettingsKey = 'autoplan.scopeFileOpenSettings';
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:185: const result = await (window.autoplan as typeof window.autoplan & {
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:5: return window.autoplan.getDroppedFilePath(file) || (file as File & { path?: string }).path || '';
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:15: return window.autoplan.toFileUrl(path);
+D:\project\GitHub\autoplan\src\renderer\hooks\useSnapshot.ts:19: const unsubscribe = window.autoplan.onLoopUpdate((next) => {
+D:\project\GitHub\autoplan\src\renderer\hooks\useSnapshot.ts:28: window.autoplan
+D:\project\GitHub\autoplan\src\renderer\pages\ProjectsPage.tsx:63: ? await window.autoplan.updateProject({
+D:\project\GitHub\autoplan\src\renderer\pages\ProjectsPage.tsx:71: : await window.autoplan.createProject({
+D:\project\GitHub\autoplan\src\renderer\pages\ProjectsPage.tsx:89: const next = await window.autoplan.deleteProject({ projectId: deleting.id });
+D:\project\GitHub\autoplan\src\renderer\pages\ProjectsPage.tsx:109: <h1>AutoPlan</h1>
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:254: const parsed = JSON.parse(window.localStorage.getItem('autoplan.scopeFileOpenSettings') || 'null');
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:337: window.localStorage.setItem('autoplan.scopeFileOpenSettings', JSON.stringify(scopeFileOpenSettings));
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:392: const next = await window.autoplan.createRequirement({
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:417: const next = await window.autoplan.createFeedback({
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:442: const next = await window.autoplan.updateRequirement({ projectId, id, ...input });
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:458: const next = await window.autoplan.deleteRequirement({ projectId, id });
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:474: const next = await window.autoplan.updateFeedback({ projectId, id, ...input });
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:490: const next = await window.autoplan.deleteFeedback({ projectId, id });
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:505: const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:526: const next = await window.autoplan.interruptIntake({ projectId, type, id });
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:539: const next = await window.autoplan.resumeIntake({ projectId, type, id });
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:552: const next = await window.autoplan.appendIntakeTask({ projectId, type, id, title });
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:568: const result = await window.autoplan.readPlan({ projectId: plan.project_id, planId: plan.id });
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:693: ? window.autoplan.stopLoop({ projectId, manual: true })
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:694: : window.autoplan.startLoop({ projectId, manual: true }),
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:783: (window.autoplan as typeof window.autoplan & {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:808: onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:809: onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:828: ? window.autoplan.stopLoop({ projectId, manual: true })
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:829: : window.autoplan.startLoop({ projectId, manual: true }),
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:877: <div className="brand-name">AutoPlan</div>
+D:\project\GitHub\autoplan\src\renderer\types.ts:539: export interface AutoplanApi {
+D:\project\GitHub\autoplan\src\renderer\types.ts:544: configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:566: interface Window {
+D:\project\GitHub\autoplan\src\renderer\types.ts:567: autoplan: AutoplanApi;
+
+exec
+powershell.exe -Command 'function Show($f,$s,$e){ Write-Output (("`n--- {0}:{1}-{2} ---") -f $f,$s,$e); $lines=Get-Content -Encoding UTF8 $f; for($i=$s;$i -le $e -and $i -le $lines.Length;$i++){ '"'{0,4}: {1}' -f "'$i,$lines[$i-1] }}; Show '"'src/renderer/types.ts' 500 575" in D:\project\GitHub\autoplan
+ succeeded in 514ms:
+
+--- src/renderer/types.ts:500-575 ---
+ 500: }
+ 501: 
+ 502: export interface ProjectIdInput {
+ 503:   projectId: number;
+ 504:   manual?: boolean;
+ 505: }
+ 506: 
+ 507: export interface RecordIdInput extends ProjectIdInput {
+ 508:   id: number;
+ 509: }
+ 510: 
+ 511: export interface TaskIdInput extends ProjectIdInput {
+ 512:   taskId: number;
+ 513: }
+ 514: 
+ 515: export interface ReadPlanInput extends ProjectIdInput {
+ 516:   planId: number;
+ 517: }
+ 518: 
+ 519: export interface IntakeActionInput extends ProjectIdInput {
+ 520:   type: IntakeType;
+ 521:   id: number;
+ 522:   title?: string;
+ 523: }
+ 524: 
+ 525: export interface UpdateRequirementInput extends RecordIdInput {
+ 526:   title?: string;
+ 527:   body?: string;
+ 528:   status?: string;
+ 529:   attachments?: PendingAttachment[];
+ 530:   agentCliProvider?: AgentCliProvider;
+ 531:   agentCliCommand?: string;
+ 532:   codexReasoningEffort?: CodexReasoningEffort;
+ 533: }
+ 534: 
+ 535: export interface UpdateFeedbackInput extends UpdateRequirementInput {
+ 536:   requirementId?: number | null;
+ 537: }
+ 538: 
+ 539: export interface AutoplanApi {
+ 540:   snapshot: (projectId?: number | null) => Promise<AppSnapshot>;
+ 541:   createProject: (input: CreateProjectInput) => Promise<AppSnapshot>;
+ 542:   updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+ 543:   deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+ 544:   configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+ 545:   startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+ 546:   stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+ 547:   runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+ 548:   readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
+ 549:   runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+ 550:   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+ 551:   createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+ 552:   updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+ 553:   deleteRequirement: (input: RecordIdInput) => Promise<AppSnapshot>;
+ 554:   createFeedback: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+ 555:   updateFeedback: (input: UpdateFeedbackInput) => Promise<AppSnapshot>;
+ 556:   deleteFeedback: (input: RecordIdInput) => Promise<AppSnapshot>;
+ 557:   interruptIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+ 558:   resumeIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+ 559:   appendIntakeTask: (input: IntakeActionInput) => Promise<AppSnapshot>;
+ 560:   getDroppedFilePath: (file: File) => string;
+ 561:   toFileUrl: (filePath: string) => string;
+ 562:   onLoopUpdate: (handler: (snapshot: AppSnapshot) => void) => () => void;
+ 563: }
+ 564: 
+ 565: declare global {
+ 566:   interface Window {
+ 567:     autoplan: AutoplanApi;
+ 568:   }
+ 569: }
+
+codex
+找到 API 类型了，还需要查看 `LoopConfigInput` 以对齐新增 payload。
+exec
+powershell.exe -Command "Select-String -Path src\\renderer\\types.ts -Pattern 'LoopConfigInput|CreateProjectInput|UpdateProjectInput' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }; function Show($f,$s,$e){ Write-Output (("`n--- {0}:{1}-{2} ---") -f $f,$s,$e); $lines=Get-Content -Encoding UTF8 $f; for($i=$s;$i -le $e -and $i -le $lines.Length;$i++){ '"'{0,4}: {1}' -f "'$i,$lines[$i-1] }}; Show '"'src/renderer/types.ts' 470 505" in D:\project\GitHub\autoplan
+ succeeded in 527ms:
+D:\project\GitHub\autoplan\src\renderer\types.ts:479: export interface CreateProjectInput {
+D:\project\GitHub\autoplan\src\renderer\types.ts:488: export interface UpdateProjectInput extends CreateProjectInput {
+D:\project\GitHub\autoplan\src\renderer\types.ts:492: export interface LoopConfigInput {
+D:\project\GitHub\autoplan\src\renderer\types.ts:541: createProject: (input: CreateProjectInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:542: updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:544: configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+
+--- src/renderer/types.ts:470-505 ---
+ 470:   title?: string;
+ 471:   status?: string;
+ 472:   autoRun?: boolean;
+ 473:   requirementId?: number | null;
+ 474:   agentCliProvider?: AgentCliProvider;
+ 475:   agentCliCommand?: string;
+ 476:   codexReasoningEffort?: CodexReasoningEffort;
+ 477: }
+ 478: 
+ 479: export interface CreateProjectInput {
+ 480:   name: string;
+ 481:   workspacePath: string;
+ 482:   description?: string;
+ 483:   agentCliProvider?: AgentCliProvider;
+ 484:   agentCliCommand?: string;
+ 485:   codexReasoningEffort?: CodexReasoningEffort;
+ 486: }
+ 487: 
+ 488: export interface UpdateProjectInput extends CreateProjectInput {
+ 489:   id: number;
+ 490: }
+ 491: 
+ 492: export interface LoopConfigInput {
+ 493:   projectId: number;
+ 494:   workspacePath?: string;
+ 495:   intervalSeconds?: number;
+ 496:   validationCommand?: string;
+ 497:   agentCliProvider?: AgentCliProvider;
+ 498:   agentCliCommand?: string;
+ 499:   codexReasoningEffort?: CodexReasoningEffort;
+ 500: }
+ 501: 
+ 502: export interface ProjectIdInput {
+ 503:   projectId: number;
+ 504:   manual?: boolean;
+ 505: }
+
+codex
+我会把本地 payload 类型切回共享 `LoopConfigInput`，并添加表单比较/脏态函数。
+  ✓ 确认前端同步状态
+  → 加入脏态保护逻辑
+  • 更新必要类型定义
+  • 检查差异不运行测试
+codex
+先改共享类型，再让页面 helper 使用同一份配置入参类型。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\types.ts
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index ae87bdfbe46e72dd1d6a5e0c6157651ff80e4e7c..dbed6de863fd7d1730d4d5eab2b95e338dc442d1
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -490,10 +490,11 @@
+ }
+ 
+ export interface LoopConfigInput {
+-  projectId: number;
+-  workspacePath?: string;
++  projectId: number;
++  workspacePath?: string;
+   intervalSeconds?: number;
+   validationCommand?: string;
++  validation_command?: string;
+   agentCliProvider?: AgentCliProvider;
+   agentCliCommand?: string;
+   codexReasoningEffort?: CodexReasoningEffort;
+
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index ae87bdfbe46e72dd1d6a5e0c6157651ff80e4e7c..dbed6de863fd7d1730d4d5eab2b95e338dc442d1
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -490,10 +490,11 @@
+ }
+ 
+ export interface LoopConfigInput {
+-  projectId: number;
+-  workspacePath?: string;
++  projectId: number;
++  workspacePath?: string;
+   intervalSeconds?: number;
+   validationCommand?: string;
++  validation_command?: string;
+   agentCliProvider?: AgentCliProvider;
+   agentCliCommand?: string;
+   codexReasoningEffort?: CodexReasoningEffort;
+
+codex
+类型已补齐；现在 patch 页面同步逻辑和保存成功后的表单重置。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index c7043a0eb10649d8aff43919d545787257c2bd8d..804f40687cdaa7fe548185af12c9cd74b535bf85
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -7,6 +7,7 @@
+   AppSnapshot,
+   CodexReasoningEffort,
+   IntakeType,
++  LoopConfigInput,
+   PendingAttachment,
+   Plan,
+   PlanTask,
+@@ -75,16 +76,6 @@
+   agentCliProvider: string;
+   agentCliCommand: string;
+   codexReasoningEffort: CodexReasoningEffort;
+-};
+-
+-type LoopConfigurePayload = {
+-  projectId: number;
+-  workspacePath: string;
+-  intervalSeconds: number;
+-  validationCommand: string;
+-  agentCliProvider: string;
+-  agentCliCommand: string;
+-  codexReasoningEffort?: CodexReasoningEffort;
+ };
+ 
+ type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+@@ -212,8 +203,8 @@
+   };
+ }
+ 
+-function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigurePayload {
+-  const payload: LoopConfigurePayload = {
++function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigInput {
++  const payload: LoopConfigInput = {
+     projectId,
+     workspacePath: form.workspacePath,
+     intervalSeconds: Number(form.intervalSeconds || 5),
+@@ -227,6 +218,15 @@
+   return payload;
+ }
+ 
++function loopFormsEqual(left: LoopFormState, right: LoopFormState) {
++  return left.workspacePath === right.workspacePath
++    && left.intervalSeconds === right.intervalSeconds
++    && left.validationCommand === right.validationCommand
++    && left.agentCliProvider === right.agentCliProvider
++    && left.agentCliCommand === right.agentCliCommand
++    && left.codexReasoningEffort === right.codexReasoningEffort;
++}
++
+ export function WorkspacePage() {
+   const params = useParams<{ projectId: string }>();
+   const navigate = useNavigate();
+@@ -249,6 +249,7 @@
+     agentCliCommand: '',
+     codexReasoningEffort: defaultCodexReasoningEffort,
+   });
++  const [loopFormDirty, setLoopFormDirty] = useState(false);
+   const [scopeFileOpenSettings, setScopeFileOpenSettings] = useState<ScopeFileOpenSettings>(() => {
+     try {
+       const parsed = JSON.parse(window.localStorage.getItem('autoplan.scopeFileOpenSettings') || 'null');
+@@ -289,16 +290,26 @@
+     );
+   }, [planReadState.plan, snapshot?.plans]);
+ 
+-  const showError = useCallback((e: unknown) => {
++  const showError = useCallback((e: unknown) => {
+     const msg = e instanceof Error ? e.message : String(e);
+     setError(msg);
+     window.alert(msg);
+-  }, [setError]);
+-
++  }, [setError]);
++
++  const updateLoopForm: Dispatch<SetStateAction<LoopFormState>> = useCallback((action) => {
++    setLoopFormDirty(true);
++    setLoopForm(action);
++  }, []);
++
++  useEffect(() => {
++    if (!state || Number(state.project_id) !== Number(projectId)) return;
++    const nextForm = loopFormFromProjectState(state);
++    setLoopForm((current) => (loopFormDirty || loopFormsEqual(current, nextForm) ? current : nextForm));
++  }, [projectId, loopFormDirty, state?.project_id, state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
++
+   useEffect(() => {
+-    if (!state) return;
+-    setLoopForm(loopFormFromProjectState(state));
+-  }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
++    setLoopFormDirty(false);
++  }, [projectId]);
+ 
+   useEffect(() => {
+     const defaultProvider = state?.agent_cli_provider || 'codex';
+@@ -503,6 +514,10 @@
+     event.preventDefault();
+     try {
+       const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
++      if (next.state && Number(next.state.project_id) === Number(projectId)) {
++        setLoopForm(loopFormFromProjectState(next.state));
++      }
++      setLoopFormDirty(false);
+       setSnapshot(next);
+       setError(null);
+     } catch (e) {
+@@ -819,7 +834,7 @@
+             <SettingsView
+               loopForm={loopForm}
+               scopeFileOpenSettings={scopeFileOpenSettings}
+-              setLoopForm={setLoopForm}
++              setLoopForm={updateLoopForm}
+               setScopeFileOpenSettings={setScopeFileOpenSettings}
+               onSubmit={submitLoopConfig}
+               onToggleRun={() =>
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index ae87bdfbe46e72dd1d6a5e0c6157651ff80e4e7c..dbed6de863fd7d1730d4d5eab2b95e338dc442d1
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -490,10 +490,11 @@
+ }
+ 
+ export interface LoopConfigInput {
+-  projectId: number;
+-  workspacePath?: string;
++  projectId: number;
++  workspacePath?: string;
+   intervalSeconds?: number;
+   validationCommand?: string;
++  validation_command?: string;
+   agentCliProvider?: AgentCliProvider;
+   agentCliCommand?: string;
+   codexReasoningEffort?: CodexReasoningEffort;
+
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index c7043a0eb10649d8aff43919d545787257c2bd8d..804f40687cdaa7fe548185af12c9cd74b535bf85
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -7,6 +7,7 @@
+   AppSnapshot,
+   CodexReasoningEffort,
+   IntakeType,
++  LoopConfigInput,
+   PendingAttachment,
+   Plan,
+   PlanTask,
+@@ -75,16 +76,6 @@
+   agentCliProvider: string;
+   agentCliCommand: string;
+   codexReasoningEffort: CodexReasoningEffort;
+-};
+-
+-type LoopConfigurePayload = {
+-  projectId: number;
+-  workspacePath: string;
+-  intervalSeconds: number;
+-  validationCommand: string;
+-  agentCliProvider: string;
+-  agentCliCommand: string;
+-  codexReasoningEffort?: CodexReasoningEffort;
+ };
+ 
+ type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+@@ -212,8 +203,8 @@
+   };
+ }
+ 
+-function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigurePayload {
+-  const payload: LoopConfigurePayload = {
++function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigInput {
++  const payload: LoopConfigInput = {
+     projectId,
+     workspacePath: form.workspacePath,
+     intervalSeconds: Number(form.intervalSeconds || 5),
+@@ -227,6 +218,15 @@
+   return payload;
+ }
+ 
++function loopFormsEqual(left: LoopFormState, right: LoopFormState) {
++  return left.workspacePath === right.workspacePath
++    && left.intervalSeconds === right.intervalSeconds
++    && left.validationCommand === right.validationCommand
++    && left.agentCliProvider === right.agentCliProvider
++    && left.agentCliCommand === right.agentCliCommand
++    && left.codexReasoningEffort === right.codexReasoningEffort;
++}
++
+ export function WorkspacePage() {
+   const params = useParams<{ projectId: string }>();
+   const navigate = useNavigate();
+@@ -249,6 +249,7 @@
+     agentCliCommand: '',
+     codexReasoningEffort: defaultCodexReasoningEffort,
+   });
++  const [loopFormDirty, setLoopFormDirty] = useState(false);
+   const [scopeFileOpenSettings, setScopeFileOpenSettings] = useState<ScopeFileOpenSettings>(() => {
+     try {
+       const parsed = JSON.parse(window.localStorage.getItem('autoplan.scopeFileOpenSettings') || 'null');
+@@ -289,16 +290,26 @@
+     );
+   }, [planReadState.plan, snapshot?.plans]);
+ 
+-  const showError = useCallback((e: unknown) => {
++  const showError = useCallback((e: unknown) => {
+     const msg = e instanceof Error ? e.message : String(e);
+     setError(msg);
+     window.alert(msg);
+-  }, [setError]);
+-
++  }, [setError]);
++
++  const updateLoopForm: Dispatch<SetStateAction<LoopFormState>> = useCallback((action) => {
++    setLoopFormDirty(true);
++    setLoopForm(action);
++  }, []);
++
++  useEffect(() => {
++    if (!state || Number(state.project_id) !== Number(projectId)) return;
++    const nextForm = loopFormFromProjectState(state);
++    setLoopForm((current) => (loopFormDirty || loopFormsEqual(current, nextForm) ? current : nextForm));
++  }, [projectId, loopFormDirty, state?.project_id, state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
++
+   useEffect(() => {
+-    if (!state) return;
+-    setLoopForm(loopFormFromProjectState(state));
+-  }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
++    setLoopFormDirty(false);
++  }, [projectId]);
+ 
+   useEffect(() => {
+     const defaultProvider = state?.agent_cli_provider || 'codex';
+@@ -503,6 +514,10 @@
+     event.preventDefault();
+     try {
+       const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
++      if (next.state && Number(next.state.project_id) === Number(projectId)) {
++        setLoopForm(loopFormFromProjectState(next.state));
++      }
++      setLoopFormDirty(false);
+       setSnapshot(next);
+       setError(null);
+     } catch (e) {
+@@ -819,7 +834,7 @@
+             <SettingsView
+               loopForm={loopForm}
+               scopeFileOpenSettings={scopeFileOpenSettings}
+-              setLoopForm={setLoopForm}
++              setLoopForm={updateLoopForm}
+               setScopeFileOpenSettings={setScopeFileOpenSettings}
+               onSubmit={submitLoopConfig}
+               onToggleRun={() =>
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index ae87bdfbe46e72dd1d6a5e0c6157651ff80e4e7c..dbed6de863fd7d1730d4d5eab2b95e338dc442d1
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -490,10 +490,11 @@
+ }
+ 
+ export interface LoopConfigInput {
+-  projectId: number;
+-  workspacePath?: string;
++  projectId: number;
++  workspacePath?: string;
+   intervalSeconds?: number;
+   validationCommand?: string;
++  validation_command?: string;
+   agentCliProvider?: AgentCliProvider;
+   agentCliCommand?: string;
+   codexReasoningEffort?: CodexReasoningEffort;
+
+**Considering settings update**
+
+I’m thinking about whether I need to update the `SettingsView` props type since it already dispatches actions. If the save fails, I might need to show an error alert using `setError`. Retaining this might be important. I'm also wondering if I should skip tests for this change. I should check the differences more closely to see if it's limited, just to be sure everything is working as it should.
+codex
+脏态保护已加；我只做差异和关键行号检查，不运行任何验证命令。
+  ✓ 确认前端同步状态
+  ✓ 加入脏态保护逻辑
+  → 更新必要类型定义
+  • 检查差异不运行测试
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index c7043a0eb10649d8aff43919d545787257c2bd8d..804f40687cdaa7fe548185af12c9cd74b535bf85
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -7,6 +7,7 @@
+   AppSnapshot,
+   CodexReasoningEffort,
+   IntakeType,
++  LoopConfigInput,
+   PendingAttachment,
+   Plan,
+   PlanTask,
+@@ -75,16 +76,6 @@
+   agentCliProvider: string;
+   agentCliCommand: string;
+   codexReasoningEffort: CodexReasoningEffort;
+-};
+-
+-type LoopConfigurePayload = {
+-  projectId: number;
+-  workspacePath: string;
+-  intervalSeconds: number;
+-  validationCommand: string;
+-  agentCliProvider: string;
+-  agentCliCommand: string;
+-  codexReasoningEffort?: CodexReasoningEffort;
+ };
+ 
+ type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+@@ -212,8 +203,8 @@
+   };
+ }
+ 
+-function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigurePayload {
+-  const payload: LoopConfigurePayload = {
++function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigInput {
++  const payload: LoopConfigInput = {
+     projectId,
+     workspacePath: form.workspacePath,
+     intervalSeconds: Number(form.intervalSeconds || 5),
+@@ -227,6 +218,15 @@
+   return payload;
+ }
+ 
++function loopFormsEqual(left: LoopFormState, right: LoopFormState) {
++  return left.workspacePath === right.workspacePath
++    && left.intervalSeconds === right.intervalSeconds
++    && left.validationCommand === right.validationCommand
++    && left.agentCliProvider === right.agentCliProvider
++    && left.agentCliCommand === right.agentCliCommand
++    && left.codexReasoningEffort === right.codexReasoningEffort;
++}
++
+ export function WorkspacePage() {
+   const params = useParams<{ projectId: string }>();
+   const navigate = useNavigate();
+@@ -249,6 +249,7 @@
+     agentCliCommand: '',
+     codexReasoningEffort: defaultCodexReasoningEffort,
+   });
++  const [loopFormDirty, setLoopFormDirty] = useState(false);
+   const [scopeFileOpenSettings, setScopeFileOpenSettings] = useState<ScopeFileOpenSettings>(() => {
+     try {
+       const parsed = JSON.parse(window.localStorage.getItem('autoplan.scopeFileOpenSettings') || 'null');
+@@ -289,16 +290,26 @@
+     );
+   }, [planReadState.plan, snapshot?.plans]);
+ 
+-  const showError = useCallback((e: unknown) => {
++  const showError = useCallback((e: unknown) => {
+     const msg = e instanceof Error ? e.message : String(e);
+     setError(msg);
+     window.alert(msg);
+-  }, [setError]);
+-
++  }, [setError]);
++
++  const updateLoopForm: Dispatch<SetStateAction<LoopFormState>> = useCallback((action) => {
++    setLoopFormDirty(true);
++    setLoopForm(action);
++  }, []);
++
++  useEffect(() => {
++    if (!state || Number(state.project_id) !== Number(projectId)) return;
++    const nextForm = loopFormFromProjectState(state);
++    setLoopForm((current) => (loopFormDirty || loopFormsEqual(current, nextForm) ? current : nextForm));
++  }, [projectId, loopFormDirty, state?.project_id, state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
++
+   useEffect(() => {
+-    if (!state) return;
+-    setLoopForm(loopFormFromProjectState(state));
+-  }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
++    setLoopFormDirty(false);
++  }, [projectId]);
+ 
+   useEffect(() => {
+     const defaultProvider = state?.agent_cli_provider || 'codex';
+@@ -503,6 +514,10 @@
+     event.preventDefault();
+     try {
+       const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
++      if (next.state && Number(next.state.project_id) === Number(projectId)) {
++        setLoopForm(loopFormFromProjectState(next.state));
++      }
++      setLoopFormDirty(false);
+       setSnapshot(next);
+       setError(null);
+     } catch (e) {
+@@ -819,7 +834,7 @@
+             <SettingsView
+               loopForm={loopForm}
+               scopeFileOpenSettings={scopeFileOpenSettings}
+-              setLoopForm={setLoopForm}
++              setLoopForm={updateLoopForm}
+               setScopeFileOpenSettings={setScopeFileOpenSettings}
+               onSubmit={submitLoopConfig}
+               onToggleRun={() =>
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index ae87bdfbe46e72dd1d6a5e0c6157651ff80e4e7c..dbed6de863fd7d1730d4d5eab2b95e338dc442d1
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -490,10 +490,11 @@
+ }
+ 
+ export interface LoopConfigInput {
+-  projectId: number;
+-  workspacePath?: string;
++  projectId: number;
++  workspacePath?: string;
+   intervalSeconds?: number;
+   validationCommand?: string;
++  validation_command?: string;
+   agentCliProvider?: AgentCliProvider;
+   agentCliCommand?: string;
+   codexReasoningEffort?: CodexReasoningEffort;
+
+codex
+共享类型已更新，最后确认 P003 scope 差异。
+exec
+powershell.exe -Command 'git diff -- src/renderer/pages/WorkspacePage.tsx src/renderer/types.ts; $files=@('"'src/renderer/pages/WorkspacePage.tsx','src/renderer/types.ts'); foreach("'$f in $files){ $lines=Get-Content -Encoding UTF8 $f; foreach($pattern in '"'LoopConfigInput','loopFormsEqual','loopFormDirty','updateLoopForm','setLoopFormDirty\\(false\\)','configureLoop\\(loopConfigurePayloadFromForm','validation_command\\?: string'){ for("'$i=0;$i -lt $lines.Length;$i++){ if($lines[$i] -match $pattern){ '"'{0}:{1}: {2}' -f "'$f,($i+1),$lines[$i].Trim() } } } }' in D:\project\GitHub\autoplan
+ succeeded in 536ms:
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index b2b3330..804f406 100644
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -7,6 +7,7 @@ import type {
+   AppSnapshot,
+   CodexReasoningEffort,
+   IntakeType,
++  LoopConfigInput,
+   PendingAttachment,
+   Plan,
+   PlanTask,
+@@ -25,7 +26,7 @@ import { EventList, PlanList, TaskList } from '../components/PlanLists';
+ import { SearchResults } from '../components/SearchResults';
+ import { CodexLog } from '../components/CodexLog';
+ import { Icon, type IconName } from '../components/icons';
+-import { getFilePath, agentCliProviderLabel, codexReasoningEffortLabel } from '../components/shared';
++import { getFilePath, toSafeFileUrl, agentCliProviderLabel, codexReasoningEffortLabel } from '../components/shared';
+ import { searchWorkspaceSnapshot } from '../utils/search';
+ import { formatChinaTime } from '../utils/time';
+ 
+@@ -110,7 +111,7 @@ function createPendingPathAttachment(file: File): PendingAttachment | null {
+     name,
+     size: file.size,
+     type,
+-    previewUrl: window.autoplan.toFileUrl(path),
++    previewUrl: toSafeFileUrl(path),
+   };
+ }
+ 
+@@ -191,6 +192,41 @@ function normalizeCodexReasoningEffort(value?: string | null): CodexReasoningEff
+   return defaultCodexReasoningEffort;
+ }
+ 
++function loopFormFromProjectState(state: ProjectState): LoopFormState {
++  return {
++    workspacePath: state.workspace_path || '',
++    intervalSeconds: String(state.interval_seconds || 5),
++    validationCommand: state.validation_command ?? '',
++    agentCliProvider: state.agent_cli_provider || 'codex',
++    agentCliCommand: state.agent_cli_command || '',
++    codexReasoningEffort: normalizeCodexReasoningEffort(state.codex_reasoning_effort),
++  };
++}
++
++function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigInput {
++  const payload: LoopConfigInput = {
++    projectId,
++    workspacePath: form.workspacePath,
++    intervalSeconds: Number(form.intervalSeconds || 5),
++    validationCommand: form.validationCommand,
++    agentCliProvider: form.agentCliProvider || 'codex',
++    agentCliCommand: form.agentCliCommand.trim(),
++  };
++  if (form.agentCliProvider !== 'claude') {
++    payload.codexReasoningEffort = form.codexReasoningEffort;
++  }
++  return payload;
++}
++
++function loopFormsEqual(left: LoopFormState, right: LoopFormState) {
++  return left.workspacePath === right.workspacePath
++    && left.intervalSeconds === right.intervalSeconds
++    && left.validationCommand === right.validationCommand
++    && left.agentCliProvider === right.agentCliProvider
++    && left.agentCliCommand === right.agentCliCommand
++    && left.codexReasoningEffort === right.codexReasoningEffort;
++}
++
+ export function WorkspacePage() {
+   const params = useParams<{ projectId: string }>();
+   const navigate = useNavigate();
+@@ -213,6 +249,7 @@ export function WorkspacePage() {
+     agentCliCommand: '',
+     codexReasoningEffort: defaultCodexReasoningEffort,
+   });
++  const [loopFormDirty, setLoopFormDirty] = useState(false);
+   const [scopeFileOpenSettings, setScopeFileOpenSettings] = useState<ScopeFileOpenSettings>(() => {
+     try {
+       const parsed = JSON.parse(window.localStorage.getItem('autoplan.scopeFileOpenSettings') || 'null');
+@@ -259,19 +296,20 @@ export function WorkspacePage() {
+     window.alert(msg);
+   }, [setError]);
+ 
++  const updateLoopForm: Dispatch<SetStateAction<LoopFormState>> = useCallback((action) => {
++    setLoopFormDirty(true);
++    setLoopForm(action);
++  }, []);
++
+   useEffect(() => {
+-    if (!state) return;
+-    const defaultProvider = state.agent_cli_provider || 'codex';
+-    const defaultReasoning = normalizeCodexReasoningEffort(state.codex_reasoning_effort);
+-    setLoopForm({
+-      workspacePath: state.workspace_path || '',
+-      intervalSeconds: String(state.interval_seconds || 5),
+-      validationCommand: state.validation_command || '',
+-      agentCliProvider: defaultProvider,
+-      agentCliCommand: state.agent_cli_command || '',
+-      codexReasoningEffort: defaultReasoning,
+-    });
+-  }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
++    if (!state || Number(state.project_id) !== Number(projectId)) return;
++    const nextForm = loopFormFromProjectState(state);
++    setLoopForm((current) => (loopFormDirty || loopFormsEqual(current, nextForm) ? current : nextForm));
++  }, [projectId, loopFormDirty, state?.project_id, state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
++
++  useEffect(() => {
++    setLoopFormDirty(false);
++  }, [projectId]);
+ 
+   useEffect(() => {
+     const defaultProvider = state?.agent_cli_provider || 'codex';
+@@ -475,17 +513,11 @@ export function WorkspacePage() {
+   const submitLoopConfig = async (event: FormEvent<HTMLFormElement>) => {
+     event.preventDefault();
+     try {
+-      const next = await window.autoplan.configureLoop({
+-        projectId,
+-        workspacePath: loopForm.workspacePath,
+-        intervalSeconds: Number(loopForm.intervalSeconds || 5),
+-        validationCommand: loopForm.validationCommand,
+-        agentCliProvider: loopForm.agentCliProvider || 'codex',
+-        agentCliCommand: loopForm.agentCliCommand.trim(),
+-        ...(loopForm.agentCliProvider === 'claude'
+-          ? {}
+-          : { codexReasoningEffort: loopForm.codexReasoningEffort }),
+-      });
++      const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
++      if (next.state && Number(next.state.project_id) === Number(projectId)) {
++        setLoopForm(loopFormFromProjectState(next.state));
++      }
++      setLoopFormDirty(false);
+       setSnapshot(next);
+       setError(null);
+     } catch (e) {
+@@ -802,7 +834,7 @@ export function WorkspacePage() {
+             <SettingsView
+               loopForm={loopForm}
+               scopeFileOpenSettings={scopeFileOpenSettings}
+-              setLoopForm={setLoopForm}
++              setLoopForm={updateLoopForm}
+               setScopeFileOpenSettings={setScopeFileOpenSettings}
+               onSubmit={submitLoopConfig}
+               onToggleRun={() =>
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index ae87bdf..dbed6de 100644
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -494,6 +494,7 @@ export interface LoopConfigInput {
+   workspacePath?: string;
+   intervalSeconds?: number;
+   validationCommand?: string;
++  validation_command?: string;
+   agentCliProvider?: AgentCliProvider;
+   agentCliCommand?: string;
+   codexReasoningEffort?: CodexReasoningEffort;
+src/renderer/pages/WorkspacePage.tsx:10: LoopConfigInput,
+src/renderer/pages/WorkspacePage.tsx:206: function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigInput {
+src/renderer/pages/WorkspacePage.tsx:207: const payload: LoopConfigInput = {
+src/renderer/pages/WorkspacePage.tsx:221: function loopFormsEqual(left: LoopFormState, right: LoopFormState) {
+src/renderer/pages/WorkspacePage.tsx:307: setLoopForm((current) => (loopFormDirty || loopFormsEqual(current, nextForm) ? current : nextForm));
+src/renderer/pages/WorkspacePage.tsx:252: const [loopFormDirty, setLoopFormDirty] = useState(false);
+src/renderer/pages/WorkspacePage.tsx:300: setLoopFormDirty(true);
+src/renderer/pages/WorkspacePage.tsx:307: setLoopForm((current) => (loopFormDirty || loopFormsEqual(current, nextForm) ? current : nextForm));
+src/renderer/pages/WorkspacePage.tsx:308: }, [projectId, loopFormDirty, state?.project_id, state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
+src/renderer/pages/WorkspacePage.tsx:311: setLoopFormDirty(false);
+src/renderer/pages/WorkspacePage.tsx:520: setLoopFormDirty(false);
+src/renderer/pages/WorkspacePage.tsx:299: const updateLoopForm: Dispatch<SetStateAction<LoopFormState>> = useCallback((action) => {
+src/renderer/pages/WorkspacePage.tsx:837: setLoopForm={updateLoopForm}
+src/renderer/pages/WorkspacePage.tsx:311: setLoopFormDirty(false);
+src/renderer/pages/WorkspacePage.tsx:520: setLoopFormDirty(false);
+src/renderer/pages/WorkspacePage.tsx:516: const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
+src/renderer/types.ts:492: export interface LoopConfigInput {
+src/renderer/types.ts:545: configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+src/renderer/types.ts:123: validation_command?: string;
+src/renderer/types.ts:497: validation_command?: string;
+warning: in the working copy of 'src/renderer/pages/WorkspacePage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/types.ts', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index c7043a0eb10649d8aff43919d545787257c2bd8d..804f40687cdaa7fe548185af12c9cd74b535bf85
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -7,6 +7,7 @@
+   AppSnapshot,
+   CodexReasoningEffort,
+   IntakeType,
++  LoopConfigInput,
+   PendingAttachment,
+   Plan,
+   PlanTask,
+@@ -75,16 +76,6 @@
+   agentCliProvider: string;
+   agentCliCommand: string;
+   codexReasoningEffort: CodexReasoningEffort;
+-};
+-
+-type LoopConfigurePayload = {
+-  projectId: number;
+-  workspacePath: string;
+-  intervalSeconds: number;
+-  validationCommand: string;
+-  agentCliProvider: string;
+-  agentCliCommand: string;
+-  codexReasoningEffort?: CodexReasoningEffort;
+ };
+ 
+ type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+@@ -212,8 +203,8 @@
+   };
+ }
+ 
+-function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigurePayload {
+-  const payload: LoopConfigurePayload = {
++function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigInput {
++  const payload: LoopConfigInput = {
+     projectId,
+     workspacePath: form.workspacePath,
+     intervalSeconds: Number(form.intervalSeconds || 5),
+@@ -227,6 +218,15 @@
+   return payload;
+ }
+ 
++function loopFormsEqual(left: LoopFormState, right: LoopFormState) {
++  return left.workspacePath === right.workspacePath
++    && left.intervalSeconds === right.intervalSeconds
++    && left.validationCommand === right.validationCommand
++    && left.agentCliProvider === right.agentCliProvider
++    && left.agentCliCommand === right.agentCliCommand
++    && left.codexReasoningEffort === right.codexReasoningEffort;
++}
++
+ export function WorkspacePage() {
+   const params = useParams<{ projectId: string }>();
+   const navigate = useNavigate();
+@@ -249,6 +249,7 @@
+     agentCliCommand: '',
+     codexReasoningEffort: defaultCodexReasoningEffort,
+   });
++  const [loopFormDirty, setLoopFormDirty] = useState(false);
+   const [scopeFileOpenSettings, setScopeFileOpenSettings] = useState<ScopeFileOpenSettings>(() => {
+     try {
+       const parsed = JSON.parse(window.localStorage.getItem('autoplan.scopeFileOpenSettings') || 'null');
+@@ -289,16 +290,26 @@
+     );
+   }, [planReadState.plan, snapshot?.plans]);
+ 
+-  const showError = useCallback((e: unknown) => {
++  const showError = useCallback((e: unknown) => {
+     const msg = e instanceof Error ? e.message : String(e);
+     setError(msg);
+     window.alert(msg);
+-  }, [setError]);
+-
++  }, [setError]);
++
++  const updateLoopForm: Dispatch<SetStateAction<LoopFormState>> = useCallback((action) => {
++    setLoopFormDirty(true);
++    setLoopForm(action);
++  }, []);
++
++  useEffect(() => {
++    if (!state || Number(state.project_id) !== Number(projectId)) return;
++    const nextForm = loopFormFromProjectState(state);
++    setLoopForm((current) => (loopFormDirty || loopFormsEqual(current, nextForm) ? current : nextForm));
++  }, [projectId, loopFormDirty, state?.project_id, state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
++
+   useEffect(() => {
+-    if (!state) return;
+-    setLoopForm(loopFormFromProjectState(state));
+-  }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
++    setLoopFormDirty(false);
++  }, [projectId]);
+ 
+   useEffect(() => {
+     const defaultProvider = state?.agent_cli_provider || 'codex';
+@@ -503,6 +514,10 @@
+     event.preventDefault();
+     try {
+       const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
++      if (next.state && Number(next.state.project_id) === Number(projectId)) {
++        setLoopForm(loopFormFromProjectState(next.state));
++      }
++      setLoopFormDirty(false);
+       setSnapshot(next);
+       setError(null);
+     } catch (e) {
+@@ -819,7 +834,7 @@
+             <SettingsView
+               loopForm={loopForm}
+               scopeFileOpenSettings={scopeFileOpenSettings}
+-              setLoopForm={setLoopForm}
++              setLoopForm={updateLoopForm}
+               setScopeFileOpenSettings={setScopeFileOpenSettings}
+               onSubmit={submitLoopConfig}
+               onToggleRun={() =>
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index ae87bdfbe46e72dd1d6a5e0c6157651ff80e4e7c..dbed6de863fd7d1730d4d5eab2b95e338dc442d1
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -490,10 +490,11 @@
+ }
+ 
+ export interface LoopConfigInput {
+-  projectId: number;
+-  workspacePath?: string;
++  projectId: number;
++  workspacePath?: string;
+   intervalSeconds?: number;
+   validationCommand?: string;
++  validation_command?: string;
+   agentCliProvider?: AgentCliProvider;
+   agentCliCommand?: string;
+   codexReasoningEffort?: CodexReasoningEffort;
+
+codex
+差异确认完成，没有运行验证命令；我会结束 P003。
+  ✓ 确认前端同步状态
+  ✓ 加入脏态保护逻辑
+  ✓ 更新必要类型定义
+  ✓ 检查差异不运行测试
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index c7043a0eb10649d8aff43919d545787257c2bd8d..804f40687cdaa7fe548185af12c9cd74b535bf85
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -7,6 +7,7 @@
+   AppSnapshot,
+   CodexReasoningEffort,
+   IntakeType,
++  LoopConfigInput,
+   PendingAttachment,
+   Plan,
+   PlanTask,
+@@ -75,16 +76,6 @@
+   agentCliProvider: string;
+   agentCliCommand: string;
+   codexReasoningEffort: CodexReasoningEffort;
+-};
+-
+-type LoopConfigurePayload = {
+-  projectId: number;
+-  workspacePath: string;
+-  intervalSeconds: number;
+-  validationCommand: string;
+-  agentCliProvider: string;
+-  agentCliCommand: string;
+-  codexReasoningEffort?: CodexReasoningEffort;
+ };
+ 
+ type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+@@ -212,8 +203,8 @@
+   };
+ }
+ 
+-function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigurePayload {
+-  const payload: LoopConfigurePayload = {
++function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigInput {
++  const payload: LoopConfigInput = {
+     projectId,
+     workspacePath: form.workspacePath,
+     intervalSeconds: Number(form.intervalSeconds || 5),
+@@ -227,6 +218,15 @@
+   return payload;
+ }
+ 
++function loopFormsEqual(left: LoopFormState, right: LoopFormState) {
++  return left.workspacePath === right.workspacePath
++    && left.intervalSeconds === right.intervalSeconds
++    && left.validationCommand === right.validationCommand
++    && left.agentCliProvider === right.agentCliProvider
++    && left.agentCliCommand === right.agentCliCommand
++    && left.codexReasoningEffort === right.codexReasoningEffort;
++}
++
+ export function WorkspacePage() {
+   const params = useParams<{ projectId: string }>();
+   const navigate = useNavigate();
+@@ -249,6 +249,7 @@
+     agentCliCommand: '',
+     codexReasoningEffort: defaultCodexReasoningEffort,
+   });
++  const [loopFormDirty, setLoopFormDirty] = useState(false);
+   const [scopeFileOpenSettings, setScopeFileOpenSettings] = useState<ScopeFileOpenSettings>(() => {
+     try {
+       const parsed = JSON.parse(window.localStorage.getItem('autoplan.scopeFileOpenSettings') || 'null');
+@@ -289,16 +290,26 @@
+     );
+   }, [planReadState.plan, snapshot?.plans]);
+ 
+-  const showError = useCallback((e: unknown) => {
++  const showError = useCallback((e: unknown) => {
+     const msg = e instanceof Error ? e.message : String(e);
+     setError(msg);
+     window.alert(msg);
+-  }, [setError]);
+-
++  }, [setError]);
++
++  const updateLoopForm: Dispatch<SetStateAction<LoopFormState>> = useCallback((action) => {
++    setLoopFormDirty(true);
++    setLoopForm(action);
++  }, []);
++
++  useEffect(() => {
++    if (!state || Number(state.project_id) !== Number(projectId)) return;
++    const nextForm = loopFormFromProjectState(state);
++    setLoopForm((current) => (loopFormDirty || loopFormsEqual(current, nextForm) ? current : nextForm));
++  }, [projectId, loopFormDirty, state?.project_id, state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
++
+   useEffect(() => {
+-    if (!state) return;
+-    setLoopForm(loopFormFromProjectState(state));
+-  }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
++    setLoopFormDirty(false);
++  }, [projectId]);
+ 
+   useEffect(() => {
+     const defaultProvider = state?.agent_cli_provider || 'codex';
+@@ -503,6 +514,10 @@
+     event.preventDefault();
+     try {
+       const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
++      if (next.state && Number(next.state.project_id) === Number(projectId)) {
++        setLoopForm(loopFormFromProjectState(next.state));
++      }
++      setLoopFormDirty(false);
+       setSnapshot(next);
+       setError(null);
+     } catch (e) {
+@@ -819,7 +834,7 @@
+             <SettingsView
+               loopForm={loopForm}
+               scopeFileOpenSettings={scopeFileOpenSettings}
+-              setLoopForm={setLoopForm}
++              setLoopForm={updateLoopForm}
+               setScopeFileOpenSettings={setScopeFileOpenSettings}
+               onSubmit={submitLoopConfig}
+               onToggleRun={() =>
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index ae87bdfbe46e72dd1d6a5e0c6157651ff80e4e7c..dbed6de863fd7d1730d4d5eab2b95e338dc442d1
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -490,10 +490,11 @@
+ }
+ 
+ export interface LoopConfigInput {
+-  projectId: number;
+-  workspacePath?: string;
++  projectId: number;
++  workspacePath?: string;
+   intervalSeconds?: number;
+   validationCommand?: string;
++  validation_command?: string;
+   agentCliProvider?: AgentCliProvider;
+   agentCliCommand?: string;
+   codexReasoningEffort?: CodexReasoningEffort;
+
+codex
+已完成 P003，未修改 plan 文件、未勾选 checkbox，且按要求未运行测试/构建/lint。
+
+**改动**
+- 在 `src/renderer/pages/WorkspacePage.tsx:252` 增加 `loopFormDirty`，区分本地未保存编辑和快照刷新。
+- 在 `src/renderer/pages/WorkspacePage.tsx:299` 增加 `updateLoopForm`，设置页输入变更会标记为脏态。
+- 在 `src/renderer/pages/WorkspacePage.tsx:304` 调整 state → 表单同步：项目匹配且表单非脏态时才接受快照，避免自动刷新覆盖用户输入。
+- 在 `src/renderer/pages/WorkspacePage.tsx:516` 保存成功后用主进程返回的 `next.state` 重置表单，并清除脏态，避免保存后短暂回退。
+- 在 `src/renderer/types.ts:492` 为 `LoopConfigInput` 补充 `validation_command`，对齐 P002 后端兼容字段。
+
+**说明**
+- 保存失败路径保持当前输入不变，并继续通过现有 `showError` 展示错误。
+- 差异中仍包含前序/既有的附件预览相关改动，我没有处理或回退。
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index c7043a0eb10649d8aff43919d545787257c2bd8d..804f40687cdaa7fe548185af12c9cd74b535bf85
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -7,6 +7,7 @@
+   AppSnapshot,
+   CodexReasoningEffort,
+   IntakeType,
++  LoopConfigInput,
+   PendingAttachment,
+   Plan,
+   PlanTask,
+@@ -75,16 +76,6 @@
+   agentCliProvider: string;
+   agentCliCommand: string;
+   codexReasoningEffort: CodexReasoningEffort;
+-};
+-
+-type LoopConfigurePayload = {
+-  projectId: number;
+-  workspacePath: string;
+-  intervalSeconds: number;
+-  validationCommand: string;
+-  agentCliProvider: string;
+-  agentCliCommand: string;
+-  codexReasoningEffort?: CodexReasoningEffort;
+ };
+ 
+ type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+@@ -212,8 +203,8 @@
+   };
+ }
+ 
+-function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigurePayload {
+-  const payload: LoopConfigurePayload = {
++function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigInput {
++  const payload: LoopConfigInput = {
+     projectId,
+     workspacePath: form.workspacePath,
+     intervalSeconds: Number(form.intervalSeconds || 5),
+@@ -227,6 +218,15 @@
+   return payload;
+ }
+ 
++function loopFormsEqual(left: LoopFormState, right: LoopFormState) {
++  return left.workspacePath === right.workspacePath
++    && left.intervalSeconds === right.intervalSeconds
++    && left.validationCommand === right.validationCommand
++    && left.agentCliProvider === right.agentCliProvider
++    && left.agentCliCommand === right.agentCliCommand
++    && left.codexReasoningEffort === right.codexReasoningEffort;
++}
++
+ export function WorkspacePage() {
+   const params = useParams<{ projectId: string }>();
+   const navigate = useNavigate();
+@@ -249,6 +249,7 @@
+     agentCliCommand: '',
+     codexReasoningEffort: defaultCodexReasoningEffort,
+   });
++  const [loopFormDirty, setLoopFormDirty] = useState(false);
+   const [scopeFileOpenSettings, setScopeFileOpenSettings] = useState<ScopeFileOpenSettings>(() => {
+     try {
+       const parsed = JSON.parse(window.localStorage.getItem('autoplan.scopeFileOpenSettings') || 'null');
+@@ -289,16 +290,26 @@
+     );
+   }, [planReadState.plan, snapshot?.plans]);
+ 
+-  const showError = useCallback((e: unknown) => {
++  const showError = useCallback((e: unknown) => {
+     const msg = e instanceof Error ? e.message : String(e);
+     setError(msg);
+     window.alert(msg);
+-  }, [setError]);
+-
++  }, [setError]);
++
++  const updateLoopForm: Dispatch<SetStateAction<LoopFormState>> = useCallback((action) => {
++    setLoopFormDirty(true);
++    setLoopForm(action);
++  }, []);
++
++  useEffect(() => {
++    if (!state || Number(state.project_id) !== Number(projectId)) return;
++    const nextForm = loopFormFromProjectState(state);
++    setLoopForm((current) => (loopFormDirty || loopFormsEqual(current, nextForm) ? current : nextForm));
++  }, [projectId, loopFormDirty, state?.project_id, state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
++
+   useEffect(() => {
+-    if (!state) return;
+-    setLoopForm(loopFormFromProjectState(state));
+-  }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
++    setLoopFormDirty(false);
++  }, [projectId]);
+ 
+   useEffect(() => {
+     const defaultProvider = state?.agent_cli_provider || 'codex';
+@@ -503,6 +514,10 @@
+     event.preventDefault();
+     try {
+       const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
++      if (next.state && Number(next.state.project_id) === Number(projectId)) {
++        setLoopForm(loopFormFromProjectState(next.state));
++      }
++      setLoopFormDirty(false);
+       setSnapshot(next);
+       setError(null);
+     } catch (e) {
+@@ -819,7 +834,7 @@
+             <SettingsView
+               loopForm={loopForm}
+               scopeFileOpenSettings={scopeFileOpenSettings}
+-              setLoopForm={setLoopForm}
++              setLoopForm={updateLoopForm}
+               setScopeFileOpenSettings={setScopeFileOpenSettings}
+               onSubmit={submitLoopConfig}
+               onToggleRun={() =>
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index ae87bdfbe46e72dd1d6a5e0c6157651ff80e4e7c..dbed6de863fd7d1730d4d5eab2b95e338dc442d1
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -490,10 +490,11 @@
+ }
+ 
+ export interface LoopConfigInput {
+-  projectId: number;
+-  workspacePath?: string;
++  projectId: number;
++  workspacePath?: string;
+   intervalSeconds?: number;
+   validationCommand?: string;
++  validation_command?: string;
+   agentCliProvider?: AgentCliProvider;
+   agentCliCommand?: string;
+   codexReasoningEffort?: CodexReasoningEffort;
+
+tokens used
+157,528
+共享类型已更新，最后确认 P003 scope 差异。

@@ -63,6 +63,7 @@ async function main() {
     assert.equal(snapshot.attachments[0].mime_type, 'image/png', '图片附件应保留 MIME 类型');
     assert.ok(fs.existsSync(snapshot.attachments[0].stored_path), '附件文件应复制到持久化目录');
     await assertAttachmentPersistenceSmoke(db, loop, tempRoot);
+    await assertLoopConfigPersistenceSmoke(db, loop, tempRoot);
 
     loop.configure(projectId, {
       workspacePath: workspace,
@@ -330,7 +331,7 @@ async function main() {
     loop.stop(multiProjectB);
     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
 
-    console.log('smoke ok: projects, scoped snapshots, attachments, attachment prompts, plan reader, scope concurrency, scope file open, search, task acceptance, task events, scan, validation, duration stats, codex session reuse, multi-backend, multi-loop');
+    console.log('smoke ok: projects, scoped snapshots, attachments, attachment prompts, plan reader, config persistence, scope concurrency, scope file open, search, task acceptance, task events, scan, validation, duration stats, codex session reuse, multi-backend, multi-loop');
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -497,6 +498,147 @@ async function assertPlanReadRegression(
   assert.equal(outsideRead.error, '计划文件路径超出项目工作区', '读取越界 Plan 路径应提示越界');
 
   assert.equal(fs.readFileSync(planFile, 'utf8'), originalPlanText, 'Plan 阅读 smoke 不应修改正式 Plan 文件');
+}
+
+async function assertLoopConfigPersistenceSmoke(db, loop, tempRoot) {
+  const workspace = path.join(tempRoot, 'config-persistence-workspace');
+  const projectId = insertProject(db, loop, 'Config Persistence Smoke Project', workspace);
+  const handlers = loadMainIpcHandlers(db, loop);
+  const configureLoop = handlers.get('loop:configure');
+  const snapshotProject = handlers.get('snapshot');
+  assert.equal(typeof configureLoop, 'function', '主进程应注册 loop:configure IPC handler');
+  assert.equal(typeof snapshotProject, 'function', '主进程应注册 snapshot IPC handler');
+
+  let configuredSnapshot = configureLoop(null, {
+    projectId,
+    workspacePath: workspace,
+    intervalSeconds: 7,
+    validationCommand: 'npm run smoke:config',
+    agentCliProvider: 'codex',
+    codexReasoningEffort: 'high',
+  });
+  assertLoopConfigSnapshot(configuredSnapshot, {
+    projectId,
+    validationCommand: 'npm run smoke:config',
+    provider: 'codex',
+    effort: 'high',
+  }, '非空验收命令与 high 思考深度保存结果');
+  assertLoopConfigRow(db, projectId, {
+    validationCommand: 'npm run smoke:config',
+    provider: 'codex',
+    effort: 'high',
+  }, '非空验收命令与 high 思考深度数据库记录');
+  assertLoopConfigSnapshot(snapshotProject(null, { projectId }), {
+    projectId,
+    validationCommand: 'npm run smoke:config',
+    provider: 'codex',
+    effort: 'high',
+  }, '非空验收命令与 high 思考深度刷新快照');
+
+  configuredSnapshot = configureLoop(null, {
+    projectId,
+    validation_command: '',
+    agentCliProvider: 'codex',
+    codexReasoningEffort: 'low',
+  });
+  assertLoopConfigSnapshot(configuredSnapshot, {
+    projectId,
+    validationCommand: '',
+    provider: 'codex',
+    effort: 'low',
+  }, '验收命令从非空保存为空结果');
+  assertLoopConfigRow(db, projectId, {
+    validationCommand: '',
+    provider: 'codex',
+    effort: 'low',
+  }, '验收命令从非空保存为空数据库记录');
+  assertLoopConfigSnapshot(snapshotProject(null, { projectId }), {
+    projectId,
+    validationCommand: '',
+    provider: 'codex',
+    effort: 'low',
+  }, '验收命令保存为空后的刷新快照');
+
+  configuredSnapshot = configureLoop(null, {
+    projectId,
+    validationCommand: 'node scripts/config-validation-smoke.js',
+    agentCliProvider: 'codex',
+    codexReasoningEffort: 'invalid-depth',
+  });
+  assertLoopConfigSnapshot(configuredSnapshot, {
+    projectId,
+    validationCommand: 'node scripts/config-validation-smoke.js',
+    provider: 'codex',
+    effort: 'medium',
+  }, '验收命令从空保存为非空且非法思考深度回退默认结果');
+  assertLoopConfigRow(db, projectId, {
+    validationCommand: 'node scripts/config-validation-smoke.js',
+    provider: 'codex',
+    effort: 'medium',
+  }, '验收命令从空保存为非空且非法思考深度回退默认数据库记录');
+
+  configureLoop(null, { projectId, agentCliProvider: 'claude', codexReasoningEffort: 'high' });
+  assertLoopConfigSnapshot(snapshotProject(null, { projectId }), {
+    projectId,
+    validationCommand: 'node scripts/config-validation-smoke.js',
+    provider: 'claude',
+    effort: null,
+  }, 'Claude 后端刷新快照不展示 Codex 思考深度');
+  configureLoop(null, { projectId, agentCliProvider: 'codex' });
+  assertLoopConfigSnapshot(snapshotProject(null, { projectId }), {
+    projectId,
+    validationCommand: 'node scripts/config-validation-smoke.js',
+    provider: 'codex',
+    effort: 'medium',
+  }, '从 Claude 切回 Codex 后刷新快照使用明确默认思考深度');
+
+  assert.throws(
+    () => configureLoop(null, { projectId: -999999, validationCommand: 'should-not-save' }),
+    /项目不存在/,
+    '配置保存失败应抛出可定位错误',
+  );
+  assertLoopConfigRow(db, projectId, {
+    validationCommand: 'node scripts/config-validation-smoke.js',
+    provider: 'codex',
+    effort: 'medium',
+  }, '失败保存不应把旧值误展示为成功结果');
+
+  configureLoop(null, { projectId, codexReasoningEffort: 'high' });
+  await assertCodexReasoningExecutionArgSmoke(db, workspace, projectId, 'high');
+  configureLoop(null, { projectId, codexReasoningEffort: 'low' });
+  await assertCodexReasoningExecutionArgSmoke(db, workspace, projectId, 'low');
+}
+
+function assertLoopConfigSnapshot(snapshot, expected, label) {
+  assert.ok(snapshot?.state, `${label} 应返回项目状态`);
+  assert.equal(Number(snapshot.state.project_id), Number(expected.projectId), `${label} 应属于目标项目`);
+  assert.equal(snapshot.state.validation_command, expected.validationCommand, `${label} 应返回最新验收命令`);
+  assert.equal(snapshot.state.agent_cli_provider, expected.provider, `${label} 应返回最新 CLI 后端`);
+  assert.equal(snapshot.state.codex_reasoning_effort ?? null, expected.effort, `${label} 应返回最新 Codex 思考深度`);
+}
+
+function assertLoopConfigRow(db, projectId, expected, label) {
+  const row = db.get('SELECT * FROM project_states WHERE project_id = ?', [projectId]);
+  assert.ok(row, `${label} 应存在数据库状态行`);
+  assert.equal(row.validation_command, expected.validationCommand, `${label} 应持久化验收命令`);
+  assert.equal(row.agent_cli_provider, expected.provider, `${label} 应持久化 CLI 后端`);
+  assert.equal(row.codex_reasoning_effort ?? null, expected.effort, `${label} 应持久化 Codex 思考深度`);
+}
+
+async function assertCodexReasoningExecutionArgSmoke(db, workspace, projectId, effort) {
+  const spawned = [];
+  const { LoopService: PatchedLoopService } = loadPatchedLoopService({
+    spawnOverride: (command, args, options) => {
+      spawned.push({ command, args, options });
+      return createFakeChild({ output: 'config persistence smoke ok\n' });
+    },
+  });
+  const patchedLoop = new PatchedLoopService(db);
+  const result = await patchedLoop.runCodex(workspace, `执行 Codex ${effort} 思考深度 smoke`, `config-${effort}`, { projectId });
+  assert.equal(result.exitCode, 0, `${effort} 思考深度执行 smoke 应成功`);
+  assert.equal(spawned.length, 1, `${effort} 思考深度执行 smoke 应只启动一次 agent`);
+  assert.equal(commandName(spawned[0].command), 'codex', `${effort} 思考深度执行 smoke 应使用 codex`);
+  assertCodexReasoningArg(spawned[0], effort, `${effort} 思考深度执行 smoke`);
 }
 
 function loadMainPlanReadHandler(db, loop) {
@@ -1647,6 +1789,7 @@ function assertRendererAgentCliTypeSmoke() {
   assert.match(typeSource, /interface CreateIntakeInput[\s\S]*codexReasoningEffort\?: CodexReasoningEffort;/, '创建需求/反馈输入类型应允许设置 Codex 思考深度');
   assert.match(typeSource, /interface CreateProjectInput[\s\S]*agentCliProvider\?: AgentCliProvider;/, '创建项目输入类型应允许选择后端');
   assert.match(typeSource, /interface LoopConfigInput[\s\S]*agentCliProvider\?: AgentCliProvider;/, '循环配置输入类型应允许选择后端');
+  assert.match(typeSource, /interface LoopConfigInput[\s\S]*validation_command\?: string;/, '循环配置输入类型应兼容下划线验收命令字段');
   assert.match(typeSource, /interface LoopConfigInput[\s\S]*codexReasoningEffort\?: CodexReasoningEffort;/, '循环配置输入类型应允许设置 Codex 思考深度');
   assert.equal(formatPlanCliSummary({ agentCliProvider: 'codex', codexReasoningEffort: 'high' }), 'Codex CLI · 思考深度 high', '计划 CLI 文案应兼容驼峰字段');
   assert.equal(formatPlanCliSummary({ agent_cli_provider: 'claude', codex_reasoning_effort: 'high' }), 'Claude CLI', 'Claude 计划 CLI 文案不应展示 Codex 思考深度');

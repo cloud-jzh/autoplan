@@ -1,0 +1,13 @@
+已完成 P001，仅处理配置保存与刷新链路梳理，未修改 plan 文件、未勾选 checkbox、未运行测试/构建/lint。
+
+**本次改动**
+- 在 `src/renderer/pages/WorkspacePage.tsx:80` 显式定义 `LoopConfigurePayload`，固定 UI → IPC 字段形状。
+- 在 `src/renderer/pages/WorkspacePage.tsx:204` 新增 `loopFormFromProjectState`，明确 `ProjectState` → 表单字段映射。
+- 在 `src/renderer/pages/WorkspacePage.tsx:215` 新增 `loopConfigurePayloadFromForm`，明确表单 → `configureLoop` 入参映射。
+- 在 `src/renderer/pages/WorkspacePage.tsx:300` 和 `src/renderer/pages/WorkspacePage.tsx:505` 替换原内联映射，方便后续 P002/P003 精确修复。
+
+**链路结论**
+- UI 保存字段：`validationCommand`、`agentCliProvider`、`agentCliCommand`、`codexReasoningEffort`。
+- IPC 入口：`src/preload.js` 暴露 `configureLoop` → `src/main.js` 的 `loop:configure` → `loop.configure` → `loop.snapshot`。
+- 后端字段：`validation_command`、`agent_cli_provider`、`agent_cli_command`、`codex_reasoning_effort`。
+- 已定位后续修复边界：`project_states` 的 `codex_reasoning_effort` 持久化列/迁移，以及 `WorkspacePage` state 刷新 effect 覆盖表单输入，留给 P002/P003 处理。

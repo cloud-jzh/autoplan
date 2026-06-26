@@ -60,7 +60,8 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y libfuse2
+          sudo apt-get install --no-install-recommends -y build-essential libfuse2 ruby ruby-dev
+          sudo gem install --no-document fpm
 
       - name: Package ${{ matrix.platform }}
         run: npm run ${{ matrix.package_script }} -- --publish never

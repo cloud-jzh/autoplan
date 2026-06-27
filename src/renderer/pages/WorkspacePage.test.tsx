@@ -21,6 +21,15 @@ function expectIncludes(sourceText: string, snippet: string, message: string) {
   expect(sourceText.includes(snippet), message);
 }
 
+function expectAnyIncludes(sourceText: string, snippets: string[], message: string) {
+  expect(snippets.some((snippet) => sourceText.includes(snippet)), message);
+}
+
+function expectCountAtLeast(sourceText: string, snippet: string, minimum: number, message: string) {
+  const count = sourceText.split(snippet).length - 1;
+  expect(count >= minimum, message);
+}
+
 describe('Workspace task page structure', () => {
   it('keeps the task page split into Plan and task columns', () => {
     const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
@@ -65,6 +74,59 @@ describe('Workspace task page structure', () => {
   });
 });
 
+describe('Workspace intake Plan preview binding', () => {
+  it('wires requirement and feedback panels to the shared Plan reader flow', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+    const controller = source('src', 'renderer', 'hooks', 'useWorkspaceController.ts');
+
+    expectIncludes(page, 'const intakePlanPreviewProps = {', 'intake panels should share preview props');
+    expectIncludes(page, 'plans: snapshot.plans', 'intake preview props should carry current Plan snapshots');
+    expectAnyIncludes(
+      page,
+      ['onOpenPlan: openIntakePlanReader', 'onPreviewPlan: openIntakePlanReader'],
+      'intake preview props should use the controller Plan reader callback',
+    );
+    expectCountAtLeast(page, '{...intakePlanPreviewProps}', 2, 'requirement and feedback panels should both receive preview props');
+    expectIncludes(page, '<PlanReaderModal', 'workspace should mount the reusable Plan reader modal once');
+    expectIncludes(page, 'readerState={planReadState}', 'intake preview should reuse the workspace Plan reader state');
+
+    expectIncludes(controller, 'const openIntakePlanReader = useCallback', 'controller should expose an intake Plan reader opener');
+    expectIncludes(controller, 'findLinkedPlanInSnapshot(snapshot?.plans || [], planId, projectId)', 'intake preview should locate plans from the current snapshot first');
+    expectIncludes(controller, 'showUnavailableLinkedPlanReader', 'controller should provide unavailable Plan fallback state');
+    expectIncludes(controller, '绑定 Plan ID 无效，暂无法预览。', 'invalid linked Plan IDs should produce a readable error');
+    expectIncludes(controller, '绑定 Plan #${planId} 当前不可用', 'missing linked Plan snapshots should produce a readable error');
+  });
+
+  it('renders bound intake Plan metadata, progress, preview affordance, and fallbacks', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+    const intakePanel = source('src', 'renderer', 'components', 'IntakePanel.tsx');
+    const styles = source('src', 'renderer', 'styles', 'components.css');
+    const pageUsesOpenPlan = page.includes('onOpenPlan: openIntakePlanReader');
+    const pageUsesPreviewPlan = page.includes('onPreviewPlan: openIntakePlanReader');
+    const intakeAcceptsOpenPlan = intakePanel.includes('onOpenPlan');
+    const intakeAcceptsPreviewPlan = intakePanel.includes('onPreviewPlan');
+
+    expectIncludes(intakePanel, 'function PlanBindingCard', 'intake panel should render a dedicated bound Plan card');
+    expectIncludes(intakePanel, 'if (linkedPlanId === null) return null;', 'unbound intake items should not show Plan preview UI');
+    expectIncludes(intakePanel, "readStringField(item, ['plan_title', 'linked_plan_title'])", 'bound cards should read Plan title snapshots');
+    expectIncludes(intakePanel, "readStringField(item, ['plan_file_path', 'linked_plan_file_path', 'plan_path', 'linked_plan_path'])", 'bound cards should read Plan path snapshots');
+    expectIncludes(intakePanel, 'Plan ID <b>#{linkedPlanId}</b>', 'bound cards should display Plan ID');
+    expectIncludes(intakePanel, '任务进度 <b>{progressLabel}</b>', 'bound cards should display task progress text');
+    expectIncludes(intakePanel, 'className="intake-plan-progress"', 'bound cards should display task progress bars');
+    expectIncludes(intakePanel, 'disabled={!canPreview}', 'unavailable Plan previews should be disabled');
+    expectIncludes(intakePanel, '绑定 Plan 快照缺失，暂不能预览全文。', 'missing Plan snapshots should show fallback copy');
+    expect(
+      (pageUsesOpenPlan && intakeAcceptsOpenPlan) || (pageUsesPreviewPlan && intakeAcceptsPreviewPlan),
+      'WorkspacePage and IntakePanel should use the same intake preview callback prop name',
+    );
+
+    expectIncludes(styles, '.intake-plan-card', 'bound Plan card styles should be scoped to intake cards');
+    expectIncludes(styles, '.intake-plan-name', 'long Plan titles should have dedicated text styling');
+    expectIncludes(styles, '.intake-plan-path', 'long Plan paths should have dedicated truncation styling');
+    expectIncludes(styles, '.intake-plan-side', 'preview actions should be able to wrap without squeezing intake actions');
+  });
+});
+
 describe('Workspace settings page structure', () => {
   it('defines four settings panes with navigation metadata', () => {
     const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
@@ -77,11 +139,16 @@ describe('Workspace settings page structure', () => {
   });
 
   it('keeps CLI, scope, and MCP interactions represented in source', () => {
+    const composer = source('src', 'renderer', 'components', 'Composer.tsx');
     const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
 
     expectIncludes(settingsView, 'agentCliOptionDetails.map', 'CLI provider should use segmented option data');
     expectIncludes(settingsView, 'codexReasoningOptionDetails.map', 'Codex reasoning should render option cards');
-    expectIncludes(settingsView, "loopForm.agentCliProvider === 'claude'", 'Claude should hide Codex-only effort controls');
+    expectIncludes(settingsView, 'isCodexAgentCliProvider(loopForm.agentCliProvider)', 'non-Codex providers should hide Codex-only effort controls');
+    expectIncludes(settingsView, 'agentCliDefaultCommand(loopForm.agentCliProvider)', 'CLI command placeholder should follow the selected provider');
+    expectIncludes(composer, "selectedProvider !== 'claude'", 'composer should treat Claude as non-Codex');
+    expectIncludes(composer, 'agentCliProvider: selectedProvider as AgentCliProvider', 'composer submit payload should carry the selected CLI provider');
+    expectIncludes(composer, '...(isCodexProvider ? { codexReasoningEffort:', 'composer should only submit Codex reasoning for Codex provider');
     expectIncludes(settingsView, 'scopeFileOpenModeOptions.map', 'scope mode should use segmented option data');
     expectIncludes(settingsView, "scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command'", 'editor command should only expand for command-based modes');
     expectIncludes(settingsView, '<InfoRow label="服务状态">', 'MCP pane should expose service status as readonly info');
@@ -89,5 +156,19 @@ describe('Workspace settings page structure', () => {
     expectIncludes(settingsView, '<InfoRow label="请求头">', 'MCP pane should show the standard auth header');
     expectIncludes(settingsView, '<InfoRow label="工具清单">', 'MCP pane should expose tool list as readonly info');
     expectIncludes(settingsView, 'AUTOPLAN_MCP_ENABLED=0', 'MCP pane should keep the disable reminder');
+  });
+});
+
+describe('OpenCode CLI backend integration', () => {
+  it('exposes OpenCode CLI across shared labels, settings form, and option data', () => {
+    const shared = source('src', 'renderer', 'components', 'shared.tsx');
+    const forms = source('src', 'renderer', 'utils', 'workspaceForms.ts');
+    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+
+    expectIncludes(shared, "if (value === 'opencode') return 'OpenCode';", 'shared label helper should resolve opencode to OpenCode');
+    expectIncludes(forms, "{ value: 'opencode', label: 'OpenCode CLI' },", 'CLI option list should expose OpenCode CLI for the composer and settings');
+    expectIncludes(forms, "if (normalized === 'opencode') return 'opencode';", 'default command resolver should return opencode for the OpenCode backend');
+    expectIncludes(settingsView, "if (provider === 'opencode') return 'OpenCode';", 'settings view should display the OpenCode backend name');
+    expectIncludes(settingsView, "loopForm.agentCliProvider === 'opencode'", 'settings view should branch the command hint on the OpenCode backend');
   });
 });

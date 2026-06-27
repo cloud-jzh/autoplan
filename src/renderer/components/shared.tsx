@@ -36,9 +36,9 @@ export function sourceTypeName(type: 'requirement' | 'feedback') {
 
 /** CLI 后端 → 语义化显示名（默认 Codex） */
 export function agentCliProviderLabel(provider?: string | null): string {
-  const value = String(provider || '').trim().toLowerCase();
+  const value = normalizeAgentCliProvider(provider);
   if (value === 'claude') return 'Claude';
-  if (value && value !== 'codex') return value;
+  if (value === 'opencode') return 'OpenCode';
   return 'Codex';
 }
 
@@ -53,7 +53,7 @@ export function codexReasoningEffortLabel(effort?: string | null): string {
 export function planCliSummaryLabel(source?: object | null): string {
   const provider = readAgentCliProvider(source);
   const providerLabel = `${agentCliProviderLabel(provider)} CLI`;
-  if (provider === 'claude') return providerLabel;
+  if (provider !== 'codex') return providerLabel;
   const effort = readCodexReasoningEffort(source) || 'medium';
   return `${providerLabel} · 思考深度 ${codexReasoningEffortLabel(effort)}`;
 }
@@ -72,7 +72,7 @@ export function readAgentCliProvider(source?: object | null): string {
 
 export function readCodexReasoningEffort(source?: object | null): string | null {
   const provider = readAgentCliProvider(source);
-  if (provider === 'claude') return null;
+  if (provider !== 'codex') return null;
   return normalizeCodexReasoningEffort(readFirstString(source, [
     'codex_reasoning_effort',
     'codexReasoningEffort',
@@ -97,7 +97,7 @@ function readFirstString(source: object | null | undefined, keys: string[]): str
 function normalizeAgentCliProvider(provider?: string | null): string {
   const value = String(provider || '').trim().toLowerCase();
   if (value === 'claude') return 'claude';
-  if (value && value !== 'codex') return value;
+  if (value === 'opencode') return 'opencode';
   return 'codex';
 }
 

@@ -1,7 +1,15 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { nowIso } = require('../database');
-const { agentCliContextFields, normalizeOptionalNumber } = require('./agentCliConfig');
+const {
+  DEFAULT_AGENT_CLI_PROVIDER,
+  agentCliContextFields,
+  codexSessionContextFields,
+  normalizeAgentCliSessionId,
+  normalizeCodexSessionId,
+  normalizeOptionalNumber,
+  operationCodexSessionId,
+} = require('./agentCliConfig');
 const { compactEventMeta, TASK_EVENT_STATUS, TASK_EVENT_TYPES } = require('./taskEvents');
 
 function isFinalAcceptanceTask(service, helpers, planId, task) {
@@ -41,8 +49,10 @@ function completeAcceptanceTask(service, helpers, workspace, plan, task, result)
       'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
       [hash, 'completed', Number(totals.total || 0), Number(totals.completed || 0), nowIso(), plan.id],
     );
+    const planAgentCliContext = agentCliContextFields(service.planAgentCliConfig(plan), { defaultProvider: true });
     service.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.SUCCEEDED, completedTask, {
-      ...agentCliContextFields(service.planAgentCliConfig(plan), { defaultProvider: true }),
+      ...planAgentCliContext,
+      ...validationResultSessionContextFields(result, planAgentCliContext.agentCliProvider),
       planId: plan.id,
       status: TASK_EVENT_STATUS.COMPLETED,
       finishedAt,
@@ -60,14 +70,29 @@ async function validatePlan(service, helpers, workspace, plan, options = {}) {
     const planAgentCliContext = agentCliContextFields(service.planAgentCliConfig(plan), { defaultProvider: true });
     const acceptanceTask = options.task || null;
     let startedAcceptanceTask = acceptanceTask;
+    let acceptanceStartedAt = null;
     if (acceptanceTask) {
-      const startedAt = nowIso();
-      startedAcceptanceTask = service.startTaskRun(acceptanceTask.id, startedAt) || acceptanceTask;
+      acceptanceStartedAt = nowIso();
+      startedAcceptanceTask = service.startTaskRun(acceptanceTask.id, acceptanceStartedAt) || acceptanceTask;
+    }
+    let validationSessionId = validationTaskSessionId(startedAcceptanceTask, planAgentCliContext.agentCliProvider);
+    let validationSessionState = validationSessionId ? 'resume' : 'new';
+    if (!validationSessionId) {
+      validationSessionId = previousValidationSessionId(service, plan.id, startedAcceptanceTask, planAgentCliContext.agentCliProvider);
+      if (validationSessionId) validationSessionState = 'plan-resume';
+    }
+    if (acceptanceTask) {
       service.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.STARTED, startedAcceptanceTask, {
         ...planAgentCliContext,
+        ...validationSessionContextFields(planAgentCliContext.agentCliProvider, {
+          sessionId: validationSessionId,
+          requestedId: validationSessionId,
+          mode: validationSessionId ? 'resume' : 'new',
+          state: validationSessionState,
+        }),
         planId: plan.id,
         status: TASK_EVENT_STATUS.RUNNING,
-        startedAt,
+        startedAt: startedAcceptanceTask.started_at || acceptanceStartedAt,
         acceptanceTask: true,
       });
     }
@@ -75,12 +100,14 @@ async function validatePlan(service, helpers, workspace, plan, options = {}) {
     if (!command) {
       // 验收命令为空：跳过校验，直接标记完成。
       const validation = { exitCode: 0, output: '', logFile: null, finishedAt: nowIso() };
+      attachValidationSessionContext(validation, planAgentCliContext.agentCliProvider, validationSessionId, validationSessionState);
       service.db.run(
         'UPDATE plans SET status = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
         ['completed', validation.finishedAt, plan.id],
       );
       service.addEvent(plan.project_id, 'plan.completed', '任务全部完成（验收命令为空，已跳过校验）', {
         ...planAgentCliContext,
+        ...validationResultSessionContextFields(validation, planAgentCliContext.agentCliProvider),
         planId: plan.id,
       });
       if (startedAcceptanceTask) service.completeAcceptanceTask(workspace, plan, startedAcceptanceTask, validation);
@@ -106,16 +133,30 @@ async function validatePlan(service, helpers, workspace, plan, options = {}) {
         '失败输出摘要：',
         tailText(validation.output, 12000),
       ].join('\n');
-      await service.runCodexWithPlanGuard(workspace, prompt, `repair-${plan.id}-${attempt}`, {
+      const repair = await service.runCodexWithPlanGuard(workspace, prompt, `repair-${plan.id}-${attempt}`, {
         projectId: plan.project_id,
         planId: plan.id,
+        taskId: startedAcceptanceTask?.id,
         ...planAgentCliContext,
+        ...validationSessionContextFields(planAgentCliContext.agentCliProvider, {
+          sessionId: validationSessionId,
+          requestedId: validationSessionId,
+          mode: validationSessionId ? 'resume' : 'new',
+          state: validationSessionState,
+        }),
       }, planFile);
+      const repairSessionId = validationResultSessionId(repair, planAgentCliContext.agentCliProvider);
+      if (repairSessionId) {
+        validationSessionId = repairSessionId;
+        validationSessionState = validationResultSessionState(repair, planAgentCliContext.agentCliProvider);
+        writeValidationSession(service, plan, startedAcceptanceTask, planAgentCliContext.agentCliProvider, repairSessionId, nowIso());
+      }
       validation = await service.runShell(workspace, command, `validate-${plan.id}-repair-${attempt}`, {
         projectId: plan.project_id,
       });
       validationFailure = classifyExecutionFailure(validation);
     }
+    attachValidationSessionContext(validation, planAgentCliContext.agentCliProvider, validationSessionId, validationSessionState);
 
     if (validation.exitCode === 0) {
       validation.finishedAt = nowIso();
@@ -123,7 +164,11 @@ async function validatePlan(service, helpers, workspace, plan, options = {}) {
         'UPDATE plans SET status = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
         ['completed', validation.finishedAt, plan.id],
       );
-      service.addEvent(plan.project_id, 'plan.completed', plan.file_path, { ...planAgentCliContext, planId: plan.id });
+      service.addEvent(plan.project_id, 'plan.completed', plan.file_path, {
+        ...planAgentCliContext,
+        ...validationResultSessionContextFields(validation, planAgentCliContext.agentCliProvider),
+        planId: plan.id,
+      });
       if (startedAcceptanceTask) service.completeAcceptanceTask(workspace, plan, startedAcceptanceTask, validation);
     } else {
       validation.finishedAt = nowIso();
@@ -135,6 +180,7 @@ async function validatePlan(service, helpers, workspace, plan, options = {}) {
       const eventType = isEnvironmentBlockingFailure(validationFailure) ? 'validation.blocked' : 'validation.failed';
       service.addEvent(plan.project_id, eventType, validation.logFile || validationFailure.failureSummary || command, {
         ...planAgentCliContext,
+        ...validationResultSessionContextFields(validation, planAgentCliContext.agentCliProvider),
         planId: plan.id,
         exitCode: validation.exitCode,
         log: validation.logFile,
@@ -143,6 +189,7 @@ async function validatePlan(service, helpers, workspace, plan, options = {}) {
       if (startedAcceptanceTask) {
         service.recordTaskFailure(plan.project_id, plan, startedAcceptanceTask, validation.finishedAt, {
           ...planAgentCliContext,
+          ...validationResultSessionContextFields(validation, planAgentCliContext.agentCliProvider),
           exitCode: validation.exitCode,
           log: validation.logFile,
           acceptanceTask: true,
@@ -184,7 +231,7 @@ function classifyExecutionFailure(result = {}) {
   } else if (/(?:Compilation failed|Dart compiler exited|Error: The Dart compiler|Failed to compile|Target kernel_snapshot failed|SyntaxError)/i.test(text)) {
     failureKind = 'compile_failure';
     failureCategory = 'compile';
-  } else if (/(?:Agent CLI|Codex CLI|Claude CLI)/i.test(text)) {
+  } else if (/(?:Agent CLI|Codex CLI|Claude CLI|OpenCode CLI)/i.test(text)) {
     failureKind = 'agent_failure';
     failureCategory = 'agent';
   }
@@ -217,6 +264,167 @@ function formatDurationMs(milliseconds) {
   const seconds = Math.max(1, Math.round(Number(milliseconds || 0) / 1000));
   if (seconds < 60) return `${seconds}s`;
   return `${Math.round(seconds / 60)}m`;
+}
+
+function supportsValidationSession(provider) {
+  return provider === DEFAULT_AGENT_CLI_PROVIDER || provider === 'claude';
+}
+
+function validationTaskSessionId(task, provider) {
+  if (!task || !supportsValidationSession(provider)) return '';
+  if (provider === DEFAULT_AGENT_CLI_PROVIDER) return operationCodexSessionId(task);
+  return normalizeAgentCliSessionId(
+    task.agent_cli_session_id
+      || task.agentCliSessionId
+      || task.claude_session_id
+      || task.claudeSessionId,
+  );
+}
+
+function previousValidationSessionId(service, planId, task, provider) {
+  if (!supportsValidationSession(provider)) return '';
+  if (task) {
+    const previousTaskSession = provider === DEFAULT_AGENT_CLI_PROVIDER
+      ? service.previousPlanCodexSessionId(planId, task)
+      : service.previousPlanAgentCliSessionId(planId, task);
+    return previousTaskSession || normalizeAgentCliSessionId(service.planAgentCliSessionId(planId));
+  }
+  return normalizeAgentCliSessionId(service.planAgentCliSessionId(planId))
+    || latestCompletedPlanSessionId(service, planId, provider);
+}
+
+function latestCompletedPlanSessionId(service, planId, provider) {
+  const sessionColumn = provider === DEFAULT_AGENT_CLI_PROVIDER ? 'codex_session_id' : 'agent_cli_session_id';
+  const previousTask = service.db.get(
+    `SELECT ${sessionColumn} AS session_id
+     FROM plan_tasks
+     WHERE plan_id = ?
+       AND status = ?
+       AND ${sessionColumn} IS NOT NULL
+       AND ${sessionColumn} != ''
+     ORDER BY sort_order DESC, id DESC
+     LIMIT 1`,
+    [planId, TASK_EVENT_STATUS.COMPLETED],
+  );
+  if (provider === DEFAULT_AGENT_CLI_PROVIDER) return normalizeCodexSessionId(previousTask?.session_id);
+  return normalizeAgentCliSessionId(previousTask?.session_id);
+}
+
+function validationSessionContextFields(provider, options = {}) {
+  if (!supportsValidationSession(provider)) return {};
+  const sessionId = normalizeAgentCliSessionId(options.sessionId);
+  const requestedId = normalizeAgentCliSessionId(options.requestedId);
+  const mode = options.mode || (sessionId ? 'resume' : 'new');
+  const state = options.state || mode;
+  if (provider === DEFAULT_AGENT_CLI_PROVIDER) {
+    return codexSessionContextFields({
+      codexSessionId: sessionId,
+      codexSessionRequestedId: requestedId,
+      codexSessionMode: mode,
+      codexSessionState: state,
+      codexSessionFallback: options.fallback,
+    });
+  }
+  return agentCliSessionContextFields('claude', {
+    sessionId,
+    requestedId,
+    mode,
+    state,
+    fallback: options.fallback,
+  });
+}
+
+function validationResultSessionContextFields(result, provider) {
+  if (!result) return {};
+  if (!supportsValidationSession(provider)) return {};
+  if (provider === DEFAULT_AGENT_CLI_PROVIDER) return codexSessionContextFields(result);
+  return agentCliSessionContextFields('claude', {
+    sessionId: result?.agentCliSessionId || result?.claudeSessionId || result?.sessionId,
+    requestedId: result?.agentCliSessionRequestedId || result?.claudeSessionRequestedId,
+    mode: result?.agentCliSessionMode || result?.claudeSessionMode,
+    state: result?.agentCliSessionState || result?.claudeSessionState,
+    fallback: result?.agentCliSessionFallback || result?.claudeSessionFallback,
+  });
+}
+
+function validationResultSessionId(result, provider) {
+  if (provider === DEFAULT_AGENT_CLI_PROVIDER) return operationCodexSessionId(result);
+  if (provider === 'claude') {
+    return normalizeAgentCliSessionId(
+      result?.agentCliSessionId
+        || result?.claudeSessionId
+        || result?.sessionId,
+    );
+  }
+  return '';
+}
+
+function validationResultSessionState(result, provider) {
+  if (provider === DEFAULT_AGENT_CLI_PROVIDER) {
+    return result?.codexSessionState || result?.codexSessionMode || (result?.resumed ? 'resume' : 'new');
+  }
+  if (provider === 'claude') {
+    return result?.agentCliSessionState
+      || result?.claudeSessionState
+      || result?.agentCliSessionMode
+      || result?.claudeSessionMode
+      || (result?.resumed ? 'resume' : 'new');
+  }
+  return 'new';
+}
+
+function attachValidationSessionContext(result, provider, sessionId, state) {
+  Object.assign(result, validationSessionContextFields(provider, {
+    sessionId,
+    requestedId: sessionId,
+    mode: sessionId ? 'resume' : 'new',
+    state,
+  }));
+  if (provider === 'claude' && sessionId) {
+    result.agentCliSessionId = sessionId;
+    result.claudeSessionId = sessionId;
+  }
+  if (provider === DEFAULT_AGENT_CLI_PROVIDER && sessionId) {
+    result.sessionId = sessionId;
+    result.codexSessionId = sessionId;
+  }
+  return result;
+}
+
+function writeValidationSession(service, plan, task, provider, sessionId, updatedAt = nowIso()) {
+  const normalizedSessionId = normalizeAgentCliSessionId(sessionId);
+  if (!normalizedSessionId || !supportsValidationSession(provider)) return;
+  if (task?.id) {
+    if (provider === DEFAULT_AGENT_CLI_PROVIDER) {
+      service.updateTaskCodexSession(task.id, normalizedSessionId, updatedAt);
+    } else if (provider === 'claude') {
+      service.updateTaskAgentCliSession(task.id, normalizedSessionId, updatedAt);
+    }
+    return;
+  }
+  service.updatePlanAgentCliSession(plan.id, normalizedSessionId, updatedAt);
+}
+
+function agentCliSessionContextFields(provider, options = {}) {
+  const sessionId = normalizeAgentCliSessionId(options.sessionId);
+  const requestedId = normalizeAgentCliSessionId(options.requestedId);
+  const mode = options.mode || (sessionId ? 'resume' : 'new');
+  const state = options.state || mode;
+  const context = {
+    agentCliSessionMode: mode,
+    agentCliSessionState: state,
+  };
+  if (sessionId) context.agentCliSessionId = sessionId;
+  if (requestedId) context.agentCliSessionRequestedId = requestedId;
+  if (options.fallback) context.agentCliSessionFallback = true;
+  if (provider === 'claude') {
+    if (sessionId) context.claudeSessionId = sessionId;
+    if (requestedId) context.claudeSessionRequestedId = requestedId;
+    context.claudeSessionMode = mode;
+    context.claudeSessionState = state;
+    if (options.fallback) context.claudeSessionFallback = true;
+  }
+  return context;
 }
 
 module.exports = {

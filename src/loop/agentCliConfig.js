@@ -36,6 +36,61 @@ const AGENT_CLI_COMMAND_INPUT_KEYS = Object.freeze([
 ]);
 const AGENT_CLI_PROVIDER_CONTEXT_KEYS = Object.freeze([...AGENT_CLI_PROVIDER_INPUT_KEYS, 'provider']);
 const AGENT_CLI_COMMAND_CONTEXT_KEYS = Object.freeze([...AGENT_CLI_COMMAND_INPUT_KEYS, 'command']);
+const AGENT_CLI_SESSION_COLUMNS = Object.freeze(['agent_cli_session_id', 'codex_session_id', 'opencode_session_id']);
+const AGENT_CLI_SESSION_CONTEXT_KEYS = Object.freeze([
+  'agentCliSessionId',
+  'agent_cli_session_id',
+  'sessionId',
+  'session_id',
+  'codexSessionId',
+  'codex_session_id',
+  'opencodeSessionId',
+  'opencode_session_id',
+]);
+const AGENT_CLI_SESSION_REQUESTED_ID_CONTEXT_KEYS = Object.freeze([
+  'agentCliSessionRequestedId',
+  'agent_cli_session_requested_id',
+  'requestedSessionId',
+  'requested_session_id',
+  'codexSessionRequestedId',
+  'codex_session_requested_id',
+  'opencodeSessionRequestedId',
+  'opencode_session_requested_id',
+]);
+const AGENT_CLI_SESSION_MODE_CONTEXT_KEYS = Object.freeze([
+  'agentCliSessionMode',
+  'agent_cli_session_mode',
+  'codexSessionMode',
+  'codex_session_mode',
+  'opencodeSessionMode',
+  'opencode_session_mode',
+]);
+const AGENT_CLI_SESSION_STATE_CONTEXT_KEYS = Object.freeze([
+  'agentCliSessionState',
+  'agent_cli_session_state',
+  'codexSessionState',
+  'codex_session_state',
+  'opencodeSessionState',
+  'opencode_session_state',
+]);
+const AGENT_CLI_SESSION_LABEL_CONTEXT_KEYS = Object.freeze([
+  'agentCliSessionLabel',
+  'agent_cli_session_label',
+  'codexSessionLabel',
+  'codex_session_label',
+  'opencodeSessionLabel',
+  'opencode_session_label',
+]);
+const AGENT_CLI_SESSION_FALLBACK_CONTEXT_KEYS = Object.freeze([
+  'agentCliSessionFallback',
+  'agent_cli_session_fallback',
+  'codexSessionFallback',
+  'codex_session_fallback',
+  'opencodeSessionFallback',
+  'opencode_session_fallback',
+]);
+const AGENT_CLI_SESSION_PROVIDERS = new Set([DEFAULT_AGENT_CLI_PROVIDER, 'claude', 'opencode']);
+const AGENT_CLI_SESSION_MODES = new Set(['new', 'resume', 'continue']);
 const LOOP_CONFIG_INPUT_KEYS = Object.freeze([
   'workspacePath',
   'intervalSeconds',
@@ -103,7 +158,7 @@ function normalizeIntakeAgentCliConfig(source = {}) {
   const provider = normalizeOptionalAgentCliProvider(
     readFirstOwnValue(source, [...AGENT_CLI_PROVIDER_INPUT_KEYS, ...AGENT_CLI_PROVIDER_COLUMNS]),
   );
-  const codexReasoningEffort = provider === 'claude'
+  const codexReasoningEffort = provider && provider !== DEFAULT_AGENT_CLI_PROVIDER
     ? null
     : normalizeOptionalCodexReasoningEffort(readFirstOwnValue(source, CODEX_REASONING_EFFORT_COLUMNS));
   return {
@@ -231,6 +286,149 @@ function normalizeOptionalString(value) {
   return text || undefined;
 }
 
+function normalizeAgentCliSessionId(value) {
+  const text = normalizeOptionalString(value);
+  if (!text || text.length > 256) return '';
+  return /^[A-Za-z0-9._:-]+$/.test(text) ? text : '';
+}
+
+function shortAgentCliSessionId(sessionId) {
+  const normalized = normalizeAgentCliSessionId(sessionId);
+  return normalized ? normalized.slice(0, 8) : '';
+}
+
+function normalizeAgentCliSessionMode(mode) {
+  const normalized = normalizeOptionalString(mode);
+  return AGENT_CLI_SESSION_MODES.has(normalized) ? normalized : undefined;
+}
+
+function agentCliProviderSupportsSession(provider) {
+  const normalized = normalizeOptionalString(provider);
+  return Boolean(normalized && AGENT_CLI_SESSION_PROVIDERS.has(normalized.toLowerCase()));
+}
+
+function normalizeSessionProvider(source = {}, options = {}) {
+  const explicitProvider = readFirstOwnValue(source, AGENT_CLI_PROVIDER_CONTEXT_KEYS) ?? options.provider;
+  const provider = normalizeOptionalString(explicitProvider);
+  if (provider) return provider.toLowerCase();
+  if (hasAnyOwnProperty(source, ['codexSessionId', 'codex_session_id'])) return DEFAULT_AGENT_CLI_PROVIDER;
+  if (hasAnyOwnProperty(source, ['opencodeSessionId', 'opencode_session_id'])) return 'opencode';
+  return undefined;
+}
+
+function normalizeAgentCliSessionIdForProvider(provider, value) {
+  const normalizedProvider = normalizeOptionalString(provider)?.toLowerCase();
+  return normalizedProvider === DEFAULT_AGENT_CLI_PROVIDER
+    ? normalizeCodexSessionId(value)
+    : normalizeAgentCliSessionId(value);
+}
+
+function shortAgentCliSessionIdForProvider(provider, sessionId) {
+  const normalizedProvider = normalizeOptionalString(provider)?.toLowerCase();
+  return normalizedProvider === DEFAULT_AGENT_CLI_PROVIDER
+    ? shortCodexSessionId(sessionId)
+    : shortAgentCliSessionId(sessionId);
+}
+
+function isAgentCliSessionKeyForProvider(key, provider) {
+  const normalizedProvider = normalizeOptionalString(provider)?.toLowerCase();
+  if (!normalizedProvider) return true;
+  if (key.startsWith('codex') || key.startsWith('codex_')) return normalizedProvider === DEFAULT_AGENT_CLI_PROVIDER;
+  if (key.startsWith('opencode') || key.startsWith('opencode_')) return normalizedProvider === 'opencode';
+  return true;
+}
+
+function readFirstAgentCliSessionValue(source, keys, provider) {
+  for (const key of keys) {
+    if (!isAgentCliSessionKeyForProvider(key, provider)) continue;
+    if (Object.prototype.hasOwnProperty.call(source || {}, key)) return source[key];
+  }
+  return undefined;
+}
+
+function readAgentCliSessionId(source, keys, provider) {
+  for (const key of keys) {
+    if (!isAgentCliSessionKeyForProvider(key, provider)) continue;
+    if (!Object.prototype.hasOwnProperty.call(source || {}, key)) continue;
+    const sessionId = normalizeAgentCliSessionIdForProvider(provider, source[key]);
+    if (sessionId) return sessionId;
+  }
+  return '';
+}
+
+function normalizeOptionalBoolean(value) {
+  if (value === undefined || value === null || value === '') return false;
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value).trim().toLowerCase();
+  if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+  if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+  return Boolean(value);
+}
+
+function agentCliSessionParts(source = {}, options = {}) {
+  const provider = normalizeSessionProvider(source, options);
+  const sessionId = readAgentCliSessionId(source, AGENT_CLI_SESSION_CONTEXT_KEYS, provider);
+  const requestedSessionId = readAgentCliSessionId(source, AGENT_CLI_SESSION_REQUESTED_ID_CONTEXT_KEYS, provider);
+  const mode = normalizeAgentCliSessionMode(readFirstAgentCliSessionValue(source, AGENT_CLI_SESSION_MODE_CONTEXT_KEYS, provider));
+  const fallback = normalizeOptionalBoolean(readFirstAgentCliSessionValue(source, AGENT_CLI_SESSION_FALLBACK_CONTEXT_KEYS, provider));
+  const state = normalizeOptionalString(readFirstAgentCliSessionValue(source, AGENT_CLI_SESSION_STATE_CONTEXT_KEYS, provider)) ||
+    (fallback ? 'fallback-new' : mode);
+  const label = normalizeOptionalString(readFirstAgentCliSessionValue(source, AGENT_CLI_SESSION_LABEL_CONTEXT_KEYS, provider));
+  return { provider, sessionId, requestedSessionId, mode, state, fallback, label };
+}
+
+function agentCliSessionReadableLabel(source = {}, options = {}) {
+  const { provider, sessionId, requestedSessionId, mode, state, fallback, label } = agentCliSessionParts(source, options);
+  if (label) return label;
+  const providerPrefix = provider ? `${agentCliProviderDisplayName(provider)} ` : '';
+  const sessionShortId = sessionId ? shortAgentCliSessionIdForProvider(provider, sessionId) : '';
+  const requestedShortId = requestedSessionId ? shortAgentCliSessionIdForProvider(provider, requestedSessionId) : '';
+  const effectiveMode = mode || normalizeAgentCliSessionMode(state);
+  if (state === 'fallback-new' || fallback) {
+    if (sessionShortId && requestedShortId) return `${providerPrefix}回退新建会话 ${sessionShortId}（原 ${requestedShortId}）`;
+    if (sessionShortId) return `${providerPrefix}回退新建会话 ${sessionShortId}`;
+    return requestedShortId ? `${providerPrefix}回退新建会话（原 ${requestedShortId}）` : `${providerPrefix}回退新建会话`;
+  }
+  if (effectiveMode === 'resume') return sessionShortId ? `${providerPrefix}恢复会话 ${sessionShortId}` : `${providerPrefix}恢复会话`;
+  if (effectiveMode === 'continue') return sessionShortId ? `${providerPrefix}继续会话 ${sessionShortId}` : `${providerPrefix}继续会话`;
+  if (effectiveMode === 'new') return sessionShortId ? `${providerPrefix}新建会话 ${sessionShortId}` : `${providerPrefix}新建会话`;
+  return sessionShortId ? `${providerPrefix}会话 ${sessionShortId}` : '';
+}
+
+function agentCliSessionContextFields(source = {}, options = {}) {
+  const { provider, sessionId, requestedSessionId, mode, state, fallback } = agentCliSessionParts(source, options);
+  if (provider && !agentCliProviderSupportsSession(provider)) return compactDefinedFields({ agentCliProvider: provider });
+  const sessionShortId = sessionId ? shortAgentCliSessionIdForProvider(provider, sessionId) : '';
+  const requestedShortId = requestedSessionId ? shortAgentCliSessionIdForProvider(provider, requestedSessionId) : '';
+  const label = agentCliSessionReadableLabel(source, options);
+  return compactDefinedFields({
+    agentCliProvider: provider,
+    agentCliSessionId: sessionId || undefined,
+    agentCliSessionShortId: sessionShortId || undefined,
+    agentCliSessionRequestedId: requestedSessionId || undefined,
+    agentCliSessionRequestedShortId: requestedShortId || undefined,
+    agentCliSessionMode: mode || undefined,
+    agentCliSessionState: state || undefined,
+    agentCliSessionFallback: fallback || undefined,
+    agentCliSessionLabel: label || undefined,
+  });
+}
+
+function operationAgentCliSessionId(operation = {}) {
+  const provider = normalizeSessionProvider(operation);
+  return readAgentCliSessionId(operation, AGENT_CLI_SESSION_CONTEXT_KEYS, provider);
+}
+
+function hasAgentCliSessionOption(operation = {}) {
+  return [
+    ...AGENT_CLI_SESSION_CONTEXT_KEYS,
+    ...AGENT_CLI_SESSION_REQUESTED_ID_CONTEXT_KEYS,
+    ...AGENT_CLI_SESSION_MODE_CONTEXT_KEYS,
+    ...AGENT_CLI_SESSION_STATE_CONTEXT_KEYS,
+    ...AGENT_CLI_SESSION_FALLBACK_CONTEXT_KEYS,
+  ].some((key) => Object.prototype.hasOwnProperty.call(operation, key));
+}
+
 function agentCliContextFields(source = {}, options = {}) {
   const hasProvider = hasAnyOwnProperty(source, AGENT_CLI_PROVIDER_CONTEXT_KEYS);
   const rawProvider = readFirstOwnValue(source, AGENT_CLI_PROVIDER_CONTEXT_KEYS);
@@ -242,21 +440,39 @@ function agentCliContextFields(source = {}, options = {}) {
     codexReasoningEffort: provider === DEFAULT_AGENT_CLI_PROVIDER
       ? normalizeOptionalCodexReasoningEffort(readFirstOwnValue(source, CODEX_REASONING_EFFORT_COLUMNS))
       : undefined,
+    ...agentCliSessionContextFields(source, { provider }),
   });
 }
 
 function agentCliProviderDisplayName(provider) {
-  return normalizeAgentCliProvider(provider) === 'claude' ? 'Claude' : 'Codex';
+  const rawProvider = normalizeOptionalString(provider);
+  const normalized = rawProvider ? rawProvider.toLowerCase() : normalizeAgentCliProvider(provider);
+  if (normalized === 'claude') return 'Claude';
+  if (normalized === 'opencode') return 'OpenCode';
+  if (normalized === DEFAULT_AGENT_CLI_PROVIDER) return 'Codex';
+  return rawProvider || 'Agent';
 }
 
 function hasCodexSessionOption(operation = {}) {
+  operation = operation || {};
   return Object.prototype.hasOwnProperty.call(operation, 'codexSessionId') ||
+    Object.prototype.hasOwnProperty.call(operation, 'agentCliSessionId') ||
     Object.prototype.hasOwnProperty.call(operation, 'sessionId') ||
+    Object.prototype.hasOwnProperty.call(operation, 'session_id') ||
+    Object.prototype.hasOwnProperty.call(operation, 'agent_cli_session_id') ||
     Object.prototype.hasOwnProperty.call(operation, 'codex_session_id');
 }
 
 function operationCodexSessionId(operation = {}) {
-  return normalizeCodexSessionId(operation.codexSessionId ?? operation.sessionId ?? operation.codex_session_id);
+  operation = operation || {};
+  return normalizeCodexSessionId(
+    operation.codexSessionId ??
+      operation.agentCliSessionId ??
+      operation.sessionId ??
+      operation.session_id ??
+      operation.codex_session_id ??
+      operation.agent_cli_session_id,
+  );
 }
 
 function normalizeCodexSessionId(value) {
@@ -285,10 +501,13 @@ function shortCodexSessionId(sessionId) {
 
 function codexSessionContextFields(source = {}) {
   const sessionId = operationCodexSessionId(source);
-  const requestedSessionId = normalizeCodexSessionId(source.codexSessionRequestedId ?? source.requestedSessionId);
-  const mode = normalizeCodexSessionMode(source.codexSessionMode);
-  const fallback = Boolean(source.codexSessionFallback);
-  const state = normalizeOptionalString(source.codexSessionState) || (fallback ? 'fallback-new' : mode);
+  const requestedSessionId = normalizeCodexSessionId(
+    source.codexSessionRequestedId ?? source.agentCliSessionRequestedId ?? source.requestedSessionId,
+  );
+  const mode = normalizeCodexSessionMode(source.codexSessionMode ?? source.agentCliSessionMode);
+  const fallback = normalizeOptionalBoolean(source.codexSessionFallback ?? source.agentCliSessionFallback);
+  const state = normalizeOptionalString(source.codexSessionState ?? source.agentCliSessionState) ||
+    (fallback ? 'fallback-new' : mode);
   const label = codexSessionReadableLabel({
     codexSessionId: sessionId,
     codexSessionRequestedId: requestedSessionId,
@@ -311,34 +530,103 @@ function codexSessionContextFields(source = {}) {
 function clearCodexSessionFields(operation) {
   for (const key of [
     'codexSessionId',
-    'sessionId',
+    'codexSessionShortId',
     'codex_session_id',
     'codexSessionRequestedId',
-    'requestedSessionId',
+    'codexSessionRequestedShortId',
+    'codex_session_requested_id',
     'codexSessionMode',
+    'codex_session_mode',
     'codexSessionState',
+    'codex_session_state',
     'codexSessionFallback',
+    'codex_session_fallback',
+    'codexSessionLabel',
+    'codex_session_label',
   ]) {
     delete operation[key];
   }
 }
 
+function clearAgentCliSessionFields(operation) {
+  for (const key of [
+    'agentCliSessionId',
+    'agentCliSessionShortId',
+    'agent_cli_session_id',
+    'sessionId',
+    'session_id',
+    'agentCliSessionRequestedId',
+    'agentCliSessionRequestedShortId',
+    'agent_cli_session_requested_id',
+    'requestedSessionId',
+    'requested_session_id',
+    'agentCliSessionMode',
+    'agent_cli_session_mode',
+    'agentCliSessionState',
+    'agent_cli_session_state',
+    'agentCliSessionFallback',
+    'agent_cli_session_fallback',
+    'agentCliSessionLabel',
+    'agent_cli_session_label',
+    'opencodeSessionId',
+    'opencodeSessionShortId',
+    'opencode_session_id',
+    'opencodeSessionRequestedId',
+    'opencodeSessionRequestedShortId',
+    'opencode_session_requested_id',
+    'opencodeSessionMode',
+    'opencode_session_mode',
+    'opencodeSessionState',
+    'opencode_session_state',
+    'opencodeSessionFallback',
+    'opencode_session_fallback',
+    'opencodeSessionLabel',
+    'opencode_session_label',
+  ]) {
+    delete operation[key];
+  }
+  clearCodexSessionFields(operation);
+}
+
+function clearUnsupportedAgentCliSessionFields(operation, provider) {
+  const normalizedProvider = provider || readFirstOwnValue(operation, AGENT_CLI_PROVIDER_CONTEXT_KEYS);
+  if (normalizedProvider && !agentCliProviderSupportsSession(normalizedProvider)) clearAgentCliSessionFields(operation);
+  return operation;
+}
+
+function opencodeSessionContextFields(source = {}) {
+  const fields = agentCliSessionContextFields(source, { provider: 'opencode' });
+  return compactDefinedFields({
+    ...fields,
+    opencodeSessionId: fields.agentCliSessionId,
+    opencodeSessionShortId: fields.agentCliSessionShortId,
+    opencodeSessionRequestedId: fields.agentCliSessionRequestedId,
+    opencodeSessionRequestedShortId: fields.agentCliSessionRequestedShortId,
+    opencodeSessionMode: fields.agentCliSessionMode,
+    opencodeSessionState: fields.agentCliSessionState,
+    opencodeSessionFallback: fields.agentCliSessionFallback,
+    opencodeSessionLabel: fields.agentCliSessionLabel,
+  });
+}
+
 function normalizeCodexSessionMode(mode) {
-  const normalized = normalizeOptionalString(mode);
+  const normalized = normalizeAgentCliSessionMode(mode);
   if (normalized === 'new' || normalized === 'resume') return normalized;
   return undefined;
 }
 
 function codexSessionReadableLabel(source = {}) {
-  const explicit = normalizeOptionalString(source.codexSessionLabel);
+  const explicit = normalizeOptionalString(source.codexSessionLabel ?? source.agentCliSessionLabel);
   if (explicit) return explicit;
   const sessionId = operationCodexSessionId(source);
-  const requestedSessionId = normalizeCodexSessionId(source.codexSessionRequestedId ?? source.requestedSessionId);
+  const requestedSessionId = normalizeCodexSessionId(
+    source.codexSessionRequestedId ?? source.agentCliSessionRequestedId ?? source.requestedSessionId,
+  );
   const sessionShortId = sessionId ? shortCodexSessionId(sessionId) : '';
   const requestedShortId = requestedSessionId ? shortCodexSessionId(requestedSessionId) : '';
-  const mode = normalizeCodexSessionMode(source.codexSessionMode);
-  const state = normalizeOptionalString(source.codexSessionState);
-  if (state === 'fallback-new' || source.codexSessionFallback) {
+  const mode = normalizeCodexSessionMode(source.codexSessionMode ?? source.agentCliSessionMode);
+  const state = normalizeOptionalString(source.codexSessionState ?? source.agentCliSessionState);
+  if (state === 'fallback-new' || normalizeOptionalBoolean(source.codexSessionFallback ?? source.agentCliSessionFallback)) {
     if (sessionShortId && requestedShortId) return `回退新建会话 ${sessionShortId}（原 ${requestedShortId}）`;
     if (sessionShortId) return `回退新建会话 ${sessionShortId}`;
     return requestedShortId ? `回退新建会话（原 ${requestedShortId}）` : '回退新建会话';
@@ -353,6 +641,13 @@ module.exports = {
   AGENT_CLI_COMMAND_INPUT_KEYS,
   AGENT_CLI_PROVIDER_COLUMNS,
   AGENT_CLI_PROVIDER_INPUT_KEYS,
+  AGENT_CLI_SESSION_COLUMNS,
+  AGENT_CLI_SESSION_CONTEXT_KEYS,
+  AGENT_CLI_SESSION_FALLBACK_CONTEXT_KEYS,
+  AGENT_CLI_SESSION_LABEL_CONTEXT_KEYS,
+  AGENT_CLI_SESSION_MODE_CONTEXT_KEYS,
+  AGENT_CLI_SESSION_REQUESTED_ID_CONTEXT_KEYS,
+  AGENT_CLI_SESSION_STATE_CONTEXT_KEYS,
   CODEX_REASONING_EFFORT_COLUMNS,
   DEFAULT_AGENT_CLI_PROVIDER,
   DEFAULT_CODEX_REASONING_EFFORT,
@@ -360,14 +655,20 @@ module.exports = {
   VALIDATION_COMMAND_INPUT_KEYS,
   agentCliContextFields,
   agentCliOperationFields,
+  agentCliProviderSupportsSession,
   agentCliProviderDisplayName,
+  agentCliSessionContextFields,
+  agentCliSessionReadableLabel,
   agentCliStateUpdates,
+  clearAgentCliSessionFields,
   clearCodexSessionFields,
+  clearUnsupportedAgentCliSessionFields,
   codexSessionContextFields,
   codexSessionReadableLabel,
   effectiveAgentCliConfig,
   extractCodexSessionId,
   hasAgentCliOverride,
+  hasAgentCliSessionOption,
   hasAnyOwnProperty,
   hasCodexSessionOption,
   hasExplicitAgentCliProvider,
@@ -376,15 +677,23 @@ module.exports = {
   nextAgentCliConfig,
   nextIntakeAgentCliConfig,
   normalizeAgentCliConfig,
+  normalizeAgentCliSessionId,
+  normalizeAgentCliSessionIdForProvider,
+  normalizeAgentCliSessionMode,
   normalizeCodexReasoningEffort,
   normalizeCodexSessionId,
   normalizeIntakeAgentCliConfig,
   normalizeOptionalAgentCliProvider,
+  normalizeOptionalBoolean,
   normalizeOptionalCodexReasoningEffort,
   normalizeOptionalNumber,
   normalizeOptionalString,
+  operationAgentCliSessionId,
   operationCodexSessionId,
+  opencodeSessionContextFields,
   planAgentCliColumnValues,
   readFirstOwnValue,
   shortCodexSessionId,
+  shortAgentCliSessionId,
+  shortAgentCliSessionIdForProvider,
 };

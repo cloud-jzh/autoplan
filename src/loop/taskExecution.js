@@ -6,6 +6,8 @@ const {
   agentCliContextFields,
   agentCliProviderDisplayName,
   codexSessionContextFields,
+  opencodeSessionContextFields,
+  normalizeAgentCliSessionId,
   normalizeCodexSessionId,
   operationCodexSessionId,
 } = require('./agentCliConfig');
@@ -65,6 +67,23 @@ function previousPlanCodexSessionId(service, helpers, planId, task) {
     return normalizeCodexSessionId(previousTask?.codex_session_id);
   }
 
+function previousPlanAgentCliSessionId(service, helpers, planId, task) {
+    if (!task) return '';
+    const previousTask = service.db.get(
+      `SELECT agent_cli_session_id
+       FROM plan_tasks
+       WHERE plan_id = ?
+         AND status = ?
+         AND agent_cli_session_id IS NOT NULL
+         AND agent_cli_session_id != ''
+         AND (sort_order < ? OR (sort_order = ? AND id < ?))
+       ORDER BY sort_order DESC, id DESC
+       LIMIT 1`,
+      [planId, TASK_EVENT_STATUS.COMPLETED, task.sort_order || 0, task.sort_order || 0, task.id || 0],
+    );
+    return normalizeAgentCliSessionId(previousTask?.agent_cli_session_id);
+  }
+
 function parallelTaskBatch(service, helpers, tasks) {
     const selected = [];
     const usedScopes = new Set();
@@ -85,6 +104,42 @@ function parallelTaskBatch(service, helpers, tasks) {
 async function executeTaskBatch(service, helpers, workspace, plan, tasks, options = {}) {
     service.setPhase(plan.project_id, 'execute-task');
     const agentContext = agentCliContextFields(service.planAgentCliConfig(plan), { defaultProvider: true });
+    if (agentContext.agentCliProvider === 'opencode') {
+      service.addEvent(
+        plan.project_id,
+        'tasks.parallel.serialized',
+        `OpenCode 会话复用已将并发批次转为串行执行：${tasks.map((task) => task.task_key).join(', ')}`,
+        {
+          ...agentContext,
+          planId: plan.id,
+          taskIds: tasks.map((task) => task.id),
+          batchIndex: options.batchIndex,
+          batchCount: options.batchCount,
+        },
+      );
+      const results = [];
+      for (const task of tasks) {
+        let result;
+        try {
+          result = await service.executeTask(workspace, plan, task, { parallel: false });
+        } catch (error) {
+          const finishedAt = nowIso();
+          if (!taskLifecycleEventRecorded(error)) {
+            service.recordTaskFailure(plan.project_id, plan, task, finishedAt, {
+              error: error?.message || String(error),
+            });
+          }
+          results.push({ task, result: { exitCode: -1, finishedAt } });
+          break;
+        }
+        if (result.exitCode === 0) {
+          service.completeTask(workspace, plan, task, result);
+        }
+        results.push({ task, result });
+        if (result.exitCode !== 0) break;
+      }
+      return results;
+    }
     service.addEvent(
       plan.project_id,
       'tasks.parallel.started',
@@ -127,10 +182,19 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
     const startedTask = service.startTaskRun(task.id, startedAt) || task;
     const taskAgentCliContext = agentCliContextFields(service.planAgentCliConfig(plan), { defaultProvider: true });
     const isTaskCodexProvider = taskAgentCliContext.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER;
-    const taskSessionId = isTaskCodexProvider ? operationCodexSessionId(startedTask) : '';
-    const planSessionId = isTaskCodexProvider && !options.parallel
-      ? service.previousPlanCodexSessionId(plan.id, startedTask)
+    const isTaskClaudeProvider = taskAgentCliContext.agentCliProvider === 'claude';
+    const isTaskOpenCodeProvider = taskAgentCliContext.agentCliProvider === 'opencode';
+    const taskSessionId = isTaskCodexProvider
+      ? operationCodexSessionId(startedTask)
+      : isTaskClaudeProvider
+        ? taskAgentCliSessionId(startedTask)
+        : '';
+    const planSessionId = (isTaskCodexProvider || isTaskClaudeProvider) && !options.parallel
+      ? (isTaskCodexProvider
+          ? service.previousPlanCodexSessionId(plan.id, startedTask)
+          : service.previousPlanAgentCliSessionId(plan.id, startedTask))
       : '';
+    const openCodeSessionId = isTaskOpenCodeProvider ? service.planAgentCliSessionId(plan.id) : '';
     const existingSessionId = taskSessionId || planSessionId;
     const inheritedPlanSession = Boolean(!taskSessionId && planSessionId);
     const startedSessionContext = isTaskCodexProvider
@@ -139,6 +203,18 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
           codexSessionMode: existingSessionId ? 'resume' : 'new',
           codexSessionState: inheritedPlanSession ? 'plan-resume' : undefined,
         })
+      : isTaskClaudeProvider
+        ? agentCliSessionContextFields('claude', {
+            sessionId: existingSessionId,
+            requestedId: existingSessionId,
+            mode: existingSessionId ? 'resume' : 'new',
+            state: inheritedPlanSession ? 'plan-resume' : undefined,
+          })
+      : isTaskOpenCodeProvider
+        ? opencodeSessionContextFields({
+            opencodeSessionId: openCodeSessionId,
+            opencodeSessionMode: openCodeSessionId ? 'resume' : 'new',
+          })
       : {};
     service.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.STARTED, startedTask, {
       ...taskAgentCliContext,
@@ -160,7 +236,7 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
       '- 中文文件读写使用 UTF-8',
     ];
     if (inheritedPlanSession) {
-      completionRules.unshift('- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理');
+      completionRules.unshift(`- 当前任务已恢复同一 plan 前序任务的 ${agentCliProviderDisplayName(taskAgentCliContext.agentCliProvider)} 会话，请沿用已有分析结论和修改背景，避免重新从零梳理`);
     }
     if (options.parallel) {
       completionRules.unshift('- 当前为并发执行模式，不要读写其它任务的 scope');
@@ -184,8 +260,11 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
         taskId: task.id,
         parallel: Boolean(options.parallel),
         ...taskAgentCliContext,
+        ...startedSessionContext,
         ...(isTaskCodexProvider && existingSessionId ? { codexSessionId: existingSessionId } : {}),
-        ...(inheritedPlanSession ? { codexSessionState: 'plan-resume' } : {}),
+        ...(isTaskClaudeProvider && existingSessionId ? { agentCliSessionId: existingSessionId } : {}),
+        ...(isTaskCodexProvider && inheritedPlanSession ? { codexSessionState: 'plan-resume' } : {}),
+        ...(isTaskClaudeProvider && inheritedPlanSession ? { agentCliSessionState: 'plan-resume' } : {}),
       }, planFile);
     } catch (error) {
       const finishedAt = nowIso();
@@ -202,8 +281,14 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
     }
     const finishedAt = nowIso();
     result.finishedAt = finishedAt;
-    const capturedSessionId = operationCodexSessionId(result);
-    if (capturedSessionId) service.updateTaskCodexSession(task.id, capturedSessionId, finishedAt);
+    const capturedSessionId = taskResultSessionId(result);
+    if (capturedSessionId) {
+      if (result.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER) {
+        service.updateTaskCodexSession(task.id, capturedSessionId, finishedAt);
+      } else if (result.agentCliProvider === 'claude') {
+        service.updateTaskAgentCliSession(task.id, capturedSessionId, finishedAt);
+      }
+    }
     const succeeded = result.exitCode === 0;
     if (!succeeded) {
       const failure = classifyExecutionFailure(result);
@@ -212,7 +297,7 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
         exitCode: result.exitCode,
         log: result.logFile,
         ...failure,
-        ...(result.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionContextFields(result) : {}),
+        ...taskResultSessionContextFields(result),
       });
     }
     return result;
@@ -230,7 +315,7 @@ function completeTask(service, helpers, workspace, plan, task, result) {
       finishedAt,
       exitCode: result?.exitCode,
       log: result?.logFile,
-      ...(result?.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionContextFields(result) : {}),
+      ...taskResultSessionContextFields(result),
     });
     service.refreshPlanProgress(plan.id, planFile);
     service.emitUpdate(plan.project_id);
@@ -287,7 +372,65 @@ module.exports = {
   executeTaskBatch,
   markTaskCompletedInPlan,
   parallelTaskBatch,
+  previousPlanAgentCliSessionId,
   previousPlanCodexSessionId,
   processPlan,
   refreshPlanProgress,
 };
+
+function taskAgentCliSessionId(task) {
+  return normalizeAgentCliSessionId(
+    task?.agent_cli_session_id
+      || task?.agentCliSessionId
+      || task?.claude_session_id
+      || task?.claudeSessionId,
+  );
+}
+
+function taskResultSessionId(result) {
+  if (result?.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER) return operationCodexSessionId(result);
+  if (result?.agentCliProvider === 'claude') {
+    return normalizeAgentCliSessionId(
+      result.agentCliSessionId
+        || result.claudeSessionId
+        || result.sessionId,
+    );
+  }
+  return '';
+}
+
+function taskResultSessionContextFields(result) {
+  if (result?.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER) return codexSessionContextFields(result);
+  if (result?.agentCliProvider === 'claude') {
+    return agentCliSessionContextFields('claude', {
+      sessionId: result.agentCliSessionId || result.claudeSessionId || result.sessionId,
+      requestedId: result.agentCliSessionRequestedId || result.claudeSessionRequestedId,
+      mode: result.agentCliSessionMode || result.claudeSessionMode,
+      state: result.agentCliSessionState || result.claudeSessionState,
+      fallback: result.agentCliSessionFallback || result.claudeSessionFallback,
+    });
+  }
+  return {};
+}
+
+function agentCliSessionContextFields(provider, options = {}) {
+  const sessionId = normalizeAgentCliSessionId(options.sessionId);
+  const requestedId = normalizeAgentCliSessionId(options.requestedId);
+  const mode = options.mode || (sessionId ? 'resume' : 'new');
+  const state = options.state || mode;
+  const context = {
+    agentCliSessionMode: mode,
+    agentCliSessionState: state,
+  };
+  if (sessionId) context.agentCliSessionId = sessionId;
+  if (requestedId) context.agentCliSessionRequestedId = requestedId;
+  if (options.fallback) context.agentCliSessionFallback = true;
+  if (provider === 'claude') {
+    if (sessionId) context.claudeSessionId = sessionId;
+    if (requestedId) context.claudeSessionRequestedId = requestedId;
+    context.claudeSessionMode = mode;
+    context.claudeSessionState = state;
+    if (options.fallback) context.claudeSessionFallback = true;
+  }
+  return context;
+}

@@ -49,6 +49,8 @@ interface ComposerProps {
 export interface ComposerSubmitPayload {
   body: string;
   createAsDraft: boolean;
+  agentCliProvider?: AgentCliProvider;
+  codexReasoningEffort?: CodexReasoningEffort;
 }
 
 function getClipboardImageFiles(event: ClipboardEvent<HTMLTextAreaElement>) {
@@ -81,10 +83,24 @@ export function Composer({
     if (textareaRef.current) autoGrowTextarea(textareaRef.current);
   }, [body]);
 
+  const selectedProvider = cliSelection?.selectedByType[type] || cliSelection?.options[0]?.value || '';
+  const isCodexProvider = selectedProvider === 'codex';
+  const selectedProviderOption = cliSelection?.options.find((option) => option.value === selectedProvider);
+  const selectedReasoning = cliSelection?.reasoningByType[type] || cliSelection?.reasoningOptions[1]?.value || 'medium';
+  const selectedReasoningOption = cliSelection?.reasoningOptions.find((option) => option.value === selectedReasoning);
+  const draftHelp = '创建为草稿后只生成计划，不会立即进入执行队列；确认后可在任务与计划中手动执行。';
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!body.trim() && !pendingAttachments.length) return;
-    const payload = createAsDraft ? { body, createAsDraft } : body;
+    const payload = cliSelection
+      ? {
+          body,
+          createAsDraft,
+          agentCliProvider: selectedProvider as AgentCliProvider,
+          ...(isCodexProvider ? { codexReasoningEffort: selectedReasoning as CodexReasoningEffort } : {}),
+        }
+      : createAsDraft ? { body, createAsDraft } : body;
     const succeeded = await onSubmit(payload);
     if (succeeded) {
       setBody('');
@@ -111,13 +127,6 @@ export function Composer({
     if (relatedTarget && event.currentTarget.contains(relatedTarget)) return;
     setDragOver(false);
   };
-
-  const selectedProvider = cliSelection?.selectedByType[type] || cliSelection?.options[0]?.value || '';
-  const isCodexProvider = selectedProvider !== 'claude';
-  const selectedProviderOption = cliSelection?.options.find((option) => option.value === selectedProvider);
-  const selectedReasoning = cliSelection?.reasoningByType[type] || cliSelection?.reasoningOptions[1]?.value || 'medium';
-  const selectedReasoningOption = cliSelection?.reasoningOptions.find((option) => option.value === selectedReasoning);
-  const draftHelp = '创建为草稿后只生成计划，不会立即进入执行队列；确认后可在任务与计划中手动执行。';
 
   return (
     <form

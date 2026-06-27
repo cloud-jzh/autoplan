@@ -58,6 +58,7 @@ function snapshot(service, helpers, projectId = null) {
       concurrencySuggestionByPlanId.get(Number(plan.id)),
       service.planSnapshotAgentCliConfig(plan),
     ));
+    const planSnapshotById = new Map(planSnapshots.map((plan) => [Number(plan.id), plan]));
     const planTitleById = new Map(planSnapshots.map((plan) => [Number(plan.id), plan.title || '']));
 
     return {
@@ -67,23 +68,27 @@ function snapshot(service, helpers, projectId = null) {
       mcp,
       state,
       requirements: service.db.all(
-        `SELECT requirements.*, plans.status AS plan_status,
+        `SELECT requirements.*, plans.file_path AS plan_file_path,
+                plans.status AS plan_status,
                 plans.completed_tasks AS plan_completed, plans.total_tasks AS plan_total
          FROM requirements
          LEFT JOIN plans ON plans.id = requirements.linked_plan_id
+          AND plans.project_id = requirements.project_id
          WHERE requirements.project_id = ?
           ORDER BY requirements.updated_at DESC`,
         [projectId],
-      ).map((row) => intakeSnapshotRow(row)),
+      ).map((row) => intakeLinkedPlanSnapshotRow(row, planSnapshotById)),
       feedback: service.db.all(
-        `SELECT feedback.*, plans.status AS plan_status,
+        `SELECT feedback.*, plans.file_path AS plan_file_path,
+                plans.status AS plan_status,
                 plans.completed_tasks AS plan_completed, plans.total_tasks AS plan_total
          FROM feedback
          LEFT JOIN plans ON plans.id = feedback.linked_plan_id
+          AND plans.project_id = feedback.project_id
          WHERE feedback.project_id = ?
           ORDER BY feedback.updated_at DESC`,
         [projectId],
-      ).map((row) => intakeSnapshotRow(row)),
+      ).map((row) => intakeLinkedPlanSnapshotRow(row, planSnapshotById)),
       attachments: service.db.all(
         'SELECT * FROM attachments WHERE project_id = ? ORDER BY created_at DESC, id DESC',
         [projectId],
@@ -148,6 +153,33 @@ function taskSnapshotRow(service, workspace, task, operationContext = null) {
     ...(runDurationMs !== undefined ? { run_duration_ms: normalizeDurationMs(runDurationMs) } : {}),
     ...agentContext,
     ...sessionContext,
+  };
+}
+
+function intakeLinkedPlanSnapshotRow(row = {}, planSnapshotById = new Map()) {
+  const normalized = intakeSnapshotRow(row);
+  const linkedPlanId = Number(normalized.linked_plan_id);
+  const linkedPlan = Number.isFinite(linkedPlanId) ? planSnapshotById.get(linkedPlanId) : null;
+  if (!linkedPlan) return normalized;
+
+  const title = linkedPlan.title || null;
+  const filePath = linkedPlan.file_path || normalized.plan_file_path || null;
+  const status = linkedPlan.status || normalized.plan_status || null;
+  const completed = linkedPlan.completed_tasks ?? normalized.plan_completed ?? null;
+  const total = linkedPlan.total_tasks ?? normalized.plan_total ?? null;
+
+  return {
+    ...normalized,
+    plan_title: title,
+    plan_file_path: filePath,
+    plan_status: status,
+    plan_completed: completed,
+    plan_total: total,
+    linked_plan_title: title,
+    linked_plan_file_path: filePath,
+    linked_plan_status: status,
+    linked_plan_completed_tasks: completed,
+    linked_plan_total_tasks: total,
   };
 }
 
@@ -294,6 +326,9 @@ function planSnapshotRow(service, workspace, plan, concurrencySuggestion = null,
     agent_cli_provider: planAgentCliConfig.provider,
     agent_cli_command: planAgentCliConfig.command,
     codex_reasoning_effort: planAgentCliConfig.codexReasoningEffort,
+    agent_cli_session_id: planAgentCliConfig.provider === 'opencode'
+      ? normalizeOptionalString(plan.agent_cli_session_id) || null
+      : null,
     title: cachedPlanMarkdownTitle(service, workspace, plan),
     concurrency_suggestion: concurrencySuggestion || emptyConcurrencySuggestion(),
   };

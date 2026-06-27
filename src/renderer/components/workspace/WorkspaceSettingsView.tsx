@@ -2,8 +2,10 @@ import { useState, type Dispatch, type FormEvent, type ReactNode, type SetStateA
 import type { McpStatus } from '../../types';
 import MarkdownReader from '../MarkdownReader';
 import {
+  agentCliDefaultCommand,
   agentCliOptionDetails,
   codexReasoningOptionDetails,
+  isCodexAgentCliProvider,
   normalizeCodexReasoningEffort,
   scopeFileOpenModeOptions,
   type LoopFormState,
@@ -40,6 +42,17 @@ function scopeModeLabel(mode: ScopeFileOpenMode) {
   return '系统默认';
 }
 
+function agentCliNavLabel(provider: string) {
+  if (provider === 'claude') return 'Claude';
+  if (provider === 'opencode') return 'OpenCode';
+  return 'Codex';
+}
+
+function agentCliNonCodexHint(provider: string) {
+  if (provider === 'opencode') return 'OpenCode CLI 不使用该配置';
+  return 'Claude CLI 不使用该配置';
+}
+
 export function WorkspaceSettingsView({
   loopForm,
   mcpAuthToken,
@@ -65,7 +78,7 @@ export function WorkspaceSettingsView({
 }) {
   const [activePane, setActivePane] = useState<SettingsPane>('loop');
   const [openMcpToolName, setOpenMcpToolName] = useState<string>('');
-  const isCodexProvider = loopForm.agentCliProvider !== 'claude';
+  const isCodexProvider = isCodexAgentCliProvider(loopForm.agentCliProvider);
   const mcpTools = mcp?.tools?.length ? mcp.tools : window.autoplan.mcpToolNames;
   const mcpToolDocs = mcp?.toolDocs?.length
     ? mcp.toolDocs
@@ -80,7 +93,7 @@ export function WorkspaceSettingsView({
 
   const navMeta: Record<SettingsPane, { label: string; tone?: string }> = {
     loop: { label: running ? '运行中' : '已停止', tone: running ? 'ok' : '' },
-    cli: { label: loopForm.agentCliProvider === 'claude' ? 'Claude' : 'Codex', tone: isCodexProvider ? 'ok' : '' },
+    cli: { label: agentCliNavLabel(loopForm.agentCliProvider), tone: isCodexProvider ? 'ok' : '' },
     scope: { label: scopeModeLabel(scopeFileOpenSettings.mode) },
     mcp: { label: mcpStatus, tone: mcpStatusTone(mcp) },
   };
@@ -175,7 +188,7 @@ export function WorkspaceSettingsView({
               <div className="set-card">
                 <div className="set-card-head">
                   <h3>后端与命令</h3>
-                  <div className="set-card-hint">Codex / Claude Provider、思考深度与可执行命令</div>
+                  <div className="set-card-hint">Codex / Claude / OpenCode Provider、思考深度与可执行命令</div>
                 </div>
                 <div className="set-card-body">
                   <label className="field">
@@ -199,6 +212,9 @@ export function WorkspaceSettingsView({
                     </div>
                     {loopForm.agentCliProvider === 'claude' ? (
                       <span className="field-hint">需本机已安装 claude CLI 并完成认证。</span>
+                    ) : null}
+                    {loopForm.agentCliProvider === 'opencode' ? (
+                      <span className="field-hint">需本机已安装 opencode CLI 并完成认证，默认命令为 opencode。</span>
                     ) : null}
                   </label>
                   {isCodexProvider ? (
@@ -231,7 +247,7 @@ export function WorkspaceSettingsView({
                   ) : (
                     <div className="field readonly-field">
                       <span className="field-label">Codex 思考深度</span>
-                      <span>Claude CLI 不使用该配置</span>
+                      <span>{agentCliNonCodexHint(loopForm.agentCliProvider)}</span>
                     </div>
                   )}
                   <label className="field">
@@ -240,7 +256,7 @@ export function WorkspaceSettingsView({
                       className="field-input mono"
                       value={loopForm.agentCliCommand}
                       onChange={(event) => setLoopForm((current) => ({ ...current, agentCliCommand: event.target.value }))}
-                      placeholder={loopForm.agentCliProvider === 'claude' ? 'claude' : 'codex'}
+                      placeholder={agentCliDefaultCommand(loopForm.agentCliProvider)}
                     />
                     <span className="field-hint">后端在 PATH 中时留空即可，否则填写可执行文件完整路径。</span>
                   </label>

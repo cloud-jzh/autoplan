@@ -31,10 +31,40 @@ function spawnChild(command, args, options = {}) {
 }
 
 async function main() {
-  spawnChild(bin('vite'), ['--host', '127.0.0.1']);
+  if (!(await isReachable(rendererUrl))) {
+    const renderer = rendererServerArgs(rendererUrl);
+    spawnChild(bin('vite'), ['--host', renderer.host, '--port', String(renderer.port)]);
+  }
   await waitFor(rendererUrl, 30000);
   electronProcess = spawnChild(bin('electron'), ['.'], {
     env: { ELECTRON_RENDERER_URL: rendererUrl },
+  });
+}
+
+function rendererServerArgs(url) {
+  try {
+    const parsed = new URL(url);
+    return {
+      host: parsed.hostname || '127.0.0.1',
+      port: Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80)),
+    };
+  } catch {
+    return { host: '127.0.0.1', port: 5173 };
+  }
+}
+
+function isReachable(url) {
+  return new Promise((resolve) => {
+    const request = http.get(url, (response) => {
+      response.resume();
+      resolve(true);
+    });
+
+    request.setTimeout(1000, () => {
+      request.destroy();
+      resolve(false);
+    });
+    request.on('error', () => resolve(false));
   });
 }
 

@@ -16,6 +16,13 @@ import type {
 import { useSnapshot } from './useSnapshot';
 import { searchWorkspaceSnapshot } from '../utils/search';
 import {
+  createUnavailableLinkedPlan,
+  findLinkedPlanInSnapshot,
+  matchFallbackPlan,
+  normalizeLinkedPlanId,
+  type LinkedPlanIntakeItem,
+} from '../utils/linkedPlan';
+import {
   appendPendingAttachments,
   agentCliOptions,
   codexReasoningOptions,
@@ -448,6 +455,46 @@ export function useWorkspaceController() {
     [planReadState.loading, planReadState.plan?.id, planReadState.plan?.project_id, readPlanForReader],
   );
 
+  const showUnavailableLinkedPlanReader = useCallback(
+    (item: LinkedPlanIntakeItem, message: string, planId: number | null = normalizeLinkedPlanId(item.linked_plan_id)) => {
+      planReadRequestRef.current += 1;
+      setPlanReadState({
+        plan: createUnavailableLinkedPlan(projectId, item, planId),
+        result: null,
+        loading: false,
+        error: message,
+      });
+    },
+    [projectId],
+  );
+
+  const openIntakePlanReader = useCallback(
+    (item: LinkedPlanIntakeItem, fallbackPlan?: Plan | null) => {
+      const planId = normalizeLinkedPlanId(item.linked_plan_id);
+      if (planId === null) {
+        if (fallbackPlan) {
+          openPlanReader(fallbackPlan);
+          return;
+        }
+        showUnavailableLinkedPlanReader(item, '绑定 Plan ID 无效，暂无法预览。', null);
+        return;
+      }
+
+      const plan = findLinkedPlanInSnapshot(snapshot?.plans || [], planId, projectId) || matchFallbackPlan(fallbackPlan, planId);
+      if (!plan) {
+        showUnavailableLinkedPlanReader(
+          item,
+          `绑定 Plan #${planId} 当前不可用，可能尚未同步、已删除或不属于当前项目。`,
+          planId,
+        );
+        return;
+      }
+
+      openPlanReader(plan);
+    },
+    [openPlanReader, projectId, showUnavailableLinkedPlanReader, snapshot?.plans],
+  );
+
   const closePlanReader = useCallback(() => {
     planReadRequestRef.current += 1;
     setPlanReadState(createEmptyPlanReadState());
@@ -457,6 +504,13 @@ export function useWorkspaceController() {
     if (planReadState.loading) return;
     const plan = latestReadingPlan || planReadState.plan;
     if (!plan) return;
+    if (Number(plan.id) <= 0) {
+      setPlanReadState((current) => ({
+        ...current,
+        error: current.error || '绑定 Plan ID 无效，暂无法预览。',
+      }));
+      return;
+    }
     void readPlanForReader(plan);
   }, [latestReadingPlan, planReadState.loading, planReadState.plan, readPlanForReader]);
 
@@ -509,6 +563,7 @@ export function useWorkspaceController() {
     loopForm,
     mcpAuthToken,
     navigate,
+    openIntakePlanReader,
     openPlanReader,
     openTaskPlanReader,
     pendingAttachments,

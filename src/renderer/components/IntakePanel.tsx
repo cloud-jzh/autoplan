@@ -6,6 +6,7 @@ import { formatChinaDateTime } from '../utils/time';
 
 type IntakeItem = Requirement | Feedback;
 type IntakeUpdate = { title?: string; body?: string; status?: string };
+type PlanPreviewHandler = (type: IntakeType, linkedPlanId: number) => void;
 
 interface IntakePanelProps {
   attachments: Attachment[];
@@ -25,6 +26,7 @@ interface IntakePanelProps {
   onInterrupt: (type: IntakeType, id: number) => Promise<void>;
   onResume: (type: IntakeType, id: number) => Promise<void>;
   onAppendTask: (type: IntakeType, id: number, title: string) => Promise<void>;
+  onPreviewPlan?: PlanPreviewHandler;
 }
 
 export function IntakePanel({
@@ -45,6 +47,7 @@ export function IntakePanel({
   onInterrupt,
   onResume,
   onAppendTask,
+  onPreviewPlan,
 }: IntakePanelProps) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState({ title: '', body: '', status: 'open' });
@@ -84,11 +87,10 @@ export function IntakePanel({
     setAppendId(null);
   };
 
-  const planStatus = (item: IntakeItem) => item.plan_status || null;
+  const planStatus = (item: IntakeItem) => readStringField(item, ['plan_status', 'linked_plan_status']) || null;
   const planPct = (item: IntakeItem) => {
-    const total = Number(item.plan_total || 0);
-    const done = Number(item.plan_completed || 0);
-    return total > 0 ? Math.round((done / total) * 100) : 0;
+    const { completed, total } = planTaskCounts(item);
+    return total > 0 ? Math.min(100, Math.max(0, Math.round((completed / total) * 100))) : 0;
   };
 
   return (
@@ -155,7 +157,8 @@ export function IntakePanel({
               }
 
               const ps = planStatus(item);
-              const hasPlan = Boolean(item.linked_plan_id);
+              const linkedPlanId = linkedPlanIdOf(item);
+              const hasPlan = linkedPlanId !== null;
               const isInterrupted = ps === 'interrupted';
               const isCompleted = ps === 'completed';
               const showAppend = appendId === item.id;
@@ -165,25 +168,13 @@ export function IntakePanel({
                   <div className="item-title">
                     <span>{title}</span>
                     <span className="item-title-right">
-                      {hasPlan && ps ? (
-                        <span className={`chip ${planChipClass(ps)}`}>
-                          {planStatusLabel(ps)} {item.plan_completed ?? 0}/{item.plan_total ?? 0}
-                        </span>
-                      ) : (
-                        <span className={`chip ${statusChip(item.status)}`}>{item.status}</span>
-                      )}
+                      <span className={`chip ${statusChip(item.status)}`}>{item.status}</span>
                     </span>
                   </div>
                   {item.body ? <div className="item-body plain-text">{item.body}</div> : null}
                   <AttachmentGrid attachments={itemAttachments} />
 
-                  {hasPlan ? (
-                    <div className="intake-progress">
-                      <div className="progress">
-                        <span style={{ width: `${planPct(item)}%` }} />
-                      </div>
-                    </div>
-                  ) : null}
+                  <PlanBindingCard item={item} type={type} progressPct={planPct(item)} onPreviewPlan={onPreviewPlan} />
 
                   <div className="item-foot">
                     <div className="item-actions">
@@ -272,6 +263,92 @@ export function IntakePanel({
   );
 }
 
+function PlanBindingCard({
+  item,
+  type,
+  progressPct,
+  onPreviewPlan,
+}: {
+  item: IntakeItem;
+  type: IntakeType;
+  progressPct: number;
+  onPreviewPlan?: PlanPreviewHandler;
+}) {
+  const linkedPlanId = linkedPlanIdOf(item);
+  if (linkedPlanId === null) return null;
+
+  const planTitle = readStringField(item, ['plan_title', 'linked_plan_title']);
+  const planPath = readStringField(item, ['plan_file_path', 'linked_plan_file_path', 'plan_path', 'linked_plan_path']);
+  const planStatus = readStringField(item, ['plan_status', 'linked_plan_status']);
+  const { completed, total } = planTaskCounts(item);
+  const hasSnapshot = Boolean(planTitle || planPath || planStatus || completed > 0 || total > 0);
+  const displayName = hasSnapshot ? planTitle || planPath || `Plan #${linkedPlanId}` : '计划不可用';
+  const displayTitle = [planTitle || null, planPath || null].filter(Boolean).join('\n') || displayName;
+  const canPreview = hasSnapshot && Boolean(onPreviewPlan);
+  const previewTitle = !hasSnapshot
+    ? '绑定 Plan 快照缺失，无法预览'
+    : canPreview
+      ? `预览 Plan #${linkedPlanId}`
+      : '预览入口尚未就绪';
+  const progressLabel = total > 0 ? `${completed}/${total} · ${progressPct}%` : '暂无任务进度';
+  const progressClass = planStatus === 'completed' ? ' success' : planStatus ? ' running' : '';
+
+  return (
+    <div className={`intake-plan-card${hasSnapshot ? '' : ' is-unavailable'}`}>
+      <div className="intake-plan-head">
+        <div className="intake-plan-main">
+          <span className="intake-plan-label">绑定 Plan</span>
+          <strong className="intake-plan-name" title={displayTitle}>
+            {displayName}
+          </strong>
+          {planTitle && planPath ? (
+            <span className="intake-plan-path" title={planPath}>
+              {planPath}
+            </span>
+          ) : null}
+        </div>
+        <div className="intake-plan-side">
+          {hasSnapshot ? (
+            <span className={`chip ${planStatus ? planChipClass(planStatus) : 'chip-waiting'}`}>
+              {planStatus ? planStatusLabel(planStatus) : '状态未知'}
+            </span>
+          ) : (
+            <span className="chip chip-waiting">计划不可用</span>
+          )}
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={!canPreview}
+            title={previewTitle}
+            onClick={() => {
+              if (canPreview) onPreviewPlan?.(type, linkedPlanId);
+            }}
+          >
+            预览 Plan
+          </button>
+        </div>
+      </div>
+
+      <div className="intake-plan-details">
+        <span>
+          Plan ID <b>#{linkedPlanId}</b>
+        </span>
+        <span>
+          任务进度 <b>{progressLabel}</b>
+        </span>
+      </div>
+
+      <div className="intake-plan-progress" aria-label={`Plan 任务完成进度 ${progressLabel}`}>
+        <div className={`progress${progressClass}`}>
+          <span style={{ width: `${progressPct}%` }} />
+        </div>
+      </div>
+
+      {hasSnapshot ? null : <p className="intake-plan-unavailable">绑定 Plan 快照缺失，暂不能预览全文。</p>}
+    </div>
+  );
+}
+
 export function RecordCard({
   anchorId,
   actions,
@@ -311,6 +388,41 @@ export function RecordCard({
 
 function workspaceSearchAnchorId(type: IntakeType, id: number) {
   return `workspace-${type}-${id}`;
+}
+
+function linkedPlanIdOf(item: IntakeItem) {
+  const value = (item as unknown as Record<string, unknown>).linked_plan_id;
+  const numericValue = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : null;
+}
+
+function planTaskCounts(item: IntakeItem) {
+  return {
+    completed: readNumberField(item, ['plan_completed', 'linked_plan_completed', 'plan_completed_tasks']),
+    total: readNumberField(item, ['plan_total', 'linked_plan_total', 'plan_total_tasks']),
+  };
+}
+
+function readStringField(item: IntakeItem, fieldNames: string[]) {
+  const record = item as unknown as Record<string, unknown>;
+  for (const fieldName of fieldNames) {
+    const value = record[fieldName];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
+function readNumberField(item: IntakeItem, fieldNames: string[]) {
+  const record = item as unknown as Record<string, unknown>;
+  for (const fieldName of fieldNames) {
+    const value = record[fieldName];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim()) {
+      const numericValue = Number(value);
+      if (Number.isFinite(numericValue)) return numericValue;
+    }
+  }
+  return 0;
 }
 
 function statusChip(status: string) {

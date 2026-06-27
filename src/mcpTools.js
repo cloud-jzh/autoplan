@@ -13,7 +13,7 @@ const MCP_TOOL_NAMES = Object.freeze({
   STOP_LOOP: 'stop_loop',
 });
 
-const AGENT_CLI_PROVIDERS = Object.freeze(['codex', 'claude']);
+const AGENT_CLI_PROVIDERS = Object.freeze(['codex', 'claude', 'opencode']);
 const CODEX_REASONING_EFFORTS = Object.freeze(['low', 'medium', 'high', 'xhigh']);
 const INTAKE_STATUSES = Object.freeze(['open', 'completed', 'closed']);
 const PLAN_STATUSES = Object.freeze(['pending', 'running', 'ready_for_validation', 'completed', 'interrupted', 'draft']);
@@ -735,6 +735,7 @@ function planSummary(plan) {
     validationPassed: Boolean(plan.validation_passed),
     agentCliProvider: plan.agent_cli_provider || null,
     agentCliCommand: plan.agent_cli_command || '',
+    agentCliSessionId: plan.agent_cli_session_id || null,
     codexReasoningEffort: plan.codex_reasoning_effort || null,
     createdAt: plan.created_at,
     updatedAt: plan.updated_at,

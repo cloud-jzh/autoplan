@@ -1,9 +1,11 @@
 import {
+  agentCliProviderLabel,
   codexReasoningEffortLabel,
   planCliSummaryLabel,
   readCodexReasoningEffort,
 } from './shared';
 import {
+  agentCliDefaultCommand,
   agentCliOptionDetails,
   codexReasoningOptionDetails,
   scopeFileOpenModeOptions,
@@ -48,11 +50,28 @@ describe('shared Codex reasoning helpers', () => {
   });
 });
 
+describe('shared OpenCode display helpers', () => {
+  it('labels the opencode provider without Codex reasoning depth', () => {
+    expectEqual(agentCliProviderLabel('opencode'), 'OpenCode');
+    expectEqual(agentCliProviderLabel('OPENCODE'), 'OpenCode');
+    expectEqual(agentCliDefaultCommand('opencode'), 'opencode');
+  });
+
+  it('keeps OpenCode plan summaries free of Codex reasoning depth', () => {
+    expectEqual(planCliSummaryLabel({ agentCliProvider: 'opencode' }), 'OpenCode CLI');
+    expectEqual(
+      planCliSummaryLabel({ agent_cli_provider: 'opencode', codex_reasoning_effort: 'xhigh' }),
+      'OpenCode CLI',
+    );
+  });
+});
+
 describe('settings choice metadata', () => {
   it('keeps CLI provider choices ready for segmented controls', () => {
-    expectEqual(agentCliOptionDetails.length, 2);
+    expectEqual(agentCliOptionDetails.length, 3);
     expectEqual(agentCliOptionDetails[0].value, 'codex');
     expectEqual(agentCliOptionDetails[1].value, 'claude');
+    expectEqual(agentCliOptionDetails[2].value, 'opencode');
     expect(agentCliOptionDetails.every((option) => option.description), 'CLI options should include descriptions');
   });
 

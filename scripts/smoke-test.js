@@ -3,12 +3,19 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const vm = require('node:vm');
 const { saveAttachments } = require('../src/attachments');
 const { AppDatabase, nowIso } = require('../src/database');
 const { createIntakeService } = require('../src/intakeService');
 const { LoopService } = require('../src/loopService');
 const { MCP_TOOL_NAMES, callMcpTool } = require('../src/mcpTools');
+const {
+  createFakeChild,
+  createSpawnOnlyChild,
+  loadMainIpcHandlers,
+  loadMainPlanReadHandler,
+  loadPatchedLoopService,
+  loadRendererTsModule,
+} = require('./smoke-helpers');
 
 async function main() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-smoke-'));
@@ -67,6 +74,7 @@ async function main() {
     await assertAttachmentPersistenceSmoke(db, loop, tempRoot);
     await assertLoopConfigPersistenceSmoke(db, loop, tempRoot);
     await assertMcpToolsSmoke(db, loop, tempRoot);
+    await assertIntakeLinkedPlanPreviewSmoke(db, loop, tempRoot);
 
     loop.configure(projectId, {
       workspacePath: workspace,
@@ -309,7 +317,11 @@ async function main() {
 
     await assertCodexSessionReuseSmoke(db, loop, projectId, workspace);
 
+    await assertClaudeSessionContextSmoke(db, loop, projectId, workspace);
+
     await assertAgentCliBackendSmoke(db, loop, projectId, workspace);
+
+    await assertAgentCliOpenCodeSmoke(db, loop, tempRoot);
 
     await assertFeedback10RegressionSmoke(db, loop, tempRoot);
 
@@ -341,7 +353,7 @@ async function main() {
     loop.stop(multiProjectB);
     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
 
-    console.log('smoke ok: projects, scoped snapshots, attachments, attachment prompts, plan reader, markdown reader, config persistence, scope concurrency, scope file open, search, frontend interactions, task acceptance, task events, scan, validation, duration stats, codex session reuse, multi-backend, multi-loop');
+    console.log('smoke ok: projects, scoped snapshots, attachments, attachment prompts, plan reader, markdown reader, config persistence, scope concurrency, scope file open, search, frontend interactions, task acceptance, task events, scan, validation, duration stats, codex session reuse, claude session context, multi-backend, multi-loop');
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -555,8 +567,8 @@ function assertMarkdownPlanReaderSourceSmoke() {
     path.join(__dirname, '..', 'src', 'renderer', 'components', 'MarkdownReader.tsx'),
     'utf8',
   );
-  const planListSource = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'renderer', 'components', 'plans', 'PlanList.tsx'),
+  const planReaderModalSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'components', 'plans', 'PlanReaderModal.tsx'),
     'utf8',
   );
   const autoplanTaskMarkdown = [
@@ -575,8 +587,8 @@ function assertMarkdownPlanReaderSourceSmoke() {
   assert.match(markdownReaderSource, /skipHtml/, 'MarkdownReader 应隐藏 scope HTML 注释而不是展示到预览');
   assert.doesNotMatch(markdownReaderSource, /exposeHtmlComments|renderScopeCommentParts|markdown-scope-/, 'MarkdownReader 不应把 scope 注释转换为可见 chip');
   assert.match(markdownReaderSource, /type="checkbox"[\s\S]*readOnly[\s\S]*disabled[\s\S]*tabIndex=\{-1\}/, 'MarkdownReader checkbox 应保持只读且不可聚焦');
-  assert.match(planListSource, /<MarkdownReader[\s\S]*markdown=\{planReadResult\?\.markdown \?\? ''\}/, 'Plan 阅读弹窗应继续通过 Markdown 正文展示任务拆解');
-  assert.doesNotMatch(planListSource, /plan-reader-task-summary|任务拆解解析结果|已解析任务列表|task_parse_message/, 'Plan 阅读弹窗不应在 Markdown 前展示独立任务拆解摘要');
+  assert.match(planReaderModalSource, /<MarkdownReader[\s\S]*markdown=\{planReadResult\?\.markdown \?\? ''\}/, 'Plan 阅读弹窗应继续通过 Markdown 正文展示任务拆解');
+  assert.doesNotMatch(planReaderModalSource, /plan-reader-task-summary|任务拆解解析结果|已解析任务列表|task_parse_message/, 'Plan 阅读弹窗不应在 Markdown 前展示独立任务拆解摘要');
 }
 
 function assertEventPresentationCopyRegression() {
@@ -851,6 +863,17 @@ async function assertMcpToolsSmoke(db, loop, tempRoot) {
   }, context), 'MCP get_project');
   assert.equal(fetchedProject.project.id, mcpProjectId, 'MCP get_project should return the target project');
 
+  const mcpOpenCodeProjectResult = assertMcpToolSuccess(await callMcpTool(MCP_TOOL_NAMES.CREATE_PROJECT, {
+    name: 'MCP OpenCode Smoke Project',
+    workspacePath: path.join(tempRoot, 'mcp-opencode-workspace'),
+    description: 'MCP opencode provider smoke',
+    agentCliProvider: 'opencode',
+    codexReasoningEffort: 'high',
+  }, context), 'MCP create_project opencode');
+  const mcpOpenCodeState = loop.snapshot(mcpOpenCodeProjectResult.projectId).state;
+  assert.equal(mcpOpenCodeState.agent_cli_provider, 'opencode', 'MCP create_project should accept opencode provider');
+  assert.equal(mcpOpenCodeState.codex_reasoning_effort ?? null, null, 'MCP opencode project should ignore Codex reasoning effort');
+
   const guiSnapshot = createProject(null, {
     name: 'GUI Smoke Project For MCP Compare',
     workspacePath: guiWorkspace,
@@ -1089,144 +1112,8 @@ async function assertCodexReasoningExecutionArgSmoke(db, workspace, projectId, e
   const result = await patchedLoop.runCodex(workspace, `执行 Codex ${effort} 思考深度 smoke`, `config-${effort}`, { projectId });
   assert.equal(result.exitCode, 0, `${effort} 思考深度执行 smoke 应成功`);
   assert.equal(spawned.length, 1, `${effort} 思考深度执行 smoke 应只启动一次 agent`);
-  assert.equal(commandName(spawned[0].command), 'codex', `${effort} 思考深度执行 smoke 应使用 codex`);
+  assert.equal(commandName(spawned[0].command, spawned[0].args), 'codex', `${effort} 思考深度执行 smoke 应使用 codex`);
   assertCodexReasoningArg(spawned[0], effort, `${effort} 思考深度执行 smoke`);
-}
-
-function loadMainPlanReadHandler(db, loop) {
-  const handlers = loadMainIpcHandlers(db, loop);
-  const handler = handlers.get('plans:read');
-  assert.equal(typeof handler, 'function', '主进程应注册 plans:read IPC handler');
-  return handler;
-}
-
-function loadMainIpcHandlers(db, loop, options = {}) {
-  const mainPath = path.join(__dirname, '..', 'src', 'main.js');
-  const handlers = new Map();
-  const module = { exports: {} };
-  const source = `${fs.readFileSync(mainPath, 'utf8')}\nmodule.exports.__setSmokeState = (state) => { db = state.db; loop = state.loop; };\nmodule.exports.__smokeIpcHandlers = __smokeIpcHandlers;\n`;
-  const fakeChildProcess = {
-    spawn: options.spawn || (() => createSpawnOnlyChild()),
-  };
-  const fakeElectron = {
-    app: {
-      getPath: () => path.join(os.tmpdir(), 'autoplan-smoke-user-data'),
-      on: () => {},
-      quit: () => {},
-      whenReady: () => ({ then: () => undefined }),
-    },
-    BrowserWindow: function SmokeBrowserWindow() {
-      throw new Error('smoke 不应创建 Electron 窗口');
-    },
-    ipcMain: {
-      handle: (channel, handler) => handlers.set(channel, handler),
-    },
-    Menu: {
-      setApplicationMenu: () => {},
-    },
-    shell: options.shell || {
-      openPath: async () => '',
-      showItemInFolder: () => {},
-    },
-  };
-  const localRequire = (request) => {
-    if (request === 'electron') return fakeElectron;
-    if (request === 'node:child_process') return fakeChildProcess;
-    if (request.startsWith('./')) return require(path.join(path.dirname(mainPath), request));
-    return require(request);
-  };
-
-  vm.runInNewContext(
-    source,
-    {
-      require: localRequire,
-      module,
-      exports: module.exports,
-      __dirname: path.dirname(mainPath),
-      __filename: mainPath,
-      __smokeIpcHandlers: handlers,
-      Buffer,
-      clearTimeout,
-      console,
-      process,
-      setTimeout,
-    },
-    { filename: mainPath },
-  );
-  module.exports.__setSmokeState({ db, loop });
-  return handlers;
-}
-
-function loadRendererTsModule(modulePath, cache = new Map()) {
-  const absolutePath = path.resolve(modulePath);
-  const cachedModule = cache.get(absolutePath);
-  if (cachedModule) return cachedModule.exports;
-
-  const ts = require('typescript');
-  const module = { exports: {} };
-  cache.set(absolutePath, module);
-
-  const source = fs.readFileSync(absolutePath, 'utf8');
-  const transpiled = ts.transpileModule(source, {
-    fileName: absolutePath,
-    compilerOptions: {
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2022,
-      jsx: ts.JsxEmit.ReactJSX,
-      esModuleInterop: true,
-    },
-    reportDiagnostics: true,
-  });
-  const diagnostics = (transpiled.diagnostics || []).filter(
-    (diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error,
-  );
-  assert.deepEqual(
-    diagnostics.map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')),
-    [],
-    `${absolutePath} 应能被 TypeScript 转译`,
-  );
-
-  const rendererRoot = path.join(__dirname, '..', 'src', 'renderer');
-  const localRequire = (request) => {
-    if (request.startsWith('.') || path.isAbsolute(request)) {
-      return loadRendererTsModule(resolveRendererModule(path.dirname(absolutePath), request, rendererRoot), cache);
-    }
-    return require(request);
-  };
-
-  const script = new vm.Script(transpiled.outputText, { filename: absolutePath });
-  script.runInNewContext({
-    require: localRequire,
-    module,
-    exports: module.exports,
-    __dirname: path.dirname(absolutePath),
-    __filename: absolutePath,
-    console,
-  });
-  return module.exports;
-}
-
-function resolveRendererModule(fromDir, request, rendererRoot) {
-  const basePath = path.resolve(fromDir, request);
-  const candidates = [
-    basePath,
-    `${basePath}.ts`,
-    `${basePath}.tsx`,
-    `${basePath}.js`,
-    `${basePath}.jsx`,
-    path.join(basePath, 'index.ts'),
-    path.join(basePath, 'index.tsx'),
-    path.join(basePath, 'index.js'),
-  ];
-  const resolvedPath = candidates.find((candidate) => fs.existsSync(candidate) && fs.statSync(candidate).isFile());
-  assert.ok(resolvedPath, `应能解析前端模块 ${request}`);
-
-  const relativePath = path.relative(rendererRoot, resolvedPath);
-  assert.ok(
-    relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath),
-    `前端 smoke 模块应限制在 renderer 目录内：${request}`,
-  );
-  return resolvedPath;
 }
 
 function insertProject(db, loop, name, workspacePath) {
@@ -1341,6 +1228,108 @@ function insertFeedback(db, projectId) {
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [projectId, null, '普通文本反馈', '列表展示\n重点内容\n可附加图片', 'open', now, now],
   );
+}
+
+async function assertIntakeLinkedPlanPreviewSmoke(db, loop, tempRoot) {
+  const workspace = path.join(tempRoot, 'intake-linked-plan-preview-workspace');
+  const projectId = insertProject(db, loop, 'Intake Linked Plan Preview Smoke Project', workspace);
+  loop.configure(projectId, { workspacePath: workspace, intervalSeconds: 5, validationCommand: '' });
+  loop.ensureWorkspaceDirs(workspace);
+
+  const requirementId = insertRequirement(db, projectId);
+  const feedbackId = insertFeedback(db, projectId);
+  let snapshot = loop.snapshot(projectId);
+  const unboundRequirement = snapshot.requirements.find((item) => item.id === requirementId);
+  const unboundFeedback = snapshot.feedback.find((item) => item.id === feedbackId);
+  assert.equal(unboundRequirement?.linked_plan_id ?? null, null, '未绑定需求不应携带 linked_plan_id');
+  assert.equal(unboundRequirement?.linked_plan_title ?? null, null, '未绑定需求不应携带 Plan 标题快照');
+  assert.equal(unboundFeedback?.linked_plan_id ?? null, null, '未绑定反馈不应携带 linked_plan_id');
+  assert.equal(unboundFeedback?.linked_plan_file_path ?? null, null, '未绑定反馈不应携带 Plan 路径快照');
+
+  const planId = writeSmokePlan(db, loop, workspace, projectId);
+  const now = nowIso();
+  db.run('UPDATE requirements SET linked_plan_id = ?, updated_at = ? WHERE id = ?', [planId, now, requirementId]);
+  db.run('UPDATE feedback SET linked_plan_id = ?, updated_at = ? WHERE id = ?', [planId, now, feedbackId]);
+
+  snapshot = loop.snapshot(projectId);
+  const linkedPlan = snapshot.plans.find((plan) => plan.id === planId);
+  assertLinkedIntakePlanSnapshot(
+    snapshot.requirements.find((item) => item.id === requirementId),
+    linkedPlan,
+    '绑定 Plan 的需求快照',
+  );
+  assertLinkedIntakePlanSnapshot(
+    snapshot.feedback.find((item) => item.id === feedbackId),
+    linkedPlan,
+    '绑定 Plan 的反馈快照',
+  );
+
+  const missingPlanId = planId + 99999;
+  const missingRequirementId = insertRequirement(db, projectId);
+  const missingFeedbackId = insertFeedback(db, projectId);
+  db.run('UPDATE requirements SET linked_plan_id = ?, updated_at = ? WHERE id = ?', [missingPlanId, nowIso(), missingRequirementId]);
+  db.run('UPDATE feedback SET linked_plan_id = ?, updated_at = ? WHERE id = ?', [missingPlanId, nowIso(), missingFeedbackId]);
+  snapshot = loop.snapshot(projectId);
+  assertMissingLinkedIntakePlanSnapshot(
+    snapshot.requirements.find((item) => item.id === missingRequirementId),
+    missingPlanId,
+    '缺失 Plan 的需求快照',
+  );
+  assertMissingLinkedIntakePlanSnapshot(
+    snapshot.feedback.find((item) => item.id === missingFeedbackId),
+    missingPlanId,
+    '缺失 Plan 的反馈快照',
+  );
+
+  const readPlan = loadMainPlanReadHandler(db, loop);
+  const missingPlanRead = await readPlan(null, { projectId, planId: missingPlanId });
+  assert.equal(missingPlanRead.ok, false, '绑定预览读取不存在 Plan 应失败');
+  assert.equal(missingPlanRead.markdown, '', '绑定预览读取不存在 Plan 不应返回正文');
+  assert.equal(missingPlanRead.error, '计划不存在', '绑定预览读取不存在 Plan 应提示计划不存在');
+
+  const missingFilePlanRel = path.join('docs', 'plan', 'linked-preview-missing.md');
+  const missingFilePlanId = insertPlan(db, projectId, missingFilePlanRel, 'linked-preview-missing');
+  const missingFileFeedbackId = insertFeedback(db, projectId);
+  db.run('UPDATE feedback SET linked_plan_id = ?, updated_at = ? WHERE id = ?', [
+    missingFilePlanId,
+    nowIso(),
+    missingFileFeedbackId,
+  ]);
+  snapshot = loop.snapshot(projectId);
+  assertLinkedIntakePlanSnapshot(
+    snapshot.feedback.find((item) => item.id === missingFileFeedbackId),
+    snapshot.plans.find((plan) => plan.id === missingFilePlanId),
+    'Plan 文件缺失的反馈快照',
+  );
+  const missingFileRead = await readPlan(null, { projectId, planId: missingFilePlanId });
+  assert.equal(missingFileRead.ok, false, '绑定预览读取缺失 Plan 文件应失败');
+  assert.equal(missingFileRead.markdown, '', '绑定预览读取缺失 Plan 文件不应返回正文');
+  assert.equal(missingFileRead.error, '计划文件不存在', '绑定预览读取缺失 Plan 文件应提示文件不存在');
+}
+
+function assertLinkedIntakePlanSnapshot(item, plan, label) {
+  assert.ok(item, `${label} 应存在`);
+  assert.ok(plan, `${label} 对应 Plan 应存在`);
+  assert.equal(Number(item.linked_plan_id), Number(plan.id), `${label} 应保留 Plan ID`);
+  assert.ok(item.linked_plan_title || item.linked_plan_file_path, `${label} 应暴露 Plan 标题或路径`);
+  assert.equal(item.linked_plan_file_path, plan.file_path, `${label} 应暴露 Plan 文件路径`);
+  assert.equal(item.linked_plan_status, plan.status, `${label} 应暴露 Plan 状态`);
+  assert.equal(
+    Number(item.linked_plan_completed_tasks || 0),
+    Number(plan.completed_tasks || 0),
+    `${label} 应暴露已完成任务数`,
+  );
+  assert.equal(Number(item.linked_plan_total_tasks || 0), Number(plan.total_tasks || 0), `${label} 应暴露任务总数`);
+}
+
+function assertMissingLinkedIntakePlanSnapshot(item, linkedPlanId, label) {
+  assert.ok(item, `${label} 应存在`);
+  assert.equal(Number(item.linked_plan_id), Number(linkedPlanId), `${label} 应保留原始 linked_plan_id`);
+  assert.equal(item.linked_plan_title ?? null, null, `${label} 不应伪造 Plan 标题`);
+  assert.equal(item.linked_plan_file_path ?? null, null, `${label} 不应伪造 Plan 文件路径`);
+  assert.equal(item.linked_plan_status ?? null, null, `${label} 不应伪造 Plan 状态`);
+  assert.equal(item.linked_plan_completed_tasks ?? null, null, `${label} 不应伪造已完成任务数`);
+  assert.equal(item.linked_plan_total_tasks ?? null, null, `${label} 不应伪造任务总数`);
 }
 
 async function assertAttachmentPersistenceSmoke(db, loop, tempRoot) {
@@ -1703,6 +1692,7 @@ async function assertCodexSessionReuseSmoke(db, loop, projectId, workspace) {
       await sleep(5);
       return {
         exitCode: 1,
+        agentCliProvider: 'codex',
         logFile: fakeLogFile,
         lastFile: path.join(logDir, 'context-c001-failed.txt'),
         codexSessionId: retrySessionId,
@@ -1725,6 +1715,7 @@ async function assertCodexSessionReuseSmoke(db, loop, projectId, workspace) {
       await sleep(5);
       return {
         exitCode: 0,
+        agentCliProvider: 'codex',
         logFile: fakeLogFile,
         lastFile: path.join(logDir, 'context-c001-retry.txt'),
         codexSessionId: retrySessionId,
@@ -1750,6 +1741,7 @@ async function assertCodexSessionReuseSmoke(db, loop, projectId, workspace) {
       await sleep(5);
       return {
         exitCode: 0,
+        agentCliProvider: 'codex',
         logFile: fakeLogFile,
         lastFile: path.join(logDir, 'context-c007-serial.txt'),
         codexSessionId: retrySessionId,
@@ -1781,6 +1773,7 @@ async function assertCodexSessionReuseSmoke(db, loop, projectId, workspace) {
       await sleep(currentTask.task_key === 'C002' ? 10 : 1);
       return {
         exitCode: 0,
+        agentCliProvider: 'codex',
         logFile: fakeLogFile,
         lastFile: path.join(logDir, `context-${currentTask.task_key}.txt`),
         codexSessionId: parallelSessions.get(currentTask.id),
@@ -1838,6 +1831,219 @@ async function assertCodexSessionReuseSmoke(db, loop, projectId, workspace) {
   }
 }
 
+async function assertClaudeSessionContextSmoke(db, loop, projectId, workspace) {
+  const claudePlanRel = path.join('docs', 'plan', 'claude-context-smoke.md');
+  const claudePlanFile = path.join(workspace, claudePlanRel);
+  fs.mkdirSync(path.dirname(claudePlanFile), { recursive: true });
+  fs.writeFileSync(
+    claudePlanFile,
+    [
+      '# Claude context smoke',
+      '',
+      '- [ ] L001: 首个 Claude 会话 <!-- scope: smoke/l001.js -->',
+      '- [ ] L002: 串行恢复 Claude 会话 <!-- scope: smoke/l002.js -->',
+      '- [ ] L003: Claude 重试优先任务会话 <!-- scope: smoke/l003.js -->',
+      '- [ ] L004: Claude 并发任务 A <!-- scope: smoke/l004.js -->',
+      '- [ ] L005: Claude 并发任务 B <!-- scope: smoke/l005.js -->',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  const claudePlanId = insertPlan(db, projectId, claudePlanRel, 'claude-context-smoke');
+  db.run('UPDATE plans SET agent_cli_provider = ?, agent_cli_command = ?, updated_at = ? WHERE id = ?', [
+    'claude',
+    'claude',
+    nowIso(),
+    claudePlanId,
+  ]);
+  loop.syncPlanTasks(claudePlanId, claudePlanFile);
+  const claudePlan = db.get('SELECT * FROM plans WHERE id = ?', [claudePlanId]);
+  const claudeTask = (taskKey) => db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [claudePlanId, taskKey]);
+
+  const logDir = path.join(workspace, 'docs', 'progress', 'logs');
+  fs.mkdirSync(logDir, { recursive: true });
+  const fakeLogFile = path.join(logDir, 'claude-context-smoke.log');
+  fs.writeFileSync(fakeLogFile, 'claude context smoke', 'utf8');
+
+  const firstSessionId = 'claude-first-session';
+  const retrySessionId = 'claude-retry-session';
+  const parallelSessionA = 'claude-parallel-a';
+  const parallelSessionB = 'claude-parallel-b';
+  const originalRunCodex = loop.runCodex.bind(loop);
+
+  try {
+    const firstTask = claudeTask('L001');
+    loop.runCodex = async (_workspace, prompt, label, operation = {}) => {
+      assert.equal(_workspace, workspace, 'Claude 首次执行应使用当前工作区');
+      assert.match(prompt, /只执行指定任务 L001/, 'Claude 首次执行 prompt 应锁定 L001');
+      assert.doesNotMatch(prompt, /恢复同一 plan 前序任务/, 'Claude 首次执行不应提示恢复 plan 上下文');
+      assert.equal(label, 'execute-L001', 'Claude 首次执行 label 应包含任务 key');
+      assert.equal(operation.agentCliProvider, 'claude', 'Claude 首次执行 operation 应标记 claude 后端');
+      assert.equal(operation.planId, claudePlanId, 'Claude 首次执行 operation 应绑定 plan');
+      assert.equal(operation.taskId, firstTask.id, 'Claude 首次执行 operation 应绑定 task');
+      assert.equal(operation.agentCliSessionId, undefined, 'Claude 首次执行不应传入已有 Agent session id');
+      assert.equal(operation.codexSessionId, undefined, 'Claude 首次执行不应串用 Codex session 字段');
+      assert.equal(operation.agentCliSessionMode, 'new', 'Claude 首次执行应标记新会话');
+      await sleep(5);
+      return {
+        exitCode: 0,
+        agentCliProvider: 'claude',
+        logFile: fakeLogFile,
+        lastFile: path.join(logDir, 'claude-l001.txt'),
+        agentCliSessionId: firstSessionId,
+        claudeSessionId: firstSessionId,
+        agentCliSessionMode: 'new',
+      };
+    };
+    const firstResult = await loop.executeTask(workspace, claudePlan, firstTask);
+    assert.equal(firstResult.exitCode, 0, 'Claude 首次会话 smoke 应成功');
+    assert.equal(firstResult.codexSessionId, undefined, 'Claude 首次结果不应包含 Codex session id');
+    loop.completeTask(workspace, claudePlan, firstTask, firstResult);
+    const completedFirstTask = claudeTask('L001');
+    assert.equal(completedFirstTask.status, 'completed', 'Claude 首次任务应完成');
+    assert.equal(completedFirstTask.agent_cli_session_id, firstSessionId, 'Claude 首次任务应保存捕获的 Agent session id');
+
+    const serialTask = claudeTask('L002');
+    loop.runCodex = async (_workspace, prompt, label, operation = {}) => {
+      assert.equal(_workspace, workspace, 'Claude 串行任务应使用当前工作区');
+      assert.match(prompt, /只执行指定任务 L002/, 'Claude 串行任务 prompt 应锁定 L002');
+      assert.match(prompt, /恢复同一 plan 前序任务的 Claude 会话/, 'Claude 串行任务 prompt 应提示恢复 Claude 上下文');
+      assert.equal(label, 'execute-L002', 'Claude 串行任务 label 应包含任务 key');
+      assert.equal(operation.agentCliProvider, 'claude', 'Claude 串行任务 operation 应标记 claude 后端');
+      assert.equal(operation.planId, claudePlanId, 'Claude 串行任务 operation 应绑定 plan');
+      assert.equal(operation.taskId, serialTask.id, 'Claude 串行任务 operation 应绑定 task');
+      assert.equal(operation.agentCliSessionId, firstSessionId, 'Claude 串行任务应继承同一 plan 前序 session id');
+      assert.equal(operation.agentCliSessionRequestedId, firstSessionId, 'Claude 串行任务应记录请求恢复的 session id');
+      assert.equal(operation.agentCliSessionState, 'plan-resume', 'Claude 串行任务应标记 plan-resume 状态');
+      assert.equal(operation.codexSessionId, undefined, 'Claude 串行任务不应串用 Codex session 字段');
+      await sleep(5);
+      return {
+        exitCode: 0,
+        agentCliProvider: 'claude',
+        logFile: fakeLogFile,
+        lastFile: path.join(logDir, 'claude-l002.txt'),
+        agentCliSessionId: firstSessionId,
+        claudeSessionId: firstSessionId,
+        agentCliSessionRequestedId: firstSessionId,
+        claudeSessionRequestedId: firstSessionId,
+        agentCliSessionMode: 'resume',
+        agentCliSessionState: 'plan-resume',
+      };
+    };
+    const serialResult = await loop.executeTask(workspace, claudePlan, serialTask);
+    assert.equal(serialResult.exitCode, 0, 'Claude 串行恢复 smoke 应成功');
+    assert.equal(serialResult.codexSessionId, undefined, 'Claude 串行结果不应包含 Codex session id');
+    loop.completeTask(workspace, claudePlan, serialTask, serialResult);
+    const completedSerialTask = claudeTask('L002');
+    assert.equal(completedSerialTask.status, 'completed', 'Claude 串行任务应完成');
+    assert.equal(completedSerialTask.agent_cli_session_id, firstSessionId, 'Claude 串行任务应保存同一个 Agent session id');
+
+    const retryTask = claudeTask('L003');
+    loop.runCodex = async (_workspace, prompt, label, operation = {}) => {
+      assert.equal(_workspace, workspace, 'Claude 失败任务首次执行应使用当前工作区');
+      assert.match(prompt, /只执行指定任务 L003/, 'Claude 失败任务 prompt 应锁定 L003');
+      assert.equal(label, 'execute-L003', 'Claude 失败任务 label 应包含任务 key');
+      assert.equal(operation.agentCliSessionId, firstSessionId, 'Claude 失败任务首次执行应先继承 plan session');
+      assert.equal(operation.agentCliSessionState, 'plan-resume', 'Claude 失败任务首次执行应标记 plan-resume');
+      assert.equal(operation.codexSessionId, undefined, 'Claude 失败任务不应串用 Codex session 字段');
+      await sleep(5);
+      return {
+        exitCode: 1,
+        agentCliProvider: 'claude',
+        logFile: fakeLogFile,
+        lastFile: path.join(logDir, 'claude-l003-failed.txt'),
+        agentCliSessionId: retrySessionId,
+        claudeSessionId: retrySessionId,
+        agentCliSessionRequestedId: firstSessionId,
+        claudeSessionRequestedId: firstSessionId,
+        agentCliSessionMode: 'resume',
+        agentCliSessionState: 'plan-resume',
+      };
+    };
+    const failedResult = await loop.executeTask(workspace, claudePlan, retryTask);
+    assert.equal(failedResult.exitCode, 1, 'Claude 重试 smoke 首次执行应模拟失败');
+    assert.equal(failedResult.codexSessionId, undefined, 'Claude 失败结果不应包含 Codex session id');
+    const failedTask = claudeTask('L003');
+    assert.equal(failedTask.status, 'pending', 'Claude 失败任务应回到 pending 以便重试');
+    assert.equal(failedTask.agent_cli_session_id, retrySessionId, 'Claude 失败后应保存当前任务捕获的 session id');
+
+    loop.runCodex = async (_workspace, prompt, label, operation = {}) => {
+      assert.equal(_workspace, workspace, 'Claude 重试执行应使用当前工作区');
+      assert.match(prompt, /只执行指定任务 L003/, 'Claude 重试 prompt 应锁定 L003');
+      assert.equal(label, 'execute-L003', 'Claude 重试 label 应包含任务 key');
+      assert.equal(operation.agentCliSessionId, retrySessionId, 'Claude 重试应优先恢复任务已有 session id');
+      assert.notEqual(operation.agentCliSessionId, firstSessionId, 'Claude 重试不应继续使用 plan 前序 session id');
+      assert.equal(operation.agentCliSessionState, 'resume', 'Claude 重试应标记普通 resume 状态');
+      assert.equal(operation.codexSessionId, undefined, 'Claude 重试不应串用 Codex session 字段');
+      await sleep(5);
+      return {
+        exitCode: 0,
+        agentCliProvider: 'claude',
+        logFile: fakeLogFile,
+        lastFile: path.join(logDir, 'claude-l003-retry.txt'),
+        agentCliSessionId: retrySessionId,
+        claudeSessionId: retrySessionId,
+        agentCliSessionRequestedId: retrySessionId,
+        claudeSessionRequestedId: retrySessionId,
+        agentCliSessionMode: 'resume',
+      };
+    };
+    const retryResult = await loop.executeTask(workspace, claudePlan, failedTask);
+    assert.equal(retryResult.exitCode, 0, 'Claude 重试恢复 smoke 应成功');
+    loop.completeTask(workspace, claudePlan, failedTask, retryResult);
+    const retriedTask = claudeTask('L003');
+    assert.equal(retriedTask.status, 'completed', 'Claude 重试成功后任务应完成');
+    assert.equal(retriedTask.agent_cli_session_id, retrySessionId, 'Claude 重试成功后应保留任务自己的 session id');
+
+    const parallelTasks = [claudeTask('L004'), claudeTask('L005')];
+    const parallelSessions = new Map([
+      [parallelTasks[0].id, parallelSessionA],
+      [parallelTasks[1].id, parallelSessionB],
+    ]);
+    const seenParallelTaskIds = new Set();
+    loop.runCodex = async (_workspace, prompt, label, operation = {}) => {
+      const currentTask = parallelTasks.find((task) => task.id === operation.taskId);
+      assert.ok(currentTask, 'Claude 并发执行 operation 应绑定当前任务');
+      assert.match(prompt, new RegExp(`只执行指定任务 ${currentTask.task_key}`), 'Claude 并发 prompt 应锁定当前任务');
+      assert.equal(label, `execute-${currentTask.task_key}`, 'Claude 并发 label 应包含当前任务 key');
+      assert.equal(operation.agentCliProvider, 'claude', 'Claude 并发 operation 应标记 claude 后端');
+      assert.equal(operation.parallel, true, 'Claude 并发执行 operation 应标记 parallel');
+      assert.equal(operation.agentCliSessionId, undefined, 'Claude 并发任务不应继承同一 plan 前序 session id');
+      assert.equal(operation.codexSessionId, undefined, 'Claude 并发任务不应串用 Codex session 字段');
+      seenParallelTaskIds.add(operation.taskId);
+      await sleep(currentTask.task_key === 'L004' ? 10 : 1);
+      return {
+        exitCode: 0,
+        agentCliProvider: 'claude',
+        logFile: fakeLogFile,
+        lastFile: path.join(logDir, `claude-${currentTask.task_key}.txt`),
+        agentCliSessionId: parallelSessions.get(currentTask.id),
+        claudeSessionId: parallelSessions.get(currentTask.id),
+        agentCliSessionMode: 'new',
+      };
+    };
+    const parallelResults = await loop.executeTaskBatch(workspace, claudePlan, parallelTasks);
+    assert.deepEqual(
+      parallelResults.map(({ result }) => result.exitCode),
+      [0, 0],
+      'Claude 并发会话 smoke 应全部执行成功',
+    );
+    assert.equal(seenParallelTaskIds.size, 2, 'Claude 并发执行应覆盖两个独立任务');
+    const parallelTaskA = claudeTask('L004');
+    const parallelTaskB = claudeTask('L005');
+    assert.equal(parallelTaskA.agent_cli_session_id, parallelSessionA, 'Claude 并发任务 A 应保存自己的 Agent session id');
+    assert.equal(parallelTaskB.agent_cli_session_id, parallelSessionB, 'Claude 并发任务 B 应保存自己的 Agent session id');
+    assert.notEqual(parallelTaskA.agent_cli_session_id, parallelTaskB.agent_cli_session_id, 'Claude 并发任务 session id 应彼此独立');
+    assert.notEqual(parallelTaskA.agent_cli_session_id, firstSessionId, 'Claude 并发任务 A 不应复用 plan 前序 session id');
+    assert.notEqual(parallelTaskB.agent_cli_session_id, firstSessionId, 'Claude 并发任务 B 不应复用 plan 前序 session id');
+    assert.notEqual(parallelTaskA.agent_cli_session_id, retrySessionId, 'Claude 并发任务 A 不应复用重试任务 session id');
+    assert.notEqual(parallelTaskB.agent_cli_session_id, retrySessionId, 'Claude 并发任务 B 不应复用重试任务 session id');
+  } finally {
+    loop.runCodex = originalRunCodex;
+  }
+}
+
 async function assertAgentCliBackendSmoke(db, loop, projectId, workspace) {
   assertRendererAgentCliTypeSmoke();
 
@@ -1884,9 +2090,9 @@ async function assertAgentCliBackendSmoke(db, loop, projectId, workspace) {
     spawnOverride: (command, args, options) => {
       const entry = { command, args, options, prompt: '' };
       spawned.push(entry);
-      const isCodexResume = commandName(command) === 'codex' && args.includes('resume');
+      const isCodexResume = commandName(command, args) === 'codex' && args.includes('resume');
       const isFallbackResume = args.includes(fallbackSessionId);
-      const isCodexFresh = commandName(command) === 'codex' && !isCodexResume;
+      const isCodexFresh = commandName(command, args) === 'codex' && !isCodexResume;
       return createFakeChild({
         exitCode: isFallbackResume ? 1 : 0,
         output: isFallbackResume
@@ -1912,6 +2118,8 @@ async function assertAgentCliBackendSmoke(db, loop, projectId, workspace) {
   });
   const patchedLoop = new PatchedLoopService(db);
 
+  loop.configure(projectId, { agentCliProvider: 'claude', agentCliCommand: '' });
+
   spawned.length = 0;
   const backendIssueScan = {
     aggregateHash: 'smoke-backend-issue-hash',
@@ -1929,14 +2137,14 @@ async function assertAgentCliBackendSmoke(db, loop, projectId, workspace) {
     'utf8',
   );
   await patchedLoop.generatePlan(projectId, workspace, backendIssueScan);
-  assert.ok(spawned.some((entry) => commandName(entry.command) === 'claude'), 'Claude 计划生成应走 claude 后端');
+  assert.ok(spawned.some((entry) => commandName(entry.command, entry.args) === 'claude'), 'Claude 计划生成应走 claude 后端');
   assert.equal(
     spawned[0].options.env.PUB_CACHE,
     path.join(workspace, '.autoplan-runtime', 'pub-cache'),
     'agent CLI should receive workspace-local PUB_CACHE',
   );
   assert.ok(
-    spawned.every((entry) => commandName(entry.command) === 'claude' && entry.args.includes('--print')),
+    spawned.every((entry) => commandName(entry.command, entry.args) === 'claude' && spawnedArgs(entry).includes('--print')),
     'Claude 计划生成不应回退到 codex 命令',
   );
   assertNoSpawnArg(spawned, 'resume', 'Claude 计划生成不应使用 Codex resume 参数');
@@ -1964,8 +2172,8 @@ async function assertAgentCliBackendSmoke(db, loop, projectId, workspace) {
   spawned.length = 0;
   const claudeTaskResult = await patchedLoop.executeTask(workspace, generatedPlan, generatedTask);
   assert.equal(claudeTaskResult.exitCode, 0, 'Claude 后端任务执行应成功');
-  assert.ok(spawned.some((entry) => commandName(entry.command) === 'claude'), 'Claude 任务执行应走 claude 后端');
-  assert.ok(spawned.every((entry) => commandName(entry.command) === 'claude'), 'Claude 任务执行不应回退到 codex 命令');
+  assert.ok(spawned.some((entry) => commandName(entry.command, entry.args) === 'claude'), 'Claude 任务执行应走 claude 后端');
+  assert.ok(spawned.every((entry) => commandName(entry.command, entry.args) === 'claude'), 'Claude 任务执行不应回退到 codex 命令');
   assertNoSpawnArg(spawned, '00000000-0000-4000-8000-000000000000', 'Claude 任务执行不应传入 codexSessionId');
   assertNoSpawnArg(spawned, 'resume', 'Claude 任务执行不应使用 Codex resume 参数');
   assert.equal(claudeTaskResult.codexSessionId, undefined, 'Claude 任务执行结果不应包含 Codex session');
@@ -1993,9 +2201,9 @@ async function assertAgentCliBackendSmoke(db, loop, projectId, workspace) {
   });
   assert.equal(claudeResult.exitCode, 0, 'claude 后端执行应成功');
   assert.ok(spawned.length >= 1, 'claude 后端应至少 spawn 一次');
-  assert.equal(commandName(spawned[0].command), 'claude', 'claude 后端应调用 claude 命令');
+  assert.equal(commandName(spawned[0].command, spawned[0].args), 'claude', 'claude 后端应调用 claude 命令');
   assert.ok(
-    spawned.every((entry) => commandName(entry.command) === 'claude' && entry.args.includes('--print')),
+    spawned.every((entry) => commandName(entry.command, entry.args) === 'claude' && spawnedArgs(entry).includes('--print')),
     'claude 后端不应回退到 codex 命令',
   );
   // claude 后端不应返回 codex 会话信息
@@ -2013,7 +2221,7 @@ async function assertAgentCliBackendSmoke(db, loop, projectId, workspace) {
   });
   assert.equal(codexResult.exitCode, 0, 'codex 后端执行应成功');
   assert.equal(spawned.length, 1, 'codex 后端带 session id 应只 resume 一次');
-  assert.equal(commandName(spawned[0].command), 'codex', 'codex 后端应调用 codex 命令');
+  assert.equal(commandName(spawned[0].command, spawned[0].args), 'codex', 'codex 后端应调用 codex 命令');
   assert.ok(spawned[0].args.includes('resume'), 'codex 后端应使用 resume 参数复用 session');
   assert.equal(codexResult.resumed, true, 'codex 后端应复用传入的 session');
 
@@ -2027,7 +2235,7 @@ async function assertAgentCliBackendSmoke(db, loop, projectId, workspace) {
   assert.equal(fallbackResult.exitCode, 0, 'codex resume 失败后应回退新建成功');
   assert.equal(spawned.length, 2, 'codex resume 失败后应先 resume 再新建');
   assert.deepEqual(
-    spawned.map((entry) => commandName(entry.command)),
+    spawned.map((entry) => commandName(entry.command, entry.args)),
     ['codex', 'codex'],
     'codex fallback 全程应使用 codex 命令',
   );
@@ -2044,10 +2252,102 @@ async function assertAgentCliBackendSmoke(db, loop, projectId, workspace) {
   });
   assert.equal(freshResult.exitCode, 0, 'codex 无 session 时应新建成功');
   assert.equal(spawned.length, 1, 'codex 无 session 时应只 spawn 一次');
-  assert.equal(commandName(spawned[0].command), 'codex', 'codex 新建会话应调用 codex 命令');
+  assert.equal(commandName(spawned[0].command, spawned[0].args), 'codex', 'codex 新建会话应调用 codex 命令');
   assert.ok(!spawned[0].args.includes('resume'), 'codex 无 session 时不应尝试 resume');
   assert.equal(freshResult.codexSessionId, freshSessionId, 'codex 新建会话应记录新 session id');
   assert.equal(freshResult.codexSessionMode, 'new', 'codex 新建会话应标记 new 模式');
+}
+
+async function assertAgentCliOpenCodeSmoke(db, loop, tempRoot) {
+  const workspace = path.join(tempRoot, 'opencode-backend-workspace');
+  const projectId = insertProject(db, loop, 'OpenCode Backend Smoke Project', workspace);
+  loop.configure(projectId, { workspacePath: workspace, intervalSeconds: 5, validationCommand: '' });
+
+  loop.configure(projectId, { agentCliProvider: 'opencode', agentCliCommand: '' });
+  const opencodeState = loop.snapshot(projectId).state;
+  assert.equal(opencodeState.agent_cli_provider, 'opencode', '应能切换到 opencode 后端');
+  assert.equal(opencodeState.codex_reasoning_effort ?? null, null, 'opencode 后端不应展示 Codex 思考深度');
+
+  const handlers = loadMainIpcHandlers(db, loop);
+  const createRequirement = handlers.get('requirements:create');
+  const createFeedback = handlers.get('feedback:create');
+  createRequirement(null, { projectId, body: 'OpenCode 单条需求覆盖后端', agentCliProvider: 'opencode' });
+  createFeedback(null, { projectId, body: 'OpenCode 单条反馈覆盖后端', agentCliProvider: 'opencode' });
+  const requirement = db.get('SELECT * FROM requirements WHERE project_id = ? AND body = ?', [projectId, 'OpenCode 单条需求覆盖后端']);
+  const feedback = db.get('SELECT * FROM feedback WHERE project_id = ? AND body = ?', [projectId, 'OpenCode 单条反馈覆盖后端']);
+  assert.equal(requirement.agent_cli_provider, 'opencode', '需求单条配置应保存 opencode 后端');
+  assert.equal(requirement.codex_reasoning_effort, null, '需求选择 opencode 时应忽略 Codex 思考深度');
+  assert.equal(feedback.agent_cli_provider, 'opencode', '反馈单条配置应保存 opencode 后端');
+  assert.equal(feedback.codex_reasoning_effort, null, '反馈选择 opencode 时应忽略 Codex 思考深度');
+
+  // opencode 以位置参数投递 prompt（不在 stdin），因此从 spawn 参数中提取输出文件路径写入计划。
+  const spawned = [];
+  const { LoopService: PatchedLoopService } = loadPatchedLoopService({
+    spawnOverride: (command, args, options) => {
+      const entry = { command, args, options, prompt: '' };
+      spawned.push(entry);
+      return createFakeChild({
+        output: 'opencode smoke output\n',
+        onPrompt: (prompt) => {
+          entry.prompt = prompt;
+          const planMatch = args.map(String).join(' ').match(/输出文件：(\S+)/);
+          if (!planMatch) return;
+          const generatedPlanFile = planMatch[1].trim();
+          fs.mkdirSync(path.dirname(generatedPlanFile), { recursive: true });
+          fs.writeFileSync(
+            generatedPlanFile,
+            ['# OpenCode backend smoke', '', '- [ ] O001: opencode 生成后执行 <!-- scope: smoke/o001.js -->', ''].join('\n'),
+            'utf8',
+          );
+        },
+      });
+    },
+  });
+  const patchedLoop = new PatchedLoopService(db);
+
+  const opencodeIssueScan = {
+    aggregateHash: 'smoke-backend-opencode-hash',
+    files: [{ path: path.join('docs', 'issues', 'opencode-smoke.md'), hash: 'smoke-backend-opencode-file-hash' }],
+  };
+  fs.mkdirSync(path.join(workspace, 'docs', 'issues'), { recursive: true });
+  fs.writeFileSync(path.join(workspace, opencodeIssueScan.files[0].path), '# OpenCode smoke\n\n验证 opencode 后端可生成计划。\n', 'utf8');
+
+  spawned.length = 0;
+  await patchedLoop.generatePlan(projectId, workspace, opencodeIssueScan);
+  assert.ok(spawned.length >= 1, 'opencode 计划生成应至少 spawn 一次');
+  assert.ok(spawned.every((entry) => commandName(entry.command, entry.args) === 'opencode'), 'opencode 计划生成不应回退到 codex/claude 命令');
+  assert.ok(spawned.every((entry) => spawnedArgs(entry).includes('run') && spawnedArgs(entry).includes('--format')), 'opencode 计划生成应使用 run 非交互子命令');
+  assertNoSpawnArg(spawned, 'model_reasoning_effort', 'opencode 计划生成不应携带 Codex 思考深度参数');
+  assertNoSpawnArg(spawned, 'resume', 'opencode 计划生成不应使用 Codex resume 参数');
+  assert.ok(spawned.every((entry) => entry.prompt === ''), 'opencode 不应通过 stdin 投递 prompt');
+  const opencodePlan = db.get('SELECT * FROM plans WHERE issue_hash = ?', [opencodeIssueScan.aggregateHash]);
+  assert.ok(opencodePlan, 'opencode 后端应能通过 stub 生成计划并入库');
+  assertPlanCliSnapshot(opencodePlan, { provider: 'opencode', command: 'opencode', effort: null }, 'opencode 生成计划数据库快照');
+  const opencodePlanSnapshot = patchedLoop.snapshot(projectId).plans.find((plan) => plan.id === opencodePlan.id);
+  assertPlanCliSnapshot(opencodePlanSnapshot, { provider: 'opencode', command: 'opencode', effort: null }, 'opencode 生成计划前端快照');
+  assert.equal(formatPlanCliSummary(opencodePlanSnapshot), 'OpenCode CLI', 'opencode 计划展示不应包含 Codex 思考深度');
+  const opencodeEventMeta = latestPlanGeneratedMeta(db, projectId, opencodePlan.id);
+  assert.equal(opencodeEventMeta.agentCliProvider, 'opencode', 'opencode 计划生成事件应记录 opencode 后端');
+  assert.equal(opencodeEventMeta.codexReasoningEffort, undefined, 'opencode 计划生成事件不应记录 Codex 思考深度');
+
+  const opencodeTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [opencodePlan.id, 'O001']);
+  assert.ok(opencodeTask, 'opencode 生成计划后应同步任务列表');
+  spawned.length = 0;
+  const opencodeResult = await patchedLoop.runCodex(workspace, '执行 opencode 任务 O001', 'execute-O001', {
+    projectId,
+    planId: opencodePlan.id,
+    taskId: opencodeTask.id,
+    codexSessionId: '00000000-0000-4000-8000-000000000000',
+  });
+  assert.equal(opencodeResult.exitCode, 0, 'opencode 后端执行应成功');
+  assert.ok(spawned.every((entry) => commandName(entry.command, entry.args) === 'opencode'), 'opencode 执行不应回退到 codex/claude 命令');
+  assertNoSpawnArg(spawned, 'resume', 'opencode 执行不应使用 Codex resume 参数');
+  assertNoSpawnArg(spawned, 'model_reasoning_effort', 'opencode 执行不应携带 Codex 思考深度参数');
+  assertNoSpawnArg(spawned, '00000000-0000-4000-8000-000000000000', 'opencode 执行不应传入 codexSessionId');
+  assert.equal(opencodeResult.agentCliProvider, 'opencode', 'opencode 执行结果应标记 opencode 后端');
+  assert.equal(opencodeResult.command, 'opencode', 'opencode 执行结果应记录解析后的命令');
+  assert.equal(opencodeResult.codexSessionId, undefined, 'opencode 执行结果不应包含 Codex session');
+  assert.ok(fs.readFileSync(opencodeResult.lastFile, 'utf8').includes('opencode smoke output'), 'opencode 应从 stdout 写入 last message');
 }
 
 async function assertFeedback10RegressionSmoke(db, loop, tempRoot) {
@@ -2192,13 +2492,13 @@ async function assertFeedback10RegressionSmoke(db, loop, tempRoot) {
       const entry = { command, args, options, prompt: '' };
       spawned.push(entry);
       return createFakeChild({
-        output: commandName(command) === 'codex' ? `Session ID: ${codexSessionId}\n` : 'fake claude output\n',
+        output: commandName(command, args) === 'codex' ? `Session ID: ${codexSessionId}\n` : 'fake claude output\n',
         onPrompt: (prompt) => {
           entry.prompt = prompt;
           const planMatch = prompt.match(/输出文件：(.+)/);
           if (!planMatch) return;
           const generatedPlanFile = planMatch[1].trim();
-          const isClaude = commandName(command) === 'claude';
+          const isClaude = commandName(command, args) === 'claude';
           const taskKey = isClaude ? 'F010' : 'R010';
           fs.mkdirSync(path.dirname(generatedPlanFile), { recursive: true });
           fs.writeFileSync(
@@ -2224,7 +2524,7 @@ async function assertFeedback10RegressionSmoke(db, loop, tempRoot) {
   });
   assert.ok(requirementPlanId, 'Codex high 需求应通过 stub 生成计划');
   assert.equal(spawned.length, 1, 'Codex high 需求生成计划应只 spawn 一次');
-  assert.equal(commandName(spawned[0].command), 'codex', 'Codex high 需求应调用 codex 命令');
+  assert.equal(commandName(spawned[0].command, spawned[0].args), 'codex', 'Codex high 需求应调用 codex 命令');
   assertCodexReasoningArg(spawned[0], 'high', 'Codex high 需求');
   const linkedRequirement = db.get('SELECT linked_plan_id FROM requirements WHERE id = ?', [requirement.id]);
   assert.equal(linkedRequirement.linked_plan_id, requirementPlanId, 'Codex high 需求应回写 linked_plan_id');
@@ -2251,8 +2551,8 @@ async function assertFeedback10RegressionSmoke(db, loop, tempRoot) {
   });
   assert.ok(feedbackPlanId, 'Claude 反馈应通过 stub 生成计划');
   assert.equal(spawned.length, 1, 'Claude 反馈生成计划应只 spawn 一次');
-  assert.equal(commandName(spawned[0].command), 'claude', 'Claude 反馈应调用 claude 命令');
-  assert.ok(spawned[0].args.includes('--print'), 'Claude 反馈应使用 print 模式');
+  assert.equal(commandName(spawned[0].command, spawned[0].args), 'claude', 'Claude 反馈应调用 claude 命令');
+  assert.ok(spawnedArgs(spawned[0]).includes('--print'), 'Claude 反馈应使用 print 模式');
   assertNoSpawnArg(spawned, 'model_reasoning_effort', 'Claude 反馈不应携带 Codex 思考深度参数');
   const linkedFeedback = db.get('SELECT linked_plan_id FROM feedback WHERE id = ?', [feedback.id]);
   assert.equal(linkedFeedback.linked_plan_id, feedbackPlanId, 'Claude 反馈应回写 linked_plan_id');
@@ -2287,8 +2587,11 @@ function assertRendererAgentCliTypeSmoke() {
   assert.match(typeSource, /interface LoopConfigInput[\s\S]*agentCliProvider\?: AgentCliProvider;/, '循环配置输入类型应允许选择后端');
   assert.match(typeSource, /interface LoopConfigInput[\s\S]*validation_command\?: string;/, '循环配置输入类型应兼容下划线验收命令字段');
   assert.match(typeSource, /interface LoopConfigInput[\s\S]*codexReasoningEffort\?: CodexReasoningEffort;/, '循环配置输入类型应允许设置 Codex 思考深度');
+  assert.match(typeSource, /export type AgentCliProvider = [^;]*'codex'[^;]*'claude'/, 'AgentCliProvider 类型应包含 codex 与 claude');
+  assert.match(typeSource, /export type AgentCliProvider = [^;]*'opencode'/, 'AgentCliProvider 类型应包含 opencode');
   assert.equal(formatPlanCliSummary({ agentCliProvider: 'codex', codexReasoningEffort: 'high' }), 'Codex CLI · 思考深度 high', '计划 CLI 文案应兼容驼峰字段');
   assert.equal(formatPlanCliSummary({ agent_cli_provider: 'claude', codex_reasoning_effort: 'high' }), 'Claude CLI', 'Claude 计划 CLI 文案不应展示 Codex 思考深度');
+  assert.equal(formatPlanCliSummary({ agentCliProvider: 'opencode' }), 'OpenCode CLI', 'OpenCode 计划 CLI 文案不应展示 Codex 思考深度');
   assert.equal(formatPlanCliSummary({}), 'Codex CLI · 思考深度 medium', '空计划 CLI 字段应按历史默认降级');
 }
 
@@ -2336,106 +2639,26 @@ function latestPlanGeneratedMeta(db, projectId, planId) {
   return meta;
 }
 
-function commandName(command) {
-  return path.basename(String(command || '')).replace(/\.(?:cmd|bat|exe)$/i, '').toLowerCase();
+function commandName(command, args) {
+  const base = path.basename(String(command || '')).replace(/\.(?:cmd|bat|exe)$/i, '').toLowerCase();
+  // Windows 上 .cmd/.bat 经由 `cmd.exe /d /s /c call <script> ...` 包装执行，
+  // 这里从包装行还原实际调用的命令名，便于跨平台断言后端路由。
+  if (base === 'cmd' && Array.isArray(args)) {
+    const wrapped = String(args[args.length - 1] || '');
+    const match = wrapped.match(/(?:^|\s)(?:call\s+)?["']?([^"'&|<>\s]+\.(?:cmd|bat|exe))["']?/i);
+    if (match) return path.basename(match[1]).replace(/\.(?:cmd|bat|exe)$/i, '').toLowerCase();
+  }
+  return base;
 }
 
-function loadPatchedLoopService({ spawnOverride }) {
-  const loopServicePath = path.join(__dirname, '..', 'src', 'loopService.js');
-  const source = fs.readFileSync(loopServicePath, 'utf8');
-  const module = { exports: {} };
-  const patchedAgentCli = loadPatchedAgentCli({ spawnOverride });
-  const fakeChildProcess = {
-    spawn: (command, args, options) => spawnOverride(command, args, options),
-  };
-  const localRequire = (request) => {
-    if (request === 'node:child_process') return fakeChildProcess;
-    if (request === './database') return { nowIso };
-    if (request === './agentCli') return patchedAgentCli;
-    if (request === './codexActivity' || request.startsWith('./loop/')) return require(path.join(path.dirname(loopServicePath), request));
-    return require(request);
-  };
-  vm.runInNewContext(
-    source,
-    {
-      require: localRequire,
-      module,
-      exports: module.exports,
-      __dirname: path.dirname(loopServicePath),
-      __filename: loopServicePath,
-      Buffer,
-      clearTimeout,
-      console,
-      process,
-      setTimeout,
-      setInterval,
-      clearInterval,
-    },
-    { filename: loopServicePath },
-  );
-  assert.equal(typeof module.exports.LoopService, 'function', 'patched loopService 应导出 LoopService');
-  return module.exports;
-}
-
-function loadPatchedAgentCli({ spawnOverride }) {
-  const agentCliPath = path.join(__dirname, '..', 'src', 'agentCli.js');
-  const source = fs.readFileSync(agentCliPath, 'utf8');
-  const module = { exports: {} };
-  const fakeChildProcess = {
-    spawn: (command, args, options) => spawnOverride(command, args, options),
-  };
-  const localRequire = (request) => {
-    if (request === 'node:child_process') return fakeChildProcess;
-    return require(request);
-  };
-  vm.runInNewContext(
-    source,
-    {
-      require: localRequire,
-      module,
-      exports: module.exports,
-      __dirname: path.dirname(agentCliPath),
-      __filename: agentCliPath,
-      Buffer,
-      clearTimeout,
-      console,
-      process,
-      setTimeout,
-    },
-    { filename: agentCliPath },
-  );
-  return module.exports;
-}
-
-function createFakeChild(options = {}) {
-  const { EventEmitter } = require('node:events');
-  const child = new EventEmitter();
-  child.stdin = new EventEmitter();
-  child.stdin.setDefaultEncoding = () => {};
-  child.stdin.end = (prompt = '') => {
-    if (typeof options.onPrompt === 'function') options.onPrompt(String(prompt || ''));
-    child.stdout.emit('data', Buffer.from(options.output || 'fake agent output\n', 'utf8'));
-    setImmediate(() => child.emit('exit', typeof options.exitCode === 'number' ? options.exitCode : 0));
-  };
-  child.stdout = new EventEmitter();
-  child.stdout.pipe = () => {};
-  child.stderr = new EventEmitter();
-  child.stderr.pipe = () => {};
-  child.killed = false;
-  child.kill = () => {};
-  child.pid = Math.floor(Math.random() * 1e6);
-  return child;
-}
-
-function createSpawnOnlyChild() {
-  const { EventEmitter } = require('node:events');
-  const child = new EventEmitter();
-  child.unref = () => {};
-  child.kill = () => {};
-  child.killed = false;
-  child.pid = Math.floor(Math.random() * 1e6);
-  setImmediate(() => child.emit('spawn'));
-  return child;
+// Windows 上 .cmd/.bat 的参数被折叠进 `cmd.exe /d /s /c call <script> <args...>` 单行，
+// 这里还原为概念参数数组，便于跨平台断言 `--print` 等标志。
+function spawnedArgs(entry) {
+  const args = Array.isArray(entry?.args) ? entry.args : [];
+  const base = path.basename(String(entry?.command || '')).replace(/\.(?:cmd|bat|exe)$/i, '').toLowerCase();
+  if (base !== 'cmd') return args;
+  const wrapped = String(args[args.length - 1] || '');
+  return wrapped.split(/\s+/).filter(Boolean);
 }
 
 function sleep(milliseconds) {

@@ -98,6 +98,7 @@ class AppDatabase {
         agent_cli_provider TEXT,
         agent_cli_command TEXT NOT NULL DEFAULT '',
         codex_reasoning_effort TEXT,
+        agent_cli_session_id TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -143,6 +144,7 @@ class AppDatabase {
         agent_cli_provider TEXT,
         agent_cli_command TEXT NOT NULL DEFAULT '',
         codex_reasoning_effort TEXT,
+        agent_cli_session_id TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -159,6 +161,7 @@ class AppDatabase {
         started_at TEXT,
         finished_at TEXT,
         duration_ms INTEGER NOT NULL DEFAULT 0,
+        agent_cli_session_id TEXT,
         codex_session_id TEXT,
         updated_at TEXT NOT NULL,
         UNIQUE(plan_id, task_key)
@@ -203,12 +206,14 @@ class AppDatabase {
     this.ensureColumn('feedback', 'agent_cli_provider', 'TEXT');
     this.ensureColumn('feedback', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('feedback', 'codex_reasoning_effort', 'TEXT');
+    this.ensureColumn('feedback', 'agent_cli_session_id', 'TEXT');
     this.ensureColumn('attachments', 'project_id', 'INTEGER');
     this.ensureColumn('plans', 'project_id', 'INTEGER');
     this.ensureColumn('plans', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
     this.ensureColumn('plans', 'agent_cli_provider', 'TEXT');
     this.ensureColumn('plans', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('plans', 'codex_reasoning_effort', 'TEXT');
+    this.ensureColumn('plans', 'agent_cli_session_id', 'TEXT');
     this.db.run(`
       CREATE INDEX IF NOT EXISTS idx_plans_project_sort
       ON plans (project_id, sort_order, created_at, id)
@@ -217,6 +222,7 @@ class AppDatabase {
     this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
     this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
     this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+    this.ensureColumn('plan_tasks', 'agent_cli_session_id', 'TEXT');
     this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
     this.ensureColumn('events', 'project_id', 'INTEGER');
     this.ensureColumn('project_states', 'agent_cli_provider', "TEXT NOT NULL DEFAULT 'codex'");

@@ -1,5 +1,5 @@
-import type { AppSnapshot, ProjectState } from '../../types';
-import { CodexLog } from '../CodexLog';
+import type { AppSnapshot, AppEventMeta, CodexSessionInfo, AgentCliSessionInfo, ProjectState } from '../../types';
+import { CodexLog, agentCliSessionContextLabel } from '../CodexLog';
 import { EventList } from '../PlanLists';
 import { Icon, type IconName } from '../icons';
 import {
@@ -9,6 +9,8 @@ import {
   readCodexReasoningEffort,
 } from '../shared';
 import { formatChinaTime } from '../../utils/time';
+
+type EventSessionMeta = Record<string, unknown> & AgentCliSessionInfo & CodexSessionInfo;
 
 export function WorkspaceOverviewView({
   snapshot,
@@ -24,7 +26,10 @@ export function WorkspaceOverviewView({
   const runningPlan = snapshot.plans.find((plan) => !['completed'].includes(plan.status));
   const doneTasks = snapshot.tasks.filter((task) => task.status === 'completed').length;
   const totalTasks = snapshot.tasks.length;
-  const recentEvents = snapshot.events.filter((event) => !String(event.type || '').startsWith('scan.')).slice(0, 8);
+  const recentEvents = snapshot.events
+    .filter((event) => !String(event.type || '').startsWith('scan.'))
+    .slice(0, 8)
+    .map(withAgentSessionEventLabel);
 
   const phases = ['scan', 'generate-plan', 'execute-task', 'validate', 'completed'];
   const currentPhase = state?.phase || 'idle';
@@ -39,10 +44,12 @@ export function WorkspaceOverviewView({
     : state;
   const operationProvider = readAgentCliProvider(operationCliSource);
   const operationProviderLabel = agentCliProviderLabel(operationProvider);
-  const operationReasoningLabel = operationProvider !== 'claude'
+  const operationReasoningLabel = operationProvider === 'codex'
     ? `思考${codexReasoningEffortLabel(readCodexReasoningEffort(operationCliSource))}`
     : '';
-  const operationSessionLabel = operationProviderLabel === 'Codex' ? operation?.codexSessionLabel : '';
+  const operationSessionLabel = operation
+    ? agentCliSessionContextLabel(operation, operationProviderLabel, { includeProvider: false })
+    : '';
   const operationTime = operation?.startedAt ? `开始于 ${formatChinaTime(operation.startedAt)}` : '';
   const operationExit =
     operation && !operationActive && typeof operation.exitCode === 'number'
@@ -74,7 +81,7 @@ export function WorkspaceOverviewView({
           icon="settings"
           value={stateProviderLabel}
           label="CLI 后端"
-          sub={stateProvider === 'claude' ? `间隔 ${state?.interval_seconds || 5}s` : `思考${stateReasoningLabel} · 间隔 ${state?.interval_seconds || 5}s`}
+          sub={stateProvider === 'codex' ? `思考${stateReasoningLabel} · 间隔 ${state?.interval_seconds || 5}s` : `间隔 ${state?.interval_seconds || 5}s`}
           accent="warning"
         />
       </div>
@@ -200,4 +207,24 @@ function phaseLabel(phase: string) {
       error: '异常',
     }[phase] || phase
   );
+}
+
+function withAgentSessionEventLabel(event: AppSnapshot['events'][number]) {
+  const meta = event.meta;
+  if (!isEventMetaObject(meta)) return event;
+  const providerLabel = agentCliProviderLabel(readAgentCliProvider(meta));
+  const sessionLabel = agentCliSessionContextLabel(meta, providerLabel);
+  if (!sessionLabel) return event;
+  return {
+    ...event,
+    meta: {
+      ...meta,
+      agentCliSessionLabel: sessionLabel,
+      codexSessionLabel: sessionLabel,
+    },
+  };
+}
+
+function isEventMetaObject(meta: AppEventMeta | null | undefined): meta is EventSessionMeta {
+  return Boolean(meta && typeof meta === 'object' && !Array.isArray(meta));
 }

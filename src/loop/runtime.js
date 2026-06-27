@@ -4,6 +4,7 @@ const {
   DEFAULT_AGENT_CLI_PROVIDER,
   agentCliContextFields,
   codexSessionContextFields,
+  opencodeSessionContextFields,
 } = require('./agentCliConfig');
 const {
   TASK_EVENT_STATUS,
@@ -266,6 +267,7 @@ function archiveRuntimeOperation(runtime, operationKey) {
       logTail: (op.logBuffer || '').slice(-8000),
       activity: op.activity ? op.activity.getLines() : [],
       ...(op.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionContextFields(op) : {}),
+      ...(op.agentCliProvider === 'opencode' ? opencodeSessionContextFields(op) : {}),
     };
   }
   if (operationKey) {
@@ -280,6 +282,7 @@ function archiveRuntimeOperation(runtime, operationKey) {
 
 function operationSnapshotRow(operation) {
   if (!operation) return null;
+  const agentContext = agentCliContextFields(operation);
   const activity = Array.isArray(operation.activity)
     ? operation.activity
     : operation.activity && typeof operation.activity.getLines === 'function'
@@ -290,7 +293,7 @@ function operationSnapshotRow(operation) {
     projectId: operation.projectId || null,
     planId: operation.planId || null,
     taskId: operation.taskId || null,
-    ...agentCliContextFields(operation),
+    ...agentContext,
     startedAt: operation.startedAt || null,
     ...(operation.finishedAt ? { finishedAt: operation.finishedAt } : {}),
     ...(typeof operation.exitCode === 'number' ? { exitCode: operation.exitCode } : {}),
@@ -299,7 +302,8 @@ function operationSnapshotRow(operation) {
     ...(operation.errorMessage ? { errorMessage: operation.errorMessage } : {}),
     logTail: (operation.logBuffer || operation.logTail || '').slice(-8000),
     activity,
-    ...codexSessionContextFields(operation),
+    ...(agentContext.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionContextFields(operation) : {}),
+    ...(agentContext.agentCliProvider === 'opencode' ? opencodeSessionContextFields(operation) : {}),
   };
 }
 
@@ -320,6 +324,7 @@ function operationTaskContextFields(operation = {}) {
   return {
     ...agentContext,
     ...(agentContext.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionContextFields(operation) : {}),
+    ...(agentContext.agentCliProvider === 'opencode' ? opencodeSessionContextFields(operation) : {}),
   };
 }
 

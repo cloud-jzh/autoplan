@@ -1,7 +1,7 @@
 export type IntakeType = 'requirement' | 'feedback';
 export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'tasks' | 'events' | 'settings';
 export const DEFAULT_WORKSPACE_TAB: WorkspaceTab = 'requirement';
-export type AgentCliProvider = 'codex' | 'claude' | string;
+export type AgentCliProvider = 'codex' | 'claude' | 'opencode' | string;
 export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | string;
 
 export const PLAN_STATUS = {
@@ -44,6 +44,20 @@ export interface AgentCliDisplaySource {
   reasoningEffort?: CodexReasoningEffort | null;
   thinking_depth?: CodexReasoningEffort | null;
   thinkingDepth?: CodexReasoningEffort | null;
+  agent_cli_session_id?: string | null;
+  agentCliSessionId?: string | null;
+  agentCliSessionMode?: string | null;
+  agentCliSessionState?: string | null;
+  agentCliSessionRequestedId?: string | null;
+  agentCliSessionFallback?: boolean | null;
+  agentCliSessionLabel?: string | null;
+  codex_session_id?: string | null;
+  codexSessionId?: string | null;
+  codexSessionMode?: string | null;
+  codexSessionState?: string | null;
+  codexSessionRequestedId?: string | null;
+  codexSessionFallback?: boolean | null;
+  codexSessionLabel?: string | null;
   [key: string]: unknown;
 }
 
@@ -192,6 +206,8 @@ export interface Requirement {
   agent_cli_command?: string;
   codex_reasoning_effort?: CodexReasoningEffort | null;
   linked_plan_id?: number | null;
+  plan_title?: string | null;
+  plan_file_path?: string | null;
   plan_status?: string | null;
   plan_completed?: number | null;
   plan_total?: number | null;
@@ -199,7 +215,7 @@ export interface Requirement {
   updated_at: string;
 }
 
-export interface Feedback {
+export interface Feedback extends AgentCliSessionInfo {
   id: number;
   project_id: number;
   requirement_id?: number | null;
@@ -209,7 +225,10 @@ export interface Feedback {
   agent_cli_provider?: AgentCliProvider | null;
   agent_cli_command?: string;
   codex_reasoning_effort?: CodexReasoningEffort | null;
+  agent_cli_session_id?: string | null;
   linked_plan_id?: number | null;
+  plan_title?: string | null;
+  plan_file_path?: string | null;
   plan_status?: string | null;
   plan_completed?: number | null;
   plan_total?: number | null;
@@ -230,7 +249,7 @@ export interface Attachment {
   created_at: string;
 }
 
-export interface Plan {
+export interface Plan extends AgentCliSessionInfo {
   id: number;
   project_id: number;
   issue_hash: string;
@@ -246,6 +265,7 @@ export interface Plan {
   agent_cli_provider?: AgentCliProvider | null;
   agent_cli_command?: string;
   codex_reasoning_effort?: CodexReasoningEffort | null;
+  agent_cli_session_id?: string | null;
   concurrency_suggestion: PlanConcurrencySuggestion;
   created_at: string;
   updated_at: string;
@@ -325,22 +345,55 @@ export interface WorkspacePlanReadState {
   error: string | null;
 }
 
-export type CodexSessionMode = 'new' | 'resume';
+export type AgentCliSessionMode = 'new' | 'resume' | 'continue';
+
+export type AgentCliSessionState = AgentCliSessionMode | 'fallback-new' | string;
+
+export interface AgentCliSessionInfo {
+  agentCliProvider?: AgentCliProvider | null;
+  agent_cli_provider?: AgentCliProvider | null;
+  agentCliSessionId?: string | null;
+  agent_cli_session_id?: string | null;
+  agentCliSessionShortId?: string | null;
+  agent_cli_session_short_id?: string | null;
+  agentCliSessionMode?: AgentCliSessionMode | null;
+  agent_cli_session_mode?: AgentCliSessionMode | null;
+  agentCliSessionState?: AgentCliSessionState | null;
+  agent_cli_session_state?: AgentCliSessionState | null;
+  agentCliSessionLabel?: string | null;
+  agent_cli_session_label?: string | null;
+  agentCliSessionRequestedId?: string | null;
+  agent_cli_session_requested_id?: string | null;
+  agentCliSessionRequestedShortId?: string | null;
+  agent_cli_session_requested_short_id?: string | null;
+  agentCliSessionFallback?: boolean | null;
+  agent_cli_session_fallback?: boolean | null;
+}
+
+export type CodexSessionMode = Extract<AgentCliSessionMode, 'new' | 'resume'>;
 
 export type CodexSessionState = CodexSessionMode | 'fallback-new' | string;
 
 export interface CodexSessionInfo {
   codexSessionId?: string | null;
+  codex_session_id?: string | null;
   codexSessionShortId?: string | null;
+  codex_session_short_id?: string | null;
   codexSessionMode?: CodexSessionMode | null;
+  codex_session_mode?: CodexSessionMode | null;
   codexSessionState?: CodexSessionState | null;
+  codex_session_state?: CodexSessionState | null;
   codexSessionLabel?: string | null;
+  codex_session_label?: string | null;
   codexSessionRequestedId?: string | null;
+  codex_session_requested_id?: string | null;
   codexSessionRequestedShortId?: string | null;
+  codex_session_requested_short_id?: string | null;
   codexSessionFallback?: boolean | null;
+  codex_session_fallback?: boolean | null;
 }
 
-export interface PlanTask extends CodexSessionInfo {
+export interface PlanTask extends AgentCliSessionInfo, CodexSessionInfo {
   id: number;
   plan_id: number;
   task_key: string;
@@ -354,6 +407,7 @@ export interface PlanTask extends CodexSessionInfo {
   finished_at: string | null;
   duration_ms: number;
   run_duration_ms?: number;
+  agent_cli_session_id?: string | null;
   codex_session_id: string | null;
   agentCliProvider?: string | null;
   agentCliCommand?: string | null;
@@ -457,7 +511,7 @@ export const TASK_EVENT_COMPATIBILITY: Record<LegacyTaskEventType, TaskEventType
   [LEGACY_TASK_EVENT_TYPES.STOPPING]: TASK_EVENT_TYPES.STOPPED,
 };
 
-export interface TaskEventMeta extends CodexSessionInfo {
+export interface TaskEventMeta extends AgentCliSessionInfo, CodexSessionInfo {
   taskId?: number | null;
   taskKey?: string | null;
   taskTitle?: string | null;
@@ -522,7 +576,7 @@ export interface ActivityLine {
   at: string;
 }
 
-export interface ActiveOperation extends CodexSessionInfo {
+export interface ActiveOperation extends AgentCliSessionInfo, CodexSessionInfo {
   label: string;
   projectId: number | null;
   planId: number | null;

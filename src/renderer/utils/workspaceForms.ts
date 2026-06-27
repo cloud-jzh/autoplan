@@ -26,6 +26,7 @@ export const emptyPendingAttachments: Record<IntakeType, PendingAttachment[]> = 
 export const agentCliOptions: AgentCliOption[] = [
   { value: 'codex', label: 'Codex CLI' },
   { value: 'claude', label: 'Claude CLI' },
+  { value: 'opencode', label: 'OpenCode CLI' },
 ];
 
 export const codexReasoningOptions: AgentCliOption[] = [
@@ -44,6 +45,7 @@ export type SettingsChoiceOption<T extends string = string> = {
 export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>> = [
   { value: 'codex', label: 'Codex CLI', description: '默认后端，支持思考深度参数。' },
   { value: 'claude', label: 'Claude CLI', description: '使用本机 claude 命令，需提前认证。' },
+  { value: 'opencode', label: 'OpenCode CLI', description: '使用本机 opencode 命令，需提前安装并认证。' },
 ];
 
 export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
@@ -193,6 +195,18 @@ export function normalizeCodexReasoningEffort(value?: string | null): CodexReaso
   return defaultCodexReasoningEffort;
 }
 
+export function isCodexAgentCliProvider(provider?: string | null) {
+  const normalized = String(provider || '').trim().toLowerCase();
+  return normalized === 'codex';
+}
+
+export function agentCliDefaultCommand(provider?: string | null) {
+  const normalized = String(provider || '').trim().toLowerCase();
+  if (normalized === 'claude') return 'claude';
+  if (normalized === 'opencode') return 'opencode';
+  return 'codex';
+}
+
 export function loopFormFromProjectState(state: ProjectState): LoopFormState {
   return {
     workspacePath: state.workspace_path || '',
@@ -213,7 +227,7 @@ export function loopConfigurePayloadFromForm(projectId: number, form: LoopFormSt
     agentCliProvider: form.agentCliProvider || 'codex',
     agentCliCommand: form.agentCliCommand.trim(),
   };
-  if (form.agentCliProvider !== 'claude') {
+  if (isCodexAgentCliProvider(form.agentCliProvider)) {
     payload.codexReasoningEffort = form.codexReasoningEffort;
   }
   return payload;

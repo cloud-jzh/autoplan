@@ -28,11 +28,14 @@ const {
   nextAgentCliConfig,
   nextIntakeAgentCliConfig,
   normalizeAgentCliConfig,
+  normalizeAgentCliSessionId,
   normalizeCodexSessionId,
   normalizeIntakeAgentCliConfig,
   operationCodexSessionId,
+  opencodeSessionContextFields,
   planAgentCliColumnValues,
   readFirstOwnValue,
+  shortAgentCliSessionId,
   shortCodexSessionId,
 } = require('./loop/agentCliConfig');
 const {
@@ -56,9 +59,11 @@ const {
 } = require('./loop/runtime');
 const planGeneration = require('./loop/planGeneration');
 const planParser = require('./loop/planParser');
+const planTaskSync = require('./loop/planTaskSync');
 const snapshots = require('./loop/snapshots');
 const concurrency = require('./loop/concurrency');
 const workspaceFiles = require('./loop/workspaceFiles');
+const intakeAttachments = require('./loop/intakeAttachments');
 const { parseEventMeta } = snapshots;
 const { isAcceptanceTask } = concurrency;
 const {
@@ -88,14 +93,14 @@ const {
 } = require('./loop/taskEvents');
 
 const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
-const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
-const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|[-–—]+|\.|．|、|\)|）|\s+)\s*(.*)$/;
-const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
-const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
-const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
-const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
-const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
 const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+const CLAUDE_SESSION_INPUT_KEYS = [
+  'agentCliSessionId',
+  'agentCliSessionRequestedId',
+  'claudeSessionId',
+  'claudeSessionRequestedId',
+  'sessionId',
+];
 
 class LoopService extends EventEmitter {
   constructor(db) {
@@ -495,6 +500,36 @@ class LoopService extends EventEmitter {
     return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
   }
 
+  updateTaskAgentCliSession(taskId, sessionId, updatedAt = nowIso()) {
+    const normalizedSessionId = normalizeAgentCliSessionId(sessionId);
+    if (!normalizedSessionId) return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+    this.db.run(
+      `UPDATE plan_tasks
+       SET agent_cli_session_id = ?, updated_at = ?
+       WHERE id = ?`,
+      [normalizedSessionId, updatedAt, taskId],
+    );
+    return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+  }
+
+  planAgentCliSessionId(planId) {
+    if (!planId) return '';
+    const row = this.db.get('SELECT agent_cli_session_id FROM plans WHERE id = ?', [planId]);
+    return normalizeAgentCliSessionId(row?.agent_cli_session_id);
+  }
+
+  updatePlanAgentCliSession(planId, sessionId, updatedAt = nowIso()) {
+    if (!planId) return null;
+    const normalizedSessionId = normalizeAgentCliSessionId(sessionId);
+    this.db.run(
+      `UPDATE plans
+       SET agent_cli_session_id = ?, updated_at = ?
+       WHERE id = ?`,
+      [normalizedSessionId || null, updatedAt, planId],
+    );
+    return this.db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+  }
+
   finishTaskRun(taskId, status, finishedAt = nowIso(), options = {}) {
     const task = this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
     if (!task) return null;
@@ -783,6 +818,10 @@ class LoopService extends EventEmitter {
     return taskExecution.previousPlanCodexSessionId(this, loopFlowHelpers(), planId, task);
   }
 
+  previousPlanAgentCliSessionId(planId, task) {
+    return taskExecution.previousPlanAgentCliSessionId(this, loopFlowHelpers(), planId, task);
+  }
+
   parallelTaskBatch(tasks) {
     return taskExecution.parallelTaskBatch(this, loopFlowHelpers(), tasks);
   }
@@ -816,7 +855,7 @@ class LoopService extends EventEmitter {
   }
 
   syncPlanTasks(planId, planFile) {
-    return syncPlanTasksFromMarkdown(this, planId, planFile);
+    return planTaskSync.syncPlanTasksFromMarkdown(this, planId, planFile);
   }
 
   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
@@ -833,6 +872,7 @@ class LoopService extends EventEmitter {
         fs.writeFileSync(planFile, before, 'utf8');
         this.addEvent(operation.projectId, 'plan.guard.restored', `${agentCliProviderDisplayName(result.agentCliProvider)} 修改了 plan，已恢复：${normalizeRelative(workspace, planFile)}`, {
           ...agentCliContextFields(result),
+          ...agentCliResultSessionContextFields(result),
           planId: operation.planId || null,
           taskId: operation.taskId || null,
         });
@@ -852,6 +892,13 @@ class LoopService extends EventEmitter {
     const agentCliCommand = agentCliConfig.command;
     const codexReasoningEffort = agentCliConfig.codexReasoningEffort;
     const isCodexProvider = agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER;
+    const isClaudeProvider = agentCliProvider === 'claude';
+    const isOpenCodeProvider = agentCliProvider === 'opencode';
+    const opencodePlanId = isOpenCodeProvider && operation.planId ? operation.planId : null;
+    const requestedClaudeSessionId = isClaudeProvider ? requestedAgentCliSessionId(operation) : '';
+    const hasClaudeSessionOption = isClaudeProvider && hasAnyOwnProperty(operation, CLAUDE_SESSION_INPUT_KEYS);
+    const requestedOpenCodeSessionId = opencodePlanId ? this.planAgentCliSessionId(opencodePlanId) : '';
+    const opencodeSessionTitle = opencodePlanId ? opencodePlanSessionTitle(projectIdForEmit, opencodePlanId) : '';
     const logDir = path.join(workspace, 'docs', 'progress', 'logs');
     fs.mkdirSync(logDir, { recursive: true });
     const prefix = `${timestampForPath()}_${safePart(label)}`;
@@ -875,6 +922,25 @@ class LoopService extends EventEmitter {
             codexSessionState: requestedSessionId ? 'resume' : 'new',
           }
         : {}),
+      ...(isClaudeProvider
+        ? agentCliSessionContextFields('claude', {
+            sessionId: requestedClaudeSessionId,
+            requestedId: requestedClaudeSessionId,
+            mode: requestedClaudeSessionId ? 'resume' : 'new',
+            state: agentCliSessionStateFor(requestedClaudeSessionId ? 'resume' : 'new', operation.agentCliSessionState),
+          })
+        : {}),
+      ...(isOpenCodeProvider
+        ? {
+            ...opencodeSessionContextFields({
+              opencodeSessionId: requestedOpenCodeSessionId,
+              opencodeSessionRequestedId: requestedOpenCodeSessionId,
+              opencodeSessionMode: requestedOpenCodeSessionId ? 'resume' : 'new',
+            }),
+            opencodeSessionTitle,
+            agentCliSessionTitle: opencodeSessionTitle,
+          }
+        : {}),
       logBuffer: '',
       activity: isCodexProvider ? new CodexActivityPrinter(200) : null,
       startedAt: nowIso(),
@@ -882,6 +948,8 @@ class LoopService extends EventEmitter {
     if (!isCodexProvider) clearCodexSessionFields(activeOperation);
     let operationKey = null;
     let capturedSessionId = '';
+    let capturedClaudeSessionId = '';
+    let capturedOpenCodeSessionId = requestedOpenCodeSessionId;
     let sessionScanBuffer = '';
     const stream = fs.createWriteStream(logFile, { encoding: 'utf8' });
     stream.on('error', (error) => {
@@ -909,12 +977,52 @@ class LoopService extends EventEmitter {
       }
       const exitCode = typeof attempt?.exitCode === 'number' ? attempt.exitCode : -1;
       const sessionId = capturedSessionId || (mode === 'resume' ? requestedSessionId : '');
+      const claudeSessionId = normalizeAgentCliSessionId(
+        attempt?.claudeSessionId
+          || attempt?.agentCliSessionId
+          || capturedClaudeSessionId
+          || (mode === 'resume' ? requestedClaudeSessionId : ''),
+      );
+      const openCodeSessionId = normalizeAgentCliSessionId(
+        attempt?.opencodeSessionId || attempt?.agentCliSessionId || capturedOpenCodeSessionId || (mode === 'resume' ? requestedOpenCodeSessionId : ''),
+      );
+      if (isClaudeProvider && claudeSessionId) {
+        capturedClaudeSessionId = claudeSessionId;
+        Object.assign(activeOperation, agentCliSessionContextFields('claude', {
+          sessionId: claudeSessionId,
+          requestedId: requestedClaudeSessionId,
+          mode,
+          state: agentCliSessionStateFor(mode, operation.agentCliSessionState, activeOperation.agentCliSessionFallback),
+          fallback: activeOperation.agentCliSessionFallback,
+        }));
+      }
+      if (isOpenCodeProvider && openCodeSessionId) {
+        capturedOpenCodeSessionId = openCodeSessionId;
+        activeOperation.agentCliSessionId = openCodeSessionId;
+        activeOperation.opencodeSessionId = openCodeSessionId;
+      }
       const codexSessionFields = isCodexProvider
         ? codexSessionContextFields({
             codexSessionId: sessionId,
             codexSessionRequestedId: requestedSessionId,
             codexSessionMode: mode,
             codexSessionFallback: mode === 'new' && Boolean(requestedSessionId),
+          })
+        : {};
+      const openCodeSessionFields = isOpenCodeProvider
+        ? opencodeSessionContextFields({
+            opencodeSessionId: openCodeSessionId,
+            opencodeSessionRequestedId: requestedOpenCodeSessionId,
+            opencodeSessionMode: mode,
+          })
+        : {};
+      const claudeSessionFields = isClaudeProvider
+        ? agentCliSessionContextFields('claude', {
+            sessionId: claudeSessionId,
+            requestedId: requestedClaudeSessionId,
+            mode,
+            state: agentCliSessionStateFor(mode, operation.agentCliSessionState, activeOperation.agentCliSessionFallback),
+            fallback: activeOperation.agentCliSessionFallback,
           })
         : {};
       return {
@@ -931,6 +1039,7 @@ class LoopService extends EventEmitter {
         errorMessage: attempt?.errorMessage || '',
         timedOut: Boolean(attempt?.timedOut),
         timeoutMs: attempt?.timeoutMs,
+        ...(attempt?.sessionLookupError ? { sessionLookupError: attempt.sessionLookupError } : {}),
         ...(isCodexProvider
           ? {
               sessionId: sessionId || null,
@@ -939,7 +1048,18 @@ class LoopService extends EventEmitter {
               resumed: mode === 'resume',
             }
           : {}),
+        ...(isClaudeProvider
+          ? {
+              sessionId: claudeSessionId || null,
+              agentCliSessionId: claudeSessionId || null,
+              claudeSessionId: claudeSessionId || null,
+              resumed: mode === 'resume',
+            }
+          : {}),
         ...codexSessionFields,
+        ...claudeSessionFields,
+        ...openCodeSessionFields,
+        ...(isOpenCodeProvider && opencodeSessionTitle ? { opencodeSessionTitle, agentCliSessionTitle: opencodeSessionTitle } : {}),
       };
     };
     const runAttempt = async (args, mode) => {
@@ -947,6 +1067,40 @@ class LoopService extends EventEmitter {
         activeOperation.codexSessionMode = mode;
         activeOperation.codexSessionState = activeOperation.codexSessionFallback ? 'fallback-new' : mode;
         activeOperation.codexSessionId = mode === 'resume' ? requestedSessionId || null : capturedSessionId || null;
+      }
+      if (isClaudeProvider) {
+        const nextClaudeSessionId = mode === 'resume' ? requestedClaudeSessionId : capturedClaudeSessionId;
+        Object.assign(activeOperation, agentCliSessionContextFields('claude', {
+          sessionId: nextClaudeSessionId,
+          requestedId: requestedClaudeSessionId,
+          mode,
+          state: agentCliSessionStateFor(mode, operation.agentCliSessionState, activeOperation.agentCliSessionFallback),
+          fallback: activeOperation.agentCliSessionFallback,
+        }));
+        if (!nextClaudeSessionId) {
+          activeOperation.agentCliSessionId = null;
+          activeOperation.claudeSessionId = null;
+        }
+      }
+      if (isOpenCodeProvider) {
+        const openCodeSessionId = mode === 'resume' ? capturedOpenCodeSessionId || requestedOpenCodeSessionId : '';
+        Object.assign(activeOperation, opencodeSessionContextFields({
+          opencodeSessionId: openCodeSessionId,
+          opencodeSessionRequestedId: requestedOpenCodeSessionId,
+          opencodeSessionMode: mode,
+        }));
+      }
+      let agentCliOptions;
+      if (isClaudeProvider) {
+        agentCliOptions = {
+          ...activeOperation,
+          sessionId: activeOperation.agentCliSessionId || activeOperation.claudeSessionId || '',
+        };
+      } else if (isOpenCodeProvider) {
+        agentCliOptions = {
+          sessionId: mode === 'resume' ? capturedOpenCodeSessionId || requestedOpenCodeSessionId : '',
+          title: opencodeSessionTitle,
+        };
       }
       return runAgentCliAttempt({
         workspace,
@@ -965,6 +1119,7 @@ class LoopService extends EventEmitter {
         provider: activeOperation.agentCliProvider,
         command: activeOperation.agentCliCommand,
         codexArgs: args,
+        agentCliOptions,
         env: workspaceToolEnv(workspace),
         onChunk: (text) => {
           if (!isCodexProvider) return;
@@ -981,6 +1136,112 @@ class LoopService extends EventEmitter {
       if (projectIdForEmit) this.emitUpdate(projectIdForEmit);
     }, 1500);
     try {
+      if (isOpenCodeProvider) {
+        if (capturedOpenCodeSessionId) {
+          this.addEvent(projectIdForEmit, 'opencode.session.resume.started', `尝试恢复 OpenCode 会话 ${shortAgentCliSessionId(capturedOpenCodeSessionId)}`, {
+            ...opencodeSessionContextFields({
+              opencodeSessionId: capturedOpenCodeSessionId,
+              opencodeSessionRequestedId: capturedOpenCodeSessionId,
+              opencodeSessionMode: 'resume',
+            }),
+            label,
+            planId: operation.planId || null,
+            taskId: operation.taskId || null,
+          });
+          const resume = await runAttempt([], 'resume');
+          const resumeMissing = resume.exitCode !== 0 && isOpenCodeSessionMissing(resume.output);
+          if (!resumeMissing) {
+            const result = resultFor(resume, 'resume');
+            if (result.opencodeSessionId && opencodePlanId) {
+              this.updatePlanAgentCliSession(opencodePlanId, result.opencodeSessionId);
+            }
+            return result;
+          }
+
+          this.addEvent(projectIdForEmit, 'opencode.session.resume.failed', `恢复 OpenCode 会话失败，已回退新建：${shortAgentCliSessionId(capturedOpenCodeSessionId)}`, {
+            ...opencodeSessionContextFields({
+              opencodeSessionRequestedId: capturedOpenCodeSessionId,
+              opencodeSessionMode: 'new',
+              opencodeSessionState: 'fallback-new',
+            }),
+            label,
+            planId: operation.planId || null,
+            taskId: operation.taskId || null,
+            exitCode: resume.exitCode,
+            log: logFile,
+          });
+          if (opencodePlanId) this.updatePlanAgentCliSession(opencodePlanId, '');
+          appendInternalLog(`OpenCode resume failed for session ${capturedOpenCodeSessionId}; falling back to a new session.`);
+          capturedOpenCodeSessionId = '';
+        }
+
+        const fresh = await runAttempt([], 'new');
+        const result = resultFor(fresh, 'new');
+        if (result.opencodeSessionId && opencodePlanId) {
+          this.updatePlanAgentCliSession(opencodePlanId, result.opencodeSessionId);
+        } else if (result.sessionLookupError) {
+          appendInternalLog(`OpenCode session lookup failed: ${result.sessionLookupError}`);
+        }
+        return result;
+      }
+
+      if (isClaudeProvider) {
+        if (requestedClaudeSessionId) {
+          const resumeState = agentCliSessionStateFor('resume', operation.agentCliSessionState);
+          this.addEvent(projectIdForEmit, 'claude.session.resume.started', `尝试恢复 Claude 会话 ${shortAgentCliSessionId(requestedClaudeSessionId)}`, {
+            ...agentCliSessionContextFields('claude', {
+              sessionId: requestedClaudeSessionId,
+              requestedId: requestedClaudeSessionId,
+              mode: 'resume',
+              state: resumeState,
+            }),
+            label,
+            planId: operation.planId || null,
+            taskId: operation.taskId || null,
+          });
+          const resume = await runAttempt([], 'resume');
+          const resumeMissing = resume.exitCode !== 0 && isClaudeSessionMissing(`${resume.output || ''}\n${resume.errorMessage || ''}`);
+          if (!resumeMissing) return resultFor(resume, 'resume');
+
+          this.addEvent(projectIdForEmit, 'claude.session.resume.failed', `恢复 Claude 会话失败，已回退新建：${shortAgentCliSessionId(requestedClaudeSessionId)}`, {
+            ...agentCliSessionContextFields('claude', {
+              requestedId: requestedClaudeSessionId,
+              mode: 'new',
+              state: 'fallback-new',
+              fallback: true,
+            }),
+            label,
+            planId: operation.planId || null,
+            taskId: operation.taskId || null,
+            exitCode: resume.exitCode,
+            log: logFile,
+          });
+          activeOperation.agentCliSessionFallback = true;
+          Object.assign(activeOperation, agentCliSessionContextFields('claude', {
+            requestedId: requestedClaudeSessionId,
+            mode: 'new',
+            state: 'fallback-new',
+            fallback: true,
+          }));
+          activeOperation.agentCliSessionId = null;
+          activeOperation.claudeSessionId = null;
+          appendInternalLog(`Claude resume failed for session ${requestedClaudeSessionId}; falling back to a new session.`);
+          capturedClaudeSessionId = '';
+        } else if (hasClaudeSessionOption) {
+          this.addEvent(projectIdForEmit, 'claude.session.resume.skipped', 'Claude session id 为空，已新建会话', {
+            ...agentCliSessionContextFields('claude', { mode: 'new' }),
+            label,
+            planId: operation.planId || null,
+            taskId: operation.taskId || null,
+            reason: 'empty_session_id',
+          });
+          appendInternalLog('Claude session id was empty; starting a new session.');
+        }
+
+        const fresh = await runAttempt([], 'new');
+        return resultFor(fresh, 'new');
+      }
+
       if (!isCodexProvider) {
         const attempt = await runAttempt([], '');
         return resultFor(attempt, '');
@@ -1145,96 +1406,6 @@ class LoopService extends EventEmitter {
   }
 }
 
-function intakeAttachmentOwnerTypes(intakeType) {
-  return intakeType === 'feedback' ? ['feedback'] : ['requirement', 'requirements'];
-}
-
-function describeIntakeAttachment(workspace, attachment, index) {
-  const name = attachmentField(attachment, ['original_name', 'originalName', 'name', 'filename', 'file_name']) || `附件 ${index + 1}`;
-  const mime = attachmentField(attachment, ['mime', 'mime_type', 'mimeType', 'content_type', 'contentType']) || 'unknown';
-  const declaredSize = attachmentField(attachment, ['size', 'file_size', 'fileSize']);
-  const hash = attachmentField(attachment, ['sha256', 'hash', 'file_hash', 'fileHash']) || 'unknown';
-  const storedPath = attachmentField(attachment, [
-    'stored_path',
-    'storedPath',
-    'persistent_path',
-    'persistentPath',
-    'file_path',
-    'filePath',
-    'path',
-  ]);
-  const resolvedPath = resolveAttachmentPath(workspace, storedPath);
-  let readable = false;
-  let readError = '';
-  let actualSize = null;
-
-  if (!resolvedPath) {
-    readError = '缺少持久化本地路径';
-  } else {
-    try {
-      fs.accessSync(resolvedPath, fs.constants.R_OK);
-      const stat = fs.statSync(resolvedPath);
-      readable = stat.isFile();
-      actualSize = stat.size;
-      if (!readable) readError = '路径不是文件';
-    } catch (error) {
-      readError = error?.message || String(error);
-    }
-  }
-
-  return {
-    id: attachment.id,
-    number: index + 1,
-    name,
-    mime,
-    size: declaredSize ?? actualSize,
-    actualSize,
-    hash,
-    path: resolvedPath || storedPath || '',
-    readable,
-    readError,
-  };
-}
-
-function formatIntakeAttachmentEntry(entry) {
-  const lines = [
-    `- 附件 ${entry.number}: ${entry.name}`,
-    `  - MIME: ${entry.mime}`,
-    `  - 大小: ${formatAttachmentSize(entry.size)}`,
-    `  - SHA256: ${entry.hash}`,
-    `  - 持久化本地路径: ${entry.path || '（缺失）'}`,
-    `  - 读取方式: 工具可以通过上述本地路径读取附件内容`,
-    `  - 可读性: ${entry.readable ? '已确认可读' : `不可读：${entry.readError || '未知错误'}`}`,
-  ];
-  if (entry.actualSize != null && String(entry.actualSize) !== String(entry.size ?? '')) {
-    lines.push(`  - 实际文件大小: ${entry.actualSize} bytes`);
-  }
-  return lines;
-}
-
-function attachmentField(attachment, keys) {
-  for (const key of keys) {
-    if (attachment?.[key] !== undefined && attachment[key] !== null && attachment[key] !== '') {
-      return attachment[key];
-    }
-  }
-  return '';
-}
-
-function resolveAttachmentPath(workspace, storedPath) {
-  const value = String(storedPath || '').trim();
-  if (!value) return '';
-  return path.isAbsolute(value) ? value : path.resolve(workspace, value);
-}
-
-function formatAttachmentSize(size) {
-  return size === undefined || size === null || size === '' ? 'unknown' : `${size} bytes`;
-}
-
-function escapeRegExp(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function timestampForPath() {
   const now = new Date();
   const pad = (n) => String(n).padStart(2, '0');
@@ -1261,187 +1432,79 @@ function isPlanGenerationOperation(label, operation = {}) {
   return text === 'generate-plan' || text.startsWith('gen-requirement-') || text.startsWith('gen-feedback-') || Boolean(operation.intakeType);
 }
 
-function syncPlanTasksFromMarkdown(service, planId, planFile) {
-  if (!fs.existsSync(planFile)) return;
-  const text = fs.readFileSync(planFile, 'utf8');
-  const tasks = parsePlanTasksFromMarkdown(text);
-  if (!tasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
-  const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
-  const existingByKey = new Map();
-  for (const existing of existingTasks) {
-    const matches = existingByKey.get(existing.task_key) || [];
-    matches.push(existing);
-    existingByKey.set(existing.task_key, matches);
-  }
+function opencodePlanSessionTitle(projectId, planId) {
+  return `AutoPlan project ${Number(projectId || 0)} plan ${Number(planId || 0)}`;
+}
 
-  const syncedStatuses = [];
-  for (const task of tasks) {
-    const existing = existingByKey.get(task.key)?.shift();
-    const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
-    syncedStatuses.push(status);
-    if (existing) {
-      service.db.run(
-        `UPDATE plan_tasks
-         SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
-         WHERE id = ?`,
-        [task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso(), existing.id],
-      );
-    } else {
-      service.db.run(
-        `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
-      );
-    }
-  }
+function isOpenCodeSessionMissing(output) {
+  return /(?:session\s+not\s+found|unknown\s+session|invalid\s+session)/i.test(String(output || ''));
+}
 
-  for (const matches of existingByKey.values()) {
-    for (const stale of matches) service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
-  }
-
-  const completed = syncedStatuses.filter((status) => status === TASK_EVENT_STATUS.COMPLETED).length;
-  const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
-  const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
-    ? 'completed'
-    : tasks.length > 0 && completed === tasks.length
-      ? 'ready_for_validation'
-      : 'running';
-  service.db.run(
-    'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
-    [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
+function requestedAgentCliSessionId(operation = {}) {
+  return normalizeAgentCliSessionId(
+    operation.agentCliSessionId
+      || operation.agentCliSessionRequestedId
+      || operation.claudeSessionId
+      || operation.claudeSessionRequestedId
+      || operation.sessionId,
   );
 }
 
-function recordEmptyPlanTaskParse(service, planId, planFile, markdown) {
-  const plan = service.db.get('SELECT id, project_id, file_path FROM plans WHERE id = ?', [planId]);
-  if (!plan?.project_id) return;
-  const filePath = plan.file_path || planFile;
-  const message = `计划未解析到任务拆解：${filePath}`;
-  const existing = service.db.get('SELECT id FROM events WHERE project_id = ? AND type = ? AND message = ? LIMIT 1', [
-    plan.project_id,
-    'plan.tasks.parse.empty',
-    message,
-  ]);
-  if (existing) return;
-  service.addEvent(plan.project_id, 'plan.tasks.parse.empty', message, {
-    planId,
-    filePath,
-    taskCount: 0,
-    markdownBytes: Buffer.byteLength(String(markdown || ''), 'utf8'),
-    reason: 'no_parseable_task_lines',
-    hint: '任务拆解必须位于 ## 任务拆解 章节，并使用 - [ ] P001: 任务标题 <!-- scope: ... --> 独占一行；不要写成段落、代码块、表格或嵌套 checkbox。',
-  });
+function agentCliSessionContextFields(provider, options = {}) {
+  const sessionId = normalizeAgentCliSessionId(options.sessionId);
+  const requestedId = normalizeAgentCliSessionId(options.requestedId);
+  const mode = options.mode || (sessionId ? 'resume' : 'new');
+  const state = options.state || mode;
+  const context = {
+    agentCliSessionMode: mode,
+    agentCliSessionState: state,
+  };
+  if (sessionId) context.agentCliSessionId = sessionId;
+  if (requestedId) context.agentCliSessionRequestedId = requestedId;
+  if (options.fallback) context.agentCliSessionFallback = true;
+  if (provider === 'claude') {
+    if (sessionId) context.claudeSessionId = sessionId;
+    if (requestedId) context.claudeSessionRequestedId = requestedId;
+    context.claudeSessionMode = mode;
+    context.claudeSessionState = state;
+    if (options.fallback) context.claudeSessionFallback = true;
+  }
+  return context;
 }
 
-function parsePlanTasksFromMarkdown(markdown) {
-  const tasks = [];
-  const lines = String(markdown || '').split(/\r?\n/);
-  for (const line of lines) {
-    const match = line.match(PLAN_TASK_LINE_RE);
-    if (!match) continue;
-    const sortOrder = tasks.length + 1;
-    const rawTitle = match[2].trim();
-    const titleWithoutScope = stripPlanTaskScopeComment(rawTitle);
-    const parsedTitle = parsePlanTaskTitle(titleWithoutScope, sortOrder);
-    const rawLine = ensurePlanTaskScopeComment(line, parsedTitle.validationLike ? 'validation' : 'unknown');
-    tasks.push({
-      key: parsedTitle.key,
-      title: parsedTitle.title || titleWithoutScope || rawTitle,
-      rawLine,
-      scope: planTaskScopeText({ raw_line: rawLine, title: rawTitle }, parsedTitle.validationLike ? 'validation' : 'unknown'),
-      status: match[1].toLowerCase() === 'x' ? TASK_EVENT_STATUS.COMPLETED : TASK_EVENT_STATUS.PENDING,
-      sortOrder,
+function agentCliSessionStateFor(mode, requestedState, fallback = false) {
+  if (fallback) return 'fallback-new';
+  if (mode === 'resume' && requestedState === 'plan-resume') return 'plan-resume';
+  return mode || requestedState || 'new';
+}
+
+function isClaudeSessionMissing(output) {
+  return /(?:session\s+not\s+found|unknown\s+session|invalid\s+session|conversation\s+not\s+found|no\s+conversation)/i.test(String(output || ''));
+}
+
+function agentCliResultSessionContextFields(result = {}) {
+  const provider = result.agentCliProvider || result.provider;
+  if (provider === DEFAULT_AGENT_CLI_PROVIDER) return codexSessionContextFields(result);
+  if (provider === 'opencode') return opencodeSessionContextFields(result);
+  if (provider === 'claude') {
+    return agentCliSessionContextFields('claude', {
+      sessionId: result.agentCliSessionId || result.claudeSessionId || result.sessionId,
+      requestedId: result.agentCliSessionRequestedId || result.claudeSessionRequestedId,
+      mode: result.agentCliSessionMode || result.claudeSessionMode,
+      state: result.agentCliSessionState || result.claudeSessionState,
+      fallback: result.agentCliSessionFallback || result.claudeSessionFallback,
     });
   }
-  return tasks;
-}
-
-function parsePlanTaskTitle(title, sortOrder) {
-  const text = String(title || '').trim();
-  const keyFallback = `P${String(sortOrder).padStart(3, '0')}`;
-  const match = text.match(PLAN_TASK_KEY_RE);
-  const validationLike = /完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation/i.test(text);
-  if (!match) return { key: keyFallback, title: text, validationLike };
-  return {
-    key: normalizePlanTaskKey(match[1]) || keyFallback,
-    title: cleanPlanTaskTitle(match[2]) || text,
-    validationLike,
-  };
-}
-
-function cleanPlanTaskTitle(value) {
-  return String(value || '').replace(/^[-–—:：\s]+/, '').trim();
-}
-
-function normalizePlanTaskKey(value) {
-  return String(value || '').trim().replace(/^([a-z]+)([-_]?\d+)$/i, (_match, prefix, suffix) => `${prefix.toUpperCase()}${suffix}`);
-}
-
-function planTaskScopeText(task, fallbackScope = 'unknown') {
-  const explicit = planTaskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
-  if (explicit.length) return explicit.join(', ');
-  const fallback = normalizePlanTaskScope(fallbackScope, { keepUnknown: true });
-  if (fallback) return fallback;
-  const inferred = planTaskDeclaredScopes(task, { keepUnknown: false });
-  return inferred.join(', ') || 'unknown';
-}
-
-function planTaskDeclaredScopes(task, options = {}) {
-  const { keepUnknown = false, includePathFallback = true } = options;
-  const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
-  const scopes = new Set();
-  addPlanTaskScopeParts(scopes, String(task.scope || '').split(PLAN_TASK_SCOPE_SPLIT_RE), { keepUnknown });
-  addPlanTaskScopeParts(scopes, explicitPlanTaskScopeParts(raw), { keepUnknown });
-  if (includePathFallback) {
-    for (const match of raw.matchAll(PLAN_TASK_PATH_RE)) {
-      const scope = normalizePlanTaskScope(match[0], { keepUnknown });
-      if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) scopes.add(scope);
-    }
-  }
-  return Array.from(scopes);
-}
-
-function explicitPlanTaskScopeParts(raw) {
-  const explicit = String(raw || '').match(PLAN_TASK_SCOPE_RE);
-  return explicit?.[1] ? explicit[1].split(PLAN_TASK_SCOPE_SPLIT_RE) : [];
-}
-
-function addPlanTaskScopeParts(scopes, parts, options = {}) {
-  for (const part of parts) {
-    const scope = normalizePlanTaskScope(part, options);
-    if (scope) scopes.add(scope);
-  }
-}
-
-function normalizePlanTaskScope(value, options = {}) {
-  const scope = String(value || '')
-    .trim()
-    .replace(/^["'`[{(]+|["'`\]})]+$/g, '')
-    .replace(/\s*--$/, '')
-    .replaceAll('\\', '/')
-    .toLowerCase();
-  if (!scope || scope === '-') return '';
-  if (scope === 'unknown') return options.keepUnknown ? 'unknown' : '';
-  return scope;
-}
-
-function ensurePlanTaskScopeComment(line, fallbackScope = 'unknown') {
-  const text = String(line || '').trimEnd();
-  return PLAN_TASK_SCOPE_RE.test(text) ? text : `${text} <!-- scope: ${fallbackScope} -->`;
-}
-
-function stripPlanTaskScopeComment(value) {
-  return String(value || '').replace(PLAN_TASK_SCOPE_COMMENT_RE, ' ').replace(/\s+/g, ' ').trim();
+  return {};
 }
 
 function loopFlowHelpers() {
   return {
-    describeIntakeAttachment,
-    escapeRegExp,
-    formatIntakeAttachmentEntry,
+    describeIntakeAttachment: intakeAttachments.describeIntakeAttachment,
+    formatIntakeAttachmentEntry: intakeAttachments.formatIntakeAttachmentEntry,
     hashFile,
     hashText,
-    intakeAttachmentOwnerTypes,
+    intakeAttachmentOwnerTypes: intakeAttachments.intakeAttachmentOwnerTypes,
     isAcceptanceTask,
     normalizeRelative,
     readSnippet,

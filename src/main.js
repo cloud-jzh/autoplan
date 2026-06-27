@@ -615,12 +615,13 @@ function requiredRecordId(input = {}, key = 'id') {
 function normalizeDraftIntakeInput(input = {}) {
   const bodyPayload = input.body;
   const payload = bodyPayload && typeof bodyPayload === 'object' && !Array.isArray(bodyPayload) ? bodyPayload : null;
-  const createAsDraft = Boolean(input.createAsDraft || input.draft || payload?.createAsDraft || payload?.draft);
+  const mergedInput = payload ? { ...input, ...payload } : input;
+  const createAsDraft = Boolean(mergedInput.createAsDraft || mergedInput.draft);
   return {
-    ...input,
+    ...mergedInput,
     body: payload ? payload.body || '' : input.body,
     createAsDraft,
-    status: createAsDraft ? 'draft' : input.status,
+    status: createAsDraft ? 'draft' : mergedInput.status,
   };
 }
 

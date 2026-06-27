@@ -3,13 +3,15 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 
 const DEFAULT_AGENT_CLI_PROVIDER = 'codex';
-const AGENT_CLI_PROVIDERS = new Set([DEFAULT_AGENT_CLI_PROVIDER, 'claude']);
+const AGENT_CLI_PROVIDERS = new Set([DEFAULT_AGENT_CLI_PROVIDER, 'claude', 'opencode']);
 const DEFAULT_CODEX_REASONING_EFFORT = 'medium';
 const CODEX_REASONING_EFFORTS = new Set(['low', DEFAULT_CODEX_REASONING_EFFORT, 'high', 'xhigh']);
 const AGENT_CLI_DISPLAY_NAMES = Object.freeze({
   codex: 'Codex',
   claude: 'Claude',
+  opencode: 'OpenCode',
 });
+const OPENCODE_SESSION_LOOKUP_MAX_COUNT = 50;
 
 function normalizeAgentCliProvider(value) {
   const provider = String(value || '').trim().toLowerCase();
@@ -61,26 +63,158 @@ function codexResumeSessionArgs(sessionId, lastFile, options = {}) {
   ];
 }
 
-function claudeCliArgs() {
+function claudeCliArgs(options = {}) {
   return [
     '--print',
     '--output-format',
     'text',
     '--dangerously-skip-permissions',
+    ...claudeSessionArgs(options),
   ];
 }
 
-function agentCliSpawnSpec(provider, command, lastFile, codexArgs) {
+function normalizeAgentCliSessionId(value) {
+  const text = String(value || '').trim();
+  if (!text || text.length > 256) return '';
+  return /^[A-Za-z0-9._:-]+$/.test(text) ? text : '';
+}
+
+function firstOwnSessionValue(source, keys) {
+  if (!source || typeof source !== 'object') return '';
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+    const value = source[key];
+    if (value === null || value === undefined || String(value).trim() === '') continue;
+    return value;
+  }
+  return '';
+}
+
+function normalizeClaudeSessionMode(value, sessionIds = {}) {
+  const mode = String(value || '').trim().toLowerCase().replace(/_/g, '-');
+  if (mode === 'resume' || mode === 'continue' || mode === 'new') return mode;
+  if (mode === 'session' || mode === 'session-id' || mode === 'specified' || mode === 'start') return 'session-id';
+  if (sessionIds.requestedSessionId) return 'resume';
+  if (sessionIds.sessionId) return 'session-id';
+  return 'new';
+}
+
+function claudeSessionLaunchSpec(options = {}) {
+  const sessionId = normalizeAgentCliSessionId(
+    firstOwnSessionValue(options, [
+      'sessionId',
+      'session_id',
+      'agentCliSessionId',
+      'agent_cli_session_id',
+      'claudeSessionId',
+      'claude_session_id',
+    ]),
+  );
+  const requestedSessionId = normalizeAgentCliSessionId(
+    firstOwnSessionValue(options, [
+      'requestedSessionId',
+      'requested_session_id',
+      'resumeSessionId',
+      'resume_session_id',
+      'agentCliSessionRequestedId',
+      'agent_cli_session_requested_id',
+      'agentCliSessionResumeId',
+      'agent_cli_session_resume_id',
+      'claudeSessionRequestedId',
+      'claude_session_requested_id',
+      'claudeSessionResumeId',
+      'claude_session_resume_id',
+    ]),
+  );
+  const mode = normalizeClaudeSessionMode(
+    firstOwnSessionValue(options, [
+      'sessionMode',
+      'session_mode',
+      'agentCliSessionMode',
+      'agent_cli_session_mode',
+      'claudeSessionMode',
+      'claude_session_mode',
+    ]),
+    { sessionId, requestedSessionId },
+  );
+
+  if (mode === 'continue') {
+    return { args: ['--continue'], mode, sessionId: '', requestedSessionId: '' };
+  }
+  if (mode === 'resume') {
+    const resumeSessionId = requestedSessionId || sessionId;
+    return {
+      args: resumeSessionId ? ['--resume', resumeSessionId] : [],
+      mode: resumeSessionId ? mode : 'new',
+      sessionId: resumeSessionId,
+      requestedSessionId: resumeSessionId,
+    };
+  }
+  if (mode === 'session-id') {
+    return {
+      args: sessionId ? ['--session-id', sessionId] : [],
+      mode: sessionId ? mode : 'new',
+      sessionId,
+      requestedSessionId: '',
+    };
+  }
+  return { args: [], mode: 'new', sessionId: '', requestedSessionId: '' };
+}
+
+function claudeSessionArgs(options = {}) {
+  return claudeSessionLaunchSpec(options).args;
+}
+
+// opencode 的非交互模式为 `run` 子命令（官方文档 opencode.ai/docs/cli）。
+// prompt 以位置参数方式在运行时追加，输出走 stdout（`--format default` 为格式化输出）。
+// opencode 不支持从 stdin 读取 prompt（官方长期未实现，见 sst/opencode issue #16283 / #25508），
+// 因此不可沿用 Codex/Claude 的 stdin 投递方式，否则会进入 TUI 或挂起。
+function normalizeOpenCodeSessionTitle(value) {
+  const text = String(value || '').trim();
+  return text ? text.slice(0, 160) : '';
+}
+
+function opencodeCliArgs(options = {}) {
+  const args = ['run', '--format', 'default'];
+  const sessionId = normalizeAgentCliSessionId(options.sessionId || options.opencodeSessionId);
+  const title = normalizeOpenCodeSessionTitle(options.title || options.opencodeSessionTitle);
+  if (sessionId) args.push('--session', sessionId);
+  if (title) args.push('--title', title);
+  return args;
+}
+
+function agentCliSpawnSpec(provider, command, lastFile, codexArgs, agentCliOptions = {}) {
   const normalizedProvider = normalizeAgentCliProvider(provider);
   const resolvedCommand = normalizeAgentCliCommand(command) || defaultAgentCliCommand(normalizedProvider);
   if (normalizedProvider === 'claude') {
+    const sessionSpec = claudeSessionLaunchSpec(agentCliOptions);
     return {
       provider: normalizedProvider,
       agentCliProvider: normalizedProvider,
       command: resolvedCommand,
-      args: claudeCliArgs(),
+      args: claudeCliArgs(agentCliOptions),
       lastFileSource: 'stdout',
       useShell: false,
+      promptSource: 'stdin',
+      agentCliSessionId: sessionSpec.sessionId,
+      agentCliSessionRequestedId: sessionSpec.requestedSessionId,
+      agentCliSessionMode: sessionSpec.mode,
+      agentCliSessionState: sessionSpec.mode,
+    };
+  }
+  if (normalizedProvider === 'opencode') {
+    const sessionId = normalizeAgentCliSessionId(agentCliOptions.sessionId || agentCliOptions.opencodeSessionId);
+    const title = normalizeOpenCodeSessionTitle(agentCliOptions.title || agentCliOptions.opencodeSessionTitle);
+    return {
+      provider: normalizedProvider,
+      agentCliProvider: normalizedProvider,
+      command: resolvedCommand,
+      args: opencodeCliArgs({ sessionId, title }),
+      lastFileSource: 'stdout',
+      useShell: false,
+      promptSource: 'argument',
+      agentCliSessionId: sessionId,
+      agentCliSessionTitle: title,
     };
   }
   return {
@@ -90,6 +224,7 @@ function agentCliSpawnSpec(provider, command, lastFile, codexArgs) {
     args: codexArgs || [],
     lastFileSource: 'cli',
     useShell: true,
+    promptSource: 'stdin',
   };
 }
 
@@ -109,14 +244,25 @@ async function runAgentCliAttempt(options) {
     provider,
     command,
     codexArgs,
+    agentCliOptions,
     onChunk,
     env,
     timeoutMs = 45 * 60 * 1000,
   } = options;
 
-  const spawnSpec = agentCliSpawnSpec(provider, command, lastFile, codexArgs);
+  const spawnSpec = agentCliSpawnSpec(provider, command, lastFile, codexArgs, agentCliOptions);
   activeOperation.agentCliProvider = spawnSpec.agentCliProvider;
   activeOperation.agentCliCommand = spawnSpec.command;
+  if (spawnSpec.agentCliSessionId) activeOperation.agentCliSessionId = spawnSpec.agentCliSessionId;
+  if (spawnSpec.agentCliSessionRequestedId) activeOperation.agentCliSessionRequestedId = spawnSpec.agentCliSessionRequestedId;
+  if (spawnSpec.agentCliSessionMode) activeOperation.agentCliSessionMode = spawnSpec.agentCliSessionMode;
+  if (spawnSpec.agentCliSessionState) activeOperation.agentCliSessionState = spawnSpec.agentCliSessionState;
+  if (spawnSpec.agentCliSessionTitle) activeOperation.agentCliSessionTitle = spawnSpec.agentCliSessionTitle;
+
+  // opencode 仅支持以位置参数传入 prompt，在构造命令行前追加，复用既有转义/引用逻辑。
+  if (spawnSpec.promptSource === 'argument') {
+    spawnSpec.args = [...spawnSpec.args, prompt];
+  }
 
   const executionSpec = agentCliExecutionSpec(spawnSpec);
   const child = spawn(executionSpec.command, executionSpec.args, {
@@ -174,7 +320,13 @@ async function runAgentCliAttempt(options) {
 
   if (child.stdin) {
     child.stdin.setDefaultEncoding('utf8');
-    child.stdin.end(prompt);
+    // prompt 作为位置参数的后端（opencode）不再通过 stdin 投递 prompt，
+    // 直接发送 EOF 关闭 stdin，避免 opencode 误读管道 stdin 导致挂起（见 sst/opencode #11891）。
+    if (spawnSpec.promptSource === 'argument') {
+      child.stdin.end();
+    } else {
+      child.stdin.end(prompt);
+    }
   }
 
   let exitCode = await waitForChild(child, timeoutMs);
@@ -212,6 +364,27 @@ async function runAgentCliAttempt(options) {
     }
   }
   if (runtime.activeOperations.has(nextOperationKey)) activeOperation.exitCode = exitCode;
+  let agentCliSessionId = normalizeAgentCliSessionId(spawnSpec.agentCliSessionId);
+  let sessionLookupError = '';
+  if (
+    spawnSpec.agentCliProvider === 'opencode' &&
+    !agentCliSessionId &&
+    spawnSpec.agentCliSessionTitle
+  ) {
+    const lookup = await findOpenCodeSessionByTitle({
+      command: spawnSpec.command,
+      title: spawnSpec.agentCliSessionTitle,
+      workspace,
+      env: env || process.env,
+      waitForChild,
+    });
+    agentCliSessionId = lookup.sessionId;
+    sessionLookupError = lookup.error || '';
+  }
+  if (agentCliSessionId && runtime.activeOperations.has(nextOperationKey)) {
+    activeOperation.agentCliSessionId = agentCliSessionId;
+    activeOperation.opencodeSessionId = agentCliSessionId;
+  }
   const errorMessage = timeoutMessage || (lastFileError
     ? readableAgentCliLastFileError({
         provider: spawnSpec.agentCliProvider,
@@ -244,7 +417,62 @@ async function runAgentCliAttempt(options) {
     errorMessage,
     timedOut,
     timeoutMs,
+    ...(agentCliSessionId ? { agentCliSessionId, opencodeSessionId: agentCliSessionId } : {}),
+    ...(spawnSpec.agentCliSessionTitle ? { agentCliSessionTitle: spawnSpec.agentCliSessionTitle, opencodeSessionTitle: spawnSpec.agentCliSessionTitle } : {}),
+    ...(sessionLookupError ? { sessionLookupError } : {}),
   };
+}
+
+async function findOpenCodeSessionByTitle({ command, title, workspace, env, waitForChild }) {
+  const normalizedTitle = normalizeOpenCodeSessionTitle(title);
+  if (!normalizedTitle) return { sessionId: '', error: '' };
+  const sessions = await listOpenCodeSessions({ command, workspace, env, waitForChild });
+  if (sessions.error) return { sessionId: '', error: sessions.error };
+  const workspacePath = normalizeComparablePath(workspace);
+  const matches = sessions.items.filter((session) => session?.title === normalizedTitle);
+  const match = matches.find((session) => normalizeComparablePath(session.directory) === workspacePath) || matches[0];
+  return { sessionId: normalizeAgentCliSessionId(match?.id), error: '' };
+}
+
+async function listOpenCodeSessions({ command, workspace, env, waitForChild }) {
+  const executionSpec = agentCliExecutionSpec({
+    command,
+    args: ['session', 'list', '--format', 'json', '--max-count', String(OPENCODE_SESSION_LOOKUP_MAX_COUNT)],
+    useShell: false,
+  });
+  const child = spawn(executionSpec.command, executionSpec.args, {
+    shell: executionSpec.shell,
+    windowsVerbatimArguments: executionSpec.windowsVerbatimArguments,
+    cwd: workspace,
+    env: env || process.env,
+    windowsHide: true,
+  });
+  let stdout = '';
+  let stderr = '';
+  let spawnError = null;
+  if (child.stdout) child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
+  if (child.stderr) child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+  child.on('error', (error) => {
+    spawnError = error;
+  });
+  const exitCode = await waitForChild(child, 15000);
+  if (spawnError) return { items: [], error: spawnError.message || String(spawnError) };
+  if (exitCode !== 0) {
+    return { items: [], error: String(stderr || stdout || `exit ${exitCode}`).trim() };
+  }
+  const output = String(stdout || '').trim();
+  if (!output) return { items: [], error: '' };
+  try {
+    const parsed = JSON.parse(output);
+    return { items: Array.isArray(parsed) ? parsed : [], error: '' };
+  } catch (error) {
+    return { items: [], error: error?.message || String(error) };
+  }
+}
+
+function normalizeComparablePath(value) {
+  const text = String(value || '').trim();
+  return text ? path.resolve(text).toLowerCase() : '';
 }
 
 function safeWriteStream(stream, text) {
@@ -291,7 +519,7 @@ function resolveWindowsCommand(command) {
   const pathExts = String(process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD')
     .split(path.delimiter)
     .filter(Boolean);
-  const names = path.extname(raw) ? [raw] : [raw, ...pathExts.map((ext) => `${raw}${ext}`)];
+  const names = path.extname(raw) ? [raw] : pathExts.map((ext) => `${raw}${ext}`);
   const dirs = hasPath ? [''] : String(process.env.PATH || '').split(path.delimiter);
   for (const dir of dirs) {
     for (const name of names) {
@@ -303,11 +531,7 @@ function resolveWindowsCommand(command) {
 }
 
 function isFile(filePath) {
-  try {
-    return fs.statSync(filePath).isFile();
-  } catch {
-    return false;
-  }
+  try { return fs.statSync(filePath).isFile(); } catch { return false; }
 }
 
 function windowsCmdLine(command, args) {
@@ -362,6 +586,8 @@ module.exports = {
   AGENT_CLI_PROVIDERS,
   DEFAULT_AGENT_CLI_PROVIDER,
   agentCliSpawnSpec,
+  claudeCliArgs,
+  claudeSessionArgs,
   codexNewSessionArgs,
   codexResumeSessionArgs,
   normalizeCodexReasoningEffort,

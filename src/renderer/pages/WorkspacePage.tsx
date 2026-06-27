@@ -14,6 +14,7 @@ import { IntakePanel } from '../components/IntakePanel';
 import { EventList, PlanList, TaskList } from '../components/PlanLists';
 import { SearchResults } from '../components/SearchResults';
 import { Icon } from '../components/icons';
+import { PlanReaderModal } from '../components/plans/PlanReaderModal';
 import { WorkspaceOverviewView } from '../components/workspace/WorkspaceOverviewView';
 import { WorkspaceSearchBox } from '../components/workspace/WorkspaceSearchBox';
 import { WorkspaceSettingsView } from '../components/workspace/WorkspaceSettingsView';
@@ -39,6 +40,7 @@ export function WorkspacePage() {
     loopForm,
     mcpAuthToken,
     navigate,
+    openIntakePlanReader,
     openPlanReader,
     openTaskPlanReader,
     pendingAttachments,
@@ -184,6 +186,12 @@ export function WorkspacePage() {
     );
   }
 
+  const intakePlanPreviewProps = {
+    plans: snapshot.plans,
+    onOpenPlan: openIntakePlanReader,
+  };
+  const planListReaderState = planReadState.plan ? { ...planReadState, plan: null } : planReadState;
+
   return (
     <div className="workspace-shell">
       <WorkspaceSidebar
@@ -267,6 +275,7 @@ export function WorkspacePage() {
                 submitLabel="发送需求"
                 subtitle="循环开启后自动扫描并生成计划"
                 type="requirement"
+                {...intakePlanPreviewProps}
                 attachments={snapshot.attachments}
                 onAddFiles={addPendingFiles}
                 onDelete={deleteRequirement}
@@ -293,6 +302,7 @@ export function WorkspacePage() {
                 submitLabel="发送反馈"
                 subtitle="循环开启后自动扫描并生成计划"
                 type="feedback"
+                {...intakePlanPreviewProps}
                 attachments={snapshot.attachments}
                 onAddFiles={addPendingFiles}
                 onDelete={deleteFeedback}
@@ -340,7 +350,7 @@ export function WorkspacePage() {
                     onRefreshReader={refreshPlanReader}
                     onSelectPlan={planSelectionState.selectPlan}
                     plans={filteredItems.plans}
-                    readerState={planReadState}
+                    readerState={planListReaderState}
                     selectedPlanId={planSelectionState.selectedPlanId}
                     tasks={snapshot.tasks}
                     totalPlanCount={snapshot.plans.length}
@@ -399,6 +409,13 @@ export function WorkspacePage() {
             </section>
           ) : null}
         </section>
+
+        <PlanReaderModal
+          latestPlan={latestReadingPlan}
+          onClose={closePlanReader}
+          onRefresh={refreshPlanReader}
+          readerState={planReadState}
+        />
       </div>
     </div>
   );

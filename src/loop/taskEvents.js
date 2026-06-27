@@ -4,6 +4,7 @@
   agentCliProviderDisplayName,
   codexSessionContextFields,
   codexSessionReadableLabel,
+  opencodeSessionContextFields,
   normalizeOptionalCodexReasoningEffort,
   normalizeOptionalNumber,
   normalizeOptionalString,
@@ -75,6 +76,13 @@ function taskEventMeta(task, overrides = {}) {
           codexSessionState: meta.codexSessionState,
           codexSessionFallback: meta.codexSessionFallback,
         })
+      : meta.agentCliProvider === 'opencode'
+        ? opencodeSessionContextFields({
+            opencodeSessionId: meta.opencodeSessionId ?? meta.agentCliSessionId ?? meta.agent_cli_session_id,
+            opencodeSessionRequestedId: meta.opencodeSessionRequestedId ?? meta.agentCliSessionRequestedId,
+            opencodeSessionMode: meta.opencodeSessionMode ?? meta.agentCliSessionMode,
+            opencodeSessionState: meta.opencodeSessionState ?? meta.agentCliSessionState,
+          })
       : {},
   );
   meta.taskId = normalizeOptionalNumber(meta.taskId);
@@ -110,10 +118,11 @@ function taskEventMessage(type, task, meta = null) {
     }[type] || '更新了';
   const providerContext = meta?.agentCliProvider ? agentCliProviderDisplayName(meta.agentCliProvider) : '';
   const codexContext = meta?.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionReadableLabel(meta) : '';
+  const opencodeContext = meta?.agentCliProvider === 'opencode' ? meta.opencodeSessionLabel || meta.agentCliSessionLabel || '' : '';
   const reasoningContext = meta?.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER && meta?.codexReasoningEffort
     ? `思考深度 ${meta.codexReasoningEffort}`
     : '';
-  const contexts = [providerContext, reasoningContext, codexContext].filter(Boolean).join(' · ');
+  const contexts = [providerContext, reasoningContext, codexContext, opencodeContext].filter(Boolean).join(' · ');
   return `${action}${separator}${taskLabel}：${taskTitle}${contexts ? `（${contexts}）` : ''}`;
 }
 

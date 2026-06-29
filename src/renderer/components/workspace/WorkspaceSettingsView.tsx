@@ -14,13 +14,14 @@ import {
 } from '../../utils/workspaceForms';
 import { McpControlPanel, mcpStatusText, mcpStatusTone } from './McpControlPanel';
 
-type SettingsPane = 'loop' | 'cli' | 'scope' | 'mcp';
+type SettingsPane = 'loop' | 'cli' | 'scope' | 'mcp' | 'env';
 
 const SETTINGS_NAV: Array<{ id: SettingsPane; label: string; hint: string; icon: string }> = [
   { id: 'loop', label: '循环控制', hint: '路径、间隔、验收命令', icon: 'loop' },
   { id: 'cli', label: 'CLI 后端', hint: 'Provider 与 Codex 深度', icon: 'cli' },
   { id: 'scope', label: 'scope 文件', hint: '打开方式与编辑器命令', icon: 'scope' },
   { id: 'mcp', label: 'MCP 接入', hint: '服务状态与工具清单', icon: 'mcp' },
+  { id: 'env', label: '环境变量', hint: '注入到脚本与 CLI 执行环境', icon: 'env' },
 ];
 
 function scopeModeLabel(mode: ScopeFileOpenMode) {
@@ -81,6 +82,7 @@ export function WorkspaceSettingsView({
     cli: { label: agentCliNavLabel(loopForm.agentCliProvider), tone: isCodexProvider ? 'ok' : '' },
     scope: { label: scopeModeLabel(scopeFileOpenSettings.mode) },
     mcp: { label: mcpStatus, tone: mcpStatusTone(mcp) },
+    env: { label: loopForm.envVars.length ? `${loopForm.envVars.length} 个` : '未配置' },
   };
 
   return (
@@ -325,6 +327,91 @@ export function WorkspaceSettingsView({
               stopMcp={stopMcp}
               saveMcpConfig={saveMcpConfig}
             />
+          ) : null}
+
+          {activePane === 'env' ? (
+            <section className="settings-pane active" aria-labelledby="settings-env-title">
+              <div className="pane-head">
+                <h2 id="settings-env-title"><span className="pane-ico" aria-hidden="true" />环境变量</h2>
+                <p>自定义键值对，注入到脚本（<code>runShell</code>）与 CLI 任务（<code>runCodex</code>）执行环境，优先于工作区派生变量但低于脚本 <code>AUTOPLAN_*</code> 内置变量。</p>
+              </div>
+              <div className="set-card">
+                <div className="set-card-head">
+                  <h3>键值对</h3>
+                  <div className="set-card-hint">变量名仅允许字母/数字/下划线；重复名仅保留第一个。本地明文存储于 SQLite。</div>
+                </div>
+                <div className="set-card-body">
+                  {loopForm.envVars.length === 0 ? (
+                    <div className="empty-hint">尚未配置环境变量，点击下方「新增变量」添加。</div>
+                  ) : (
+                    loopForm.envVars.map((entry, i) => (
+                      <div className="env-var-row" key={i}>
+                        <input
+                          className="field-input mono env-name"
+                          type="text"
+                          value={entry.name}
+                          placeholder="MY_TOKEN"
+                          spellCheck={false}
+                          onChange={(event) =>
+                            setLoopForm((current) => ({
+                              ...current,
+                              envVars: current.envVars.map((item, idx) =>
+                                idx === i ? { ...item, name: event.target.value } : item,
+                              ),
+                            }))
+                          }
+                        />
+                        <input
+                          className="field-input mono env-value"
+                          type="text"
+                          value={entry.value}
+                          placeholder="变量值"
+                          spellCheck={false}
+                          onChange={(event) =>
+                            setLoopForm((current) => ({
+                              ...current,
+                              envVars: current.envVars.map((item, idx) =>
+                                idx === i ? { ...item, value: event.target.value } : item,
+                              ),
+                            }))
+                          }
+                        />
+                        <button
+                          type="button"
+                          className="btn-icon env-var-delete"
+                          title="删除变量"
+                          aria-label="删除变量"
+                          onClick={() =>
+                            setLoopForm((current) => ({
+                              ...current,
+                              envVars: current.envVars.filter((_, idx) => idx !== i),
+                            }))
+                          }
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() =>
+                      setLoopForm((current) => ({
+                        ...current,
+                        envVars: [...current.envVars, { name: '', value: '' }],
+                      }))
+                    }
+                  >
+                    新增变量
+                  </button>
+                  {loopForm.envVars.some((e) => !e.name.trim()) ? (
+                    <span className="field-hint" style={{ color: 'var(--danger)' }}>⚠ 存在空变量名，保存时将被过滤。</span>
+                  ) : null}
+                </div>
+              </div>
+              <SettingsActions running={running} onToggleRun={onToggleRun} />
+            </section>
           ) : null}
         </form>
       </div>

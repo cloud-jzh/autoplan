@@ -37,6 +37,9 @@ function readLastStatus(script: Script): ScriptLastStatus | null {
 function readSourceType(script: Script): ScriptSourceType {
   return script.source_type ?? script.sourceType ?? 'inline';
 }
+function readScheduleCron(script: Script): string | null {
+  return script.schedule_cron ?? script.scheduleCron ?? null;
+}
 
 function formatRelativeTime(value?: string | null) {
   const ms = getTimestampMs(value);
@@ -97,11 +100,13 @@ export function WorkspaceScriptsView({
   scripts,
   projectId,
   onToggle,
+  onRun,
   onSync,
 }: {
   scripts: Script[];
   projectId: number;
   onToggle: (script: Script) => void;
+  onRun: (script: Script) => void;
   onSync: (snapshot: AppSnapshot) => void;
 }) {
   const [filter, setFilter] = useState<ScriptFilter>('all');
@@ -212,6 +217,7 @@ export function WorkspaceScriptsView({
             key={script.id}
             script={script}
             onToggle={() => onToggle(script)}
+            onRun={onRun}
             onOpen={() => openExisting(script)}
           />
         ))}
@@ -277,14 +283,17 @@ function FilterTab({
 function ScriptCard({
   script,
   onToggle,
+  onRun,
   onOpen,
 }: {
   script: Script;
   onToggle: () => void;
+  onRun: (script: Script) => void;
   onOpen: () => void;
 }) {
   const mode = readTriggerMode(script);
   const enabled = readEnabled(script);
+  const running = readLastStatus(script) === 'running';
   const meta = RUNTIME_META[script.runtime] ?? RUNTIME_META.node;
   const status = scriptStatus(script);
   const stage = readHookStage(script);
@@ -314,6 +323,18 @@ function ScriptCard({
         </div>
         <button
           type="button"
+          className={`sc-run${running ? ' running' : ''}`}
+          title={running ? '停止' : '运行'}
+          aria-label={running ? '停止脚本' : '运行脚本'}
+          onClick={(event) => {
+            event.stopPropagation();
+            onRun(script);
+          }}
+        >
+          <Icon name={running ? 'stop' : 'play'} size={14} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
           className={`toggle sm sc-toggle${enabled ? ' on' : ''}`}
           aria-pressed={enabled}
           aria-label={enabled ? '禁用脚本' : '启用脚本'}
@@ -334,8 +355,8 @@ function ScriptCard({
           </span>
         ) : null}
         <span className={`sc-trigger${mode === 'manual' ? ' manual' : ''}`}>
-          <Icon name={mode === 'manual' ? 'power' : 'bolt'} size={12} aria-hidden="true" />
-          {mode === 'manual' ? '手动' : stage ? HOOK_STAGE_LABEL[stage] : '自动钩子'}
+          <Icon name={mode === 'schedule' ? 'clock' : mode === 'manual' ? 'power' : 'bolt'} size={12} aria-hidden="true" />
+          {mode === 'schedule' ? (readScheduleCron(script) ?? '定时') : mode === 'manual' ? '手动' : stage ? HOOK_STAGE_LABEL[stage] : '自动钩子'}
         </span>
       </div>
       <div className="sc-foot">

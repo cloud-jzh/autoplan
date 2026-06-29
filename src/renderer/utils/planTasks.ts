@@ -262,6 +262,11 @@ export function isAcceptancePendingTask(task: PlanTask) {
   return isTaskCompleted(task) && !task.accepted_at;
 }
 
+/** 多选 key 工具：与 recordId / 事件 meta 的 targetType+id 对齐，供视图选择态使用。 */
+export function acceptanceSelectionKey(targetType: 'plan' | 'task', id: number): string {
+  return `${targetType}:${id}`;
+}
+
 export interface AcceptanceGroup {
   plan: Plan;
   /** 该计划内「已完成且未验收」的任务，按 groupTasksByPlan 的排序语义排列。 */

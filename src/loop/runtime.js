@@ -148,6 +148,14 @@ function scheduleProjectRuntime(runtime, intervalSeconds, runOnce) {
   }, Math.max(1, Number(intervalSeconds || 5)) * 1000);
 }
 
+/** 创建一个会 unref 的 setInterval（不阻塞进程退出），沿用 scheduleProjectRuntime 的 timer 句柄风格。
+ *  供全局定时调度器等「进程空闲时应自动退出」的周期任务复用；返回 timer 句柄供 clearInterval。 */
+function createUnrefInterval(callback, ms) {
+  const timer = setInterval(callback, ms);
+  if (typeof timer.unref === 'function') timer.unref();
+  return timer;
+}
+
 function findActiveRuntimeProject(runtimes, workspace, projectId, projectForId, workspaceKey) {
   const key = workspaceKey(workspace);
   if (!key) return null;
@@ -409,6 +417,7 @@ module.exports = {
   archiveRuntimeOperation,
   createProjectRuntime,
   createThrottledUpdateEmitter,
+  createUnrefInterval,
   ensureProjectRuntime,
   existingProjectRuntime,
   findActiveRuntimeProject,

@@ -340,6 +340,13 @@ textarea { min-height: 80px; resize: vertical; }
 .sc-name { font-size: 14.5px; font-weight: 700; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sc-path { font-size: 11.5px; color: var(--text-3); margin-top: 3px; font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sc-toggle { flex: 0 0 auto; }
+.sc-run { flex: 0 0 auto; width: 30px; height: 30px; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); color: var(--text-2); cursor: pointer; line-height: 0; transition: background 0.16s, color 0.16s, border-color 0.16s, transform 0.08s; }
+.sc-run:hover { background: var(--brand-50); color: var(--brand-600); border-color: var(--brand-border); }
+.sc-run:active { transform: translateY(1px); }
+.sc-run:disabled { opacity: 0.5; cursor: not-allowed; }
+/* 运行中态（stop 图标）：success 高亮，提示点击即停止 */
+.sc-run.running { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
+.sc-run.running:hover { border-color: var(--success); }
 .sc-desc { font-size: 12.5px; color: var(--text-2); line-height: 1.55; margin: 12px 0 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .sc-mid { display: flex; align-items: center; gap: 6px; margin-top: 13px; flex-wrap: wrap; }
 .sc-lang { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: var(--r-sm); font-size: 11px; font-weight: 700; font-family: var(--font-mono); border: 1px solid var(--line); background: var(--bg-soft); color: var(--text-2); }
@@ -476,6 +483,17 @@ textarea { min-height: 80px; resize: vertical; }
 .field-hint { font-size: 11px; color: var(--text-4); line-height: 1.5; }
 .field-hint code, .cfg-body code { font-family: var(--font-mono); font-size: 10.5px; padding: 1px 4px; border-radius: 4px; background: var(--bg-soft); color: var(--brand-700); }
 
+/* 环境变量键值对编辑器 */
+.env-var-row { display: flex; align-items: center; gap: 8px; }
+.env-var-row + .env-var-row { margin-top: 8px; }
+.env-var-row .env-name { flex: 0 0 180px; min-width: 0; font-family: var(--font-mono); }
+.env-var-row .env-value { flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); }
+.env-var-row .env-var-delete { flex: 0 0 auto; }
+.btn-icon { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); color: var(--text-3); font-size: 15px; font-weight: 700; line-height: 1; cursor: pointer; transition: background 0.14s, color 0.14s, border-color 0.14s; }
+.btn-icon:hover:not(:disabled) { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-border); }
+.btn-icon:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.empty-hint { padding: 32px 0; text-align: center; color: var(--text-4); font-size: 12.5px; }
+
 .segment { display: inline-flex; background: var(--bg-soft); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 3px; width: 100%; }
 .segment button { flex: 1 1 0; border: 0; background: transparent; padding: 6px 8px; border-radius: 5px; font-size: 12px; font-weight: 600; color: var(--text-3); display: inline-flex; align-items: center; justify-content: center; gap: 5px; line-height: 0; }
 .segment button:hover { color: var(--text-1); }
@@ -588,6 +606,19 @@ textarea { min-height: 80px; resize: vertical; }
 .acceptance-view .check:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .acceptance-view .check.checked { background: var(--success); border-color: var(--success); }
 .acceptance-view .check.checked .app-icon { opacity: 1; }
+
+/* 多选 checkbox — 与 .check 视觉协调但用品牌色区分 */
+.acceptance-view .sel-check { flex: 0 0 auto; width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--brand-400); background: var(--bg-elevated); display: grid; place-items: center; color: #fff; padding: 0; transition: background 0.14s, border-color 0.14s, transform 0.06s; line-height: 0; cursor: pointer; }
+.acceptance-view .sel-check .app-icon { opacity: 0; transition: opacity 0.12s; }
+.acceptance-view .sel-check:hover { border-color: var(--brand-600); }
+.acceptance-view .sel-check:active { transform: scale(0.94); }
+.acceptance-view .sel-check:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.acceptance-view .sel-check.checked { background: var(--brand-600); border-color: var(--brand-600); }
+.acceptance-view .sel-check.checked .app-icon { opacity: 1; }
+
+/* 批量操作条 — 选中 ≥1 时替换 .accept-bar 默认内容 */
+.acceptance-view .accept-batch-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1 1 auto; }
+.acceptance-view .accept-batch-bar .batch-count { font-size: 13px; font-weight: 600; color: var(--text-1); white-space: nowrap; }
 
 /* 已验收（最近）可折叠区 */
 .acceptance-view .accepted-card { border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--bg-elevated); overflow: hidden; box-shadow: var(--shadow-sm); }

@@ -176,6 +176,7 @@ export interface Project {
   agent_cli_provider?: AgentCliProvider;
   agent_cli_command?: string;
   codex_reasoning_effort?: CodexReasoningEffort | null;
+  env_vars?: string;
 }
 
 export interface ProjectState {
@@ -189,6 +190,7 @@ export interface ProjectState {
   agent_cli_provider?: AgentCliProvider;
   agent_cli_command?: string;
   codex_reasoning_effort?: CodexReasoningEffort | null;
+  env_vars?: string;
   updated_at: string;
   /** 由 snapshot 合并自 project.workspace_path */
   workspace_path?: string;
@@ -556,7 +558,7 @@ export interface ScanFile {
 
 export type ScriptRuntime = 'node' | 'bash' | 'ps' | 'cmd';
 export type ScriptSourceType = 'inline' | 'file';
-export type ScriptTriggerMode = 'hook' | 'manual';
+export type ScriptTriggerMode = 'hook' | 'manual' | 'schedule';
 export type ScriptContextInject = 'env' | 'stdin' | 'none';
 export type ScriptHookStage = 'plan:after' | 'task:after' | 'validation:before' | 'loop:end' | 'on:fail';
 export type ScriptLastStatus = 'idle' | 'ok' | 'bad' | 'running';
@@ -577,6 +579,8 @@ export interface Script {
   triggerMode?: ScriptTriggerMode;
   hook_stage: ScriptHookStage | null;
   hookStage?: ScriptHookStage | null;
+  schedule_cron: string | null;
+  scheduleCron?: string | null;
   enabled: number;
   work_dir: string;
   workDir?: string;
@@ -615,6 +619,8 @@ export interface CreateScriptInput {
   trigger_mode?: ScriptTriggerMode;
   hookStage?: ScriptHookStage | null;
   hook_stage?: ScriptHookStage | null;
+  scheduleCron?: string | null;
+  schedule_cron?: string | null;
   enabled?: number | boolean;
   workDir?: string;
   work_dir?: string;
@@ -891,6 +897,12 @@ export interface UpdateProjectInput extends CreateProjectInput {
   id: number;
 }
 
+/** 环境变量键值对（设置面板与表单共用），序列化为 project_states.env_vars 的 JSON 数组 */
+export interface EnvVarEntry {
+  name: string;
+  value: string;
+}
+
 export interface LoopConfigInput {
   projectId: number;
   workspacePath?: string;
@@ -901,6 +913,7 @@ export interface LoopConfigInput {
   agentCliCommand?: string;
   codexReasoningEffort?: CodexReasoningEffort;
   mcpAuthToken?: string;
+  envVars?: EnvVarEntry[];
 }
 
 export interface ProjectIdInput {
@@ -914,6 +927,10 @@ export interface RecordIdInput extends ProjectIdInput {
 
 export interface AcceptanceItemInput extends RecordIdInput {
   targetType: 'plan' | 'task';
+}
+
+export interface AcceptBatchInput extends ProjectIdInput {
+  targets: AcceptanceItemInput[];
 }
 
 export interface TaskIdInput extends ProjectIdInput {
@@ -962,6 +979,8 @@ export interface AutoplanApi {
   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
   acceptItem: (input: AcceptanceItemInput) => Promise<AppSnapshot>;
   unacceptItem: (input: AcceptanceItemInput) => Promise<AppSnapshot>;
+  acceptItems: (input: AcceptBatchInput) => Promise<AppSnapshot>;
+  unacceptItems: (input: AcceptBatchInput) => Promise<AppSnapshot>;
   createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
   updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
   deleteRequirement: (input: RecordIdInput) => Promise<AppSnapshot>;

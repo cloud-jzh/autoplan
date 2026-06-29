@@ -179,7 +179,10 @@ function normalizeOpenCodeSessionTitle(value) {
 }
 
 function opencodeCliArgs(options = {}) {
-  const args = ['run', '--format', 'default'];
+  // --dangerously-skip-permissions：无人值守模式下必须自动批准 external_directory 等权限，
+  // 否则每次访问工作区文件都会触发权限请求并被自动拒绝（auto-rejecting），导致工具调用全部失败、
+  // 写不出 plan。与 codex 的 --sandbox danger-full-access、claude 的 --dangerously-skip-permissions 对齐。
+  const args = ['run', '--format', 'default', '--dangerously-skip-permissions'];
   const sessionId = normalizeAgentCliSessionId(options.sessionId || options.opencodeSessionId);
   const title = normalizeOpenCodeSessionTitle(options.title || options.opencodeSessionTitle);
   if (sessionId) args.push('--session', sessionId);
@@ -284,18 +287,66 @@ async function runAgentCliAttempt(options) {
   if (spawnSpec.agentCliSessionState) activeOperation.agentCliSessionState = spawnSpec.agentCliSessionState;
   if (spawnSpec.agentCliSessionTitle) activeOperation.agentCliSessionTitle = spawnSpec.agentCliSessionTitle;
 
+  let promptSpillover = null;
+
   // opencode 仅支持以位置参数传入 prompt，在构造命令行前追加，复用既有转义/引用逻辑。
   if (spawnSpec.promptSource === 'argument') {
-    spawnSpec.args = [...spawnSpec.args, prompt];
+    const spillover = writePromptSpilloverFile(spawnSpec, prompt, workspace);
+    if (spillover) {
+      // prompt（连同 run 子命令自身参数、转义/call 开销）会超过命令行字符上限（cmd.exe 路径仅
+      // 8191，CreateProcess 路径 32767），已落盘为附件文件，仅以简短指针消息作为位置参数，
+      // 并用 -f 投递完整指令。opencode 的 run 子命令不读 stdin，必须走位置参数。
+      spawnSpec.args = [...spawnSpec.args, spillover.pointerMessage, '-f', spillover.filePath];
+      promptSpillover = spillover;
+      const note = `\n[AutoPlan] prompt 过长（${spillover.promptChars} 字符），已写入附件 ${spillover.filePath} 并以 -f 投递，规避命令行长度上限。\n`;
+      safeWriteStream(stream, note);
+      appendOperationBuffer(activeOperation, note);
+    } else {
+      spawnSpec.args = [...spawnSpec.args, prompt];
+    }
   }
 
   const executionSpec = agentCliExecutionSpec(spawnSpec);
-  const child = spawn(executionSpec.command, executionSpec.args, {
-    shell: executionSpec.shell,
-    windowsVerbatimArguments: executionSpec.windowsVerbatimArguments,
-    cwd: workspace,
-    env: env || process.env,
-  });
+  let child;
+  try {
+    child = spawn(executionSpec.command, executionSpec.args, {
+      shell: executionSpec.shell,
+      windowsVerbatimArguments: executionSpec.windowsVerbatimArguments,
+      cwd: workspace,
+      env: env || process.env,
+    });
+  } catch (spawnThrow) {
+    // spawn 同步抛出（如 Windows 命令行超长 → ENAMETOOLONG / WinError 206）时，
+    // 子进程根本未创建，既无 stdout/stderr 也无 exit 事件。这里转成统一的失败结果，
+    // 把可读错误写入日志，避免上游拿到未捕获异常或空日志。
+    if (promptSpillover) removePromptSpilloverFile(promptSpillover.filePath);
+    const message = readableAgentCliError({
+      provider: spawnSpec.agentCliProvider,
+      command: spawnSpec.command,
+      exitCode: -1,
+      error: spawnThrow,
+      logFile,
+    });
+    const note = `\n[AutoPlan] ${message}\n`;
+    safeWriteStream(stream, note);
+    appendOperationBuffer(activeOperation, note);
+    activeOperation.errorMessage = message;
+    return {
+      exitCode: -1,
+      output: note,
+      logFile,
+      lastFile,
+      provider: spawnSpec.agentCliProvider,
+      agentCliProvider: spawnSpec.agentCliProvider,
+      command: spawnSpec.command,
+      agentCliCommand: spawnSpec.command,
+      operationKey,
+      activity: agentCliActivity(activeOperation),
+      errorMessage: message,
+      timedOut: false,
+      timeoutMs,
+    };
+  }
 
   const nextOperationKey = bindRuntimeOperation({
     runtime,
@@ -309,8 +360,16 @@ async function runAgentCliAttempt(options) {
   let output = '';
   let stdoutOutput = '';
   let spawnError = null;
+  // 子进程 stdout/stderr 以流式 chunk 到达；多字节 UTF-8 序列可能跨 chunk 边界被截断，
+  // 且 Windows 原生错误（如 WinError 206「文件名或扩展名太长」）以系统 ANSI（中文环境为 GBK）编码。
+  // 直接 toString('utf8') 会把无效字节替换为 U+FFFD，产生「锟斤拷」乱码且丢失原文。
+  // 这里用每个流独立的流式解码器：优先按 UTF-8 流式解码；若检测到无效 UTF-8，回退到 GB18030 解码。
+  const chunkDecoders = {
+    stdout: createChunkDecoder(),
+    stderr: createChunkDecoder(),
+  };
   const handleChunk = (chunk, source) => {
-    const text = chunk.toString('utf8');
+    const text = chunkDecoders[source].decode(chunk);
     output += text;
     if (source === 'stdout') stdoutOutput += text;
     safeWriteStream(stream, text);
@@ -439,6 +498,10 @@ async function runAgentCliAttempt(options) {
     activeOperation.errorMessage = errorMessage;
   }
 
+  if (promptSpillover) {
+    removePromptSpilloverFile(promptSpillover.filePath);
+  }
+
   return {
     exitCode,
     output,
@@ -486,8 +549,12 @@ async function listOpenCodeSessions({ command, workspace, env, waitForChild }) {
   let stdout = '';
   let stderr = '';
   let spawnError = null;
-  if (child.stdout) child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
-  if (child.stderr) child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+  const listDecoders = {
+    stdout: createChunkDecoder(),
+    stderr: createChunkDecoder(),
+  };
+  if (child.stdout) child.stdout.on('data', (chunk) => { stdout += listDecoders.stdout.decode(chunk); });
+  if (child.stderr) child.stderr.on('data', (chunk) => { stderr += listDecoders.stderr.decode(chunk); });
   child.on('error', (error) => {
     spawnError = error;
   });
@@ -511,6 +578,37 @@ function normalizeComparablePath(value) {
   return text ? path.resolve(text).toLowerCase() : '';
 }
 
+// 子进程输出的解码助手。CLI 正常输出为 UTF-8，但 Windows 原生错误（如 WinError 206）
+// 和部分 shim 以系统 ANSI（中文环境为 GBK/GB18030）输出；直接 toString('utf8') 会把
+// GBK 字节替换成 U+FFFD 产生「锟斤拷」乱码。默认按 UTF-8（fatal）流式解码（可缓冲跨 chunk
+// 的多字节边界），一旦命中非法 UTF-8 字节即判定为 ANSI(GBK) 流并切换到 GB18030。
+function createChunkDecoder() {
+  let utf8 = null;
+  try {
+    utf8 = new TextDecoder('utf-8', { fatal: true });
+  } catch (_) { utf8 = null; /* 无完整 ICU 时回退 toString('utf8') */ }
+  let fallback = null;
+  return {
+    decode(chunk) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk || '');
+      if (utf8) {
+        try {
+          return utf8.decode(buf, { stream: true });
+        } catch (_) {
+          fallback = fallback || safeGb18030Decoder();
+          if (!fallback) return buf.toString('utf8');
+          return fallback.decode(buf, { stream: true });
+        }
+      }
+      return buf.toString('utf8');
+    },
+  };
+}
+
+function safeGb18030Decoder() {
+  try { return new TextDecoder('gb18030'); } catch (_) { return null; }
+}
+
 function safeWriteStream(stream, text) {
   if (!stream || stream.destroyed || stream.writableEnded || stream.writableFinished) return false;
   try {
@@ -519,6 +617,74 @@ function safeWriteStream(stream, text) {
   } catch {
     return false;
   }
+}
+
+// Windows 命令行长度有两层上限：
+//  - 经 cmd.exe /d /s /c 执行的 .bat/.cmd shim：cmd.exe 的命令行缓冲上限仅 8191 字符；
+//  - 直接 CreateProcess 调用 .exe：上限约 32767 字符。
+// opencode 的 run 子命令只能以位置参数接收 prompt（不读 stdin），prompt 连同 run 自身参数、
+// 引号转义、call 前缀和 /d /s /c 开销累计后一旦超过对应上限，会让进程根本起不来
+// （cmd.exe 路径表现为「命令行太长」，CreateProcess 路径为 WinError 206）。
+// 这里按估算的「最终命令行字符数」判断是否需要把 prompt 落盘为附件文件、改用 -f 投递，
+// 位置参数只保留简短指针消息。仅 promptSource=argument 需要。
+const WIN_CMD_LIMIT = 8191;
+const WIN_CREATEPROCESS_LIMIT = 32767;
+const PROMPT_ARG_SAFETY_MARGIN = 1024; // 预留 run 子命令自身参数 + 引号/call/转义开销的余量
+
+function writePromptSpilloverFile(spawnSpec, prompt, workspace) {
+  if (!spawnSpec || spawnSpec.promptSource !== 'argument') return null;
+  const text = typeof prompt === 'string' ? prompt : '';
+  const promptChars = text.length;
+  const limit = effectiveCommandLineLimit(spawnSpec) - PROMPT_ARG_SAFETY_MARGIN;
+  const baseChars = estimatedCommandLineChars(spawnSpec, '');
+  if (baseChars + promptChars <= limit) return null;
+  try {
+    const tmpDir = path.join(workspace, 'docs', 'progress', 'prompt-tmp');
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const filePath = path.join(tmpDir, `prompt-${stamp}.md`);
+    fs.writeFileSync(filePath, text, 'utf8');
+    return { filePath, promptBytes: Buffer.byteLength(text, 'utf8'), promptChars, pointerMessage: '完整指令见随附的 prompt 文件，请按其内容执行。' };
+  } catch {
+    return null;
+  }
+}
+
+// 判定该 spawn 走哪条路径，取对应命令行字符上限。
+function effectiveCommandLineLimit(spawnSpec) {
+  if (process.platform !== 'win32') return Number.MAX_SAFE_INTEGER;
+  const shell = spawnSpec.useShell;
+  // useShell=true 或命令解析为 .bat/.cmd 时，都会经 cmd.exe，受 8191 上限约束。
+  if (shell) return WIN_CMD_LIMIT;
+  if (isWindowsCmdShim(spawnSpec.command)) return WIN_CMD_LIMIT;
+  return WIN_CREATEPROCESS_LIMIT;
+}
+
+function isWindowsCmdShim(command) {
+  if (process.platform !== 'win32') return false;
+  return /\.(?:bat|cmd)$/i.test(resolveWindowsCommand(command));
+}
+
+// 估算「最终命令行字符数」，尽量贴近 agentCliExecutionSpec 实际拼出的命令行长度。
+// 给定额外的 prompt 片段（spill 时为空），返回完整命令行（含转义/引用）的字符数。
+function estimatedCommandLineChars(spawnSpec, extraPrompt) {
+  const args = [...(spawnSpec.args || []), ...(extraPrompt ? [extraPrompt] : [])];
+  if (process.platform !== 'win32' || spawnSpec.useShell) {
+    // useShell=true 时 Node 自行拼装 `command arg1 arg2`，按字符数估算即可。
+    return [spawnSpec.command, ...args].join(' ').length;
+  }
+  const resolvedCommand = resolveWindowsCommand(spawnSpec.command);
+  if (!/\.(?:bat|cmd)$/i.test(resolvedCommand)) {
+    return [resolvedCommand, ...args].join(' ').length;
+  }
+  // 走 cmd.exe /d /s /c "call <cmd> <args>"：cmd.exe 的命令行即第 4 个参数字符串长度。
+  return windowsCmdLine(resolvedCommand, args).length;
+}
+
+function removePromptSpilloverFile(filePath) {
+  try {
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch { /* 清理失败忽略，避免掩盖真正的运行结果 */ }
 }
 
 function bindRuntimeOperation({ runtime, child, activeOperation, operationKey, registerRuntimeOperation }) {
@@ -621,15 +787,19 @@ function readableAgentCliLastFileError({ provider, command, lastFile, error }) {
 module.exports = {
   AGENT_CLI_PROVIDERS,
   DEFAULT_AGENT_CLI_PROVIDER,
+  WIN_CMD_LIMIT,
+  WIN_CREATEPROCESS_LIMIT,
   agentCliSpawnSpec,
   claudeCliArgs,
   claudeSessionArgs,
   codexNewSessionArgs,
   codexResumeSessionArgs,
+  createChunkDecoder,
   ompCliArgs,
   normalizeCodexReasoningEffort,
   normalizeAgentCliCommand,
   normalizeAgentCliProvider,
   readableAgentCliError,
   runAgentCliAttempt,
+  writePromptSpilloverFile,
 };

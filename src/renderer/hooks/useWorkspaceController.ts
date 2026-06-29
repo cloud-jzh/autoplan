@@ -78,6 +78,7 @@ export function useWorkspaceController() {
     agentCliProvider: 'codex',
     agentCliCommand: '',
     codexReasoningEffort: defaultCodexReasoningEffort,
+    envVars: [],
   });
   const [loopFormDirty, setLoopFormDirty] = useState(false);
   const { mcpForm, mcpAuthTokenTouched, setMcpForm, resetMcpForm } = useMcpConfigForm(snapshot?.mcp, projectId);
@@ -149,7 +150,7 @@ export function useWorkspaceController() {
     if (!state || Number(state.project_id) !== Number(projectId)) return;
     const nextForm = loopFormFromProjectState(state);
     setLoopForm((current) => (loopFormDirty || loopFormsEqual(current, nextForm) ? current : nextForm));
-  }, [projectId, loopFormDirty, state?.project_id, state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
+  }, [projectId, loopFormDirty, state?.project_id, state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state?.env_vars, state]);
 
   useEffect(() => {
     setLoopFormDirty(false);
@@ -397,6 +398,21 @@ export function useWorkspaceController() {
   const unacceptItem = (targetType: 'plan' | 'task', id: number) =>
     runLoopAction(() => window.autoplan.unacceptItem({ projectId, targetType, id }));
 
+  const acceptItems = (targets: { targetType: 'plan' | 'task'; id: number }[]) => {
+    if (!targets || targets.length === 0) return; // 空列表短路，不发 IPC（后端亦拒绝）
+    return runLoopAction(() => window.autoplan.acceptItems({
+      projectId,
+      targets: targets.map((t) => ({ projectId, targetType: t.targetType, id: t.id })),
+    }));
+  };
+  const unacceptItems = (targets: { targetType: 'plan' | 'task'; id: number }[]) => {
+    if (!targets || targets.length === 0) return; // 空列表短路，不发 IPC（后端亦拒绝）
+    return runLoopAction(() => window.autoplan.unacceptItems({
+      projectId,
+      targets: targets.map((t) => ({ projectId, targetType: t.targetType, id: t.id })),
+    }));
+  };
+
   const interruptIntake = useCallback(
     async (type: IntakeType, id: number) => {
       try {
@@ -570,6 +586,7 @@ export function useWorkspaceController() {
     activeTab,
     acceptanceGroups,
     acceptItem,
+    acceptItems,
     addPendingFiles,
     appendIntakeTask,
     closePlanReader,
@@ -618,6 +635,7 @@ export function useWorkspaceController() {
     submitLoopConfig,
     switchProject,
     unacceptItem,
+    unacceptItems,
     updateComposerDraft,
     updateFeedback,
     updateLoopForm,

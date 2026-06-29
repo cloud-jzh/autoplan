@@ -271,6 +271,20 @@
       .sc-name { font-size: 14.5px; font-weight: 700; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .sc-path { font-size: 11.5px; color: var(--text-3); margin-top: 3px; font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .sc-toggle { flex: 0 0 auto; }
+      .sc-run {
+        flex: 0 0 auto; width: 30px; height: 30px;
+        display: grid; place-items: center; padding: 0;
+        border: 1px solid var(--line); border-radius: var(--r-sm);
+        background: var(--bg-soft); color: var(--text-2);
+        cursor: pointer; line-height: 0;
+        transition: background .16s, color .16s, border-color .16s, transform .08s;
+      }
+      .sc-run .icon { width: 14px; height: 14px; }
+      .sc-run:hover { background: var(--brand-50); color: var(--brand-600); border-color: #cdd8ea; }
+      .sc-run:active { transform: translateY(1px); }
+      /* 运行中态（stop 图标）：success 高亮，提示点击即停止 */
+      .sc-run.running { background: var(--success-bg); color: var(--success); border-color: #bce8cd; }
+      .sc-run.running:hover { border-color: var(--success); }
       .sc-desc {
         font-size: 12.5px; color: var(--text-2); line-height: 1.55; margin-top: 12px;
         display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
@@ -573,12 +587,13 @@
                   <div class="sc-name">验收前置检查</div>
                   <div class="sc-path">scripts/pre-validation.node</div>
                 </div>
+                <button class="sc-run" type="button" title="运行" aria-label="运行脚本"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-play"></use></svg></button>
                 <button class="toggle sm on sc-toggle" title="启用/禁用"></button>
               </div>
               <div class="sc-desc">在执行验收命令前先跑 lint 与类型检查，失败则中断验收并把错误写入 stderr。</div>
               <div class="sc-mid">
                 <span class="tag node">.node</span>
-                <span class="sc-trigger"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-bolt"></use></svg>验收前</span>
+                <span class="sc-trigger"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-clock"></use></svg>*/5 * * * *</span>
               </div>
               <div class="sc-foot">
                 <span class="sc-led ok"></span>
@@ -595,6 +610,7 @@
                   <div class="sc-name">代码格式化</div>
                   <div class="sc-path">scripts/format.sh</div>
                 </div>
+                <button class="sc-run" type="button" title="运行" aria-label="运行脚本"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-play"></use></svg></button>
                 <button class="toggle sm on sc-toggle" title="启用/禁用"></button>
               </div>
               <div class="sc-desc">每个任务执行后自动运行 dart format，统一代码风格，产物不理想会保留 diff。</div>
@@ -617,6 +633,7 @@
                   <div class="sc-name">部署通知</div>
                   <div class="sc-path">scripts/deploy-notify.py</div>
                 </div>
+                <button class="sc-run" type="button" title="运行" aria-label="运行脚本"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-play"></use></svg></button>
                 <button class="toggle sm on sc-toggle" title="启用/禁用"></button>
               </div>
               <div class="sc-desc">循环结束后向团队 IM 推送本次计划摘要与产物链接，失败自动重试一次。</div>
@@ -639,6 +656,7 @@
                   <div class="sc-name">构建产物检查</div>
                   <div class="sc-path">scripts/check-build.node</div>
                 </div>
+                <button class="sc-run" type="button" title="运行" aria-label="运行脚本"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-play"></use></svg></button>
                 <button class="toggle sm sc-toggle" title="启用/禁用"></button>
               </div>
               <div class="sc-desc">手动触发：构建 release 包并校验产物体积、签名清单，输出报告到 build-report 目录。</div>
@@ -661,6 +679,7 @@
                   <div class="sc-name">失败告警</div>
                   <div class="sc-path">scripts/alert-on-fail.py</div>
                 </div>
+                <button class="sc-run" type="button" title="运行" aria-label="运行脚本"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-play"></use></svg></button>
                 <button class="toggle sm on sc-toggle" title="启用/禁用"></button>
               </div>
               <div class="sc-desc">任务或验收失败时发送告警，附带 plan、任务 key 和最近日志路径。</div>
@@ -803,9 +822,10 @@
                     <div class="segment">
                       <button class="active"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-bolt"></use></svg>自动钩子</button>
                       <button><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-power"></use></svg>仅手动</button>
+                      <button><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-clock"></use></svg>定时</button>
                     </div>
                   </div>
-                  <div class="field">
+                  <div class="field" id="hookField">
                     <label>挂载阶段（循环钩子）</label>
                     <div class="hook-grid">
                       <div class="hook-opt"><span class="hook-radio"></span><span class="ho-label">计划生成后</span><span class="ho-code">plan:after</span></div>
@@ -816,6 +836,15 @@
                     </div>
                   </div>
                 </div>
+              </div>
+
+                  <div class="field" id="cronField" style="display:none">
+                    <label>定时表达式（cron）</label>
+                    <input class="mono" type="text" value="*/5 * * * *" placeholder="*/5 * * * *" spellcheck="false" />
+                    <span class="field-hint">5 字段标准 cron（分 时 日 月 周），支持 *、,、-、/。当前每 5 分钟执行一次</span>
+                  </div>
+                </div>
+              </div>
               </div>
 
               <div class="cfg-card">
@@ -941,6 +970,31 @@
           t.classList.toggle("on");
           const card = t.closest(".script-card");
           if (card) card.classList.toggle("disabled", !t.classList.contains("on"));
+        })
+      );
+
+      // ---------- 卡片「运行/停止」按钮（演示） ----------
+      document.querySelectorAll(".sc-run").forEach((btn) =>
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const running = btn.classList.toggle("running");
+          btn.title = running ? "停止" : "运行";
+          btn.setAttribute("aria-label", running ? "停止脚本" : "运行脚本");
+          const use = btn.querySelector("use");
+          if (use) use.setAttribute("href", running ? "#icon-stop" : "#icon-play");
+        })
+      );
+
+      // ---------- 触发方式 segment 切换 ----------
+      document.querySelectorAll("#scriptModal .segment button").forEach((btn) =>
+        btn.addEventListener("click", () => {
+          document.querySelectorAll("#scriptModal .segment button").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          const isSchedule = btn.textContent.trim().includes("定时");
+          const hookField = document.getElementById("hookField");
+          const cronField = document.getElementById("cronField");
+          if (hookField) hookField.style.display = isSchedule ? "none" : "";
+          if (cronField) cronField.style.display = isSchedule ? "" : "none";
         })
       );
 

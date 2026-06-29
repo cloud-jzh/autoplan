@@ -1,14 +1,21 @@
 const { describe, it } = require('node:test');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const {
   AGENT_CLI_PROVIDERS,
+  WIN_CMD_LIMIT,
+  WIN_CREATEPROCESS_LIMIT,
   agentCliSpawnSpec,
   claudeCliArgs,
   claudeSessionArgs,
   codexNewSessionArgs,
   codexResumeSessionArgs,
+  createChunkDecoder,
   normalizeAgentCliProvider,
   normalizeCodexReasoningEffort,
+  writePromptSpilloverFile,
 } = require('./agentCli');
 
 function expectEqual(actual, expected) {
@@ -26,6 +33,12 @@ function expectIncludes(items, expected) {
 function expectNotIncludes(items, expected) {
   if (items.includes(expected)) {
     throw new Error(`Expected ${JSON.stringify(items)} not to include ${JSON.stringify(expected)}`);
+  }
+}
+
+function expectTruthy(value) {
+  if (!value) {
+    throw new Error(`Expected ${JSON.stringify(value)} to be truthy`);
   }
 }
 
@@ -235,5 +248,100 @@ describe('Oh My Pi backend spec', () => {
     expectNotIncludes(spec.args, '--format');
     expectNotIncludes(spec.args, '--session');
     expectNotIncludes(spec.args, '--title');
+  });
+});
+
+describe('OpenCode prompt spillover (命令行长度上限规避)', () => {
+  it('returns null for short prompts under the effective limit', () => {
+    const spec = agentCliSpawnSpec('opencode', 'opencode', 'last.txt');
+    const result = writePromptSpilloverFile(spec, 'short prompt', os.tmpdir());
+    expectEqual(result, null);
+  });
+
+  it('returns null for non-argument prompt sources (codex/claude/oh-my-pi)', () => {
+    const longPrompt = 'x'.repeat(WIN_CMD_LIMIT + 1000);
+    const stdinSpec = agentCliSpawnSpec('codex', 'codex', 'last.txt', ['exec']);
+    expectEqual(writePromptSpilloverFile(stdinSpec, longPrompt, os.tmpdir()), null);
+    const claudeSpec = agentCliSpawnSpec('claude', 'claude', 'last.txt');
+    expectEqual(writePromptSpilloverFile(claudeSpec, longPrompt, os.tmpdir()), null);
+  });
+
+  it('writes a long OpenCode prompt to a temp file and returns a pointer + -f path', () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-spillover-'));
+    try {
+      const spec = agentCliSpawnSpec('opencode', 'opencode', 'last.txt');
+      // 远超 cmd.exe 8191 上限（按字符数判断，cmd.exe/.cmd shim 路径）
+      const longPrompt = '需求：' + '丰富内容'.repeat(5000);
+      const spillover = writePromptSpilloverFile(spec, longPrompt, tmpRoot);
+      expectTruthy(spillover);
+      expectTruthy(spillover.filePath);
+      expectTruthy(spillover.promptChars > WIN_CMD_LIMIT);
+      expectIncludes(spillover.pointerMessage, 'prompt');
+      // 文件确实落盘且内容与原 prompt 一致
+      expectTruthy(fs.existsSync(spillover.filePath));
+      expectEqual(fs.readFileSync(spillover.filePath, 'utf8'), longPrompt);
+      // 落在 progress/prompt-tmp 目录下
+      expectIncludes(spillover.filePath, path.join('docs', 'progress', 'prompt-tmp'));
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('spills prompts that exceed the cmd.exe 8191 limit (the requirement-#6 scenario)', () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-spillover-'));
+    try {
+      const spec = agentCliSpawnSpec('opencode', 'opencode', 'last.txt');
+      // 需求 #6 实际生成的 prompt 约 14700 字符：8 字符正文 + 自动注入的 README/目录上下文，
+      // 远超 cmd.exe 的 8191 字符上限，必须触发落盘。这是「命令行太长」失败的复现场景。
+      const prompt = 'x'.repeat(14700);
+      const spillover = writePromptSpilloverFile(spec, prompt, tmpRoot);
+      expectTruthy(spillover);
+      expectTruthy(spillover.promptChars === 14700);
+      // 落盘后位置参数（指针消息）远小于上限
+      expectTruthy(spillover.pointerMessage.length < WIN_CMD_LIMIT);
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('does not spill a moderate prompt that fits within cmd.exe limit', () => {
+    const spec = agentCliSpawnSpec('opencode', 'opencode', 'last.txt');
+    // ~4000 字符的 prompt：加上 run 子命令参数和余量后仍在 8191 之内，不应落盘
+    const prompt = 'x'.repeat(4000);
+    expectEqual(writePromptSpilloverFile(spec, prompt, os.tmpdir()), null);
+  });
+});
+
+describe('Chunk decoder (GBK/UTF-8 容错解码)', () => {
+  it('decodes valid UTF-8 chunks unchanged (including split multibyte sequences)', () => {
+    const decoder = createChunkDecoder();
+    const full = Buffer.from('你好，世界 hello', 'utf8');
+    const mid = Math.floor(full.length / 2);
+    const out = decoder.decode(full.subarray(0, mid)) + decoder.decode(full.subarray(mid));
+    expectEqual(out, '你好，世界 hello');
+  });
+
+  it('decodes GBK/GB18030 bytes instead of producing U+FFFD mojibake', () => {
+    const decoder = createChunkDecoder();
+    // 「文件名或扩展名太长」(WinError 206) 的 GBK 字节
+    const gbk = Buffer.from('cec4bcfec3fbbbf2c0a9d5b9c3fbccabb3a4', 'hex');
+    const out = decoder.decode(gbk);
+    expectEqual(out, '文件名或扩展名太长');
+    // 关键：不应出现替换字符（锟斤拷）
+    expectNotIncludes(out, '\uFFFD');
+  });
+
+  it('keeps ASCII prefixes intact when mixed with GBK bytes', () => {
+    const decoder = createChunkDecoder();
+    const mixed = Buffer.concat([Buffer.from('Error: '), Buffer.from('b4edcef3', 'hex')]); // Error: 错误
+    expectEqual(decoder.decode(mixed), 'Error: 错误');
+  });
+
+  it('tolerates ANSI errors without throwing even for partial GBK tails', () => {
+    const decoder = createChunkDecoder();
+    const truncated = Buffer.from('cec4bcfec3fbbbf2c0a9d5b9c3fbccab', 'hex'); // 少一个字节
+    const out = decoder.decode(truncated);
+    // 不抛异常；可读部分保留，至多末尾一个替换字符
+    expectTruthy(out.includes('文件名或扩展名'));
   });
 });

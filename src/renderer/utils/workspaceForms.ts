@@ -9,6 +9,7 @@ import type {
   AgentCliProvider,
   CodexReasoningEffort,
   CreateScriptInput,
+  EnvVarEntry,
   IntakeType,
   LoopConfigInput,
   McpConfigInput,
@@ -88,6 +89,7 @@ export type LoopFormState = {
   agentCliProvider: string;
   agentCliCommand: string;
   codexReasoningEffort: CodexReasoningEffort;
+  envVars: EnvVarEntry[];
 };
 
 export type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
@@ -223,6 +225,17 @@ export function agentCliDefaultCommand(provider?: string | null) {
 }
 
 export function loopFormFromProjectState(state: ProjectState): LoopFormState {
+  let envVars: EnvVarEntry[] = [];
+  if (state.env_vars) {
+    try {
+      const parsed = JSON.parse(state.env_vars);
+      if (Array.isArray(parsed)) {
+        envVars = parsed
+          .filter((entry) => entry != null && typeof entry === 'object')
+          .map((entry) => ({ name: String((entry as Record<string, unknown>).name ?? ''), value: String((entry as Record<string, unknown>).value ?? '') }));
+      }
+    } catch { /* JSON 解析失败降级为 [] */ }
+  }
   return {
     workspacePath: state.workspace_path || '',
     intervalSeconds: String(state.interval_seconds || 5),
@@ -230,6 +243,7 @@ export function loopFormFromProjectState(state: ProjectState): LoopFormState {
     agentCliProvider: state.agent_cli_provider || 'codex',
     agentCliCommand: state.agent_cli_command || '',
     codexReasoningEffort: normalizeCodexReasoningEffort(state.codex_reasoning_effort),
+    envVars,
   };
 }
 
@@ -245,6 +259,10 @@ export function loopConfigurePayloadFromForm(projectId: number, form: LoopFormSt
   if (isCodexAgentCliProvider(form.agentCliProvider)) {
     payload.codexReasoningEffort = form.codexReasoningEffort;
   }
+  const envVars = normalizeEnvVarEntries(form.envVars);
+  if (envVars.length > 0) {
+    payload.envVars = envVars;
+  }
   return payload;
 }
 
@@ -254,7 +272,27 @@ export function loopFormsEqual(left: LoopFormState, right: LoopFormState) {
     && left.validationCommand === right.validationCommand
     && left.agentCliProvider === right.agentCliProvider
     && left.agentCliCommand === right.agentCliCommand
-    && left.codexReasoningEffort === right.codexReasoningEffort;
+    && left.codexReasoningEffort === right.codexReasoningEffort
+    && envVarsEqual(left.envVars, right.envVars);
+}
+
+function envVarsEqual(a: EnvVarEntry[] = [], b: EnvVarEntry[] = []) {
+  if (a.length !== b.length) return false;
+  return a.every((entry, i) => entry.name === b[i].name && entry.value === b[i].value);
+}
+
+function normalizeEnvVarEntries(entries: EnvVarEntry[]): EnvVarEntry[] {
+  if (!Array.isArray(entries)) return [];
+  const seen = new Set<string>();
+  const result: EnvVarEntry[] = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') continue;
+    const name = String(entry.name ?? '').trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    result.push({ name, value: String(entry.value ?? '') });
+  }
+  return result;
 }
 
 /* ===================== MCP 配置 draft 表单（设置面板） ===================== */
@@ -419,6 +457,8 @@ export type ScriptDraftState = {
   failAborts: boolean;
   contextInject: ScriptContextInject;
   enabled: boolean;
+  /** 定时 cron 表达式（仅 triggerMode='schedule' 时序列化入库；其它模式保留草稿值以便切回不丢） */
+  scheduleCron: string;
 };
 
 function readScriptRuntime(value: unknown): ScriptRuntime {
@@ -430,7 +470,9 @@ function readScriptSourceType(value: unknown): ScriptSourceType {
 }
 
 function readScriptTriggerMode(value: unknown): ScriptTriggerMode {
-  return value === 'hook' ? 'hook' : 'manual';
+  if (value === 'hook') return 'hook';
+  if (value === 'schedule') return 'schedule';
+  return 'manual';
 }
 
 function readScriptContextInject(value: unknown): ScriptContextInject {
@@ -458,6 +500,7 @@ export function createScriptDraft(script: Script | null): ScriptDraftState {
       failAborts: false,
       contextInject: 'env',
       enabled: true,
+      scheduleCron: '*/5 * * * *',
     };
   }
   const timeoutSeconds = Number(script.timeout_seconds ?? script.timeoutSeconds);
@@ -476,6 +519,7 @@ export function createScriptDraft(script: Script | null): ScriptDraftState {
     failAborts: Boolean(script.fail_aborts ?? script.failAborts),
     contextInject: readScriptContextInject(script.context_inject ?? script.contextInject),
     enabled: Boolean(script.enabled),
+    scheduleCron: script.schedule_cron ?? script.scheduleCron ?? '',
   };
 }
 
@@ -493,6 +537,7 @@ export function validateScriptDraft(draft: ScriptDraftState): string | null {
   if (!name) return '请填写脚本名称';
   if (name.length > 120) return '脚本名称过长（最多 120 字符）';
   if (draft.triggerMode === 'hook' && !draft.hookStage) return '自动钩子需选择挂载阶段';
+  if (draft.triggerMode === 'schedule' && !draft.scheduleCron.trim()) return '定时任务需填写 cron 表达式';
   if (draft.sourceType === 'file' && !draft.path.trim()) return '选择文件来源时需指定脚本文件';
   const timeout = parseScriptTimeoutSeconds(draft.timeoutSeconds);
   if (timeout === null) return '超时秒数需为正整数';
@@ -510,6 +555,7 @@ export function scriptCreateInputFromDraft(projectId: number, draft: ScriptDraft
     body: draft.body,
     triggerMode: draft.triggerMode,
     hookStage: draft.triggerMode === 'hook' ? draft.hookStage : null,
+    scheduleCron: draft.triggerMode === 'schedule' ? draft.scheduleCron.trim() : null,
     workDir: draft.workDir.trim(),
     timeoutSeconds: parseScriptTimeoutSeconds(draft.timeoutSeconds) ?? SCRIPT_DEFAULT_TIMEOUT_SECONDS,
     failAborts: draft.failAborts ? 1 : 0,

@@ -281,3 +281,302 @@ describe('验收事件流', () => {
     }
   });
 });
+
+describe('acceptItems 批量验收', () => {
+  it('批量验收混合 plan+task 目标：全部置 accepted_at 为非空，status 不变', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      const result = fixture.loop.acceptItems(fixture.projectId, [
+        { targetType: 'plan', id: fixture.planId },
+        { targetType: 'task', id: fixture.completedTaskId },
+        { targetType: 'task', id: fixture.doneTaskId },
+      ]);
+      assert.equal(result.accepted, 3, '应返回 accepted=3');
+      assert.equal(result.items.length, 3, 'items 数量应为 3');
+      result.items.forEach((item) => assertIsoString(item.accepted_at, `item#${item.id}.accepted_at`));
+
+      const plan = fixture.db.get('SELECT * FROM plans WHERE id = ?', [fixture.planId]);
+      assertIsoString(plan.accepted_at, '批量验收后 plan.accepted_at');
+      assert.equal(plan.status, 'completed', '批量验收不应改变计划执行态 status');
+
+      for (const taskId of [fixture.completedTaskId, fixture.doneTaskId]) {
+        const task = fixture.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+        assertIsoString(task.accepted_at, `批量验收后 task#${taskId}.accepted_at`);
+        assert.ok(
+          ['completed', 'done', 'passed'].includes(task.status),
+          `批量验收不应改变任务#${taskId} 执行态 status（当前 ${task.status}）`,
+        );
+      }
+
+      const passedTask = fixture.db.get('SELECT accepted_at FROM plan_tasks WHERE id = ?', [fixture.passedTaskId]);
+      assert.equal(passedTask.accepted_at, null, '批量验收未包含的任务 accepted_at 应为 NULL');
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('原子性：含未完成任务时整体抛错且无任何行被写入', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      assert.throws(
+        () => fixture.loop.acceptItems(fixture.projectId, [
+          { targetType: 'plan', id: fixture.planId },
+          { targetType: 'task', id: fixture.pendingTaskId },
+        ]),
+        /仅可验收已完成的计划\/任务/,
+        '含未完成目标应整体抛错',
+      );
+      const plan = fixture.db.get('SELECT accepted_at FROM plans WHERE id = ?', [fixture.planId]);
+      assert.equal(plan.accepted_at, null, '原子性失败后合法目标的 accepted_at 应仍为 NULL');
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('原子性：含不存在目标时整体抛错且不写任何行', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      assert.throws(
+        () => fixture.loop.acceptItems(fixture.projectId, [
+          { targetType: 'task', id: fixture.completedTaskId },
+          { targetType: 'plan', id: fixture.planId + 9999 },
+        ]),
+        /计划不存在/,
+        '含不存在计划应整体抛错',
+      );
+      const task = fixture.db.get('SELECT accepted_at FROM plan_tasks WHERE id = ?', [fixture.completedTaskId]);
+      assert.equal(task.accepted_at, null, '原子性失败后合法任务的 accepted_at 应仍为 NULL');
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('空数组/非数组入参抛中文错误', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      assert.throws(
+        () => fixture.loop.acceptItems(fixture.projectId, []),
+        /批量验收目标列表为空/,
+        '空数组应抛中文错误',
+      );
+      assert.throws(
+        () => fixture.loop.acceptItems(fixture.projectId, null),
+        /验收目标列表无效/,
+        'null 应抛验收目标列表无效',
+      );
+      assert.throws(
+        () => fixture.loop.acceptItems(fixture.projectId, 'invalid'),
+        /验收目标列表无效/,
+        '非数组应抛验收目标列表无效',
+      );
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('幂等：含已验收项目标不报错（刷新 accepted_at 时间戳）', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      fixture.loop.acceptItem(fixture.projectId, { targetType: 'plan', id: fixture.planId });
+
+      const result = fixture.loop.acceptItems(fixture.projectId, [
+        { targetType: 'plan', id: fixture.planId },
+        { targetType: 'task', id: fixture.completedTaskId },
+      ]);
+      assert.equal(result.accepted, 2, '混合幂等应返回 accepted=2');
+
+      const plan = fixture.db.get('SELECT * FROM plans WHERE id = ?', [fixture.planId]);
+      assertIsoString(plan.accepted_at, '幂等批量验收后 plan.accepted_at 应仍为非空');
+      assert.equal(plan.status, 'completed', '幂等批量验收不应改变计划执行态');
+
+      const task = fixture.db.get('SELECT * FROM plan_tasks WHERE id = ?', [fixture.completedTaskId]);
+      assertIsoString(task.accepted_at, '幂等批量验收后 task.accepted_at 应为非空');
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('去重：同目标多次出现只处理一次（幂等不报错）', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      const result = fixture.loop.acceptItems(fixture.projectId, [
+        { targetType: 'task', id: fixture.completedTaskId },
+        { targetType: 'task', id: fixture.completedTaskId },
+        { targetType: 'task', id: fixture.completedTaskId },
+      ]);
+      assert.equal(result.accepted, 1, '去重后应返回 accepted=1');
+      assert.equal(result.items.length, 1, '去重后 items 数量应为 1');
+      const task = fixture.db.get('SELECT * FROM plan_tasks WHERE id = ?', [fixture.completedTaskId]);
+      assertIsoString(task.accepted_at, '去重验收后 task.accepted_at 应非空');
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('事件流：批量验收产生对应条数 plan.accepted / task.accepted', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      fixture.loop.acceptItems(fixture.projectId, [
+        { targetType: 'plan', id: fixture.planId },
+        { targetType: 'task', id: fixture.completedTaskId },
+        { targetType: 'task', id: fixture.doneTaskId },
+      ]);
+
+      const planAcceptedEvents = fixture.db.all(
+        'SELECT * FROM events WHERE project_id = ? AND type = ? ORDER BY id ASC',
+        [fixture.projectId, 'plan.accepted'],
+      );
+      assert.equal(planAcceptedEvents.length, 1, '批量验收应产生 1 条 plan.accepted 事件');
+      const planMeta = JSON.parse(planAcceptedEvents[0].meta);
+      assert.equal(planMeta.targetType, 'plan', 'plan.accepted meta.targetType');
+      assert.equal(Number(planMeta.id), fixture.planId, 'plan.accepted meta.id');
+      assertIsoString(planMeta.accepted_at, 'plan.accepted meta.accepted_at');
+
+      const taskAcceptedEvents = fixture.db.all(
+        'SELECT * FROM events WHERE project_id = ? AND type = ? ORDER BY id ASC',
+        [fixture.projectId, 'task.accepted'],
+      );
+      assert.equal(taskAcceptedEvents.length, 2, '批量验收应产生 2 条 task.accepted 事件');
+      taskAcceptedEvents.forEach((event) => {
+        const meta = JSON.parse(event.meta);
+        assert.equal(meta.targetType, 'task', 'task.accepted meta.targetType');
+        assertIsoString(meta.accepted_at, 'task.accepted meta.accepted_at');
+      });
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('不执行脚本：acceptItems 绝不调用 validatePlan/runShell', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      let validateCalled = false;
+      let shellCalled = false;
+      const origValidate = fixture.loop.validatePlan;
+      const origRunShell = fixture.loop.runShell;
+      fixture.loop.validatePlan = async () => { validateCalled = true; };
+      fixture.loop.runShell = async () => { shellCalled = true; return { exitCode: 0 }; };
+
+      fixture.loop.acceptItems(fixture.projectId, [
+        { targetType: 'plan', id: fixture.planId },
+        { targetType: 'task', id: fixture.completedTaskId },
+      ]);
+
+      assert.equal(validateCalled, false, 'acceptItems 不应调用 validatePlan');
+      assert.equal(shellCalled, false, 'acceptItems 不应调用 runShell');
+
+      fixture.loop.validatePlan = origValidate;
+      fixture.loop.runShell = origRunShell;
+    } finally {
+      fixture.destroy();
+    }
+  });
+});
+
+describe('unacceptItems 批量取消验收', () => {
+  it('批量取消验收置 accepted_at 为 NULL，status 不变', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      fixture.loop.acceptItem(fixture.projectId, { targetType: 'plan', id: fixture.planId });
+      fixture.loop.acceptItem(fixture.projectId, { targetType: 'task', id: fixture.completedTaskId });
+      fixture.loop.acceptItem(fixture.projectId, { targetType: 'task', id: fixture.doneTaskId });
+
+      const result = fixture.loop.unacceptItems(fixture.projectId, [
+        { targetType: 'plan', id: fixture.planId },
+        { targetType: 'task', id: fixture.completedTaskId },
+      ]);
+      assert.equal(result.unaccepted, 2, '应返回 unaccepted=2');
+      assert.equal(result.items.length, 2, 'items 数量应为 2');
+      result.items.forEach((item) => assert.equal(item.accepted_at, null, `item#${item.id}.accepted_at 应为 null`));
+
+      const plan = fixture.db.get('SELECT * FROM plans WHERE id = ?', [fixture.planId]);
+      assert.equal(plan.accepted_at, null, '取消验收后 plan.accepted_at 应为 NULL');
+      assert.equal(plan.status, 'completed', '取消验收不应改变计划执行态');
+
+      const task = fixture.db.get('SELECT * FROM plan_tasks WHERE id = ?', [fixture.completedTaskId]);
+      assert.equal(task.accepted_at, null, '取消验收后 task.accepted_at 应为 NULL');
+      assert.equal(task.status, 'completed', '取消验收不应改变任务执行态');
+
+      const doneTask = fixture.db.get('SELECT accepted_at FROM plan_tasks WHERE id = ?', [fixture.doneTaskId]);
+      assertIsoString(doneTask.accepted_at, '批量取消未包含的已验收任务 accepted_at 应保持非空');
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('幂等：含未验收项不报错（保持 NULL）', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      fixture.loop.acceptItem(fixture.projectId, { targetType: 'task', id: fixture.completedTaskId });
+
+      const result = fixture.loop.unacceptItems(fixture.projectId, [
+        { targetType: 'task', id: fixture.completedTaskId },
+        { targetType: 'plan', id: fixture.planId },
+      ]);
+      assert.equal(result.unaccepted, 2, '混合幂等应返回 unaccepted=2');
+
+      const task = fixture.db.get('SELECT accepted_at FROM plan_tasks WHERE id = ?', [fixture.completedTaskId]);
+      assert.equal(task.accepted_at, null, '已验收任务取消后 accepted_at 应为 NULL');
+
+      const plan = fixture.db.get('SELECT accepted_at FROM plans WHERE id = ?', [fixture.planId]);
+      assert.equal(plan.accepted_at, null, '未验收计划取消后 accepted_at 仍为 NULL');
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('事件流：批量取消验收产生 plan.unaccepted / task.unaccepted', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      fixture.loop.acceptItem(fixture.projectId, { targetType: 'plan', id: fixture.planId });
+      fixture.loop.acceptItem(fixture.projectId, { targetType: 'task', id: fixture.completedTaskId });
+
+      fixture.loop.unacceptItems(fixture.projectId, [
+        { targetType: 'plan', id: fixture.planId },
+        { targetType: 'task', id: fixture.completedTaskId },
+      ]);
+
+      const planUnaccepted = fixture.db.all(
+        'SELECT * FROM events WHERE project_id = ? AND type = ?',
+        [fixture.projectId, 'plan.unaccepted'],
+      );
+      assert.equal(planUnaccepted.length, 1, '批量取消验收应产生 1 条 plan.unaccepted 事件');
+      const planMeta = JSON.parse(planUnaccepted[0].meta);
+      assert.equal(planMeta.accepted_at, null, 'plan.unaccepted meta.accepted_at 应为 null');
+
+      const taskUnaccepted = fixture.db.all(
+        'SELECT * FROM events WHERE project_id = ? AND type = ?',
+        [fixture.projectId, 'task.unaccepted'],
+      );
+      assert.equal(taskUnaccepted.length, 1, '批量取消验收应产生 1 条 task.unaccepted 事件');
+      const taskMeta = JSON.parse(taskUnaccepted[0].meta);
+      assert.equal(taskMeta.accepted_at, null, 'task.unaccepted meta.accepted_at 应为 null');
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('不执行脚本：unacceptItems 绝不调用 validatePlan/runShell', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      fixture.loop.acceptItem(fixture.projectId, { targetType: 'plan', id: fixture.planId });
+
+      let validateCalled = false;
+      let shellCalled = false;
+      const origValidate = fixture.loop.validatePlan;
+      const origRunShell = fixture.loop.runShell;
+      fixture.loop.validatePlan = async () => { validateCalled = true; };
+      fixture.loop.runShell = async () => { shellCalled = true; return { exitCode: 0 }; };
+
+      fixture.loop.unacceptItems(fixture.projectId, [{ targetType: 'plan', id: fixture.planId }]);
+
+      assert.equal(validateCalled, false, 'unacceptItems 不应调用 validatePlan');
+      assert.equal(shellCalled, false, 'unacceptItems 不应调用 runShell');
+
+      fixture.loop.validatePlan = origValidate;
+      fixture.loop.runShell = origRunShell;
+    } finally {
+      fixture.destroy();
+    }
+  });
+});

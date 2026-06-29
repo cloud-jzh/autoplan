@@ -7,6 +7,7 @@ const { saveAttachments } = require('./attachments');
 const { AppDatabase, nowIso } = require('./database');
 const { createIntakeService, titleFromBody } = require('./intakeService');
 const { LoopService, nextIntakeAgentCliConfig } = require('./loopService');
+const { parseCron } = require('./loop/scriptHooks');
 const { mcpServerConfig, saveMcpSettings } = require('./mcpConfig');
 const { createMcpServer } = require('./mcpServer');
 
@@ -206,6 +207,20 @@ ipcMain.handle('acceptance:unaccept', (_event, input = {}) => {
   return loop.snapshot(projectId);
 });
 
+ipcMain.handle('acceptance:acceptBatch', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const targets = normalizeAcceptanceBatchTargets(input.targets, '批量验收目标列表为空');
+  loop.acceptItems(projectId, targets);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('acceptance:unacceptBatch', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const targets = normalizeAcceptanceBatchTargets(input.targets, '批量取消验收目标列表为空');
+  loop.unacceptItems(projectId, targets);
+  return loop.snapshot(projectId);
+});
+
 ipcMain.handle('requirements:create', (_event, input = {}) => {
   return intakeService().createRequirement(normalizeDraftIntakeInput(input));
 });
@@ -325,7 +340,7 @@ ipcMain.handle('intake:appendTask', (_event, input = {}) => {
 });
 
 const SCRIPT_RUNTIMES = new Set(['node', 'bash', 'ps', 'cmd']);
-const SCRIPT_TRIGGER_MODES = new Set(['hook', 'manual']);
+const SCRIPT_TRIGGER_MODES = new Set(['hook', 'manual', 'schedule']);
 const SCRIPT_HOOK_STAGES = new Set(['plan:after', 'task:after', 'validation:before', 'loop:end', 'on:fail']);
 const SCRIPT_CONTEXT_INJECTS = new Set(['env', 'stdin', 'none']);
 const SCRIPT_SOURCE_TYPES = new Set(['inline', 'file']);
@@ -354,6 +369,8 @@ function scriptTimeoutSeconds(value, fallback = 60) {
 function normalizeScriptFields(input = {}, current = {}) {
   const name = trimScriptText(input.name ?? current.name);
   if (!name) throw new Error('脚本名称不能为空');
+  const triggerMode = pickScriptEnum(input.triggerMode ?? input.trigger_mode ?? current.trigger_mode, SCRIPT_TRIGGER_MODES, 'manual');
+  const scheduleCron = resolveScheduleCron(triggerMode, input, current);
   return {
     name,
     path: trimScriptText(input.path ?? current.path),
@@ -361,8 +378,9 @@ function normalizeScriptFields(input = {}, current = {}) {
     source_type: pickScriptEnum(input.sourceType ?? input.source_type ?? current.source_type, SCRIPT_SOURCE_TYPES, 'inline'),
     body: trimScriptText(input.body ?? current.body),
     description: trimScriptText(input.description ?? current.description),
-    trigger_mode: pickScriptEnum(input.triggerMode ?? input.trigger_mode ?? current.trigger_mode, SCRIPT_TRIGGER_MODES, 'manual'),
+    trigger_mode: triggerMode,
     hook_stage: pickScriptEnum(input.hookStage ?? input.hook_stage ?? current.hook_stage, SCRIPT_HOOK_STAGES, null),
+    schedule_cron: scheduleCron,
     enabled: scriptFlagNumber(input.enabled ?? current.enabled, current.enabled ?? 1),
     work_dir: trimScriptText(input.workDir ?? input.work_dir ?? current.work_dir),
     timeout_seconds: scriptTimeoutSeconds(input.timeoutSeconds ?? input.timeout_seconds, current.timeout_seconds),
@@ -372,8 +390,18 @@ function normalizeScriptFields(input = {}, current = {}) {
   };
 }
 
-const SCRIPT_COLUMN_LIST = 'name, path, runtime, body, description, trigger_mode, hook_stage, enabled, work_dir, timeout_seconds, fail_aborts, context_inject, sort_order, source_type';
-const SCRIPT_SET_ASSIGNMENTS = 'name = ?, path = ?, runtime = ?, body = ?, description = ?, trigger_mode = ?, hook_stage = ?, enabled = ?, work_dir = ?, timeout_seconds = ?, fail_aborts = ?, context_inject = ?, sort_order = ?, source_type = ?';
+/** 解析 schedule_cron：仅 trigger_mode='schedule' 时落库为 cron 串，其它模式为 null（与 hook_stage 在 manual 时为 null 对齐）。
+ *  schedule 模式下 cron 为空抛「定时任务需填写 cron 表达式」、非法 cron 复用 scriptHooks.parseCron 抛中文错误，均不写入脏数据。 */
+function resolveScheduleCron(triggerMode, input, current) {
+  if (triggerMode !== 'schedule') return null;
+  const cron = trimScriptText(input.scheduleCron ?? input.schedule_cron ?? current.schedule_cron);
+  if (!cron) throw new Error('定时任务需填写 cron 表达式');
+  parseCron(cron);
+  return cron;
+}
+
+const SCRIPT_COLUMN_LIST = 'name, path, runtime, body, description, trigger_mode, hook_stage, schedule_cron, enabled, work_dir, timeout_seconds, fail_aborts, context_inject, sort_order, source_type';
+const SCRIPT_SET_ASSIGNMENTS = 'name = ?, path = ?, runtime = ?, body = ?, description = ?, trigger_mode = ?, hook_stage = ?, schedule_cron = ?, enabled = ?, work_dir = ?, timeout_seconds = ?, fail_aborts = ?, context_inject = ?, sort_order = ?, source_type = ?';
 
 ipcMain.handle('scripts:pickFile', async (_event, input = {}) => (await dialog.showOpenDialog(mainWindow, { properties: ['openFile'], filters: [{ name: '脚本文件', extensions: ['js', 'cjs', 'mjs', 'sh', 'ps1', 'bat', 'cmd'] }, { name: '所有文件', extensions: ['*'] }] }))?.filePaths?.[0] || null);
 
@@ -382,8 +410,8 @@ ipcMain.handle('scripts:create', (_event, input = {}) => {
   const fields = normalizeScriptFields(input);
   const ts = nowIso();
   db.run(
-    `INSERT INTO scripts (project_id, ${SCRIPT_COLUMN_LIST}, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [projectId, fields.name, fields.path, fields.runtime, fields.body, fields.description, fields.trigger_mode, fields.hook_stage, fields.enabled, fields.work_dir, fields.timeout_seconds, fields.fail_aborts, fields.context_inject, fields.sort_order, fields.source_type, ts, ts],
+    `INSERT INTO scripts (project_id, ${SCRIPT_COLUMN_LIST}, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [projectId, fields.name, fields.path, fields.runtime, fields.body, fields.description, fields.trigger_mode, fields.hook_stage, fields.schedule_cron, fields.enabled, fields.work_dir, fields.timeout_seconds, fields.fail_aborts, fields.context_inject, fields.sort_order, fields.source_type, ts, ts],
   );
   return loop.snapshot(projectId);
 });
@@ -396,7 +424,7 @@ ipcMain.handle('scripts:update', (_event, input = {}) => {
   const fields = normalizeScriptFields(input, current);
   db.run(
     `UPDATE scripts SET ${SCRIPT_SET_ASSIGNMENTS}, updated_at = ? WHERE id = ? AND project_id = ?`,
-    [fields.name, fields.path, fields.runtime, fields.body, fields.description, fields.trigger_mode, fields.hook_stage, fields.enabled, fields.work_dir, fields.timeout_seconds, fields.fail_aborts, fields.context_inject, fields.sort_order, fields.source_type, nowIso(), scriptId, projectId],
+    [fields.name, fields.path, fields.runtime, fields.body, fields.description, fields.trigger_mode, fields.hook_stage, fields.schedule_cron, fields.enabled, fields.work_dir, fields.timeout_seconds, fields.fail_aborts, fields.context_inject, fields.sort_order, fields.source_type, nowIso(), scriptId, projectId],
   );
   return loop.snapshot(projectId);
 });
@@ -511,6 +539,18 @@ function requiredProjectId(input = {}) {
   const projectId = Number(input.projectId || input.id || 0);
   if (!projectId || !loop.project(projectId)) throw new Error('项目不存在');
   return projectId;
+}
+
+/**
+ * 规范化批量验收目标的 IPC 入参：非数组/空数组抛中文错误；每项取 targetType/Number(id)；
+ * targetType/id 合法性交由 loop.acceptItems/unacceptItems 内部的 acceptanceTargetRow 复用校验。
+ */
+function normalizeAcceptanceBatchTargets(raw, emptyMessage) {
+  if (!Array.isArray(raw) || raw.length === 0) throw new Error(emptyMessage);
+  return raw.map((entry, index) => {
+    if (!entry || typeof entry !== 'object') throw new Error(`验收目标 #${index + 1} 无效`);
+    return { targetType: entry.targetType, id: Number(entry.id) };
+  });
 }
 
 async function readPlan(input = {}) {

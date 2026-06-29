@@ -26,6 +26,7 @@ import { WorkspaceSidebar, agentCliConfigSummary } from '../components/workspace
 export function WorkspacePage() {
   const {
     acceptItem,
+    acceptItems,
     acceptanceGroups,
     activeTab,
     addPendingFiles,
@@ -75,6 +76,7 @@ export function WorkspacePage() {
     submitLoopConfig,
     switchProject,
     unacceptItem,
+    unacceptItems,
     updateComposerDraft,
     updateFeedback,
     updateLoopForm,
@@ -209,6 +211,18 @@ export function WorkspacePage() {
   // 运行/保存/删除后经 onSync 回灌最新 snapshot，使列表卡片状态与导航徽标数量同步刷新。
   const toggleScript = (script: Script) => {
     runLoopAction(() => window.autoplan.toggleScript({ projectId, scriptId: script.id }));
+  };
+  // 卡片「启动执行」按钮：按 last_status 决定运行/停止，成功后经 runLoopAction 回灌快照刷新卡片。
+  // 运行与启停正交——禁用脚本仍可手动运行（沿用弹窗「运行」语义）。
+  const runScript = (script: Script) => {
+    const running = (script.last_status ?? script.lastStatus) === 'running';
+    runLoopAction(async () => {
+      if (running) {
+        return window.autoplan.stopScript({ projectId, scriptId: script.id });
+      }
+      const result = await window.autoplan.runScript({ projectId, scriptId: script.id });
+      return result.snapshot;
+    });
   };
   const syncScripts = (next: AppSnapshot) => {
     runLoopAction(async () => next);
@@ -352,6 +366,8 @@ export function WorkspacePage() {
               recentAccepted={recentAccepted}
               onAccept={acceptItem}
               onUnaccept={unacceptItem}
+              onAcceptItems={acceptItems}
+              onUnacceptItems={unacceptItems}
             />
           ) : null}
         </section>
@@ -458,6 +474,7 @@ export function WorkspacePage() {
               scripts={snapshot.scripts}
               projectId={projectId}
               onToggle={toggleScript}
+              onRun={runScript}
               onSync={syncScripts}
             />
           ) : null}

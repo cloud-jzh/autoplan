@@ -301,6 +301,28 @@
       }
       .check.indeterminate .icon { display: none; }
 
+      /* 多选 checkbox — 与 .check 视觉协调但用品牌色区分 */
+      .sel-check {
+        flex: 0 0 auto; width: 18px; height: 18px; border-radius: 5px;
+        border: 1.5px solid var(--brand-500); background: var(--bg-elevated);
+        display: grid; place-items: center; color: #fff; padding: 0;
+        transition: background .14s, border-color .14s, transform .06s;
+        cursor: pointer;
+      }
+      .sel-check .icon { width: 12px; height: 12px; stroke-width: 3; opacity: 0; transition: opacity .12s; }
+      .sel-check:hover { border-color: var(--brand-700); }
+      .sel-check:active { transform: scale(.94); }
+      .sel-check.checked { background: var(--brand-600); border-color: var(--brand-600); }
+      .sel-check.checked .icon { opacity: 1; }
+
+      /* 批量操作条 — 选中 ≥1 时在 .accept-bar 下方渲染 */
+      .accept-batch-bar {
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        padding: 12px 16px; border: 1px solid var(--brand-500); border-radius: var(--r-lg);
+        background: var(--brand-50); box-shadow: var(--shadow-sm);
+      }
+      .accept-batch-bar .batch-count { font-size: 13px; font-weight: 600; color: var(--text-1); white-space: nowrap; }
+
       /* 已验收（最近）可折叠区 */
       .accepted-card {
         border: 1px solid var(--line); border-radius: var(--r-lg);
@@ -440,6 +462,15 @@
               </div>
             </div>
 
+            <!-- 批量操作条（默认隐藏，选中 ≥1 时显示以替换 .accept-bar 的默认内容） -->
+            <div class="accept-batch-bar hidden" id="batchBar">
+              <span class="batch-count">已选 <b id="batchCount">0</b> 项</span>
+              <button class="btn btn-sm btn-primary" id="batchAcceptBtn"><svg class="icon"><use href="#icon-check-double"></use></svg>批量验收选中</button>
+              <button class="btn btn-sm" id="batchUnacceptBtn"><svg class="icon"><use href="#icon-undo"></use></svg>批量取消验收选中</button>
+              <button class="btn btn-sm" id="selectAllBtn">全选当页</button>
+              <button class="btn btn-sm" id="clearSelectionBtn">取消选择</button>
+            </div>
+
             <!-- 待验收清单（按计划分组） -->
             <div id="pendingBlock">
               <div class="accept-section-head" style="margin-bottom:10px;">
@@ -452,6 +483,7 @@
                 <!-- 计划 A：部分任务已验收（计划级半选） -->
                 <div class="accept-plan">
                   <div class="accept-plan-head">
+                    <button type="button" class="sel-check" title="选择此项"><svg class="icon"><use href="#icon-check"></use></svg></button>
                     <button type="button" class="check indeterminate" title="3 / 5 已验收"></button>
                     <div class="plan-main">
                       <div class="plan-path">plan_20260627-0810.md</div>
@@ -469,18 +501,21 @@
                   </div>
                   <div class="accept-tasks">
                     <div class="accept-task">
+                      <button type="button" class="sel-check" title="选择此项"><svg class="icon"><use href="#icon-check"></use></svg></button>
                       <button type="button" class="check"><svg class="icon"><use href="#icon-check"></use></svg></button>
                       <span class="task-key">P001</span>
                       <span class="task-title">悬浮态浅灰底样式</span>
                       <span class="task-scope"><svg class="icon"><use href="#icon-file"></use></svg>lib/widgets/toolbar_item.dart</span>
                     </div>
                     <div class="accept-task">
+                      <button type="button" class="sel-check" title="选择此项"><svg class="icon"><use href="#icon-check"></use></svg></button>
                       <button type="button" class="check"><svg class="icon"><use href="#icon-check"></use></svg></button>
                       <span class="task-key">P002</span>
                       <span class="task-title">工具栏分组竖线样式</span>
                       <span class="task-scope"><svg class="icon"><use href="#icon-file"></use></svg>lib/widgets/toolbar.dart</span>
                     </div>
                     <div class="accept-task">
+                      <button type="button" class="sel-check" title="选择此项"><svg class="icon"><use href="#icon-check"></use></svg></button>
                       <button type="button" class="check"><svg class="icon"><use href="#icon-check"></use></svg></button>
                       <span class="task-key">P003</span>
                       <span class="task-title">段落样式 H1/H2/H3 切换</span>
@@ -492,6 +527,7 @@
                 <!-- 计划 B：整体未验收（计划级空选） -->
                 <div class="accept-plan">
                   <div class="accept-plan-head">
+                    <button type="button" class="sel-check" title="选择此项"><svg class="icon"><use href="#icon-check"></use></svg></button>
                     <button type="button" class="check"></button>
                     <div class="plan-main">
                       <div class="plan-path">plan_20260626-1714.md</div>
@@ -509,12 +545,14 @@
                   </div>
                   <div class="accept-tasks">
                     <div class="accept-task">
+                      <button type="button" class="sel-check" title="选择此项"><svg class="icon"><use href="#icon-check"></use></svg></button>
                       <button type="button" class="check"><svg class="icon"><use href="#icon-check"></use></svg></button>
                       <span class="task-key">P101</span>
                       <span class="task-title">截图粘贴 OSS 上传流程</span>
                       <span class="task-scope"><svg class="icon"><use href="#icon-file"></use></svg>lib/services/oss_upload.dart</span>
                     </div>
                     <div class="accept-task">
+                      <button type="button" class="sel-check" title="选择此项"><svg class="icon"><use href="#icon-check"></use></svg></button>
                       <button type="button" class="check"><svg class="icon"><use href="#icon-check"></use></svg></button>
                       <span class="task-key">P102</span>
                       <span class="task-title">上传进度弹窗组件</span>
@@ -543,6 +581,7 @@
               </button>
               <div class="accepted-body">
                 <div class="accepted-item">
+                  <button type="button" class="sel-check" title="选择此项"><svg class="icon"><use href="#icon-check"></use></svg></button>
                   <span class="check checked ai-check"><svg class="icon"><use href="#icon-check"></use></svg></span>
                   <div class="ai-main">
                     <div class="ai-title">深色模式主题适配</div>
@@ -558,6 +597,7 @@
                   </div>
                 </div>
                 <div class="accepted-item">
+                  <button type="button" class="sel-check" title="选择此项"><svg class="icon"><use href="#icon-check"></use></svg></button>
                   <span class="check checked ai-check"><svg class="icon"><use href="#icon-check"></use></svg></span>
                   <div class="ai-main">
                     <div class="ai-title">image 节点插入与渲染</div>
@@ -573,6 +613,7 @@
                   </div>
                 </div>
                 <div class="accepted-item">
+                  <button type="button" class="sel-check" title="选择此项"><svg class="icon"><use href="#icon-check"></use></svg></button>
                   <span class="check checked ai-check"><svg class="icon"><use href="#icon-check"></use></svg></span>
                   <div class="ai-main">
                     <div class="ai-title">段落间距自适应调整</div>
@@ -598,6 +639,84 @@
     <div class="watermark">AutoPlan · 验收模块设计稿</div>
 
     <script>
+      /* ============================================================
+         验收交互演示 JS（含多选 + 批量操作条）
+         ============================================================ */
+
+      const acceptBar = document.querySelector('.accept-bar');
+      const batchBar = document.getElementById('batchBar');
+      const batchCount = document.getElementById('batchCount');
+
+      /* ---- 辅助：更新批量操作条可见性 ---- */
+      function updateBatchBar() {
+        const sel = document.querySelectorAll('.sel-check.checked');
+        const count = sel.length;
+        batchCount.textContent = count;
+        if (count > 0) {
+          acceptBar.classList.add('hidden');
+          batchBar.classList.remove('hidden');
+        } else {
+          acceptBar.classList.remove('hidden');
+          batchBar.classList.add('hidden');
+        }
+      }
+
+      /* ---- 多选 checkbox 勾选 / 取消 ---- */
+      document.querySelectorAll('.sel-check').forEach((box) => {
+        box.addEventListener('click', () => {
+          box.classList.toggle('checked');
+          updateBatchBar();
+        });
+      });
+
+      /* ---- 全选当页 ---- */
+      document.getElementById('selectAllBtn').addEventListener('click', () => {
+        document.querySelectorAll('.sel-check').forEach((box) => {
+          box.classList.add('checked');
+        });
+        updateBatchBar();
+      });
+
+      /* ---- 取消选择 ---- */
+      document.getElementById('clearSelectionBtn').addEventListener('click', () => {
+        document.querySelectorAll('.sel-check').forEach((box) => {
+          box.classList.remove('checked');
+        });
+        updateBatchBar();
+      });
+
+      /* ---- 批量验收选中：选中项的验收 checkbox 全部勾选 ---- */
+      document.getElementById('batchAcceptBtn').addEventListener('click', () => {
+        document.querySelectorAll('.sel-check.checked').forEach((sel) => {
+          const container = sel.closest('.accept-plan-head, .accept-task');
+          if (!container) return;
+          const check = container.querySelector(':scope > .check');
+          if (!check) return;
+          check.classList.remove('indeterminate');
+          check.classList.add('checked');
+          const task = sel.closest('.accept-task');
+          if (task) {
+            task.classList.add('accepted');
+            task.querySelector('.task-title')?.classList.add('struck');
+          }
+          sel.classList.remove('checked');
+        });
+        updateBatchBar();
+      });
+
+      /* ---- 批量取消验收选中：选中项的已验收 item 淡出 ---- */
+      document.getElementById('batchUnacceptBtn').addEventListener('click', () => {
+        document.querySelectorAll('.sel-check.checked').forEach((sel) => {
+          const item = sel.closest('.accepted-item');
+          if (item) {
+            item.style.transition = 'opacity .18s';
+            item.style.opacity = '.35';
+          }
+          sel.classList.remove('checked');
+        });
+        updateBatchBar();
+      });
+
       /* ---------- todo 复选框勾选 / 取消（演示交互态） ---------- */
       document.querySelectorAll('.accept-tasks .check').forEach((box) => {
         box.addEventListener('click', () => {

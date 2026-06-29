@@ -22,6 +22,18 @@ const { MAX_PARALLEL_TASKS, taskParallelScopes } = require('./concurrency');
 const { taskScopeText } = require('./planParser');
 const { normalizeRelative } = require('./workspaceFiles');
 
+/** 退避重试序列：首次等待 5s，逐次递增，上限 30s */
+const TASK_RETRY_BACKOFF_SECONDS = Object.freeze([5, 10, 20, 30]);
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isEnvironmentBlocking(result) {
+  const failure = classifyExecutionFailure(result);
+  return failure.environmentBlocked === true;
+}
+
 async function processPlan(service, helpers, workspace, plan) {
     plan = service.activateDraftPlan ? service.activateDraftPlan(plan) : plan;
     const planFile = path.join(workspace, plan.file_path);
@@ -37,7 +49,27 @@ async function processPlan(service, helpers, workspace, plan) {
         await service.validatePlan(workspace, plan, { task: firstPendingTask });
         return;
       }
-      const result = await service.executeTask(workspace, plan, firstPendingTask);
+      service.setPhase(plan.project_id, 'execute-task');
+      let attempt = 0;
+      let result;
+      do {
+        result = await service.executeTask(workspace, plan, firstPendingTask);
+        if (result.exitCode === 0) break;
+        attempt++;
+        if (attempt <= TASK_RETRY_BACKOFF_SECONDS.length && !isEnvironmentBlocking(result)) {
+          const delaySeconds = TASK_RETRY_BACKOFF_SECONDS[attempt - 1];
+          service.addEvent(plan.project_id, 'task.retry',
+            `任务 ${firstPendingTask.task_key} 第 ${attempt} 次重试，等待 ${delaySeconds}s`,
+            {
+              planId: plan.id,
+              taskId: firstPendingTask.id,
+              taskKey: firstPendingTask.task_key,
+              attempt,
+              delaySeconds,
+            });
+          await sleep(delaySeconds * 1000);
+        }
+      } while (result.exitCode !== 0 && attempt <= TASK_RETRY_BACKOFF_SECONDS.length && !isEnvironmentBlocking(result));
       if (result.exitCode === 0) {
         await service.completeTask(workspace, plan, firstPendingTask, result);
       }
@@ -121,7 +153,25 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
       for (const task of tasks) {
         let result;
         try {
-          result = await service.executeTask(workspace, plan, task, { parallel: false });
+          let attempt = 0;
+          do {
+            result = await service.executeTask(workspace, plan, task, { parallel: false });
+            if (result.exitCode === 0) break;
+            attempt++;
+            if (attempt <= TASK_RETRY_BACKOFF_SECONDS.length && !isEnvironmentBlocking(result)) {
+              const delaySeconds = TASK_RETRY_BACKOFF_SECONDS[attempt - 1];
+              service.addEvent(plan.project_id, 'task.retry',
+                `任务 ${task.task_key} 第 ${attempt} 次重试，等待 ${delaySeconds}s`,
+                {
+                  planId: plan.id,
+                  taskId: task.id,
+                  taskKey: task.task_key,
+                  attempt,
+                  delaySeconds,
+                });
+              await sleep(delaySeconds * 1000);
+            }
+          } while (result.exitCode !== 0 && attempt <= TASK_RETRY_BACKOFF_SECONDS.length && !isEnvironmentBlocking(result));
         } catch (error) {
           const finishedAt = nowIso();
           if (!taskLifecycleEventRecorded(error)) {
@@ -156,7 +206,25 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
       tasks.map(async (task) => {
         let result;
         try {
-          result = await service.executeTask(workspace, plan, task, { parallel: true });
+          let attempt = 0;
+          do {
+            result = await service.executeTask(workspace, plan, task, { parallel: true });
+            if (result.exitCode === 0) break;
+            attempt++;
+            if (attempt <= TASK_RETRY_BACKOFF_SECONDS.length && !isEnvironmentBlocking(result)) {
+              const delaySeconds = TASK_RETRY_BACKOFF_SECONDS[attempt - 1];
+              service.addEvent(plan.project_id, 'task.retry',
+                `任务 ${task.task_key} 第 ${attempt} 次重试，等待 ${delaySeconds}s`,
+                {
+                  planId: plan.id,
+                  taskId: task.id,
+                  taskKey: task.task_key,
+                  attempt,
+                  delaySeconds,
+                });
+              await sleep(delaySeconds * 1000);
+            }
+          } while (result.exitCode !== 0 && attempt <= TASK_RETRY_BACKOFF_SECONDS.length && !isEnvironmentBlocking(result));
         } catch (error) {
           const finishedAt = nowIso();
           if (!taskLifecycleEventRecorded(error)) {
@@ -225,6 +293,7 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
     });
     const planFile = path.join(workspace, plan.file_path);
     const completionRules = [
+      '- 这是无人值守执行：不要提问、不要请求确认、不要等待用户输入，所有不确定项自行基于代码推断并直接落地修改',
       '- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区',
       '- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区',
       '- 只修改当前任务 scope 直接相关的业务文件',
@@ -242,7 +311,7 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
       completionRules.unshift('- 当前为并发执行模式，不要读写其它任务的 scope');
     }
     const prompt = [
-      '你是开发执行者。',
+      '你是开发执行者，在无人值守模式下工作：禁止反问用户、禁止请求确认或补充信息、禁止输出“请告诉我…/是否需要…”之类等待回复的话；遇到不确定一律自行从代码推断，按最合理的工程方案直接推进，不要停下来等待输入。',
       `请只执行指定任务 ${task.task_key}，不要提前执行其它任务，也不要顺手处理其它 checkbox。`,
       '',
       `plan 文件（只读）：${planFile}`,
@@ -407,6 +476,7 @@ module.exports = {
   previousPlanCodexSessionId,
   processPlan,
   refreshPlanProgress,
+  TASK_RETRY_BACKOFF_SECONDS,
 };
 
 function taskAgentCliSessionId(task) {

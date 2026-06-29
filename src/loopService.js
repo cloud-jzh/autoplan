@@ -8,6 +8,7 @@ const { ClaudeStreamJsonPrinter } = require('./claudeActivity');
 const {
   codexNewSessionArgs,
   codexResumeSessionArgs,
+  createChunkDecoder,
   runAgentCliAttempt,
 } = require('./agentCli');
 const {
@@ -42,6 +43,7 @@ const {
 const {
   archiveRuntimeOperation,
   createThrottledUpdateEmitter,
+  createUnrefInterval,
   ensureProjectRuntime,
   existingProjectRuntime,
   findActiveRuntimeProject,
@@ -79,6 +81,7 @@ const {
 } = workspaceFiles;
 const taskExecution = require('./loop/taskExecution');
 const validationFlow = require('./loop/validation');
+const { classifyExecutionFailure } = validationFlow;
 const scriptHooks = require('./loop/scriptHooks');
 const {
   LEGACY_TASK_EVENT_TYPES,
@@ -116,6 +119,9 @@ class LoopService extends EventEmitter {
     this.runtimes = new Map();
     // 由 main.js 在持有 mcpServer 句柄后注入：返回 mcpServer?.status?.()，供快照叠加实时运行态。
     this.mcpStatusProvider = null;
+    // 全局定时调度器句柄（setInterval，60s，unref 不阻塞进程退出）：由 main.js 创建 loop 后调
+    // startScheduler、will-quit 调 stopScheduler 启停；独立于循环运行态。
+    this.scheduleTimer = null;
     this.updateEmitter = createThrottledUpdateEmitter({
       snapshot: (projectId) => this.snapshot(projectId),
       emit: (snapshot) => this.emit('update', snapshot),
@@ -217,6 +223,9 @@ class LoopService extends EventEmitter {
       ...agentCliStateUpdates(this.projectStateColumns(), agentCliConfig),
       ['updated_at', nowIso()],
     ];
+    if (Array.isArray(config.envVars) && this.projectStateColumns().has('env_vars')) {
+      stateUpdates.splice(stateUpdates.length - 1, 0, ['env_vars', normalizeEnvVarsJson(config.envVars)]);
+    }
     this.db.run(
       `UPDATE project_states
        SET ${stateUpdates.map(([column]) => `${column} = ?`).join(', ')}
@@ -225,6 +234,30 @@ class LoopService extends EventEmitter {
     );
     if (runtime?.running) this.scheduleProject(projectId, nextInterval);
     this.emitUpdate(projectId);
+  }
+
+  /** 读取项目用户自定义环境变量：解析 project_states.env_vars（JSON 数组 [{name,value}]）为 { [name]: value }。
+   *  JSON 解析失败/非数组安全降级为 {}；跳过空名、按 name 去空白；不缓存（每次执行取最新值，保证保存即时生效）。 */
+  projectEnvVars(projectId) {
+    if (!projectId) return {};
+    const row = this.db.get('SELECT env_vars FROM project_states WHERE project_id = ?', [projectId]);
+    const raw = row?.env_vars;
+    if (!raw) return {};
+    let entries;
+    try {
+      entries = JSON.parse(raw);
+    } catch {
+      return {};
+    }
+    if (!Array.isArray(entries)) return {};
+    const env = {};
+    for (const entry of entries) {
+      if (!entry || typeof entry !== 'object') continue;
+      const name = String(entry.name ?? '').trim();
+      if (!name) continue;
+      env[name] = String(entry.value ?? '');
+    }
+    return env;
   }
 
   projectStateColumns() {
@@ -316,6 +349,7 @@ class LoopService extends EventEmitter {
           `SELECT * FROM requirements
            WHERE project_id = ? AND linked_plan_id IS NULL
              AND status NOT IN ('completed', 'closed')
+             AND (generate_fail_count < 3 OR (generate_fail_count >= 3 AND last_generate_fail_at < datetime('now','-15 minutes')))
            ORDER BY created_at ASC`,
           [projectId],
         )
@@ -325,6 +359,7 @@ class LoopService extends EventEmitter {
           `SELECT * FROM feedback
            WHERE project_id = ? AND linked_plan_id IS NULL
              AND status NOT IN ('completed', 'closed')
+             AND (generate_fail_count < 3 OR (generate_fail_count >= 3 AND last_generate_fail_at < datetime('now','-15 minutes')))
            ORDER BY created_at ASC`,
           [projectId],
         )
@@ -399,7 +434,27 @@ class LoopService extends EventEmitter {
       if (this.isFinalAcceptanceTask(executablePlan.id, task)) {
         await this.validatePlan(workspace, executablePlan, { task });
       } else {
-        const result = await this.executeTask(workspace, executablePlan, task);
+        const backoff = taskExecution.TASK_RETRY_BACKOFF_SECONDS;
+        let attempt = 0;
+        let result;
+        do {
+          result = await this.executeTask(workspace, executablePlan, task);
+          if (result.exitCode === 0) break;
+          attempt++;
+          if (attempt <= backoff.length && !classifyExecutionFailure(result).environmentBlocked) {
+            const delaySeconds = backoff[attempt - 1];
+            this.addEvent(projectId, 'task.retry',
+              `任务 ${task.task_key} 第 ${attempt} 次重试，等待 ${delaySeconds}s`,
+              {
+                planId: executablePlan.id,
+                taskId: task.id,
+                taskKey: task.task_key,
+                attempt,
+                delaySeconds,
+              });
+            await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
+          }
+        } while (result.exitCode !== 0 && attempt <= backoff.length && !classifyExecutionFailure(result).environmentBlocked);
         if (result.exitCode === 0) {
           await this.completeTask(workspace, executablePlan, task, result);
         }
@@ -650,66 +705,18 @@ class LoopService extends EventEmitter {
   acceptItem(projectId, { targetType, id } = {}) {
     const target = this.acceptanceTargetRow(projectId, targetType, id);
     const acceptedAt = nowIso();
-    if (targetType === 'plan') {
-      this.db.run(
-        'UPDATE plans SET accepted_at = ?, updated_at = ? WHERE id = ? AND project_id = ?',
-        [acceptedAt, acceptedAt, target.id, projectId],
-      );
-      this.addEvent(projectId, 'plan.accepted', `plan #${target.id} 已验收`, {
-        targetType: 'plan',
-        id: target.id,
-        planId: target.id,
-        accepted_at: acceptedAt,
-      });
-    } else {
-      this.db.run(
-        'UPDATE plan_tasks SET accepted_at = ?, updated_at = ? WHERE id = ?',
-        [acceptedAt, acceptedAt, target.id],
-      );
-      this.addEvent(projectId, 'task.accepted', `${target.task_key} 已验收`, {
-        targetType: 'task',
-        id: target.id,
-        taskId: target.id,
-        planId: target.plan_id,
-        taskKey: target.task_key,
-        accepted_at: acceptedAt,
-      });
-    }
+    const result = this.writeAcceptance(targetType, target, acceptedAt, projectId);
     this.emitUpdate(projectId);
-    return { targetType, id: target.id, accepted_at: acceptedAt };
+    return result;
   }
 
   /** 取消人工验收：清空 accepted_at（NULL），不改变执行态 status，并记事件；重复取消保持 NULL 不报错。 */
   unacceptItem(projectId, { targetType, id } = {}) {
     const target = this.acceptanceTargetRow(projectId, targetType, id, { requireCompleted: false });
     const updatedAt = nowIso();
-    if (targetType === 'plan') {
-      this.db.run(
-        'UPDATE plans SET accepted_at = NULL, updated_at = ? WHERE id = ? AND project_id = ?',
-        [updatedAt, target.id, projectId],
-      );
-      this.addEvent(projectId, 'plan.unaccepted', `plan #${target.id} 已取消验收`, {
-        targetType: 'plan',
-        id: target.id,
-        planId: target.id,
-        accepted_at: null,
-      });
-    } else {
-      this.db.run(
-        'UPDATE plan_tasks SET accepted_at = NULL, updated_at = ? WHERE id = ?',
-        [updatedAt, target.id],
-      );
-      this.addEvent(projectId, 'task.unaccepted', `${target.task_key} 已取消验收`, {
-        targetType: 'task',
-        id: target.id,
-        taskId: target.id,
-        planId: target.plan_id,
-        taskKey: target.task_key,
-        accepted_at: null,
-      });
-    }
+    const result = this.writeAcceptance(targetType, target, null, projectId, updatedAt);
     this.emitUpdate(projectId);
-    return { targetType, id: target.id, accepted_at: null };
+    return result;
   }
 
   /** 校验收目标：按 targetType 路由 plan/task、校验归属当前项目与「已完成」态；不存在或不可验收时抛中文错误。 */
@@ -739,6 +746,115 @@ class LoopService extends EventEmitter {
       return task;
     }
     throw new Error('验收目标类型无效');
+  }
+
+  /**
+   * 写入单条验收态的私有 helper（acceptItem/unacceptItem 与 acceptItems/unacceptItems 共用）。
+   * 只置/清 accepted_at 并记事件，绝不执行脚本或任务——验收模块是纯人工确认，与
+   * 「完整验收」任务经 runTask→validatePlan 执行 validation_command 的链路完全解耦。
+   * acceptedAt 非空 → 验收（accepted_at=acceptedAt、updated_at=acceptedAt，记 *.accepted 事件）；
+   * acceptedAt 为 null → 取消验收（accepted_at=NULL、updated_at=updatedAt，记 *.unaccepted 事件）。
+   * 返回 { targetType, id, accepted_at }，供单目标/批量调用方回传。
+   */
+  writeAcceptance(targetType, row, acceptedAt, projectId, updatedAt = acceptedAt ?? nowIso()) {
+    if (targetType === 'plan') {
+      if (acceptedAt) {
+        this.db.run(
+          'UPDATE plans SET accepted_at = ?, updated_at = ? WHERE id = ? AND project_id = ?',
+          [acceptedAt, acceptedAt, row.id, projectId],
+        );
+        this.addEvent(projectId, 'plan.accepted', `plan #${row.id} 已验收`, {
+          targetType: 'plan',
+          id: row.id,
+          planId: row.id,
+          accepted_at: acceptedAt,
+        });
+      } else {
+        this.db.run(
+          'UPDATE plans SET accepted_at = NULL, updated_at = ? WHERE id = ? AND project_id = ?',
+          [updatedAt, row.id, projectId],
+        );
+        this.addEvent(projectId, 'plan.unaccepted', `plan #${row.id} 已取消验收`, {
+          targetType: 'plan',
+          id: row.id,
+          planId: row.id,
+          accepted_at: null,
+        });
+      }
+      return { targetType, id: row.id, accepted_at: acceptedAt ?? null };
+    }
+    if (acceptedAt) {
+      this.db.run(
+        'UPDATE plan_tasks SET accepted_at = ?, updated_at = ? WHERE id = ?',
+        [acceptedAt, acceptedAt, row.id],
+      );
+      this.addEvent(projectId, 'task.accepted', `${row.task_key} 已验收`, {
+        targetType: 'task',
+        id: row.id,
+        taskId: row.id,
+        planId: row.plan_id,
+        taskKey: row.task_key,
+        accepted_at: acceptedAt,
+      });
+    } else {
+      this.db.run(
+        'UPDATE plan_tasks SET accepted_at = NULL, updated_at = ? WHERE id = ?',
+        [updatedAt, row.id],
+      );
+      this.addEvent(projectId, 'task.unaccepted', `${row.task_key} 已取消验收`, {
+        targetType: 'task',
+        id: row.id,
+        taskId: row.id,
+        planId: row.plan_id,
+        taskKey: row.task_key,
+        accepted_at: null,
+      });
+    }
+    return { targetType, id: row.id, accepted_at: acceptedAt ?? null };
+  }
+
+  /**
+   * 批量人工验收：对一组已完成的计划/任务一次性置 accepted_at（不改变执行态 status）。
+   * 先全量预校验（acceptanceTargetRow，requireCompleted:true），任一目标非法即整体抛中文错误、
+   * 不写任何行（全有或全无）；全部通过后用同一时间戳逐条 UPDATE+addEvent，最后一次 emitUpdate。
+   * 纯人工确认：绝不调用 validatePlan/runShell/runCodex/executeTask/runOnce，不读/不执行 validation_command，不启动任何任务/脚本。
+   */
+  acceptItems(projectId, targets) {
+    const normalized = normalizeAcceptanceTargets(targets, '批量验收目标列表为空');
+    // 先全量预校验（全有或全无）：任一目标非法即整体抛错，在此之前不写任何行
+    const rows = normalized.map(({ targetType, id }) => ({
+      targetType,
+      row: this.acceptanceTargetRow(projectId, targetType, id),
+    }));
+    // 全部校验通过 → 用同一时间戳逐条写入 + 记事件（不执行任何脚本/任务）
+    const acceptedAt = nowIso();
+    const items = rows.map(({ targetType, row }) =>
+      this.writeAcceptance(targetType, row, acceptedAt, projectId),
+    );
+    this.emitUpdate(projectId);
+    return { accepted: items.length, items };
+  }
+
+  /**
+   * 批量取消人工验收：对一组计划/任务一次性清空 accepted_at（NULL），不改变执行态 status。
+   * 先全量预校验（acceptanceTargetRow，requireCompleted:false），任一目标非法即整体抛中文错误、
+   * 不写任何行；全部通过后用同一时间戳逐条 UPDATE+addEvent，最后一次 emitUpdate。
+   * 纯人工确认：绝不调用 validatePlan/runShell/runCodex/executeTask/runOnce，不读/不执行 validation_command，不启动任何任务/脚本。
+   */
+  unacceptItems(projectId, targets) {
+    const normalized = normalizeAcceptanceTargets(targets, '批量取消验收目标列表为空');
+    // 先全量预校验（全有或全无）
+    const rows = normalized.map(({ targetType, id }) => ({
+      targetType,
+      row: this.acceptanceTargetRow(projectId, targetType, id, { requireCompleted: false }),
+    }));
+    // 全部校验通过 → 用同一时间戳逐条写入 + 记事件
+    const updatedAt = nowIso();
+    const items = rows.map(({ targetType, row }) =>
+      this.writeAcceptance(targetType, row, null, projectId, updatedAt),
+    );
+    this.emitUpdate(projectId);
+    return { unaccepted: items.length, items };
   }
 
   /** 向现有 plan 追加一个任务：写回 plan 文件 + syncPlanTasks 重新解析 */
@@ -1234,7 +1350,7 @@ class LoopService extends EventEmitter {
         command: activeOperation.agentCliCommand,
         codexArgs: args,
         agentCliOptions,
-        env: workspaceToolEnv(workspace),
+        env: { ...workspaceToolEnv(workspace), ...this.projectEnvVars(projectIdForEmit) },
         onChunk: (text) => {
           if (!isCodexProvider) return;
           sessionScanBuffer = `${sessionScanBuffer}${text}`.slice(-4000);
@@ -1430,7 +1546,7 @@ class LoopService extends EventEmitter {
     const logFile = path.join(logDir, `${timestampForPath()}_${safePart(label)}.log`);
     const shellCommand = process.platform === 'win32' ? `chcp 65001>nul && ${command}` : command;
     const overrideCwd = String(operation.cwd || '').trim();
-    const baseEnv = workspaceToolEnv(workspace);
+    const baseEnv = { ...workspaceToolEnv(workspace), ...this.projectEnvVars(projectIdForEmit) };
     const child = spawn(shellCommand, {
       shell: true,
       cwd: overrideCwd || workspace,
@@ -1455,8 +1571,12 @@ class LoopService extends EventEmitter {
       ? operation.timeoutMs
       : SHELL_COMMAND_TIMEOUT_MS;
     let output = '';
-    const onChunk = (chunk) => {
-      const text = chunk.toString('utf8');
+    const shellDecoders = {
+      stdout: createChunkDecoder(),
+      stderr: createChunkDecoder(),
+    };
+    const onChunk = (chunk, source) => {
+      const text = shellDecoders[source].decode(chunk);
       output += text;
       if (!runtime.activeOperations.has(operationKey)) return;
       activeOperation.logBuffer = (activeOperation.logBuffer || '') + text;
@@ -1465,8 +1585,8 @@ class LoopService extends EventEmitter {
       }
       if (activeOperation.activity) activeOperation.activity.offer(text);
     };
-    child.stdout.on('data', onChunk);
-    child.stderr.on('data', onChunk);
+    child.stdout.on('data', (chunk) => onChunk(chunk, 'stdout'));
+    child.stderr.on('data', (chunk) => onChunk(chunk, 'stderr'));
     const tailTimer = setInterval(() => {
       if (projectIdForEmit) this.emitUpdate(projectIdForEmit);
     }, 1500);
@@ -1511,6 +1631,87 @@ class LoopService extends EventEmitter {
   /** 停止运行中的脚本（scripts:stop），复用 runShell 的 operation 取消能力 */
   stopScript(projectId, scriptId) {
     return scriptHooks.stopScript(this, projectId, scriptId);
+  }
+
+  /** 启动全局定时调度器：单一 setInterval（周期 60000ms，unref 不阻塞进程退出），每 tick 调 runScheduledScripts。
+   *  独立于循环运行态——循环停止时定时脚本仍按计划执行；禁用脚本（enabled=0）绝不触发。 */
+  startScheduler() {
+    if (this.scheduleTimer) return;
+    this.scheduleTimer = createUnrefInterval(() => {
+      this.runScheduledScripts().catch((error) => {
+        // runScheduledScripts 内部已逐项兜底；此处为最终安全网，绝不冒泡打断后续 tick。
+        console.warn('[loopService] scheduler tick failed:', error?.message || error);
+      });
+    }, 60000);
+  }
+
+  /** 停止全局定时调度器（幂等）。 */
+  stopScheduler() {
+    if (this.scheduleTimer) {
+      clearInterval(this.scheduleTimer);
+      this.scheduleTimer = null;
+    }
+  }
+
+  /** 遍历所有项目，筛选并执行到期定时脚本；单条异常兜底，绝不冒泡打断调度器或同 tick 其它脚本。
+   *  对无定时脚本项目为空操作（仅一次 SELECT），开销可忽略。 */
+  async runScheduledScripts() {
+    const now = new Date();
+    for (const project of this.projects()) {
+      const projectId = Number(project.id);
+      const workspace = String(project.workspace_path || '');
+      let scripts = [];
+      try {
+        scripts = this.db.all(
+          `SELECT * FROM scripts WHERE project_id = ? AND enabled = 1 AND trigger_mode = 'schedule'`,
+          [projectId],
+        );
+      } catch {
+        continue; // 查询失败兜底，跳过本项目不影响其它项目与后续 tick
+      }
+      // 非法 cron：记一条失败事件并置 last_status='bad'，同分钟去重避免刷屏；绝不抛错、不影响同 tick 其它脚本与后续 tick
+      for (const script of scripts) {
+        const cronExpr = String(script.schedule_cron || '').trim();
+        if (!cronExpr) continue;
+        try {
+          scriptHooks.parseCron(cronExpr);
+        } catch (error) {
+          if (scriptHooks.isRunThisMinute(script.last_run_at, now)) continue;
+          const finishedAt = nowIso();
+          this.db.run(
+            `UPDATE scripts SET last_status = 'bad', last_run_at = ?, updated_at = ? WHERE id = ?`,
+            [finishedAt, finishedAt, script.id],
+          );
+          this.addEvent(
+            projectId,
+            'script.schedule.error',
+            `${script.name} 定时表达式无效：${error?.message || error}`,
+            {
+              scriptId: script.id,
+              scriptName: script.name,
+              stage: 'schedule',
+              trigger: 'schedule',
+              cron: cronExpr,
+              errorMessage: error?.message || String(error),
+            },
+          );
+        }
+      }
+      let due = [];
+      try {
+        due = scriptHooks.dueScheduledScripts(scripts, now);
+      } catch {
+        due = []; // 筛选异常兜底，本 tick 跳过该项目
+      }
+      for (const script of due) {
+        const stage = script.hook_stage || 'schedule';
+        try {
+          await scriptHooks.runScriptOnce(this, script, stage, { trigger: 'schedule', workspace });
+        } catch (error) {
+          scriptHooks.recordRunFailure(this, script, stage, { trigger: 'schedule', workspace }, error);
+        }
+      }
+    }
   }
 
   recordError(projectId, error) {
@@ -1558,6 +1759,42 @@ function timestampForPath() {
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
     now.getHours(),
   )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+}
+
+/** 规范化用户环境变量为 JSON 串：过滤空名、按 name 去重保序、value 强制为字符串，JSON.stringify 入库。 */
+function normalizeEnvVarsJson(envVars) {
+  const seen = new Set();
+  const entries = [];
+  for (const entry of Array.isArray(envVars) ? envVars : []) {
+    if (!entry || typeof entry !== 'object') continue;
+    const name = String(entry.name ?? '').trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    entries.push({ name, value: String(entry.value ?? '') });
+  }
+  return JSON.stringify(entries);
+}
+
+/**
+ * 规范化批量验收目标列表：非数组/元素非法抛「验收目标列表无效」；去重保序、Number(id)；
+ * 空列表抛调用方指定的中文错误。targetType/id 的合法性交由 acceptanceTargetRow 复用既有校验。
+ * 去重保序：同目标多次出现只处理一次（幂等，避免重复 UPDATE/事件）。
+ */
+function normalizeAcceptanceTargets(targets, emptyMessage) {
+  if (!Array.isArray(targets)) throw new Error('验收目标列表无效');
+  const seen = new Set();
+  const normalized = [];
+  for (const entry of targets) {
+    if (!entry || typeof entry !== 'object') throw new Error('验收目标列表无效');
+    const targetType = entry.targetType;
+    const id = Number(entry.id);
+    const key = `${targetType}:${id}`;
+    if (seen.has(key)) continue; // 去重保序：同目标多次出现只处理一次
+    seen.add(key);
+    normalized.push({ targetType, id });
+  }
+  if (normalized.length === 0) throw new Error(emptyMessage);
+  return normalized;
 }
 
 function planGenerationGuardedPrompt(prompt, label, operation = {}) {

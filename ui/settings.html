@@ -344,6 +344,18 @@
       }
       .tool-tag .icon { width: 13px; height: 13px; color: var(--brand-600); }
 
+      /* 环境变量键值对行 */
+      .env-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+      .env-row input { flex: 1 1 0; min-width: 0; font-family: var(--font-mono); font-size: 12px; }
+      .env-del {
+        flex: 0 0 auto; width: 30px; height: 30px; display: grid; place-items: center; padding: 0;
+        border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); color: var(--text-3);
+        font-size: 15px; font-weight: 700; line-height: 1; cursor: pointer;
+        transition: background .14s, color .14s, border-color .14s;
+      }
+      .env-del:hover { background: var(--danger-bg); color: var(--danger); border-color: #f4c9cb; }
+      .env-empty { padding: 28px 0; text-align: center; color: var(--text-4); font-size: 12.5px; }
+
       /* 可复制地址条 */
       .copy-bar {
         display: flex; align-items: center; gap: 8px; margin-top: 10px;
@@ -416,6 +428,7 @@
       <symbol id="icon-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2.3-.4-.4-2.3Z"></path></symbol>
       <symbol id="icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></symbol>
       <symbol id="icon-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"></rect><rect x="3" y="13" width="18" height="7" rx="2"></rect><path d="M7 7.5h.01"></path><path d="M7 16.5h.01"></path></symbol>
+      <symbol id="icon-key" viewBox="0 0 24 24"><circle cx="7.5" cy="7.5" r="3.5"></circle><path d="M10 10l9.5 9.5"></path><path d="M15.2 15.2l1.8-1.8"></path><path d="M17.8 17.8l1.7-1.7"></path></symbol>
     </svg>
     <div class="app">
       <!-- ===================== 应用侧边栏 ===================== -->
@@ -513,6 +526,11 @@
                 <span class="snav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-plug"></use></svg></span>
                 MCP 接入
                 <span class="snav-meta ok">运行中</span>
+              </button>
+              <button class="settings-nav-item" data-pane="env">
+                <span class="snav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-key"></use></svg></span>
+                环境变量
+                <span class="snav-meta">未配置</span>
               </button>
             </nav>
 
@@ -752,6 +770,44 @@
                       <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-shield"></use></svg>
                       <span>默认仅监听本机地址，供本机 MCP 客户端连接。可用环境变量 <code>AUTOPLAN_MCP_ENABLED=0</code> 禁用服务；即使禁用或失败，GUI 创建项目、提需求和提反馈入口仍可用。</span>
                     </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+              <!-- ====== 环境变量 ====== -->
+              <div class="settings-pane" id="pane-env">
+                <div class="pane-head">
+                  <h2><span class="pane-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-key"></use></svg></span> 环境变量</h2>
+                  <p>自定义键值对，注入到脚本与 CLI 任务执行环境，优先于工作区派生变量但低于脚本内置变量（<code>AUTOPLAN_*</code>）。本地明文存储于 SQLite。</p>
+                </div>
+                <div class="set-card">
+                  <div class="set-card-head">
+                    <h3>键值对</h3>
+                    <div class="set-card-hint">变量名仅允许字母、数字和下划线；重复名仅保留第一个。</div>
+                  </div>
+                  <div class="set-card-body">
+                    <div class="env-row">
+                      <input class="mono" type="text" value="MY_TOKEN" placeholder="变量名" />
+                      <input class="mono" type="text" value="sk-abc123xyz" placeholder="变量值" />
+                      <button class="env-del" title="删除" aria-label="删除变量">×</button>
+                    </div>
+                    <div class="env-row">
+                      <input class="mono" type="text" value="DEBUG" placeholder="变量名" />
+                      <input class="mono" type="text" value="1" placeholder="变量值" />
+                      <button class="env-del" title="删除" aria-label="删除变量">×</button>
+                    </div>
+                    <div class="env-empty">点击下方「新增变量」添加更多自定义环境变量。</div>
+                    <button class="btn btn-sm">新增变量</button>
+                  </div>
+                </div>
+                <div class="settings-footer">
+                  <span class="dirty-note">配置修改后请保存；运行状态可独立切换。</span>
+                  <div class="spacer">
+                    <button class="btn btn-sm">停止</button>
+                    <button class="btn btn-sm btn-primary">保存配置</button>
                   </div>
                 </div>
               </div>

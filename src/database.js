@@ -70,6 +70,7 @@ class AppDatabase {
         codex_reasoning_effort TEXT,
         last_issue_hash TEXT,
         last_error TEXT,
+        env_vars TEXT NOT NULL DEFAULT '',
         updated_at TEXT NOT NULL
       );
 
@@ -191,6 +192,7 @@ class AppDatabase {
         description TEXT NOT NULL DEFAULT '',
         trigger_mode TEXT NOT NULL DEFAULT 'manual',
         hook_stage TEXT,
+        schedule_cron TEXT,
         enabled INTEGER NOT NULL DEFAULT 1,
         work_dir TEXT NOT NULL DEFAULT '',
         timeout_seconds INTEGER NOT NULL DEFAULT 60,
@@ -234,12 +236,16 @@ class AppDatabase {
     this.ensureColumn('requirements', 'agent_cli_provider', 'TEXT');
     this.ensureColumn('requirements', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('requirements', 'codex_reasoning_effort', 'TEXT');
+    this.ensureColumn('requirements', 'generate_fail_count', 'INTEGER DEFAULT 0');
+    this.ensureColumn('requirements', 'last_generate_fail_at', 'TEXT');
     this.ensureColumn('feedback', 'project_id', 'INTEGER');
     this.ensureColumn('feedback', 'linked_plan_id', 'INTEGER');
     this.ensureColumn('feedback', 'agent_cli_provider', 'TEXT');
     this.ensureColumn('feedback', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('feedback', 'codex_reasoning_effort', 'TEXT');
     this.ensureColumn('feedback', 'agent_cli_session_id', 'TEXT');
+    this.ensureColumn('feedback', 'generate_fail_count', 'INTEGER DEFAULT 0');
+    this.ensureColumn('feedback', 'last_generate_fail_at', 'TEXT');
     this.ensureColumn('attachments', 'project_id', 'INTEGER');
     this.ensureColumn('plans', 'project_id', 'INTEGER');
     this.ensureColumn('plans', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
@@ -261,9 +267,11 @@ class AppDatabase {
     this.ensureColumn('plan_tasks', 'accepted_at', 'TEXT');
     this.ensureColumn('events', 'project_id', 'INTEGER');
     this.ensureColumn('scripts', 'source_type', "TEXT NOT NULL DEFAULT 'inline'");
+    this.ensureColumn('scripts', 'schedule_cron', 'TEXT');
     this.ensureColumn('project_states', 'agent_cli_provider', "TEXT NOT NULL DEFAULT 'codex'");
     this.ensureColumn('project_states', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('project_states', 'codex_reasoning_effort', 'TEXT');
+    this.ensureColumn('project_states', 'env_vars', "TEXT NOT NULL DEFAULT ''");
 
     const defaultProjectId = this.ensureDefaultProject();
     this.ensureDefaultSettings();

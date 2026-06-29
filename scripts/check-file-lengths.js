@@ -13,8 +13,9 @@ const fileLimits = new Map([
   ['src/loopService.js', 1700],
   // src/loop/agentCliConfig.js: 新增 oh-my-pi 显示名分支（原 699 已贴近上限）使行数略超 700。
   ['src/loop/agentCliConfig.js', 720],
-  // src/agentCli.js: 接入 Claude stream-json（flush 打印机 / 最终文本 / session_id 捕获）使行数略超默认 600；新增 oh-my-pi provider 注册、默认命令映射、ompCliArgs 与 spawn 分支使行数略超 640。
-  ['src/agentCli.js', 660],
+  // src/agentCli.js: 接入 Claude stream-json（flush 打印机 / 最终文本 / session_id 捕获）使行数略超默认 600；新增 oh-my-pi provider 注册、默认命令映射、ompCliArgs 与 spawn 分支使行数略超 640；
+  // 新增 createChunkDecoder（GBK/UTF-8 容错解码）、OpenCode 长 prompt spillover（落盘 + -f 投递，区分 cmd.exe 8191 与 CreateProcess 32767 上限）使行数接近 800。
+  ['src/agentCli.js', 810],
   // src/main.js: 新增 scripts:pickFile 文件选择通道与 source_type 归一化使行数略超 800。
   ['src/main.js', 820],
   ['src/mcpTools.js', 900],

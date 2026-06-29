@@ -6,6 +6,7 @@ import {
   planTitle,
   scopeFileLabel,
   scopeFileStatus,
+  acceptanceSelectionKey,
   type AcceptanceGroup,
   type AcceptedRecord,
 } from '../../utils/planTasks';
@@ -18,6 +19,8 @@ interface AcceptanceViewProps {
   recentAccepted: AcceptedRecord[];
   onAccept: (targetType: AcceptanceTarget, id: number) => void;
   onUnaccept: (targetType: AcceptanceTarget, id: number) => void;
+  onAcceptItems: (targets: { targetType: AcceptanceTarget; id: number }[]) => void;
+  onUnacceptItems: (targets: { targetType: AcceptanceTarget; id: number }[]) => void;
 }
 
 function basename(filePath: string) {
@@ -59,10 +62,24 @@ function recordId(record: AcceptedRecord) {
   return record.targetType === 'plan' ? record.plan.id : record.task.id;
 }
 
+/** 将选择集合解析为验收目标列表（plan:123 → { targetType:'plan', id:123 }） */
+function selectionTargets(selection: Set<string>): { targetType: AcceptanceTarget; id: number }[] {
+  const results: { targetType: AcceptanceTarget; id: number }[] = [];
+  for (const key of selection) {
+    const idx = key.indexOf(':');
+    if (idx <= 0) continue;
+    const targetType = key.slice(0, idx);
+    const id = Number(key.slice(idx + 1));
+    if ((targetType === 'plan' || targetType === 'task') && Number.isFinite(id)) {
+      results.push({ targetType, id });
+    }
+  }
+  return results;
+}
+
 /**
  * 验收视图（P007）：把「已完成且未验收」的计划/任务按计划分组渲染为两级 checklist，
- * 勾选即验收、取消即回退；交互走 onAccept/onUnaccept → controller → IPC → 落库 accepted_at →
- * 回灌 snapshot 刷新，不做脱离 snapshot 的本地乐观态（与 P001 设计稿一致）。
+ * 支持多选 + 批量验收 / 批量取消验收（单次原子 IPC）；逐项 checkbox 即验收、取消即回退。
  */
 export function AcceptanceView({
   projectId,
@@ -70,8 +87,11 @@ export function AcceptanceView({
   recentAccepted,
   onAccept,
   onUnaccept,
+  onAcceptItems,
+  onUnacceptItems,
 }: AcceptanceViewProps) {
   const [acceptedCollapsed, setAcceptedCollapsed] = useState(false);
+  const [selection, setSelection] = useState<Set<string>>(new Set());
   const pendingTaskCount = useMemo(
     () => groups.reduce((sum, group) => sum + group.tasks.length, 0),
     [groups],
@@ -79,58 +99,114 @@ export function AcceptanceView({
   const latestAcceptedAt = recentAccepted.length ? recentAccepted[0].acceptedAt : '';
   const hasPending = groups.length > 0;
 
-  function acceptAllPending() {
-    groups.forEach((group) => {
-      onAccept('plan', group.plan.id);
-      group.tasks.forEach((task) => onAccept('task', task.id));
+  function handleToggleSelection(key: string) {
+    setSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
     });
   }
 
-  function acceptPlanGroup(group: AcceptanceGroup) {
-    onAccept('plan', group.plan.id);
-    group.tasks.forEach((task) => onAccept('task', task.id));
+  function acceptAllPending() {
+    const targets: { targetType: AcceptanceTarget; id: number }[] = [];
+    groups.forEach((group) => {
+      targets.push({ targetType: 'plan', id: group.plan.id });
+      group.tasks.forEach((task) => targets.push({ targetType: 'task', id: task.id }));
+    });
+    if (targets.length > 0) onAcceptItems(targets);
   }
+
+  function acceptPlanGroup(group: AcceptanceGroup) {
+    const targets: { targetType: AcceptanceTarget; id: number }[] = [
+      { targetType: 'plan', id: group.plan.id },
+      ...group.tasks.map((task) => ({ targetType: 'task' as AcceptanceTarget, id: task.id })),
+    ];
+    onAcceptItems(targets);
+  }
+
+  const allPendingKeys = useMemo(() => {
+    const keys: string[] = [];
+    groups.forEach((g) => {
+      keys.push(acceptanceSelectionKey('plan', g.plan.id));
+      g.tasks.forEach((t) => keys.push(acceptanceSelectionKey('task', t.id)));
+    });
+    return keys;
+  }, [groups]);
+
+  const allAcceptedKeys = useMemo(
+    () => recentAccepted.map((r) => acceptanceSelectionKey(r.targetType, recordId(r))),
+    [recentAccepted],
+  );
+
+  const allSelectableKeys = useMemo(
+    () => [...allPendingKeys, ...allAcceptedKeys],
+    [allPendingKeys, allAcceptedKeys],
+  );
+
+  const isSelecting = selection.size > 0;
 
   return (
     <div className="acceptance-view" data-project-id={projectId}>
       <div className="accept-bar">
-        <span className="accept-ico" aria-hidden="true">
-          <Icon name="acceptance" size={20} />
-        </span>
-        <div className="accept-text">
-          <p>
-            已完成但未验收的<b>计划与任务</b>，逐项勾选即完成验收；取消勾选可回退。
-          </p>
-          <div className="accept-meta">
-            <span>
-              待验收 <b>{groups.length}</b> 个计划
+        {isSelecting ? (
+          <BatchBar
+            selection={selection}
+            allKeys={allSelectableKeys}
+            onAcceptSelected={() => {
+              const targets = selectionTargets(selection);
+              if (targets.length > 0) onAcceptItems(targets);
+              setSelection(new Set());
+            }}
+            onUnacceptSelected={() => {
+              const targets = selectionTargets(selection);
+              if (targets.length > 0) onUnacceptItems(targets);
+              setSelection(new Set());
+            }}
+            onSelectAll={() => setSelection(new Set(allSelectableKeys))}
+            onClearSelection={() => setSelection(new Set())}
+          />
+        ) : (
+          <>
+            <span className="accept-ico" aria-hidden="true">
+              <Icon name="acceptance" size={20} />
             </span>
-            <span className="meta-dot" aria-hidden="true" />
-            <span>
-              <b>{pendingTaskCount}</b> 个任务
-            </span>
-            {latestAcceptedAt ? (
-              <>
+            <div className="accept-text">
+              <p>
+                已完成但未验收的<b>计划与任务</b>，勾选复选框选择后批量验收；逐项勾选即完成验收；取消勾选可回退。
+              </p>
+              <div className="accept-meta">
+                <span>
+                  待验收 <b>{groups.length}</b> 个计划
+                </span>
                 <span className="meta-dot" aria-hidden="true" />
                 <span>
-                  最近验收 <b className="mono">{formatChinaDateTime(latestAcceptedAt)}</b>
+                  <b>{pendingTaskCount}</b> 个任务
                 </span>
-              </>
-            ) : null}
-          </div>
-        </div>
-        <div className="accept-actions">
-          <button
-            type="button"
-            className="btn btn-sm btn-primary"
-            onClick={acceptAllPending}
-            disabled={!hasPending}
-            title={hasPending ? '批量验收当页全部待验收项' : '暂无待验收项'}
-          >
-            <Icon name="check-double" size={14} aria-hidden="true" />
-            全部验收
-          </button>
-        </div>
+                {latestAcceptedAt ? (
+                  <>
+                    <span className="meta-dot" aria-hidden="true" />
+                    <span>
+                      最近验收 <b className="mono">{formatChinaDateTime(latestAcceptedAt)}</b>
+                    </span>
+                  </>
+                ) : null}
+              </div>
+            </div>
+            <div className="accept-actions">
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                onClick={acceptAllPending}
+                disabled={!hasPending}
+                title={hasPending ? '批量验收当页全部待验收项' : '暂无待验收项'}
+              >
+                <Icon name="check-double" size={14} aria-hidden="true" />
+                全部验收
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {hasPending ? (
@@ -151,6 +227,8 @@ export function AcceptanceView({
                 group={group}
                 onAccept={onAccept}
                 onAcceptGroup={acceptPlanGroup}
+                selection={selection}
+                onToggleSelection={handleToggleSelection}
               />
             ))}
           </div>
@@ -165,12 +243,15 @@ export function AcceptanceView({
           collapsed={acceptedCollapsed}
           onToggle={() => setAcceptedCollapsed((current) => !current)}
           onUnaccept={onUnaccept}
+          selection={selection}
+          onToggleSelection={handleToggleSelection}
         />
       ) : null}
     </div>
   );
 }
 
+/** 逐项立即验收 checkbox（单目标，不参与多选） */
 function AcceptanceCheck({
   checked,
   title,
@@ -194,21 +275,111 @@ function AcceptanceCheck({
   );
 }
 
+/** 多选 checkbox（仅入选择集合，不立即验收） */
+function SelectionCheckbox({
+  checked,
+  onClick,
+}: {
+  checked: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      className={`sel-check${checked ? ' checked' : ''}`}
+      title={checked ? '取消选择' : '选择此项'}
+      onClick={onClick}
+    >
+      <Icon name="check" size={12} aria-hidden="true" />
+    </button>
+  );
+}
+
+/** 批量操作条（选中 ≥1 项时在 .accept-bar 内渲染，替代默认头部内容） */
+function BatchBar({
+  selection,
+  allKeys,
+  onAcceptSelected,
+  onUnacceptSelected,
+  onSelectAll,
+  onClearSelection,
+}: {
+  selection: Set<string>;
+  allKeys: string[];
+  onAcceptSelected: () => void;
+  onUnacceptSelected: () => void;
+  onSelectAll: () => void;
+  onClearSelection: () => void;
+}) {
+  return (
+    <div className="accept-batch-bar">
+      <span className="batch-count">
+        已选 <b>{selection.size}</b> 项
+      </span>
+      <button
+        type="button"
+        className="btn btn-sm btn-primary"
+        onClick={onAcceptSelected}
+        title="批量验收已选中的待验收项（单次原子操作）"
+      >
+        <Icon name="check-double" size={14} aria-hidden="true" />
+        批量验收选中
+      </button>
+      <button
+        type="button"
+        className="btn btn-sm"
+        onClick={onUnacceptSelected}
+        title="批量取消验收已选中的已验收项（单次原子操作）"
+      >
+        <Icon name="undo" size={14} aria-hidden="true" />
+        批量取消验收选中
+      </button>
+      <button
+        type="button"
+        className="btn btn-sm"
+        onClick={onSelectAll}
+        title="全选当页所有可选项"
+      >
+        全选当页
+      </button>
+      <button
+        type="button"
+        className="btn btn-sm"
+        onClick={onClearSelection}
+        title="取消所有选择"
+      >
+        取消选择
+      </button>
+    </div>
+  );
+}
+
 function PendingPlanCard({
   group,
   onAccept,
   onAcceptGroup,
+  selection,
+  onToggleSelection,
 }: {
   group: AcceptanceGroup;
   onAccept: (targetType: AcceptanceTarget, id: number) => void;
   onAcceptGroup: (group: AcceptanceGroup) => void;
+  selection: Set<string>;
+  onToggleSelection: (key: string) => void;
 }) {
   const { plan, tasks } = group;
   const pct = planCompletedPct(plan);
   const progressText = planProgressText(plan);
+  const planKey = acceptanceSelectionKey('plan', plan.id);
   return (
     <div className="accept-plan">
       <div className="accept-plan-head">
+        <SelectionCheckbox
+          checked={selection.has(planKey)}
+          onClick={() => onToggleSelection(planKey)}
+        />
         <AcceptanceCheck
           checked={false}
           title="验收此计划"
@@ -251,7 +422,13 @@ function PendingPlanCard({
       {tasks.length ? (
         <div className="accept-tasks">
           {tasks.map((task) => (
-            <PendingTaskRow key={task.id} task={task} onAccept={onAccept} />
+            <PendingTaskRow
+              key={task.id}
+              task={task}
+              onAccept={onAccept}
+              selection={selection}
+              onToggleSelection={onToggleSelection}
+            />
           ))}
         </div>
       ) : null}
@@ -262,15 +439,24 @@ function PendingPlanCard({
 function PendingTaskRow({
   task,
   onAccept,
+  selection,
+  onToggleSelection,
 }: {
   task: PlanTask;
   onAccept: (targetType: AcceptanceTarget, id: number) => void;
+  selection: Set<string>;
+  onToggleSelection: (key: string) => void;
 }) {
   const scopeFile = primaryScopeFile(task);
   const scopeText = primaryScopeLabel(task);
   const scopeTitle = scopeFile ? scopeFileStatus(scopeFile) : scopeText;
+  const taskKey = acceptanceSelectionKey('task', task.id);
   return (
     <div className="accept-task" id={`workspace-acceptance-task-${task.id}`}>
+      <SelectionCheckbox
+        checked={selection.has(taskKey)}
+        onClick={() => onToggleSelection(taskKey)}
+      />
       <AcceptanceCheck checked={false} title="验收此任务" onClick={() => onAccept('task', task.id)} />
       <span className="task-key mono">{task.task_key || `#${task.id}`}</span>
       <span className="task-title" title={task.title}>
@@ -298,11 +484,15 @@ function AcceptedSection({
   collapsed,
   onToggle,
   onUnaccept,
+  selection,
+  onToggleSelection,
 }: {
   records: AcceptedRecord[];
   collapsed: boolean;
   onToggle: () => void;
   onUnaccept: (targetType: AcceptanceTarget, id: number) => void;
+  selection: Set<string>;
+  onToggleSelection: (key: string) => void;
 }) {
   return (
     <div className={`accepted-card${collapsed ? ' collapsed' : ''}`}>
@@ -319,7 +509,13 @@ function AcceptedSection({
       {collapsed ? null : (
         <div className="accepted-body">
           {records.map((record) => (
-            <AcceptedRow key={`${record.targetType}-${recordId(record)}`} record={record} onUnaccept={onUnaccept} />
+            <AcceptedRow
+              key={`${record.targetType}-${recordId(record)}`}
+              record={record}
+              onUnaccept={onUnaccept}
+              selection={selection}
+              onToggleSelection={onToggleSelection}
+            />
           ))}
         </div>
       )}
@@ -330,16 +526,25 @@ function AcceptedSection({
 function AcceptedRow({
   record,
   onUnaccept,
+  selection,
+  onToggleSelection,
 }: {
   record: AcceptedRecord;
   onUnaccept: (targetType: AcceptanceTarget, id: number) => void;
+  selection: Set<string>;
+  onToggleSelection: (key: string) => void;
 }) {
   const isPlan = record.targetType === 'plan';
   const id = recordId(record);
   const title = record.targetType === 'plan' ? planTitle(record.plan) || '未命名计划' : record.task.title;
   const metaLine = recordMetaLine(record);
+  const selKey = acceptanceSelectionKey(record.targetType, id);
   return (
     <div className="accepted-item" id={`workspace-acceptance-${record.targetType}-${id}`}>
+      <SelectionCheckbox
+        checked={selection.has(selKey)}
+        onClick={() => onToggleSelection(selKey)}
+      />
       <span className="check checked ai-check" aria-hidden="true">
         <Icon name="check" size={13} />
       </span>

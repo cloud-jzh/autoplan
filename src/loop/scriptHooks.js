@@ -329,12 +329,151 @@ function safeJson(value) {
   }
 }
 
+/** 5 字段标准 cron（分 时 日 月 周）字段取值范围；周字段 0/7 均为周日。 */
+const CRON_FIELD_RANGES = [
+  { name: '分', min: 0, max: 59 },
+  { name: '时', min: 0, max: 23 },
+  { name: '日', min: 1, max: 31 },
+  { name: '月', min: 1, max: 12 },
+  { name: '周', min: 0, max: 7 },
+];
+
+/** 解析并校验 5 字段标准 cron 表达式（支持 *、,、-、/ 步长）；非法表达式抛中文错误。
+ *  返回 { minute, hour, dayOfMonth, month, dayOfWeek }，每个字段为命中值的 Set<number>。 */
+function parseCron(expr) {
+  const text = String(expr == null ? '' : expr).trim();
+  if (!text) throw new Error('cron 表达式格式无效：不能为空');
+  const fields = text.split(/\s+/);
+  if (fields.length !== 5) {
+    throw new Error('cron 表达式格式无效：需为 5 字段（分 时 日 月 周）');
+  }
+  const parsed = fields.map((field, index) => parseCronField(field, CRON_FIELD_RANGES[index]));
+  return {
+    minute: parsed[0],
+    hour: parsed[1],
+    dayOfMonth: parsed[2],
+    month: parsed[3],
+    dayOfWeek: normalizeDayOfWeekSet(parsed[4]),
+  };
+}
+
+function parseCronField(field, range) {
+  const set = new Set();
+  for (const part of String(field || '').split(',')) {
+    if (part === '') throw new Error(`cron 表达式格式无效：${range.name} 字段为空`);
+    for (const value of expandCronPart(part, range)) set.add(value);
+  }
+  if (set.size === 0) throw new Error(`cron 表达式格式无效：${range.name} 字段无有效值`);
+  return set;
+}
+
+function expandCronPart(part, range) {
+  let base = part;
+  let step = 1;
+  const stepMatch = /^(\*|(?:\d+(?:-\d+)?))\/(\d+)$/.exec(part);
+  if (stepMatch) {
+    base = stepMatch[1];
+    step = Number(stepMatch[2]);
+    if (!Number.isInteger(step) || step < 1) {
+      throw new Error(`cron 表达式格式无效：${range.name} 字段步长非法`);
+    }
+  }
+  let lo;
+  let hi;
+  if (base === '*') {
+    lo = range.min;
+    hi = range.max;
+  } else {
+    const rangeMatch = /^(\d+)-(\d+)$/.exec(base);
+    if (rangeMatch) {
+      lo = Number(rangeMatch[1]);
+      hi = Number(rangeMatch[2]);
+    } else if (/^\d+$/.test(base)) {
+      lo = Number(base);
+      hi = lo;
+    } else {
+      throw new Error(`cron 表达式格式无效：${range.name} 字段含非法字符`);
+    }
+  }
+  if (lo < range.min || hi > range.max) {
+    throw new Error(`cron 表达式格式无效：${range.name} 字段越界（${range.min}-${range.max}）`);
+  }
+  if (lo > hi) {
+    throw new Error(`cron 表达式格式无效：${range.name} 字段区间起点大于终点`);
+  }
+  const values = [];
+  for (let value = lo; value <= hi; value += step) values.push(value);
+  return values;
+}
+
+/** cron 周字段 0 与 7 均为周日；统一归一到 JS Date.getDay() 的 0-6（0=周日）。 */
+function normalizeDayOfWeekSet(set) {
+  const normalized = new Set();
+  for (const value of set) normalized.add(value === 7 ? 0 : value);
+  return normalized;
+}
+
+/** 判定给定时间是否命中已解析的 cron（分 时 日 月 周 全部命中）。 */
+function isCronDue(parsed, date) {
+  if (!parsed) return false;
+  const d = date instanceof Date ? date : new Date();
+  return (
+    parsed.minute.has(d.getMinutes()) &&
+    parsed.hour.has(d.getHours()) &&
+    parsed.dayOfMonth.has(d.getDate()) &&
+    parsed.month.has(d.getMonth() + 1) &&
+    parsed.dayOfWeek.has(d.getDay())
+  );
+}
+
+/** 判定 last_run_at 是否落在 now 所在的同一分钟（用于同分钟去重，避免一分钟内重复触发）。 */
+function isRunThisMinute(lastRunAt, now) {
+  if (!lastRunAt) return false;
+  const last = new Date(lastRunAt);
+  const cur = now instanceof Date ? now : new Date();
+  if (Number.isNaN(last.getTime())) return false;
+  return (
+    last.getFullYear() === cur.getFullYear() &&
+    last.getMonth() === cur.getMonth() &&
+    last.getDate() === cur.getDate() &&
+    last.getHours() === cur.getHours() &&
+    last.getMinutes() === cur.getMinutes()
+  );
+}
+
+/** 综合判定哪些定时脚本应在本分钟执行：enabled=1 && trigger_mode='schedule' && cron 合法 && 命中当前分钟
+ *  && last_run_at 不在当前分钟内（去重）。非法 cron 静默跳过（不抛错，避免影响同 tick 其它脚本）。 */
+function dueScheduledScripts(scripts, now) {
+  const date = now instanceof Date ? now : new Date();
+  const results = [];
+  for (const script of Array.isArray(scripts) ? scripts : []) {
+    if (Number(script.enabled) !== 1) continue;
+    if (String(script.trigger_mode) !== 'schedule') continue;
+    let parsed;
+    try {
+      parsed = parseCron(script.schedule_cron);
+    } catch {
+      continue;
+    }
+    if (!isCronDue(parsed, date)) continue;
+    if (isRunThisMinute(script.last_run_at, date)) continue;
+    results.push(script);
+  }
+  return results;
+}
+
 module.exports = {
   runHookScripts,
   runScriptManually,
+  runScriptOnce,
   stopScript,
   buildScriptContext,
   contextEnvVars,
   resolveWorkDir,
   resolveScriptFile,
+  recordRunFailure,
+  parseCron,
+  isCronDue,
+  isRunThisMinute,
+  dueScheduledScripts,
 };

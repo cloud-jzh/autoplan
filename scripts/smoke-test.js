@@ -360,7 +360,7 @@ async function main() {
     loop.stop(multiProjectB);
     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
 
-    console.log('smoke ok: projects, scoped snapshots, attachments, attachment prompts, plan reader, markdown reader, config persistence, scope concurrency, scope file open, project folder pick/open, search, frontend interactions, task acceptance, task events, scan, validation, duration stats, codex session reuse, claude session context, multi-backend, oh-my-pi backend, multi-loop, scripts module, script file source, mcp control, acceptance module');
+    console.log('smoke ok: projects, scoped snapshots, attachments, attachment prompts, plan reader, markdown reader, config persistence, scope concurrency, scope file open, project folder pick/open, search, frontend interactions, task acceptance, task events, scan, validation, duration stats, codex session reuse, claude session context, multi-backend, oh-my-pi backend, multi-loop, scripts module, script file source, mcp control, acceptance module, batch acceptance');
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -592,6 +592,14 @@ function assertScriptsModuleSourceSmoke() {
     'utf8',
   );
   const scriptHooksSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'loop', 'scriptHooks.js'), 'utf8');
+  const loopServiceSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'loopService.js'), 'utf8');
+  const workspaceFormsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'utils', 'workspaceForms.ts'), 'utf8');
+  const useControllerSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'hooks', 'useWorkspaceController.ts'), 'utf8');
+  const settingsViewSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx'),
+    'utf8',
+  );
+  const runtimeSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'loop', 'runtime.js'), 'utf8');
 
   // 后端：scripts 数据表与索引
   assert.match(databaseSource, /CREATE TABLE IF NOT EXISTS scripts \(/, 'database 应建 scripts 表');
@@ -666,6 +674,54 @@ function assertScriptsModuleSourceSmoke() {
   assert.match(scriptHooksSource, /source_type[\s\S]*resolveScriptFile[\s\S]*module\.exports[\s\S]*resolveScriptFile/, 'scriptHooks 应按 source_type 分流解析文件来源并导出 resolveScriptFile');
   assert.match(editorModalSource, /window\.autoplan\.pickScriptFile\([\s\S]*draft\.sourceType/, 'ScriptEditorModal 应调用文件选择 IPC 并接入来源切换');
   assert.match(scriptsViewSource, /function readSourceType[\s\S]*source_type/, 'WorkspaceScriptsView 应读取来源类型并兼容 source_type 蛇形字段');
+
+  // ============ 定时任务：schema + IPC + 调度器 + cron 求值器 ============
+  // 数据库：scripts.schedule_cron 列与幂等迁移
+  assert.match(databaseSource, /schedule_cron TEXT/, 'database scripts 建表应包含 schedule_cron 列');
+  assert.match(databaseSource, /ensureColumn\('scripts', 'schedule_cron', 'TEXT'\)/, 'database 应对 scripts.schedule_cron 做幂等迁移');
+  // 数据库：project_states.env_vars 列与幂等迁移
+  assert.match(databaseSource, /env_vars TEXT NOT NULL DEFAULT ''/, 'database project_states 建表应包含 env_vars 列');
+  assert.match(databaseSource, /ensureColumn\('project_states', 'env_vars', "TEXT NOT NULL DEFAULT ''"\)/, 'database 应对 project_states.env_vars 做幂等迁移');
+  // 主进程：SCRIPT_TRIGGER_MODES 含 schedule + 列清单透传 schedule_cron
+  assert.match(mainSource, /SCRIPT_TRIGGER_MODES[\s\S]*(?:'schedule'|'hook'.*'schedule')/, 'main SCRIPT_TRIGGER_MODES 应含 schedule');
+  assert.match(mainSource, /SCRIPT_COLUMN_LIST[\s\S]*schedule_cron/, 'main SCRIPT_COLUMN_LIST 应包含 schedule_cron');
+  assert.match(mainSource, /SCRIPT_SET_ASSIGNMENTS[\s\S]*schedule_cron/, 'main SCRIPT_SET_ASSIGNMENTS 应包含 schedule_cron');
+  assert.match(mainSource, /normalizeScriptFields[\s\S]*schedule_cron/, 'main normalizeScriptFields 应透传 schedule_cron');
+  // loopService：环境变量读取 + 调度器启停 + 实际执行入口
+  assert.match(loopServiceSource, /projectEnvVars\(/, 'loopService 应提供 projectEnvVars 读取用户环境变量');
+  assert.match(loopServiceSource, /startScheduler\(/, 'loopService 应提供 startScheduler');
+  assert.match(loopServiceSource, /stopScheduler\(/, 'loopService 应提供 stopScheduler');
+  assert.match(loopServiceSource, /runScheduledScripts\(/, 'loopService 应提供 runScheduledScripts');
+  assert.match(loopServiceSource, /this\.projectEnvVars\(projectIdForEmit\)/, 'runShell 应注入 projectEnvVars 到 baseEnv');
+  assert.match(loopServiceSource, /this\.projectEnvVars\(projectIdForEmit\)/, 'runCodex/runAgentCliAttempt 应合并 projectEnvVars 到 env');
+  // scriptHooks：cron 求值器（3 个纯函数导出）与 runScriptOnce/recordRunFailure 导出
+  assert.match(scriptHooksSource, /function parseCron\(expr\)/, 'scriptHooks 应定义 parseCron');
+  assert.match(scriptHooksSource, /function isCronDue\(parsed, date\)/, 'scriptHooks 应定义 isCronDue');
+  assert.match(scriptHooksSource, /function dueScheduledScripts\(scripts, now\)/, 'scriptHooks 应定义 dueScheduledScripts');
+  assert.match(scriptHooksSource, /module\.exports[\s\S]*parseCron[\s\S]*isCronDue[\s\S]*dueScheduledScripts/, 'scriptHooks 应导出 parseCron/isCronDue/dueScheduledScripts');
+  // runtime：createUnrefInterval
+  assert.match(runtimeSource, /function createUnrefInterval\(/, 'runtime 应提供 createUnrefInterval');
+  // types：ScriptTriggerMode 含 schedule + Script/CreateScriptInput 含 schedule_cron + LoopConfigInput 含 envVars + ProjectState 含 env_vars
+  assert.match(typeSource, /export type ScriptTriggerMode =[^;]*'schedule'/, 'types ScriptTriggerMode 应含 schedule');
+  assert.match(typeSource, /interface Script \{[\s\S]*schedule_cron/, 'types Script 接口应含 schedule_cron');
+  assert.match(typeSource, /interface CreateScriptInput \{[\s\S]*scheduleCron/, 'types CreateScriptInput 应含 scheduleCron');
+  assert.match(typeSource, /LoopConfigInput \{[\s\S]*envVars/, 'types LoopConfigInput 应含 envVars');
+  assert.match(typeSource, /ProjectState \{[\s\S]*env_vars/, 'types ProjectState 应含 env_vars');
+  assert.match(typeSource, /export interface EnvVarEntry/, 'types 应定义 EnvVarEntry');
+  // WorkspaceScriptsView：ScriptCard 含 onRun 与 sc-run 按钮
+  assert.match(scriptsViewSource, /onRun[:\s]/g, 'WorkspaceScriptsView ScriptCard 应含 onRun 回调');
+  assert.match(scriptsViewSource, /sc-run/, 'WorkspaceScriptsView 应渲染 sc-run 运行/停止按钮');
+  // ScriptEditorModal：schedule cron 输入
+  assert.match(editorModalSource, /scheduleCron/, 'ScriptEditorModal 应含 scheduleCron 字段');
+  assert.match(editorModalSource, /cronHint\(/, 'ScriptEditorModal 应含 cronHint 提示函数');
+  // WorkspaceSettingsView：SETTINGS_NAV 含 id:'env'
+  assert.match(settingsViewSource, /id: 'env', label: '环境变量'/, 'WorkspaceSettingsView SETTINGS_NAV 应含环境变量导航项');
+  // workspaceForms：scheduleCron 字段 / envVars 序列化 / envVars 解析
+  assert.match(workspaceFormsSource, /scheduleCron:/, 'workspaceForms ScriptDraftState 应含 scheduleCron');
+  assert.match(workspaceFormsSource, /envVars = normalizeEnvVarEntries/, 'workspaceForms loopConfigurePayloadFromForm 应序列化 envVars');
+  assert.match(workspaceFormsSource, /JSON\.parse\(state\.env_vars\)/, 'workspaceForms loopFormFromProjectState 应解析 env_vars');
+  // useWorkspaceController：loopForm 初始态含 envVars: []
+  assert.match(useControllerSource, /envVars: \[\]/, 'useWorkspaceController loopForm 初始态应含 envVars: []');
 }
 
 function assertMcpControlSourceSmoke() {
@@ -765,6 +821,10 @@ function assertAcceptanceModuleSourceSmoke() {
     path.join(__dirname, '..', 'src', 'renderer', 'components', 'workspace', 'AcceptanceView.tsx'),
     'utf8',
   );
+  const loopServiceSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'loopService.js'),
+    'utf8',
+  );
 
   // 数据层：plans/plan_tasks 增加可空 accepted_at 列（建表 + ensureColumn 增量迁移）
   assert.match(databaseSource, /CREATE TABLE IF NOT EXISTS plans \([\s\S]*accepted_at TEXT/, 'database plans 建表应含 accepted_at');
@@ -830,6 +890,33 @@ function assertAcceptanceModuleSourceSmoke() {
   assert.match(acceptanceViewSource, /暂无待验收项/, '验收视图应提供空态');
   assert.match(acceptanceViewSource, /已验收（最近）/, '验收视图应提供已验收折叠区');
   assert.match(acceptanceViewSource, /取消验收/, '已验收区应提供取消验收操作');
+
+  // 批量验收后端：acceptItems / unacceptItems / writeAcceptance
+  assert.match(loopServiceSource, /acceptItems\(/, 'loopService 应提供 acceptItems 批量验收方法');
+  assert.match(loopServiceSource, /unacceptItems\(/, 'loopService 应提供 unacceptItems 批量取消验收方法');
+  assert.match(loopServiceSource, /writeAcceptance\(/, 'loopService 应提供 writeAcceptance 私有 helper');
+
+  // 批量验收 IPC 通道
+  assert.match(mainSource, /ipcMain\.handle\('acceptance:acceptBatch'/, 'main 应注册 acceptance:acceptBatch 通道');
+  assert.match(mainSource, /ipcMain\.handle\('acceptance:unacceptBatch'/, 'main 应注册 acceptance:unacceptBatch 通道');
+
+  // preload 暴露批量方法
+  assert.match(preloadSource, /acceptItems: \(input\) => ipcRenderer\.invoke\('acceptance:acceptBatch', input\)/, 'preload 应暴露 acceptItems 转发到 acceptance:acceptBatch');
+  assert.match(preloadSource, /unacceptItems: \(input\) => ipcRenderer\.invoke\('acceptance:unacceptBatch', input\)/, 'preload 应暴露 unacceptItems 转发到 acceptance:unacceptBatch');
+
+  // 类型：AcceptBatchInput + AutoplanApi.acceptItems / unacceptItems
+  assert.match(typeSource, /export interface AcceptBatchInput extends ProjectIdInput/, 'types 应声明 AcceptBatchInput 接口');
+  assert.match(typeSource, /acceptItems: \(input: AcceptBatchInput\) => Promise<AppSnapshot>;/, 'AutoplanApi 应声明 acceptItems 签名');
+  assert.match(typeSource, /unacceptItems: \(input: AcceptBatchInput\) => Promise<AppSnapshot>;/, 'AutoplanApi 应声明 unacceptItems 签名');
+
+  // 控制器：acceptItems / unacceptItems 动作
+  assert.match(controllerSource, /const acceptItems = [\s\S]*window\.autoplan\.acceptItems/, '控制器应实现 acceptItems 批量动作');
+  assert.match(controllerSource, /const unacceptItems = [\s\S]*window\.autoplan\.unacceptItems/, '控制器应实现 unacceptItems 批量动作');
+
+  // 验收视图：多选 selection + onAcceptItems / onUnacceptItems
+  assert.match(acceptanceViewSource, /selection/, '验收视图应包含多选选择态');
+  assert.match(acceptanceViewSource, /onAcceptItems/, '验收视图应接收 onAcceptItems 批量 props');
+  assert.match(acceptanceViewSource, /onUnacceptItems/, '验收视图应接收 onUnacceptItems 批量 props');
 }
 
 function assertMarkdownPlanReaderSourceSmoke() {

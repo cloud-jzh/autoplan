@@ -54,6 +54,17 @@ function formatDurationShort(ms?: number | null) {
   return `${minutes}m${Math.round(seconds % 60)}s`;
 }
 
+/** 为 cron 表达式生成简短人类可读提示。仅处理常见模式，非标准 pattern 降级为"已填写"。 */
+function cronHint(expr: string): string {
+  const trimmed = expr.trim();
+  if (!trimmed) return '未填写';
+  if (trimmed === '*/5 * * * *') return '每 5 分钟执行一次';
+  const stepMatch = /^\*\/(\d+) \* \* \* \*$/.exec(trimmed);
+  if (stepMatch) return `每 ${stepMatch[1]} 分钟执行一次`;
+  if (/^\d+ \d+ \* \* [\d,-]+$/.test(trimmed)) return '工作日定时执行';
+  return '已填写';
+}
+
 function formatRelativeTime(value?: string | null) {
   const ms = getTimestampMs(value);
   if (!ms) return '';
@@ -522,9 +533,31 @@ export function ScriptEditorModal({
                         <Icon name="power" size={13} aria-hidden="true" />
                         仅手动
                       </button>
+                      <button
+                        type="button"
+                        className={draft.triggerMode === 'schedule' ? 'active' : ''}
+                        onClick={() => patchDraft({ triggerMode: 'schedule' as ScriptTriggerMode })}
+                      >
+                        <Icon name="clock" size={13} aria-hidden="true" />
+                        定时
+                      </button>
                     </div>
                   </div>
-                  <div className="field">
+                  {draft.triggerMode === 'schedule' ? (
+                    <div className="field">
+                      <label>定时表达式（cron）</label>
+                      <input
+                        className="mono"
+                        type="text"
+                        value={draft.scheduleCron}
+                        placeholder="*/5 * * * *"
+                        spellCheck={false}
+                        onChange={(event) => patchDraft({ scheduleCron: event.target.value })}
+                      />
+                      <span className="field-hint">5 字段标准 cron（分 时 日 月 周），支持 *、,、-、/。当前{cronHint(draft.scheduleCron)}</span>
+                    </div>
+                  ) : (
+                    <div className="field">
                     <label>挂载阶段（循环钩子）</label>
                     <div className="hook-grid">
                       {HOOK_STAGE_OPTIONS.map((option) => {
@@ -549,6 +582,7 @@ export function ScriptEditorModal({
                       <span className="field-hint">仅手动模式下脚本不会挂到循环阶段。</span>
                     ) : null}
                   </div>
+                  )}
                 </div>
               </section>
 

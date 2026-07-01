@@ -10,6 +10,25 @@
 
 这个可以验证，[ai哲学，解决99%编程问题](https://www.bilibili.com/video/BV1TsEC6DEik)。
 
+## 理念
+
+随着AI越来越智能，编程任务其实就可以像人工智能驾驶一样，逐渐卸载方向盘了。
+
+人工智能驾驶，需要给它目的地，那么AutoPlan也一样，只需要给它需求和反馈。
+
+随着需求和反馈的循环，项目会越来越完善，你的钱包也会越来越完善。
+
+项目完善是内因，环境变化是外因，内因是根本，外因是条件。
+
+天之道，损有余而补不足，即没有空中楼阁，AI的根本在于服务于人。
+
+技术毫无作用，服务于人的时候，技术才起作用。
+
+AI不服务于人，那么AI必死，AI服务于人的时候，时代就是进步的。
+
+AI不会淘汰你，淘汰你的是其它人，或者说是你自己。
+
+不必慌张，用好AI，用科技改变生活。
 
 ## 快速开始
 
@@ -26,6 +45,7 @@
 ## 为什么有这个项目？
 
 [一个脚本搞定全自动编程](https://www.bilibili.com/video/BV142jX6zEyd)
+
 
 ## 使用教程
 
@@ -58,26 +78,15 @@
 ### 工作界面
 ![](./snapshot/workspace.png)
 
+## Star History
 
-## 理念
-
-随着AI越来越智能，编程任务其实就可以像人工智能驾驶一样，逐渐卸载方向盘了。
-
-人工智能驾驶，需要给它目的地，那么AutoPlan也一样，只需要给它需求和反馈。
-
-随着需求和反馈的循环，项目会越来越完善，你的钱包也会越来越完善。
-
-项目完善是内因，环境变化是外因，内因是根本，外因是条件。
-
-天之道，损有余而补不足，即没有空中楼阁，AI的根本在于服务于人。
-
-技术毫无作用，服务于人的时候，技术才起作用。
-
-AI不服务于人，那么AI必死，AI服务于人的时候，时代就是进步的。
-
-AI不会淘汰你，淘汰你的是其它人，或者说是你自己。
-
-不必慌张，用好AI，用科技改变生活。
+<a href="https://www.star-history.com/?repos=lyming99%2Fautoplan&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=lyming99/autoplan&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=lyming99/autoplan&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=lyming99/autoplan&type=date&legend=top-left" />
+ </picture>
+</a>
 
 ## 最后
 

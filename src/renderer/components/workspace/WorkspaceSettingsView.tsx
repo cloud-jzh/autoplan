@@ -207,7 +207,8 @@ export function WorkspaceSettingsView({
           : null,
       };
       if (editingConfigId && editingConfigId > 0) {
-        await window.autoplan.aiConfigUpdate({ configId: editingConfigId, ...payload });
+        const { projectId: _, ...updatePayload } = payload;
+        await window.autoplan.aiConfigUpdate({ configId: editingConfigId, ...updatePayload });
       } else {
         await window.autoplan.aiConfigCreate(payload);
       }

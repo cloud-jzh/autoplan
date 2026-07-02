@@ -6,3 +6,6 @@ dist/
 node_modules/
 .autoplan-runtime/
 /docs/progress
+pnpm-lock.yaml
+.npmrc
+pnpm-workspace.yaml

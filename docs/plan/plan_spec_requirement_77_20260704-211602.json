@@ -1,0 +1,66 @@
+{
+  "title": "对话 AI OpenAI 模式支持超高思考深度",
+  "summary": "现有对话 AI 配置的思考深度只允许 low、medium、high，虽然 CLI Codex 配置已有 xhigh，但 OpenAI 对话配置无法选择或保存“超高”。本次需要让 OpenAI 模式在设置页和对话 composer 中支持 xhigh/超高，确保该值可被归一化、持久化、展示，并在 OpenAI 兼容请求中作为 reasoning_effort 透传；DeepSeek 与 Anthropic 的既有行为不应被误扩展或破坏。",
+  "tasks": [
+    {
+      "title": "扩展对话 AI 思考深度类型与归一化规则",
+      "scope": [
+        "src/chat/aiConfigService.js",
+        "src/renderer/types.ts",
+        "src/renderer/utils/workspaceForms.ts"
+      ],
+      "acceptance": [
+        "OpenAI provider 的 AI 配置允许 thinkingDepth 为 xhigh，并能在 create/update/resolve 链路中保留为 xhigh。",
+        "DeepSeek 仍只接受当前支持的低/中/高思考深度，Anthropic 继续只使用 thinkingBudgetTokens，不把 xhigh 写入不支持的 provider。",
+        "非法 thinkingDepth 输入仍被归一为 null 或空选项，不污染 ai_configs.thinking_depth。"
+      ]
+    },
+    {
+      "title": "更新设置页和对话输入区的 OpenAI 超高模式选择",
+      "scope": [
+        "src/renderer/utils/workspaceForms.ts",
+        "src/renderer/components/workspace/WorkspaceSettingsView.tsx",
+        "src/renderer/components/workspace/ChatView.tsx"
+      ],
+      "acceptance": [
+        "AI 配置设置页在 provider 为 OpenAI 兼容时显示“超高”思考深度选项，并能创建、编辑、保存该选项。",
+        "对话 composer 绑定 OpenAI 配置时可从思考深度下拉中切换到“超高”，切换后通过现有 aiConfigUpdate 链路持久化。",
+        "切换到不支持超高的 provider 时，表单不会继续展示或提交 OpenAI 专属 xhigh 值。"
+      ]
+    },
+    {
+      "title": "确保 OpenAI 请求透传 xhigh reasoning_effort",
+      "scope": [
+        "src/chat/llmClient.js",
+        "src/chat/chatController.js"
+      ],
+      "acceptance": [
+        "OpenAI 兼容调用在配置 thinkingDepth 为 xhigh 时，请求体包含 reasoning_effort: \"xhigh\"。",
+        "thinkingDepth 为空时仍不发送 reasoning_effort，低/中/高三档的请求体保持现有行为。",
+        "Anthropic 的 thinking budget 请求体构造不受 xhigh 支持影响。"
+      ]
+    },
+    {
+      "title": "补充超高模式回归测试覆盖",
+      "scope": [
+        "src/chat/aiConfigService.test.js",
+        "src/chat/llmClient.test.js",
+        "src/renderer/components/shared.test.tsx",
+        "src/renderer/types.syntax.test.js"
+      ],
+      "acceptance": [
+        "AI 配置服务测试覆盖 OpenAI 创建/更新 xhigh 后可脱敏返回并在数据库中保存 thinking_depth=xhigh。",
+        "LLM 客户端测试覆盖 OpenAI 请求体包含 reasoning_effort=xhigh，并确认空值不发送该字段。",
+        "渲染侧工具或类型测试覆盖 OpenAI provider 的思考深度选项包含 xhigh/超高，非 OpenAI provider 不误提交 xhigh。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm run check && npm test",
+    "criteria": [
+      "TypeScript、主进程脚本语法检查和文件长度检查全部通过。",
+      "现有 Node 测试和新增 AI 配置/LLM 请求体回归测试全部通过。",
+      "OpenAI 对话 AI 配置可选择、保存、重新加载并发送 xhigh 超高思考深度；DeepSeek、Anthropic 和既有 low/medium/high 配置行为无回归。"
+    ]
+  }
+}

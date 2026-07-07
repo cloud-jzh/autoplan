@@ -314,6 +314,23 @@ describe('snapshot linked plan batching', () => {
   });
 });
 
+
+describe('snapshot plan generation duration', () => {
+  it('normalizes plan_generation_duration_ms on plan snapshots', () => {
+    const db = createSnapshotDb({
+      plans: [
+        planRow({ id: 40, plan_generation_duration_ms: 1234.9 }),
+        planRow({ id: 41, plan_generation_duration_ms: -10 }),
+      ],
+    });
+    const service = createSnapshotService({ db });
+
+    const result = snapshots.snapshot(service, {}, 1);
+
+    assert.equal(findSnapshotRow(result.plans, 40).plan_generation_duration_ms, 1234);
+    assert.equal(findSnapshotRow(result.plans, 41).plan_generation_duration_ms, 0);
+  });
+});
 describe('snapshot scan_files payload contract', () => {
   it('keeps regular snapshots bounded while exposing a scan summary', () => {
     const baseDb = createSnapshotDb();
@@ -518,6 +535,7 @@ function planRow(overrides = {}) {
     total_tasks: overrides.total_tasks ?? 0,
     completed_tasks: overrides.completed_tasks ?? 0,
     validation_passed: overrides.validation_passed ?? 0,
+    plan_generation_duration_ms: overrides.plan_generation_duration_ms ?? 0,
     agent_cli_provider: overrides.agent_cli_provider ?? null,
     agent_cli_command: overrides.agent_cli_command || '',
     codex_reasoning_effort: overrides.codex_reasoning_effort ?? null,
@@ -742,3 +760,52 @@ function compareIntakePlanLinkRows(left, right) {
 function compareUpdatedDesc(left, right) {
   return String(right.updated_at || '').localeCompare(String(left.updated_at || ''));
 }
+
+describe('planBackendSnapshotFields Claude authToken masking', () => {
+  // 直接测 planBackendSnapshotFields 的脱敏逻辑：authToken 列被 mask 成 ····1234，
+  // 并新增 *_has_claude_auth_token 布尔位；baseUrl/model 等非敏感字段原样输出。
+  const { planBackendSnapshotFields } = snapshots;
+
+  it('masks non-empty authToken to ···· + last 4 and sets has flag true', () => {
+    const fields = planBackendSnapshotFields({
+      plan_generation_claude_base_url: 'https://plan.example.com',
+      plan_generation_claude_auth_token: 'sk-secret-abcd',
+      plan_generation_claude_model: 'claude-sonnet-4-5',
+      plan_execution_claude_auth_token: 'sk-exec-xyz',
+    });
+
+    assert.equal(fields.plan_generation_claude_base_url, 'https://plan.example.com');
+    assert.equal(fields.plan_generation_claude_auth_token, '····abcd');
+    assert.equal(fields.plan_generation_has_claude_auth_token, true);
+    assert.equal(fields.plan_generation_claude_model, 'claude-sonnet-4-5');
+    assert.equal(fields.plan_execution_claude_auth_token, '····-xyz');
+    assert.equal(fields.plan_execution_has_claude_auth_token, true);
+  });
+
+  it('returns empty authToken and has flag false when token absent', () => {
+    const fields = planBackendSnapshotFields({
+      plan_generation_claude_base_url: '',
+      plan_generation_claude_auth_token: '',
+    });
+
+    assert.equal(fields.plan_generation_claude_auth_token, '');
+    assert.equal(fields.plan_generation_has_claude_auth_token, false);
+    // baseUrl 列即使为空也原样输出（非敏感字段，UI 需要回填）。
+    assert.equal(fields.plan_generation_claude_base_url, '');
+  });
+
+  it('masks short tokens (<=4 chars) fully without leaking tail', () => {
+    const fields = planBackendSnapshotFields({
+      plan_generation_claude_auth_token: 'abc',
+    });
+    assert.equal(fields.plan_generation_claude_auth_token, '····');
+    assert.equal(fields.plan_generation_has_claude_auth_token, true);
+  });
+
+  it('omits plan backend columns when source row has no such keys', () => {
+    const fields = planBackendSnapshotFields({ unrelated_column: 'x' });
+    assert.ok(!('plan_generation_claude_auth_token' in fields));
+    assert.ok(!('plan_generation_has_claude_auth_token' in fields));
+    assert.ok(!('plan_generation_claude_base_url' in fields));
+  });
+});

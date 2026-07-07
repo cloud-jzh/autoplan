@@ -95,6 +95,7 @@ const agentCliRunner = require('./loop/agentCliRunner');
 const intakeDeletion = require('./loop/intakeDeletion');
 const planAgentCli = require('./loop/planAgentCli');
 const planBackendConfig = require('./loop/planBackendConfig');
+const { resolveDefaultClaudeCliConfig } = require('./chat/claudeCliConfigService');
 const planLifecycle = require('./loop/planLifecycle');
 const taskExecution = require('./loop/taskExecution');
 const validationFlow = require('./loop/validation');
@@ -863,6 +864,21 @@ class LoopService extends EventEmitter {
     return planLifecycle.resumePlan(this, projectId, planId);
   }
 
+  /** 更新中断/停止状态下的计划执行配置（provider/command 等），用于 CLI 工具切换。 */
+  updatePlanExecutionConfig(projectId, planId, input) {
+    return planLifecycle.updatePlanExecutionConfig(this, projectId, planId, input);
+  }
+
+  /** 重新激活已完成的计划：重置所有 completed 任务为 pending，清空 validation_passed，重新加入执行队列。 */
+  reExecutePlan(projectId, planId) {
+    return planLifecycle.reExecutePlan(this, projectId, planId);
+  }
+
+  /** 基于已完成计划的关联需求/反馈重新生成计划：旧计划保持不变，新计划作为独立条目入库。 */
+  async recreatePlanFromIntake(projectId, planId) {
+    return planLifecycle.recreatePlanFromIntake(this, projectId, planId);
+  }
+
   linkedPlansForIntake(projectId, intakeType, intakeId) {
     return planLifecycle.linkedPlansForIntake(this, projectId, intakeType, intakeId);
   }
@@ -1409,9 +1425,33 @@ class LoopService extends EventEmitter {
       }
       let agentCliOptions;
       if (isClaudeProvider) {
+        // Claude 连接解析（需求 #93）：优先级「所选 claude_config_id 命中 → 默认配置 → 既有内联 claude 字段」。
+        //  1) 计划生成：planGenerationAgentCliOperationFields → operation → activeOperation（claudeBaseUrl 等驼峰键）
+        //  2) 任务执行：planExecutionEventMeta 平铺 planExecutionClaude* → operation → activeOperation
+        // 命中/默认配置覆盖内联字段；未选配置且无默认时回退内联字段，空则沿用本机 settings.json（与现状一致）。
+        const claudeConfigId = Number(
+          activeOperation.claudeConfigId || activeOperation.planExecutionClaudeConfigId || 0,
+        );
+        const resolved = resolveClaudeConnection(this.db, claudeConfigId);
+        const claudeBaseUrl = resolved?.baseUrl
+          || activeOperation.claudeBaseUrl
+          || activeOperation.planExecutionClaudeBaseUrl
+          || '';
+        const claudeAuthToken = resolved?.authToken
+          || activeOperation.claudeAuthToken
+          || activeOperation.planExecutionClaudeAuthToken
+          || '';
+        const claudeModel = resolved?.model
+          || activeOperation.claudeModel
+          || activeOperation.planExecutionClaudeModel
+          || '';
+        const claudeEnv = (claudeBaseUrl || claudeAuthToken || claudeModel)
+          ? { baseUrl: claudeBaseUrl, authToken: claudeAuthToken, model: claudeModel }
+          : null;
         agentCliOptions = {
           ...activeOperation,
           sessionId: activeOperation.agentCliSessionId || activeOperation.claudeSessionId || '',
+          ...(claudeEnv ? { claudeEnv } : {}),
         };
       } else if (isOpenCodeProvider) {
         agentCliOptions = {
@@ -1630,7 +1670,7 @@ class LoopService extends EventEmitter {
         appendInternalLog('Codex session id was empty; starting a new session.');
       }
 
-      const fresh = await runAttempt(codexNewSessionArgs(workspace, lastFile, { reasoningEffort: codexReasoningEffort }), 'new');
+      const fresh = await runAttempt(codexNewSessionArgs(lastFile, { reasoningEffort: codexReasoningEffort }), 'new');
       if (operationCancelled()) return cancelledResult();
       return resultFor(fresh, 'new');
     } finally {
@@ -1845,32 +1885,43 @@ class LoopService extends EventEmitter {
       } catch {
         continue; // 查询失败兜底，跳过本项目不影响其它项目与后续 tick
       }
-      // 非法 cron：记一条失败事件并置 last_status='bad'，同分钟去重避免刷屏；绝不抛错、不影响同 tick 其它脚本与后续 tick
+      // 空/非法 cron：记一条失败事件并置 last_status='bad'，同分钟去重避免刷屏；绝不抛错、不影响同 tick 其它脚本与后续 tick
       for (const script of scripts) {
         const cronExpr = String(script.schedule_cron || '').trim();
-        if (!cronExpr) continue;
         try {
           scriptHooks.parseCron(cronExpr);
         } catch (error) {
           if (scriptHooks.isRunThisMinute(script.last_run_at, now)) continue;
           const finishedAt = nowIso();
-          this.db.run(
-            `UPDATE scripts SET last_status = 'bad', last_run_at = ?, updated_at = ? WHERE id = ?`,
-            [finishedAt, finishedAt, script.id],
-          );
-          this.addEvent(
-            projectId,
-            'script.schedule.error',
-            `${script.name} 定时表达式无效：${error?.message || error}`,
-            {
-              scriptId: script.id,
-              scriptName: script.name,
-              stage: 'schedule',
-              trigger: 'schedule',
-              cron: cronExpr,
-              errorMessage: error?.message || String(error),
-            },
-          );
+          const errorMessage = error?.message || String(error);
+          try {
+            this.db.run(
+              `UPDATE scripts
+               SET last_status = 'bad',
+                   last_exit_code = -1,
+                   last_duration_ms = 0,
+                   last_log = ?,
+                   last_run_at = ?,
+                   updated_at = ?
+               WHERE id = ?`,
+              [errorMessage, finishedAt, finishedAt, script.id],
+            );
+            this.addEvent(
+              projectId,
+              'script.schedule.error',
+              `${script.name} 定时表达式无效：${errorMessage}`,
+              {
+                scriptId: script.id,
+                scriptName: script.name,
+                stage: 'schedule',
+                trigger: 'schedule',
+                cron: cronExpr,
+                errorMessage,
+              },
+            );
+          } catch {
+            // 调度器兜底：单条错误状态/事件写入失败不能阻断其它脚本。
+          }
         }
       }
       let due = [];
@@ -1880,11 +1931,15 @@ class LoopService extends EventEmitter {
         due = []; // 筛选异常兜底，本 tick 跳过该项目
       }
       for (const script of due) {
-        const stage = script.hook_stage || 'schedule';
+        const stage = 'schedule';
         try {
           await scriptHooks.runScriptOnce(this, script, stage, { trigger: 'schedule', workspace });
         } catch (error) {
-          scriptHooks.recordRunFailure(this, script, stage, { trigger: 'schedule', workspace }, error);
+          try {
+            scriptHooks.recordRunFailure(this, script, stage, { trigger: 'schedule', workspace }, error);
+          } catch {
+            // 失败回写本身异常时继续处理后续脚本，避免单条脚本阻断整个 tick。
+          }
         }
       }
     }
@@ -2116,6 +2171,13 @@ function planBackendStateUpdates(columns, prefix, config = {}) {
   addColumnUpdate(updates, columns, `${prefix}_command`, config.command || '');
   addColumnUpdate(updates, columns, `${prefix}_model`, config.model || '');
   addColumnUpdate(updates, columns, `${prefix}_codex_reasoning_effort`, config.codexReasoningEffort || null);
+  // Claude 自定义连接字段（baseUrl/authToken/model）：仅 project_states / plans 有对应列，
+  // requirements / feedback 的 ensureColumn 已加生成阶段 3 列，addColumnUpdate 会按 columns 守卫跳过不存在的列。
+  addColumnUpdate(updates, columns, `${prefix}_claude_base_url`, config.claudeBaseUrl || '');
+  addColumnUpdate(updates, columns, `${prefix}_claude_auth_token`, config.claudeAuthToken || '');
+  addColumnUpdate(updates, columns, `${prefix}_claude_model`, config.claudeModel || '');
+  // Claude 多配置 id（需求 #93）：整数列，0 表示未选；按 columns 守卫跳过不存在该列的表。
+  addColumnUpdate(updates, columns, `${prefix}_claude_config_id`, config.claudeConfigId || 0);
   return updates;
 }
 
@@ -2151,7 +2213,11 @@ function storedIntakePlanGenerationConfig(source = {}) {
   const codexReasoningEffort = provider === DEFAULT_AGENT_CLI_PROVIDER
     ? normalizeNullableCodexReasoningEffort(source.plan_generation_codex_reasoning_effort)
     : null;
-  return { strategy, provider, command, model, codexReasoningEffort };
+  const claudeBaseUrl = normalizeNullableText(source.plan_generation_claude_base_url) || '';
+  const claudeAuthToken = normalizeNullableText(source.plan_generation_claude_auth_token) || '';
+  const claudeModel = normalizeNullableText(source.plan_generation_claude_model) || '';
+  const claudeConfigId = Number(source.plan_generation_claude_config_id) || 0;
+  return { strategy, provider, command, model, codexReasoningEffort, claudeBaseUrl, claudeAuthToken, claudeModel, claudeConfigId };
 }
 
 function normalizeNullablePlanGenerationStrategy(value) {
@@ -2172,6 +2238,37 @@ function normalizeNullableCodexReasoningEffort(value) {
 function normalizeNullableText(value) {
   if (value === undefined || value === null) return '';
   return String(value).trim();
+}
+
+/**
+ * 解析 Claude 连接（需求 #93）：按「所选 claude_config_id 命中 → 默认配置」优先级返回
+ * { baseUrl, authToken, model }（authToken 为明文，仅供 spawn 注入 ANTHROPIC_*）；两者都无则返回 null，
+ * 由调用方回退到既有内联 claude 字段。
+ */
+function resolveClaudeConnection(db, configId) {
+  const id = Number(configId) || 0;
+  if (id > 0) {
+    const row = db.get(
+      'SELECT base_url, auth_token, model FROM claude_cli_configs WHERE id = ? AND project_id IS NULL',
+      [id],
+    );
+    if (row) {
+      return {
+        baseUrl: row.base_url || '',
+        authToken: row.auth_token || '',
+        model: row.model || '',
+      };
+    }
+  }
+  const defaultConfig = resolveDefaultClaudeCliConfig(db);
+  if (defaultConfig) {
+    return {
+      baseUrl: defaultConfig.baseUrl || '',
+      authToken: defaultConfig.authToken || '',
+      model: defaultConfig.model || '',
+    };
+  }
+  return null;
 }
 
 module.exports = {

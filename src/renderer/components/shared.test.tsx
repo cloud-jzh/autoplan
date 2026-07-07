@@ -5,12 +5,17 @@ import {
   readCodexReasoningEffort,
 } from './shared';
 import {
+  aiConfigFormForProviderChange,
+  aiConfigInputFromForm,
+  aiThinkingDepthLabel,
   agentCliDefaultCommand,
   agentCliOptionDetails,
   codexReasoningOptionDetails,
+  createDefaultChatConfigForm,
   createDefaultPlanGenerationSelection,
   isBuiltinPlanExecutionStrategy,
   isBuiltinPlanGenerationStrategy,
+  normalizeAiThinkingDepthInput,
   planBackendDefaultCommand,
   planBackendDefaultModel,
   planBackendProviderOptionsForStrategy,
@@ -18,13 +23,16 @@ import {
   planGenerationInputFromComposerSelection,
   planGenerationStrategyOptions,
   scopeFileOpenModeOptions,
+  thinkingDepthOptionsForProvider,
 } from '../utils/workspaceForms';
+import type { ChatConfigFormState } from '../utils/workspaceForms';
 
 type TestRegistrar = (name: string, fn: () => void) => void;
 
 declare function require(id: string): unknown;
 
 const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
+const { readFileSync } = require('node:fs') as { readFileSync: (path: string, encoding: string) => string };
 
 function expectEqual(actual: unknown, expected: unknown) {
   if (actual !== expected) {
@@ -43,6 +51,37 @@ function expectDeepEqual(actual: unknown, expected: unknown) {
     throw new Error(`Expected ${actualText} to deep equal ${expectedText}`);
   }
 }
+
+function expectSourceIncludes(source: string, token: string, message: string) {
+  expect(source.includes(token), message);
+}
+
+describe('update download UI wiring', () => {
+  it('keeps global update notice wired to download phases and installer opening', () => {
+    const source = readFileSync('src/renderer/components/UpdateNotice.tsx', 'utf8');
+
+    expectSourceIncludes(source, 'openInstaller', 'UpdateNotice should expose the installer open handler');
+    expectSourceIncludes(source, '打开安装包', 'UpdateNotice should show the installer open action');
+    expectSourceIncludes(source, '正在自动下载安装包', 'UpdateNotice should describe automatic download progress');
+    expectSourceIncludes(source, "phase === 'downloaded'", 'UpdateNotice should gate downloaded installer actions');
+    expectSourceIncludes(source, "phase === 'failed'", 'UpdateNotice should surface failed downloads');
+    expectSourceIncludes(source, "phase === 'unavailable'", 'UpdateNotice should surface unavailable installers');
+    expectSourceIncludes(source, 'dismissUpdate', 'UpdateNotice should keep the dismiss action available');
+  });
+
+  it('keeps about page installer card wired to local file status and actions', () => {
+    const source = readFileSync('src/renderer/components/workspace/WorkspaceSettingsView.tsx', 'utf8');
+
+    expectSourceIncludes(source, 'update-installer-card', 'About page should render the installer card');
+    expectSourceIncludes(source, '资产名称', 'About page should show installer asset name');
+    expectSourceIncludes(source, '下载状态', 'About page should show installer download status');
+    expectSourceIncludes(source, '本地文件', 'About page should show local installer path');
+    expectSourceIncludes(source, 'openInstaller', 'About page should use the installer open handler');
+    expectSourceIncludes(source, '打开安装包', 'About page should show the installer open action');
+    expectSourceIncludes(source, '打开 GitHub Releases', 'About page should keep the releases fallback action');
+    expectSourceIncludes(source, "status.downloadPhase === 'downloaded'", 'About page should only open downloaded installers');
+  });
+});
 
 describe('shared Codex reasoning helpers', () => {
   it('reads xhigh from shared display sources', () => {
@@ -176,6 +215,69 @@ describe('settings choice metadata', () => {
   });
 });
 
+describe('AI config thinking depth metadata', () => {
+  it('keeps OpenAI xhigh option available with the display label', () => {
+    const openaiOptions = thinkingDepthOptionsForProvider('openai');
+
+    expectDeepEqual(
+      openaiOptions.map((option) => option.value),
+      ['', 'low', 'medium', 'high', 'xhigh'],
+    );
+    expectEqual(openaiOptions.find((option) => option.value === 'xhigh')?.label, '超高');
+    expectEqual(normalizeAiThinkingDepthInput(' XHIGH ', 'openai'), 'xhigh');
+    expectEqual(aiThinkingDepthLabel('xhigh', 'openai'), '思考 · 超高');
+  });
+
+  it('does not submit xhigh for providers that do not support it', () => {
+    const openaiForm: ChatConfigFormState = {
+      provider: 'openai',
+      baseUrl: 'https://api.openai.com',
+      apiKey: 'sk-render-xhigh',
+      model: 'gpt-4o',
+      temperature: '0.3',
+      thinkingDepth: 'xhigh',
+      thinkingBudgetTokens: '5000',
+    };
+
+    expectDeepEqual(
+      thinkingDepthOptionsForProvider('deepseek').map((option) => option.value),
+      ['', 'low', 'medium', 'high'],
+    );
+    expectDeepEqual(thinkingDepthOptionsForProvider('anthropic'), []);
+    expectEqual(normalizeAiThinkingDepthInput('xhigh', 'deepseek'), '');
+    expectEqual(normalizeAiThinkingDepthInput('xhigh', 'anthropic'), '');
+
+    const switchedToDeepSeek = aiConfigFormForProviderChange(openaiForm, 'deepseek');
+    expectEqual(switchedToDeepSeek.thinkingDepth, '');
+
+    const deepseekPayload = aiConfigInputFromForm('DeepSeek', { ...openaiForm, provider: 'deepseek' });
+    expectEqual(deepseekPayload.thinkingDepth, null);
+    expectEqual(deepseekPayload.thinkingBudgetTokens, null);
+
+    const anthropicPayload = aiConfigInputFromForm('Anthropic', { ...openaiForm, provider: 'anthropic' });
+    expectEqual(anthropicPayload.thinkingDepth, null);
+    expectEqual(anthropicPayload.thinkingBudgetTokens, 5000);
+  });
+});
+
+describe('AI config default model metadata', () => {
+  it('uses gpt-5.5 for OpenAI default forms and empty submissions', () => {
+    const form = createDefaultChatConfigForm();
+
+    expectEqual(form.provider, 'openai');
+    expectEqual(form.model, 'gpt-5.5');
+
+    const payload = aiConfigInputFromForm('OpenAI', { ...form, model: '' });
+    expectEqual(payload.model, 'gpt-5.5');
+
+    const switchedFromLegacyOpenAiDefault = aiConfigFormForProviderChange(
+      { ...form, model: 'gpt-4o' },
+      'openai',
+    );
+    expectEqual(switchedFromLegacyOpenAiDefault.model, 'gpt-5.5');
+  });
+});
+
 describe('plan backend settings metadata', () => {
   it('keeps generation and execution strategy choices separate', () => {
     expectDeepEqual(
@@ -203,7 +305,7 @@ describe('plan backend settings metadata', () => {
     );
     expectEqual(planBackendDefaultCommand('oh-my-pi'), 'omp');
     expectEqual(planBackendDefaultCommand('claude'), 'claude');
-    expectEqual(planBackendDefaultModel('openai'), 'gpt-4o');
+    expectEqual(planBackendDefaultModel('openai'), 'gpt-5.5');
     expectEqual(planBackendDefaultModel('deepseek'), 'deepseek-chat');
     expectEqual(planBackendDefaultModel('anthropic'), 'claude-sonnet-4-6');
   });
@@ -211,14 +313,12 @@ describe('plan backend settings metadata', () => {
   it('normalizes Composer overrides to generation fields only', () => {
     const projectDefault = planGenerationInputFromComposerSelection(createDefaultPlanGenerationSelection());
     const external = planGenerationInputFromComposerSelection(createDefaultPlanGenerationSelection({
-      useProjectDefault: false,
       strategy: 'external-cli-structured',
       provider: 'codex',
       command: ' codex plan ',
       codexReasoningEffort: 'xhigh',
     }));
     const builtin = planGenerationInputFromComposerSelection(createDefaultPlanGenerationSelection({
-      useProjectDefault: false,
       strategy: 'builtin-llm-structured',
       provider: 'deepseek',
       model: '',

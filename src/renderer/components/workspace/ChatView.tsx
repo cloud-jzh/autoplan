@@ -8,7 +8,7 @@ import {
   aiThinkingDepthLabel,
   normalizeAiThinkingDepthInput,
   providerSupportsThinkingDepth,
-  thinkingDepthOptions,
+  thinkingDepthOptionsForProvider,
 } from '../../utils/workspaceForms';
 import { parseOpenIntakeIntent } from '../../utils/chatIntents';
 import { Icon } from '../icons';
@@ -277,8 +277,13 @@ export function ChatView({ chatState, onOpenIntake }: { chatState: WorkspaceChat
   const selectedConfigId = currentAiConfig?.id ?? config?.aiConfigId ?? configSelectOptions[0]?.id ?? null;
   const selectedThinkingDepth = normalizeAiThinkingDepthInput(
     currentAiConfig?.thinkingDepth ?? config?.thinkingDepth,
+    selectedProvider,
   );
   const supportsThinkingDepth = providerSupportsThinkingDepth(selectedProvider);
+  const thinkingDepthSelectOptions = useMemo(
+    () => (supportsThinkingDepth ? thinkingDepthOptionsForProvider(selectedProvider) : []),
+    [selectedProvider, supportsThinkingDepth],
+  );
   const activeModelLabel = currentAiConfig
     ? `${currentAiConfig.name} · ${currentAiConfig.model || '未设置模型'}`
     : activeConfigName || '无可用配置';
@@ -411,7 +416,7 @@ export function ChatView({ chatState, onOpenIntake }: { chatState: WorkspaceChat
   const handleThinkingDepthChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       if (!supportsThinkingDepth || thinkingDepthDisabled) return;
-      const normalized = normalizeAiThinkingDepthInput(e.target.value);
+      const normalized = normalizeAiThinkingDepthInput(e.target.value, selectedProvider);
       const nextDepth: ChatThinkingDepth = normalized ? normalized : null;
       const currentDepth: ChatThinkingDepth = selectedThinkingDepth ? selectedThinkingDepth : null;
       if (nextDepth === currentDepth || !updateActiveAiConfigThinkingDepth) return;
@@ -420,6 +425,7 @@ export function ChatView({ chatState, onOpenIntake }: { chatState: WorkspaceChat
     [
       commitComposerConfigUpdate,
       selectedThinkingDepth,
+      selectedProvider,
       supportsThinkingDepth,
       thinkingDepthDisabled,
       updateActiveAiConfigThinkingDepth,
@@ -544,7 +550,7 @@ export function ChatView({ chatState, onOpenIntake }: { chatState: WorkspaceChat
                 >
                   <Icon name="thinking" size={16} aria-hidden />
                   <span className="chat-model-select__label">
-                    {supportsThinkingDepth ? aiThinkingDepthLabel(selectedThinkingDepth) : '思考 · 不支持'}
+                    {supportsThinkingDepth ? aiThinkingDepthLabel(selectedThinkingDepth, selectedProvider) : '思考 · 不支持'}
                   </span>
                   <select
                     value={selectedThinkingDepth}
@@ -553,7 +559,7 @@ export function ChatView({ chatState, onOpenIntake }: { chatState: WorkspaceChat
                     aria-label="选择思考深度"
                   >
                     {supportsThinkingDepth ? (
-                      thinkingDepthOptions.map((option) => (
+                      thinkingDepthSelectOptions.map((option) => (
                         <option key={option.value || 'off'} value={option.value}>
                           思考 · {option.label}
                         </option>

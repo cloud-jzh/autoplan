@@ -14,6 +14,7 @@ const {
   getLegacyChatConfig,
   listAiConfigs,
   resolveAiConfigForConversation,
+  resolveAiConfigForPlanGeneration,
   updateAiConfig,
 } = require('./aiConfigService');
 
@@ -99,6 +100,101 @@ describe('aiConfigService create regression', () => {
       assert.equal(config.provider, 'openai');
       assert.equal(config.hasApiKey, false);
       assert.equal(config.maskedKey, '');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('creates Codex config with thinkingDepth passthrough, no baseUrl/apiKey requirement, and null thinkingBudgetTokens', async () => {
+    const fixture = await createDatabaseFixture();
+    try {
+      const codex = createAiConfig(fixture.db, {
+        projectId: fixture.projectId,
+        name: 'Codex Default',
+        provider: 'codex',
+        apiKey: '',
+        thinkingDepth: 'xhigh',
+        thinkingBudgetTokens: 16000,
+      });
+      assert.equal(codex.provider, 'codex');
+      assert.equal(codex.thinkingDepth, 'xhigh');
+      // codex 无需 HTTP 凭证：不要求 apiKey，baseUrl 保持空串
+      assert.equal(codex.hasApiKey, false);
+      assert.equal(codex.maskedKey, '');
+      assert.equal(codex.baseUrl, '');
+      // codex 不支持 thinkingBudgetTokens（仍仅限 anthropic）
+      assert.equal(codex.thinkingBudgetTokens, null);
+
+      // 无效 thinkingDepth 规范化为 null
+      const codexInvalid = createAiConfig(fixture.db, {
+        projectId: fixture.projectId,
+        name: 'Codex Invalid Depth',
+        provider: 'codex',
+        thinkingDepth: 'ultra',
+      });
+      assert.equal(codexInvalid.thinkingDepth, null);
+
+      // resolveAiConfigForConversation 对 codex 不要求 apiKey/baseUrl
+      const resolved = resolveAiConfigForConversation(fixture.db, {
+        project_id: fixture.projectId,
+        ai_config_id: codex.id,
+      });
+      assert.equal(resolved.provider, 'codex');
+      assert.equal(resolved.apiKey, '');
+      assert.equal(resolved.baseUrl, '');
+      assert.equal(resolved.thinkingDepth, 'xhigh');
+      assert.equal(resolved.thinkingBudgetTokens, null);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('preserves OpenAI xhigh thinking depth on create and update without exposing API keys', async () => {
+    const fixture = await createDatabaseFixture();
+    try {
+      const created = createAiConfig(fixture.db, {
+        projectId: fixture.projectId,
+        name: 'OpenAI XHigh',
+        provider: 'openai',
+        baseUrl: 'https://api.openai.com/v1',
+        apiKey: 'sk-openai-xhigh-9999',
+        model: 'gpt-4.1',
+        temperature: '0.4',
+        thinkingDepth: 'xhigh',
+        thinkingBudgetTokens: 12000,
+      });
+
+      assert.equal(created.provider, 'openai');
+      assert.equal(created.thinkingDepth, 'xhigh');
+      assert.equal(created.thinkingBudgetTokens, null);
+      assert.equal(created.hasApiKey, true);
+      assert.equal(created.maskedKey, '····9999');
+      assert.equal(Object.prototype.hasOwnProperty.call(created, 'apiKey'), false);
+      assert.equal(Object.prototype.hasOwnProperty.call(created, 'api_key'), false);
+      assert.equal(
+        fixture.db.get('SELECT thinking_depth FROM ai_configs WHERE id = ?', [created.id]).thinking_depth,
+        'xhigh',
+      );
+
+      const updated = updateAiConfig(fixture.db, created.id, {
+        name: 'OpenAI XHigh Updated',
+        thinkingDepth: 'xhigh',
+        thinkingBudgetTokens: 16000,
+      });
+      assert.equal(updated.name, 'OpenAI XHigh Updated');
+      assert.equal(updated.thinkingDepth, 'xhigh');
+      assert.equal(updated.thinkingBudgetTokens, null);
+      assert.equal(updated.maskedKey, '····9999');
+      assert.equal(Object.prototype.hasOwnProperty.call(updated, 'apiKey'), false);
+      assert.equal(Object.prototype.hasOwnProperty.call(updated, 'api_key'), false);
+
+      const raw = fixture.db.get(
+        'SELECT api_key, thinking_depth, thinking_budget_tokens FROM ai_configs WHERE id = ?',
+        [created.id],
+      );
+      assert.equal(raw.api_key, 'sk-openai-xhigh-9999');
+      assert.equal(raw.thinking_depth, 'xhigh');
+      assert.equal(raw.thinking_budget_tokens, null);
     } finally {
       fixture.cleanup();
     }
@@ -385,8 +481,42 @@ describe('aiConfigService create regression', () => {
       assert.equal(resolved.provider, 'openai');
       assert.equal(resolved.baseUrl, 'https://api.openai.com');
       assert.equal(resolved.apiKey, '');
-      assert.equal(resolved.model, 'gpt-4o');
+      assert.equal(resolved.model, 'gpt-5.5');
       assert.equal(resolved.temperature, '0.3');
+
+      const planResolved = resolveAiConfigForPlanGeneration(fixture.db);
+      assert.equal(planResolved.provider, 'openai');
+      assert.equal(planResolved.model, 'gpt-5.5');
+
+      const explicitPlanModel = resolveAiConfigForPlanGeneration(fixture.db, {
+        planGenerationModel: 'gpt-4o',
+      });
+      assert.equal(explicitPlanModel.model, 'gpt-4o');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('initializes legacy chat defaults and global AI config with the new OpenAI default model', async () => {
+    const fixture = await createDatabaseFixture();
+    try {
+      const legacy = getLegacyChatConfig(fixture.db);
+      assert.equal(legacy.model, 'gpt-5.5');
+
+      const row = fixture.db.get(
+        'SELECT * FROM ai_configs WHERE project_id IS NULL ORDER BY id ASC LIMIT 1',
+      );
+      assert.equal(row.provider, 'openai');
+      assert.equal(row.model, 'gpt-5.5');
+
+      const resolved = resolveAiConfigForConversation(fixture.db, {
+        project_id: fixture.projectId,
+        ai_config_id: null,
+      });
+      assert.equal(resolved.model, 'gpt-5.5');
+
+      const planResolved = resolveAiConfigForPlanGeneration(fixture.db);
+      assert.equal(planResolved.model, 'gpt-5.5');
     } finally {
       fixture.cleanup();
     }
@@ -409,6 +539,24 @@ describe('aiConfigService create regression', () => {
       assert.equal(summary.hasApiKey, true);
       assert.equal(summary.maskedKey, '····9999');
       assert.equal(Object.prototype.hasOwnProperty.call(summary, 'apiKey'), false);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('migrates legacy chat settings without explicit model to the new OpenAI default model', async () => {
+    const fixture = await createDatabaseFixture({ legacyChatSettingsWithoutModel: true });
+    try {
+      const row = fixture.db.get(
+        'SELECT * FROM ai_configs WHERE project_id IS NULL ORDER BY id ASC LIMIT 1',
+      );
+      assert.equal(row.provider, 'openai');
+      assert.equal(row.base_url, 'https://api.openai.com');
+      assert.equal(row.api_key, 'sk-legacy-openai-5555');
+      assert.equal(row.model, 'gpt-5.5');
+
+      const legacy = getLegacyChatConfig(fixture.db);
+      assert.equal(legacy.model, 'gpt-5.5');
     } finally {
       fixture.cleanup();
     }
@@ -493,6 +641,8 @@ async function createDatabaseFixture(options = {}) {
   const dbPath = path.join(tempRoot, 'data', 'autoplan.sqlite');
   if (options.legacyAiConfigs) {
     await writeLegacyAiConfigDatabase(dbPath);
+  } else if (options.legacyChatSettingsWithoutModel) {
+    await writeLegacyOpenAiSettingsWithoutModelDatabase(dbPath);
   } else if (options.legacyChatSettings) {
     await writeLegacyChatSettingsDatabase(dbPath);
   }
@@ -528,6 +678,27 @@ async function writeLegacyChatSettingsDatabase(dbPath) {
     ['chat.apiKey', 'sk-legacy-chat-9999'],
     ['chat.model', 'claude-sonnet-4-6'],
     ['chat.temperature', '0.4'],
+  ]) {
+    stmt.run([key, value]);
+  }
+  stmt.free();
+  fs.writeFileSync(dbPath, Buffer.from(db.export()));
+  db.close();
+}
+
+async function writeLegacyOpenAiSettingsWithoutModelDatabase(dbPath) {
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  const SQL = await initSqlJs({
+    locateFile: (file) => path.join(__dirname, '..', '..', 'node_modules', 'sql.js', 'dist', file),
+  });
+  const db = new SQL.Database();
+  db.run('CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);');
+  const stmt = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)');
+  for (const [key, value] of [
+    ['chat.provider', 'openai'],
+    ['chat.baseUrl', 'https://api.openai.com'],
+    ['chat.apiKey', 'sk-legacy-openai-5555'],
+    ['chat.temperature', '0.3'],
   ]) {
     stmt.run([key, value]);
   }

@@ -235,6 +235,108 @@ function resumePlan(service, projectId, planId, options = {}) {
   return service.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [plan.id, normalizedProjectId]);
 }
 
+function reExecutePlan(service, projectId, planId, options = {}) {
+  const normalizedProjectId = Number(projectId || 0);
+  const normalizedPlanId = Number(planId || 0);
+  const plan = options.throwIfMissing
+    ? planForProject(service, normalizedProjectId, normalizedPlanId)
+    : findPlanForProject(service, normalizedProjectId, normalizedPlanId);
+  if (!plan) return null;
+
+  if (!isCompletedPlan(plan)) {
+    throw new Error('仅可重新执行已完成的计划');
+  }
+
+  const updatedAt = options.updatedAt || nowIso();
+  const completedTaskCount = Number(
+    service.db.get(
+      'SELECT COUNT(*) AS count FROM plan_tasks WHERE plan_id = ? AND status = ?',
+      [plan.id, 'completed'],
+    )?.count || 0,
+  );
+  service.db.runBatch([
+    {
+      sql: `UPDATE plan_tasks SET status = ?, updated_at = ?
+            WHERE plan_id = ? AND status = ?`,
+      params: ['pending', updatedAt, plan.id, 'completed'],
+    },
+    {
+      sql: `UPDATE plans SET status = ?, validation_passed = 0, updated_at = ?
+            WHERE id = ? AND project_id = ?`,
+      params: ['pending', updatedAt, plan.id, normalizedProjectId],
+    },
+  ]);
+  if (!options.suppressEvent) {
+    service.addEvent(
+      normalizedProjectId,
+      options.eventType || 'plan.reexecuted',
+      options.eventMessage || `计划 #${plan.id} 已重新激活执行`,
+      {
+        planId: plan.id,
+        previousStatus: plan.status,
+        status: 'pending',
+        resetTasks: completedTaskCount,
+      },
+    );
+  }
+  service.emitUpdate(normalizedProjectId);
+  return service.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [plan.id, normalizedProjectId]);
+}
+
+async function recreatePlanFromIntake(service, projectId, planId, options = {}) {
+  const normalizedProjectId = Number(projectId || 0);
+  const normalizedPlanId = Number(planId || 0);
+  const plan = options.throwIfMissing
+    ? planForProject(service, normalizedProjectId, normalizedPlanId)
+    : findPlanForProject(service, normalizedProjectId, normalizedPlanId);
+  if (!plan) return null;
+
+  if (!isCompletedPlan(plan)) {
+    throw new Error('仅可基于已完成的计划重新创建');
+  }
+
+  const intakeLink = intakePlanLinks.getIntakeForPlan(service, normalizedProjectId, normalizedPlanId, {
+    includeLegacyFallback: true,
+  });
+  if (!intakeLink || !intakeLink.intakeId) {
+    throw new Error('计划未关联需求/反馈，无法重新创建');
+  }
+
+  const intakeType = intakeLink.intakeType;
+  const table = intakeType === 'feedback' ? 'feedback' : 'requirements';
+  const intake = service.db.get(
+    `SELECT * FROM ${table} WHERE id = ? AND project_id = ?`,
+    [intakeLink.intakeId, normalizedProjectId],
+  );
+  if (!intake) throw new Error('关联的需求/反馈不存在');
+
+  const workspace = service.project(normalizedProjectId)?.workspace_path;
+  if (!workspace) throw new Error('请先设置项目工作区路径');
+
+  const newPlanId = await service.generatePlanForIntake(
+    normalizedProjectId,
+    workspace,
+    { ...intake, __type: intakeType },
+  );
+
+  if (newPlanId) {
+    service.addEvent(
+      normalizedProjectId,
+      options.eventType || 'plan.recreated',
+      options.eventMessage || `计划 #${plan.id} 已重新创建为计划 #${newPlanId}`,
+      {
+        previousPlanId: plan.id,
+        planId: newPlanId,
+        intakeType,
+        intakeId: intakeLink.intakeId,
+      },
+    );
+  }
+
+  service.emitUpdate(normalizedProjectId);
+  return newPlanId;
+}
+
 function stopPlan(service, projectId, planId) {
   const normalizedProjectId = Number(projectId || 0);
   const plan = planForProject(service, normalizedProjectId, planId);
@@ -302,8 +404,17 @@ function appendTaskToIntakePlan(service, projectId, intakeType, intakeId, title)
   const normalizedProjectId = Number(projectId || 0);
   const plans = linkedPlansForIntake(service, normalizedProjectId, intakeType, intakeId);
   if (plans.length === 0) throw new Error('该需求/反馈尚未生成计划');
-  const target = plans.find((link) => !PLAN_COMPLETED_STATUSES.includes(String(link.plan?.status || '').toLowerCase()))
-    || plans[plans.length - 1];
+  const nonCompleted = plans.find((link) => !PLAN_COMPLETED_STATUSES.includes(String(link.plan?.status || '').toLowerCase()));
+  const target = nonCompleted || plans[plans.length - 1];
+  const allCompleted = !nonCompleted;
+
+  // 所有关联计划均已完成时，自动重新激活最后一个计划再追加任务
+  let reExecuted = false;
+  if (allCompleted && target.planId) {
+    reExecutePlan(service, normalizedProjectId, target.planId, { suppressEvent: false });
+    reExecuted = true;
+  }
+
   const taskKey = service.appendTask(normalizedProjectId, target.planId, title);
   const summary = {
     action: 'appendTask',
@@ -315,6 +426,7 @@ function appendTaskToIntakePlan(service, projectId, intakeType, intakeId, title)
     phaseIndex: target.phaseIndex,
     phaseTitle: target.phaseTitle || '',
     planIds: plans.map((link) => Number(link.planId)),
+    reExecuted: reExecuted || undefined,
   };
   service.addEvent(
     normalizedProjectId,
@@ -399,6 +511,8 @@ function insertPlan(service, {
   hash,
   status,
   sortOrder,
+  planGenerationDurationMs,
+  plan_generation_duration_ms: planGenerationDurationMsSnake,
   agentCliConfig,
   planGenerationConfig,
   planExecutionConfig,
@@ -421,15 +535,23 @@ function insertPlan(service, {
     'updated_at',
   ];
   const values = [projectId, issueHash, filePath, hash, status, normalizedSortOrder, 0, 0, 0, createdAt, createdAt];
-  for (const [column, value] of planAgentCliColumnValues(service.planColumns(), agentCliConfig)) {
+  const planColumns = service.planColumns();
+  const normalizedPlanGenerationDurationMs = normalizePlanGenerationDurationMs(
+    planGenerationDurationMs ?? planGenerationDurationMsSnake,
+  );
+  if (planColumns.has('plan_generation_duration_ms') && normalizedPlanGenerationDurationMs != null) {
+    columns.push('plan_generation_duration_ms');
+    values.push(normalizedPlanGenerationDurationMs);
+  }
+  for (const [column, value] of planAgentCliColumnValues(planColumns, agentCliConfig)) {
     columns.push(column);
     values.push(value);
   }
-  for (const [column, value] of planBackendColumnValues(service.planColumns(), 'plan_generation', planGenerationConfig)) {
+  for (const [column, value] of planBackendColumnValues(planColumns, 'plan_generation', planGenerationConfig)) {
     columns.push(column);
     values.push(value);
   }
-  for (const [column, value] of planBackendColumnValues(service.planColumns(), 'plan_execution', planExecutionConfig)) {
+  for (const [column, value] of planBackendColumnValues(planColumns, 'plan_execution', planExecutionConfig)) {
     columns.push(column);
     values.push(value);
   }
@@ -437,6 +559,13 @@ function insertPlan(service, {
     `INSERT INTO plans (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
     values,
   );
+}
+
+function normalizePlanGenerationDurationMs(value) {
+  if (value == null || value === '') return null;
+  const duration = Number(value);
+  if (!Number.isFinite(duration)) return 0;
+  return Math.max(0, Math.floor(duration));
 }
 
 function planBackendColumnValues(columns, prefix, config) {
@@ -557,6 +686,84 @@ function completeLinkedIntakesForPlan(service, plan) {
   return result;
 }
 
+function updatePlanExecutionConfig(service, projectId, planId, input = {}) {
+  const normalizedProjectId = Number(projectId || 0);
+  const normalizedPlanId = Number(planId || 0);
+  const plan = planForProject(service, normalizedProjectId, normalizedPlanId);
+
+  const status = String(plan.status || '').toLowerCase();
+  if (status !== PLAN_INTERRUPTED_STATUS && status !== 'stopped') {
+    throw new Error('仅可在计划中断或停止状态下修改执行配置');
+  }
+
+  const config = planBackendConfig.planExecutionConfigFields({
+    strategy: input.strategy ?? input.planExecutionStrategy ?? plan.plan_execution_strategy,
+    provider: input.provider ?? input.planExecutionProvider ?? plan.plan_execution_provider,
+    command: input.command ?? input.planExecutionCommand ?? plan.plan_execution_command,
+    model: input.model ?? input.planExecutionModel ?? plan.plan_execution_model,
+    codexReasoningEffort: input.codexReasoningEffort ?? input.planExecutionCodexReasoningEffort ?? plan.plan_execution_codex_reasoning_effort,
+    claudeBaseUrl: input.claudeBaseUrl ?? input.planExecutionClaudeBaseUrl ?? plan.plan_execution_claude_base_url,
+    claudeAuthToken: input.claudeAuthToken ?? input.planExecutionClaudeAuthToken ?? plan.plan_execution_claude_auth_token,
+    claudeModel: input.claudeModel ?? input.planExecutionClaudeModel ?? plan.plan_execution_claude_model,
+    claudeConfigId: input.claudeConfigId ?? input.planExecutionClaudeConfigId ?? plan.plan_execution_claude_config_id,
+  });
+
+  const columns = service.planColumns();
+  const updatedAt = nowIso();
+  const updates = [];
+
+  addPlanBackendColumnValue(updates, columns, 'plan_execution_strategy', config.strategy);
+  addPlanBackendColumnValue(updates, columns, 'plan_execution_provider', config.provider);
+  addPlanBackendColumnValue(updates, columns, 'plan_execution_command', config.command || '');
+  addPlanBackendColumnValue(updates, columns, 'plan_execution_model', config.model || '');
+  addPlanBackendColumnValue(updates, columns, 'plan_execution_codex_reasoning_effort', config.codexReasoningEffort || null);
+  addPlanBackendColumnValue(updates, columns, 'plan_execution_claude_base_url', config.claudeBaseUrl || '');
+  addPlanBackendColumnValue(updates, columns, 'plan_execution_claude_auth_token', config.claudeAuthToken || '');
+  addPlanBackendColumnValue(updates, columns, 'plan_execution_claude_model', config.claudeModel || '');
+  addPlanBackendColumnValue(updates, columns, 'plan_execution_claude_config_id', config.claudeConfigId || 0);
+
+  if (updates.length === 0) return plan;
+
+  updates.push(['updated_at', updatedAt]);
+
+  service.db.run(
+    `UPDATE plans SET ${updates.map(([col]) => `${col} = ?`).join(', ')} WHERE id = ? AND project_id = ?`,
+    [...updates.map(([, val]) => val), normalizedPlanId, normalizedProjectId],
+  );
+
+  // provider 变更时清除 plan 级 agent_cli_session_id，避免跨后端 session 污染
+  // （如 opencode → codex → opencode 的来回切换导致旧 opencode session 被沿用）
+  const previousProvider = String(plan.plan_execution_provider || '').toLowerCase();
+  const nextProvider = String(config.provider || '').toLowerCase();
+  const providerChanged = nextProvider && previousProvider !== nextProvider;
+  const sessionCleared = providerChanged && columns.has('agent_cli_session_id')
+    && Boolean(plan.agent_cli_session_id);
+  if (sessionCleared) {
+    service.db.run(
+      'UPDATE plans SET agent_cli_session_id = NULL, updated_at = ? WHERE id = ? AND project_id = ?',
+      [updatedAt, normalizedPlanId, normalizedProjectId],
+    );
+  }
+
+  service.addEvent(
+    normalizedProjectId,
+    'plan.execution_config.updated',
+    `计划 #${plan.id} 执行配置已更新`,
+    {
+      planId: plan.id,
+      previousProvider: plan.plan_execution_provider || '',
+      previousCommand: plan.plan_execution_command || '',
+      provider: config.provider || '',
+      command: config.command || '',
+      previousAgentCliSessionId: sessionCleared ? (plan.agent_cli_session_id || '') : undefined,
+      agentCliSessionCleared: sessionCleared || undefined,
+    },
+  );
+
+  service.emitUpdate(normalizedProjectId);
+  return service.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [normalizedPlanId, normalizedProjectId]);
+}
+
 module.exports = {
   hasPlanForIssueHash,
   nextRunnablePlan,
@@ -564,7 +771,10 @@ module.exports = {
   activateDraftPlan,
   interruptPlan,
   resumePlan,
+  reExecutePlan,
+  recreatePlanFromIntake,
   stopPlan,
+  updatePlanExecutionConfig,
   linkedPlansForIntake,
   interruptPlansForIntake,
   resumePlansForIntake,

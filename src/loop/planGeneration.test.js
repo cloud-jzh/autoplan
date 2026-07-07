@@ -11,6 +11,7 @@ const {
   shouldGeneratePhasedPlans,
 } = require('./planGeneration');
 const { BUILTIN_PLAN_GENERATION_ERROR_CODES } = require('./builtinPlanGenerator');
+const { normalizePlanMarkdown, normalizePlanMarkdownFile } = require('./planParser');
 
 /**
  * planGeneration 模块单元测试（node:test 风格，对齐 acceptance.test.js）。
@@ -864,6 +865,45 @@ function validFailureStatePlanMarkdown(title, scope) {
   ].join('\n');
 }
 
+
+describe('generatePlanForIntake 计划生成耗时（P006）', () => {
+  it('成功生成计划时写入落库字段并在事件 meta 中携带同一耗时', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-duration-ok-'));
+    try {
+      const { svc } = strategyFlowService({
+        status: {
+          plan_generation_strategy: 'external-cli-markdown',
+          plan_generation_provider: 'claude',
+        },
+        async runCodex(workspace) {
+          const planFile = path.join(workspace, 'docs', 'plan', 'plan_requirement_106_20260704-120000.md');
+          fs.mkdirSync(path.dirname(planFile), { recursive: true });
+          fs.writeFileSync(planFile, validStrategyPlanMarkdown('耗时记录计划', 'src/loop/planGeneration.js'), 'utf8');
+          return { exitCode: 0, output: '', logFile: path.join(workspace, 'duration.log') };
+        },
+      });
+
+      let result;
+      await withDateNowSequence([1000, 3456], async () => {
+        result = await generatePlanForIntake(
+          svc,
+          strategyHelpers(dir),
+          'p1',
+          dir,
+          strategyIntake(106, '这是一段足够长的需求描述，用于校验计划生成耗时会被计算并写入。'),
+        );
+      });
+
+      assert.equal(result, 801);
+      assert.equal(svc.insertPlanCalls[0].planGenerationDurationMs, 2456);
+      const generated = svc.events.find((event) => event.type === 'plan.generated');
+      assert.ok(generated, '成功生成计划应记录 plan.generated 事件');
+      assert.equal(generated.meta.durationMs, 2456);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
 describe('generatePlanForIntake 生成策略路由（P011）', () => {
   it('external-cli-markdown keeps the compatibility path and stores generation/execution snapshots', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-p11-markdown-'));
@@ -1107,6 +1147,16 @@ describe('generatePlanForIntake 生成策略路由（P011）', () => {
   });
 });
 
+async function withDateNowSequence(values, fn) {
+  const originalDateNow = Date.now;
+  let index = 0;
+  Date.now = () => values[Math.min(index++, values.length - 1)];
+  try {
+    return await fn();
+  } finally {
+    Date.now = originalDateNow;
+  }
+}
 function strategyFlowService(options = {}) {
   const svc = {
     runCodexCalls: [],
@@ -1216,3 +1266,253 @@ function validStrategyPlanMarkdown(title, scope) {
     '',
   ].join('\n');
 }
+
+describe('normalizePlanMarkdown 规范化（反馈 #95）', () => {
+  it('数字编号前缀 ## 2. 任务拆解 → ## 任务拆解', () => {
+    assert.equal(normalizePlanMarkdown('## 2. 任务拆解\n'), '## 任务拆解\n');
+  });
+
+  it('阿拉伯数字 + 中文顿号 ## 2、任务拆解 → ## 任务拆解', () => {
+    assert.equal(normalizePlanMarkdown('## 2、任务拆解'), '## 任务拆解');
+  });
+
+  it('无空格紧凑写法 ##2.任务拆解 → ## 任务拆解', () => {
+    assert.equal(normalizePlanMarkdown('##2.任务拆解'), '## 任务拆解');
+  });
+
+  it('中文数字编号前缀 ## 二、任务拆解 → ## 任务拆解', () => {
+    assert.equal(normalizePlanMarkdown('## 二、任务拆解'), '## 任务拆解');
+  });
+
+  it('错误层级 ### 任务拆解 → ## 任务拆解', () => {
+    assert.equal(normalizePlanMarkdown('### 任务拆解'), '## 任务拆解');
+  });
+
+  it('一级标题 # 任务拆解 也修正为二级', () => {
+    assert.equal(normalizePlanMarkdown('# 任务拆解'), '## 任务拆解');
+  });
+
+  it('同步规范化 总体验收标准 / 进度区 的编号前缀与错误层级', () => {
+    const input = ['## 1. 任务拆解', '## 2. 总体验收标准', '### 进度区'].join('\n');
+    assert.equal(
+      normalizePlanMarkdown(input),
+      ['## 任务拆解', '## 总体验收标准', '## 进度区'].join('\n'),
+    );
+  });
+
+  it('无前缀任务行按出现顺序补齐连续 P0NN 编号（不跳号）', () => {
+    const input = ['## 任务拆解', '', '- [ ] 实现规范化', '- [ ] 接入校验'].join('\n');
+    const out = normalizePlanMarkdown(input);
+    assert.ok(out.includes('- [ ] P001: 实现规范化 <!-- scope: unknown -->'));
+    assert.ok(out.includes('- [ ] P002: 接入校验 <!-- scope: unknown -->'));
+  });
+
+  it('任务行缺失 scope 注释时补 unknown，已有 scope 保留', () => {
+    const input = [
+      '## 任务拆解',
+      '',
+      '- [ ] P009: 保留 scope <!-- scope: src/a.js -->',
+      '- [ ] 补 unknown',
+    ].join('\n');
+    const out = normalizePlanMarkdown(input);
+    assert.ok(out.includes('- [ ] P001: 保留 scope <!-- scope: src/a.js -->'), '已有 scope 应保留且重排为 P001');
+    assert.ok(out.includes('- [ ] P002: 补 unknown <!-- scope: unknown -->'), '缺失 scope 应补 unknown');
+  });
+
+  it('幂等：已是规范内容经规范化后字符串不变', () => {
+    const standard = [
+      '# 反馈 #95 计划',
+      '',
+      '## 任务拆解',
+      '',
+      '- [ ] P001: 任务一 <!-- scope: src/a.js -->',
+      '- [ ] P002: 任务二 <!-- scope: src/b.js -->',
+      '',
+      '## 总体验收标准',
+      '',
+      '```bash',
+      'npm test',
+      '```',
+      '',
+      '## 进度区',
+      '',
+    ].join('\n');
+    assert.equal(normalizePlanMarkdown(standard), standard);
+    assert.equal(normalizePlanMarkdown(normalizePlanMarkdown(standard)), standard);
+  });
+
+  it('幂等：带漂移的 plan 二次规范化稳定', () => {
+    const drifted = ['## 2. 任务拆解', '', '- [ ] 任务一'].join('\n');
+    const once = normalizePlanMarkdown(drifted);
+    assert.equal(normalizePlanMarkdown(once), once);
+  });
+
+  it('围栏代码块内的标题与任务行不被改动', () => {
+    const input = [
+      '## 任务拆解',
+      '',
+      '```markdown',
+      '## 2. 任务拆解',
+      '- [ ] 不是真任务',
+      '```',
+      '',
+      '- [ ] 真任务',
+    ].join('\n');
+    const out = normalizePlanMarkdown(input);
+    assert.ok(
+      out.includes('```markdown\n## 2. 任务拆解\n- [ ] 不是真任务\n```'),
+      '代码块内容应原样保留',
+    );
+    assert.ok(out.includes('- [ ] P001: 真任务 <!-- scope: unknown -->'), '代码块外的真任务应被编号');
+  });
+
+  it('只动已知标题与任务行，其它标题/段落不受影响', () => {
+    const input = [
+      '# 标题',
+      '',
+      '## 需求概要',
+      '正文里提到任务拆解但不是标题。',
+      '',
+      '## 1. 任务拆解',
+      '',
+      '- [ ] 任务一',
+    ].join('\n');
+    const out = normalizePlanMarkdown(input);
+    assert.ok(out.includes('## 需求概要'), '非目标标题应保留');
+    assert.ok(out.includes('正文里提到任务拆解但不是标题。'), '正文段落应保留');
+    assert.ok(out.includes('## 任务拆解'), '目标标题应被规范化');
+  });
+
+  it('规范化后漂移 plan 通过 isPlanContentValid 校验', () => {
+    const drifted = ['## 2. 任务拆解', '', '- [ ] 实现规范化 <!-- scope: src/a.js -->'].join('\n');
+    assert.equal(isPlanContentValid(drifted), false, '规范化前应判为不合规');
+    assert.equal(isPlanContentValid(normalizePlanMarkdown(drifted)), true, '规范化后应通过校验');
+  });
+
+  it('normalizePlanMarkdownFile 幂等：规范内容不写盘', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-norm-idem-'));
+    try {
+      const file = path.join(dir, 'plan.md');
+      const standard = ['## 任务拆解', '', '- [ ] P001: 任务一 <!-- scope: src/a.js -->'].join('\n');
+      fs.writeFileSync(file, standard, 'utf8');
+      assert.equal(normalizePlanMarkdownFile(file), false, '规范内容不应触发写盘');
+      assert.equal(fs.readFileSync(file, 'utf8'), standard, '内容应不变');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('normalizePlanMarkdownFile 对漂移文件写回规范化内容', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-norm-fix-'));
+    try {
+      const file = path.join(dir, 'plan.md');
+      const drifted = ['## 2. 任务拆解', '', '- [ ] 任务一'].join('\n');
+      fs.writeFileSync(file, drifted, 'utf8');
+      assert.equal(normalizePlanMarkdownFile(file), true, '漂移内容应触发写盘');
+      const content = fs.readFileSync(file, 'utf8');
+      assert.ok(content.includes('## 任务拆解'), '标题应被规范化');
+      assert.ok(!content.includes('## 2. 任务拆解'), '原标题应被移除');
+      assert.ok(
+        content.includes('- [ ] P001: 任务一 <!-- scope: unknown -->'),
+        '任务行应补 P001 与 scope',
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('generatePlanForIntake 标题漂移经规范化后成功落库（反馈 #95）', () => {
+  // runCodex 写出带编号前缀标题的漂移 plan，捕获 insertPlan/syncPlanTasks/事件以校验规范化兜底链路。
+  function driftedPlanService(planFilePath, planContent) {
+    const events = [];
+    let insertCalls = 0;
+    let synced = false;
+    const svc = {
+      setPhase() {},
+      status() {
+        return {};
+      },
+      intakeAttachmentPrompt() {
+        return '';
+      },
+      async runCodex() {
+        fs.mkdirSync(path.dirname(planFilePath), { recursive: true });
+        fs.writeFileSync(planFilePath, planContent, 'utf8');
+        return { exitCode: 0, output: '', logFile: '/tmp/mock.log' };
+      },
+      addEvent(_pid, type, message, meta) {
+        events.push({ type, message, meta });
+      },
+      async runHookScripts() {},
+      insertPlan() {
+        insertCalls += 1;
+        return 1;
+      },
+      syncPlanTasks() {
+        synced = true;
+      },
+      db: {
+        all() {
+          return [];
+        },
+        run() {},
+      },
+    };
+    return { svc, events, insertCount: () => insertCalls, isSynced: () => synced };
+  }
+
+  function helpersFor() {
+    return {
+      timestampForPath: () => '20260629-120000',
+      readSnippet: () => '',
+      normalizeRelative: (_ws, p) => p,
+      hashFile: () => 'abc123',
+      hashText: () => 'abc123',
+    };
+  }
+
+  it('claude 写出 ## 2. 任务拆解 标题 → 规范化后成功落库（plans>0、plan_tasks 同步），不触发 plan.format.invalid', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-p95-drift-'));
+    try {
+      const planFilePath = path.join(dir, 'docs', 'plan', 'plan_requirement_1_20260629-120000.md');
+      // 模拟 claude 直写：带编号前缀的三个二级标题 + 无 P0NN 前缀的任务行
+      const drifted = [
+        '# 反馈 #95 计划',
+        '',
+        '## 2. 任务拆解',
+        '',
+        '- [ ] 实现规范化函数 <!-- scope: src/loop/planParser.js -->',
+        '- [ ] 接入校验流程 <!-- scope: src/loop/planGeneration.js -->',
+        '',
+        '## 3. 总体验收标准',
+        '',
+        '最终验收命令：npm test',
+        '',
+        '## 4. 进度区',
+        '',
+      ].join('\n');
+      const { svc, events, insertCount, isSynced } = driftedPlanService(planFilePath, drifted);
+
+      const intake = { __type: 'requirement', id: 1, body: '这是一段足够长的需求描述超过二十个字符。' };
+      const result = await generatePlanForIntake(svc, helpersFor(), 'p1', dir, intake);
+
+      assert.ok(result, '规范化后应返回 plan id（成功落库）');
+      assert.ok(insertCount() > 0, 'plans 计数应 > 0（已 insertPlan）');
+      assert.equal(isSynced(), true, 'plan_tasks 应同步成功');
+      assert.ok(!events.some((e) => e.type === 'plan.format.invalid'), '不应触发 plan.format.invalid');
+      // 磁盘文件经规范化：标题与任务行均为规范写法
+      const onDisk = fs.readFileSync(planFilePath, 'utf8');
+      assert.ok(onDisk.includes('## 任务拆解'), '磁盘文件应含规范 ## 任务拆解');
+      assert.ok(!onDisk.includes('## 2. 任务拆解'), '磁盘文件不应再含漂移标题');
+      assert.ok(
+        onDisk.includes('- [ ] P001: 实现规范化函数 <!-- scope: src/loop/planParser.js -->'),
+        '任务行应补 P001 且保留 scope',
+      );
+      assert.ok(onDisk.includes('## 总体验收标准'), '总体验收标准应规范化');
+      assert.ok(onDisk.includes('## 进度区'), '进度区应规范化');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

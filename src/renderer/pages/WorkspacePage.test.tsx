@@ -1208,13 +1208,33 @@ describe('Workspace terminal page regression', () => {
 
     expectIncludes(page, 'const refreshTerminalSessions = useCallback(async () => {', 'WorkspacePage 应提供终端列表刷新函数');
     expectIncludes(page, 'const result = await window.autoplan.listTerminals({ projectId });', '终端列表刷新应调用 preload listTerminals');
-    expectIncludes(page, 'setTerminalSessions(result.ok ? normalizeTerminalSessions(result.sessions, requestProjectId) : []);', '读取终端列表应按项目归一化');
-    expectIncludes(page, 'const unsubscribeStatus = window.autoplan.onTerminalStatus((event) => upsert(event.session));', 'WorkspacePage 应订阅终端 status 事件');
-    expectIncludes(page, 'const unsubscribeExit = window.autoplan.onTerminalExit((event) => upsert(event.session));', 'WorkspacePage 应订阅终端 exit 事件');
-    expectIncludes(page, 'if (!terminalBelongsToProject(session, projectId)) return;', '终端事件应过滤其它项目');
-    expectIncludes(page, 'setTerminalSessions((current) => upsertTerminalSession(current, session, projectId));', '终端事件应按 session id upsert');
+    expectIncludes(page, 'rememberClosedTerminalSessions(result.sessions, requestProjectId, closedTerminalSessionKeysRef.current);', '读取终端列表应先记录关闭态 session');
+    expectIncludes(page, 'setTerminalSessions(normalizeTerminalSessions(', '读取终端列表应按项目和关闭态归一化');
+    expectIncludes(page, 'closedTerminalSessionKeysRef.current,', '终端列表归一化应接入 closed tombstone');
+    expectIncludes(page, 'const unsubscribeStatus = window.autoplan.onTerminalStatus(applyTerminalEvent);', 'WorkspacePage 应订阅终端 status 事件');
+    expectIncludes(page, 'const unsubscribeExit = window.autoplan.onTerminalExit(applyTerminalEvent);', 'WorkspacePage 应订阅终端 exit 事件');
+    expectIncludes(page, 'const unsubscribeClosed = window.autoplan.onTerminalClosed(applyTerminalEvent);', 'WorkspacePage 应订阅终端 closed 事件');
+    expectIncludes(page, 'if (!terminalEventBelongsToProject(event, projectId)) return;', '终端事件应过滤其它项目');
+    expectIncludes(page, 'setTerminalSessions((current) => upsertTerminalSession(', '普通终端事件应按 session id upsert');
     expectIncludes(page, 'unsubscribeStatus();', '卸载时应清理 status 监听');
     expectIncludes(page, 'unsubscribeExit();', '卸载时应清理 exit 监听');
+    expectIncludes(page, 'unsubscribeClosed();', '卸载时应清理 closed 监听');
+  });
+
+  it('removes closed terminal sessions and prevents stale snapshots from restoring them', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+
+    expectIncludes(page, 'const closedTerminalSessionKeysRef = useRef(new Set<string>());', 'WorkspacePage 应记录关闭态 tombstone');
+    expectIncludes(page, 'if (terminalEventClosed(event, projectId, closedTerminalSessionKeysRef.current)) {', 'closed/status/exit 事件应先走删除判断');
+    expectIncludes(page, 'rememberClosedTerminalSession(', '关闭事件应记录 closed tombstone');
+    expectIncludes(page, 'setTerminalListLoaded(true);', '关闭事件后应切换到本地终端列表，避免旧 snapshot 兜底');
+    expectIncludes(page, 'setTerminalSessions((current) => removeTerminalSession(', '关闭事件应从终端列表删除 session');
+    expectIncludes(page, 'function shouldRemoveTerminalSession(', 'WorkspacePage 应集中判断关闭态 session');
+    expectIncludes(page, 'return Boolean(session.closed) || closedSessionKeys.has(closedTerminalSessionKey(projectId, session.id));', 'closed 字段和 tombstone 都应触发删除语义');
+    expectIncludes(page, 'function terminalEventClosed(', 'WorkspacePage 应集中判断关闭事件');
+    expectIncludes(page, 'if (event.closed || event.session?.closed) return true;', 'closed 事件或 closed session 均应删除');
+    expectIncludes(page, 'closedSessionKeys.has(closedTerminalSessionKey(projectId, sessionId))', '旧 snapshot/status/exit 命中 tombstone 时不应重新插入');
+    expectIncludes(page, '&& !shouldRemoveTerminalSession(session, projectId, closedSessionKeys)', 'currentTerminalSessions 应过滤关闭态 session');
   });
 
   it('wires the terminal tab to the full WorkspaceTerminalView contract', () => {

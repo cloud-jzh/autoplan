@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { DEFAULT_WORKSPACE_TAB, WORKSPACE_SEARCH_SOURCE_TYPES, getPlanTaskAssociationSource } from '../types';
+import { DEFAULT_WORKSPACE_TAB, PLAN_GENERATION_STRATEGIES, WORKSPACE_SEARCH_SOURCE_TYPES, getPlanTaskAssociationSource } from '../types';
 import type {
   AppSnapshot,
   CodexReasoningEffort,
@@ -42,6 +42,7 @@ import {
   defaultScopeFileOpenSettings,
   emptyPendingAttachments,
   getErrorMessage,
+  isExternalPlanGenerationStrategy,
   loopConfigurePayloadFromForm,
   loopFormFromProjectState,
   loopFormsEqual,
@@ -94,11 +95,21 @@ export function useWorkspaceController() {
     planGenerationCommand: '',
     planGenerationModel: '',
     planGenerationCodexReasoningEffort: defaultCodexReasoningEffort,
+    planGenerationClaudeBaseUrl: '',
+    planGenerationClaudeAuthToken: '',
+    planGenerationClaudeModel: '',
+    planGenerationHasClaudeAuthToken: false,
+    planGenerationClaudeConfigId: 0,
     planExecutionStrategy: 'external-cli',
     planExecutionProvider: 'codex',
     planExecutionCommand: '',
     planExecutionModel: '',
     planExecutionCodexReasoningEffort: defaultCodexReasoningEffort,
+    planExecutionClaudeBaseUrl: '',
+    planExecutionClaudeAuthToken: '',
+    planExecutionClaudeModel: '',
+    planExecutionHasClaudeAuthToken: false,
+    planExecutionClaudeConfigId: 0,
     envVars: [],
   });
   const [loopFormDirty, setLoopFormDirty] = useState(false);
@@ -293,10 +304,9 @@ export function useWorkspaceController() {
   }, [projectId]);
 
   useEffect(() => {
-    const defaultPlanGeneration = composerPlanGenerationSelectionFromProjectState(state);
     setComposerPlanGeneration({
-      requirement: defaultPlanGeneration,
-      feedback: defaultPlanGeneration,
+      requirement: composerPlanGenerationSelectionFromProjectState(state),
+      feedback: composerPlanGenerationSelectionFromProjectState(state),
     });
   }, [
     projectId,
@@ -318,13 +328,19 @@ export function useWorkspaceController() {
       onProviderChange: (type: IntakeType, provider: PlanBackendProvider) => {
         setComposerPlanGeneration((current) => {
           const currentSelection = current[type];
-          const strategy = normalizePlanGenerationStrategy(currentSelection.strategy);
+          const selectedStrategy = normalizePlanGenerationStrategy(currentSelection.strategy);
+          const strategy = isExternalPlanGenerationStrategy(selectedStrategy)
+            ? selectedStrategy
+            : PLAN_GENERATION_STRATEGIES.EXTERNAL_CLI_MARKDOWN;
+          const currentProvider = normalizePlanBackendProvider(currentSelection.provider, strategy);
+          const nextProvider = normalizePlanBackendProvider(provider, strategy);
           return {
             ...current,
             [type]: {
               ...currentSelection,
-              useProjectDefault: false,
-              provider: normalizePlanBackendProvider(provider, strategy),
+              strategy,
+              provider: nextProvider,
+              command: currentProvider === nextProvider ? currentSelection.command : '',
             },
           };
         });
@@ -334,17 +350,7 @@ export function useWorkspaceController() {
           ...current,
           [type]: {
             ...current[type],
-            useProjectDefault: false,
             codexReasoningEffort: normalizeCodexReasoningEffort(effort),
-          },
-        }));
-      },
-      onUseProjectDefaultChange: (type: IntakeType, useProjectDefault: boolean) => {
-        setComposerPlanGeneration((current) => ({
-          ...current,
-          [type]: {
-            ...(useProjectDefault ? composerPlanGenerationSelectionFromProjectState(state) : current[type]),
-            useProjectDefault,
           },
         }));
       },
@@ -356,27 +362,14 @@ export function useWorkspaceController() {
             ...current,
             [type]: {
               ...current[type],
-              useProjectDefault: false,
               strategy: normalizedStrategy,
               provider,
             },
           };
         });
       },
-      onCommandChange: (type: IntakeType, command: string) => {
-        setComposerPlanGeneration((current) => ({
-          ...current,
-          [type]: { ...current[type], useProjectDefault: false, command },
-        }));
-      },
-      onModelChange: (type: IntakeType, model: string) => {
-        setComposerPlanGeneration((current) => ({
-          ...current,
-          [type]: { ...current[type], useProjectDefault: false, model },
-        }));
-      },
     }),
-    [composerPlanGeneration, state],
+    [composerPlanGeneration],
   );
 
   useEffect(() => {
@@ -591,6 +584,62 @@ export function useWorkspaceController() {
       }
     },
     [clearDeletedPlanReader, projectId, setSnapshot, setError, showError],
+  );
+
+  const resumePlan = useCallback(
+    async (plan: Plan) => {
+      const targetProjectId = Number(plan?.project_id || projectId);
+      const planId = Number(plan?.id || 0);
+      if (!targetProjectId || !planId) return;
+      await runLoopAction(() => window.autoplan.resumePlan({ projectId: targetProjectId, planId }));
+    },
+    [projectId, runLoopAction],
+  );
+
+  const updatePlanExecutionConfig = useCallback(
+    async (plan: Plan, provider: string, command?: string) => {
+      const targetProjectId = Number(plan?.project_id || projectId);
+      const planId = Number(plan?.id || 0);
+      if (!targetProjectId || !planId) return;
+      await runLoopAction(() =>
+        window.autoplan.updatePlanExecutionConfig({ projectId: targetProjectId, planId, provider, command }),
+      );
+    },
+    [projectId, runLoopAction],
+  );
+
+  const reExecutePlan = useCallback(
+    async (plan: Plan) => {
+      const targetProjectId = Number(plan?.project_id || projectId);
+      const planId = Number(plan?.id || 0);
+      if (!targetProjectId || !planId) return;
+      await runLoopAction(() => window.autoplan.reExecutePlan({ projectId: targetProjectId, planId }));
+    },
+    [projectId, runLoopAction],
+  );
+
+  const recreatePlanFromIntake = useCallback(
+    async (plan: Plan) => {
+      const targetProjectId = Number(plan?.project_id || projectId);
+      const planId = Number(plan?.id || 0);
+      if (!targetProjectId || !planId) return;
+      await runLoopAction(() =>
+        window.autoplan.recreatePlanFromIntake({ projectId: targetProjectId, planId }),
+      );
+    },
+    [projectId, runLoopAction],
+  );
+
+  const appendPlanTask = useCallback(
+    async (plan: Plan, title: string) => {
+      const targetProjectId = Number(plan?.project_id || projectId);
+      const planId = Number(plan?.id || 0);
+      if (!targetProjectId || !planId) return;
+      await runLoopAction(() =>
+        window.autoplan.appendPlanTask({ projectId: targetProjectId, planId, title }),
+      );
+    },
+    [projectId, runLoopAction],
   );
 
   const startMcp = () => runLoopAction(() => window.autoplan.startMcp({ projectId }));
@@ -869,8 +918,13 @@ export function useWorkspaceController() {
     startMcp,
     state,
     stopMcp,
+    appendPlanTask,
+    recreatePlanFromIntake,
+    reExecutePlan,
+    resumePlan,
     stopPlan,
     submitLoopConfig,
+    updatePlanExecutionConfig,
     switchProject,
     unacceptItem,
     unacceptItems,

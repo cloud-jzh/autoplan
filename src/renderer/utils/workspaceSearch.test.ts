@@ -32,6 +32,7 @@ function makePlan(id: number, filePath: string): Plan {
     status: 'completed',
     sort_order: id,
     is_draft: false,
+    plan_generation_duration_ms: 0,
     total_tasks: 1,
     completed_tasks: 1,
     validation_passed: 1,

@@ -31,8 +31,8 @@
 ## workspace.html · 工作区
 恢复为第一版的工作区布局（侧边栏导航），五个视图间切换：
 - **概览** — 统计卡 + 渐变循环状态卡 + 阶段流水线 + 近期事件
-- **需求 / 反馈** — 流式列表 + 悬浮圆角输入框 + 附件
-- **计划与任务** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格 + 并发建议入口
+- **需求 / 反馈** — 流式列表 + 悬浮圆角输入框 + 附件 + 输入框底部计划生成 CLI 选择
+- **计划与任务** — 循环控制（含 CLI 后端选择）+ 计划草稿 + Plan/Task 网格 + 并发建议入口
 - **事件流** — 循环运行日志表格
 - **设置** — 工作区 / CLI / scope 打开配置 + MCP 外部接入只读信息
 - 侧边栏底部显示当前循环状态与 CLI 后端
@@ -40,22 +40,25 @@
 
 ## 需求 / 反馈附件交互
 - 需求和反馈输入框支持三种附件添加方式：点击选择文件、拖拽文件到输入区、在输入框内直接粘贴剪贴板图片或截图。
+- 需求和反馈输入框底部直接提供计划生成 CLI 后端选择，选项为 Codex CLI、Claude CLI、OpenCode CLI、Oh My Pi CLI；该选择与附件、草稿开关和 Enter 发送操作并列。
+- 选择 Codex CLI 时显示 Codex 思考深度选择（low / medium / high / xhigh）；选择 Claude CLI、OpenCode CLI 或 Oh My Pi CLI 时隐藏思考深度，不向非 Codex 后端传递该字段。
 - 粘贴 PNG、JPEG、WebP 等图片后，图片进入待提交附件列表并显示缩略图、文件名和大小；提交前可移除。
 - 正文和附件可以一起发送；正文为空时也可以只提交附件，适合快速提交截图类需求或反馈。
 - 发送成功后会清空正文和待提交附件；发送失败时保留待提交附件，方便用户重试。
 - 附件保存后会以本地文件路径、MIME、大小和 hash 进入计划生成上下文，供 AI 工具按需读取；图片二进制不会直接内联进 prompt。
 
 ## CLI 后端选择说明
-- 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
+- 设计稿覆盖需求/反馈输入区、项目级配置与工作区「循环控制」中的 CLI 后端选择；需求/反馈输入区直接选择计划生成 CLI，不再需要先切换配置来源。
+- 计划生成 CLI 选项统一为 Codex CLI、Claude CLI、OpenCode CLI、Oh My Pi CLI；输入区选择会随新需求或新反馈一起固化到计划生成快照。
 - 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
-- Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
-- Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
-- Plan 卡片和 Plan 全文阅读器展示的是计划生成时固化的 CLI 快照，而不是当前项目默认配置；切换默认后端不会让历史计划显示漂移。
-- 展示口径统一为 `Codex CLI · 思考深度 medium/high/low` 或 `Claude CLI`；历史计划缺字段时按 Codex + `medium` 降级，Claude 不展示 Codex 思考深度。
+- Claude、OpenCode、Oh My Pi 均走本机外部 CLI 调用链路；使用前需在本机安装并完成认证，必要时在 CLI 命令路径填写完整路径。
+- Codex 会话复用与 Codex 思考深度仅在 Codex 后端展示和生效；Claude、OpenCode、Oh My Pi 后端不展示或传递 `codex_session_id` / Codex 思考深度。
+- Plan 卡片和 Plan 全文阅读器展示的是计划生成时固化的 CLI 快照，而不是当前项目配置；切换配置不会让历史计划显示漂移。
+- 展示口径统一为 `Codex CLI · 思考深度 medium/high/low/xhigh`、`Claude CLI`、`OpenCode CLI` 或 `Oh My Pi CLI`；历史计划缺字段时按 Codex + `medium` 降级，非 Codex 不展示 Codex 思考深度。
 
 ## 并发建议与 scope 文件交互
 - Plan 卡片展示并发建议摘要：可并发任务数、建议批次数、需串行任务数，以及不可并发原因入口。
-- Plan 卡片元信息同时展示计划级 CLI 摘要，与 Plan 全文阅读器摘要保持一致，不从当前项目默认 CLI 反推历史计划。
+- Plan 卡片元信息同时展示计划级 CLI 摘要，与 Plan 全文阅读器摘要保持一致，不从当前项目配置反推历史计划。
 - 「并发执行」按钮只在存在安全批次且计划未完成、没有运行中任务时可用；点击后先展示确认弹窗，用户确认前不会启动任务，取消不会改变状态。
 - 建议批次基于任务 `scope` 冲突检测：scope 互不重叠的 pending 任务可进入同一批；`unknown`、`validation`、空 scope、无法解析 scope 或 scope 重叠任务需串行展示。
 - Task 卡片展示从 `scope` 解析出的相关文件列表；长路径折行/省略，缺失文件、`unknown` 和 `validation` 使用不同状态提示，不挤压任务标题与操作按钮。

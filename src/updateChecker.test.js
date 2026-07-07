@@ -1,5 +1,8 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const {
   parseVersion,
   compareVersions,
@@ -21,6 +24,12 @@ function createSettingsDb(initial = {}) {
     },
     setSetting(key, value) {
       store.set(key, String(value));
+    },
+    runBatch(statements) {
+      for (const statement of statements || []) {
+        const [key, value] = Array.isArray(statement?.params) ? statement.params : [];
+        if (key) store.set(key, String(value));
+      }
     },
     getSettings(prefix = '') {
       const entries = [...store.entries()]
@@ -44,6 +53,15 @@ function releaseJson(tag, extra = {}) {
   };
 }
 
+function releaseAsset(name, extra = {}) {
+  return {
+    name,
+    browser_download_url: `https://github.com/lyming99/autoplan/releases/download/v0.3.0/${encodeURIComponent(name)}`,
+    size: 1024,
+    ...extra,
+  };
+}
+
 function fetchStub(payload) {
   const fn = async () => {
     fn.calls += 1;
@@ -52,6 +70,29 @@ function fetchStub(payload) {
   };
   fn.calls = 0;
   return fn;
+}
+
+function makeTempDir() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-update-download-'));
+}
+
+function cleanupTempDir(dir) {
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+function expectedInstallerPath(downloadDir, version, fileName) {
+  return path.join(downloadDir, `v${version}`, fileName);
+}
+
+async function waitForStatus(checker, predicate, message) {
+  const deadline = Date.now() + 1500;
+  let last = checker.status();
+  while (Date.now() < deadline) {
+    last = checker.status();
+    if (predicate(last)) return last;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail(`${message}: ${JSON.stringify(last)}`);
 }
 
 describe('parseVersion', () => {
@@ -140,18 +181,123 @@ describe('parseLatestRelease', () => {
     assert.equal(r.isStable, true);
     assert.equal(r.isPrerelease, false);
     assert.equal(r.isDraft, false);
+    assert.equal(r.installerAssetAvailable, false);
+    assert.equal(r.installerAssetStatus, 'unavailable');
+    assert.equal(r.installerAssetReason, 'no_assets');
+  });
+
+  it('从 assets 选择 Windows 当前架构 NSIS Setup .exe 并提取元数据', () => {
+    const winX64 = releaseAsset('AutoPlan-0.3.0-win-x64-Setup.exe', {
+      size: 123456,
+      content_type: 'application/octet-stream',
+    });
+    const r = parseLatestRelease(
+      releaseJson('v0.3.0', {
+        assets: [
+          releaseAsset('latest.yml'),
+          releaseAsset('AutoPlan-0.3.0-win-x64.exe'),
+          releaseAsset('AutoPlan-0.3.0-win-arm64-Setup.exe'),
+          releaseAsset('AutoPlan-0.3.0-mac-x64.dmg'),
+          winX64,
+        ],
+      }),
+      { platform: 'win32', arch: 'x64' }
+    );
+    assert.equal(r.installerAssetAvailable, true);
+    assert.equal(r.installerAssetStatus, 'available');
+    assert.equal(r.installerAssetReason, 'matched');
+    assert.equal(r.installerAsset.name, 'AutoPlan-0.3.0-win-x64-Setup.exe');
+    assert.equal(r.installerAsset.downloadUrl, winX64.browser_download_url);
+    assert.equal(r.installerAsset.size, 123456);
+    assert.equal(r.installerAsset.platform, 'win32');
+    assert.equal(r.installerAsset.arch, 'x64');
+    assert.equal(r.installerAsset.kind, 'nsis');
+    assert.equal(r.installerAsset.contentType, 'application/octet-stream');
+  });
+
+  it('macOS 优先选择 dmg，缺少 dmg 时选择 zip', () => {
+    const dmg = releaseAsset('AutoPlan-0.3.0-mac-arm64.dmg');
+    const zip = releaseAsset('AutoPlan-0.3.0-mac-arm64.zip');
+    const withDmg = parseLatestRelease(releaseJson('v0.3.0', { assets: [zip, dmg] }), {
+      platform: 'darwin',
+      arch: 'arm64',
+    });
+    assert.equal(withDmg.installerAsset.name, 'AutoPlan-0.3.0-mac-arm64.dmg');
+    assert.equal(withDmg.installerAsset.kind, 'dmg');
+
+    const zipOnly = parseLatestRelease(releaseJson('v0.3.0', { assets: [zip] }), {
+      platform: 'darwin',
+      arch: 'arm64',
+    });
+    assert.equal(zipOnly.installerAsset.name, 'AutoPlan-0.3.0-mac-arm64.zip');
+    assert.equal(zipOnly.installerAsset.kind, 'zip');
+  });
+
+  it('Linux 优先选择 AppImage，缺少 AppImage 时选择 deb', () => {
+    const appImage = releaseAsset('AutoPlan-0.3.0-linux-x64.AppImage');
+    const deb = releaseAsset('AutoPlan-0.3.0-linux-x64.deb');
+    const withAppImage = parseLatestRelease(releaseJson('v0.3.0', { assets: [deb, appImage] }), {
+      platform: 'linux',
+      arch: 'x64',
+    });
+    assert.equal(withAppImage.installerAsset.name, 'AutoPlan-0.3.0-linux-x64.AppImage');
+    assert.equal(withAppImage.installerAsset.kind, 'appimage');
+
+    const debOnly = parseLatestRelease(releaseJson('v0.3.0', { assets: [deb] }), { platform: 'linux', arch: 'x64' });
+    assert.equal(debOnly.installerAsset.name, 'AutoPlan-0.3.0-linux-x64.deb');
+    assert.equal(debOnly.installerAsset.kind, 'deb');
+  });
+
+  it('没有当前平台匹配资产时明确标记无可用安装包', () => {
+    const r = parseLatestRelease(
+      releaseJson('v0.3.0', {
+        assets: [releaseAsset('AutoPlan-0.3.0-win-x64-Setup.exe')],
+      }),
+      { platform: 'linux', arch: 'x64' }
+    );
+    assert.equal(r.installerAsset, null);
+    assert.equal(r.installerAssetAvailable, false);
+    assert.equal(r.installerAssetStatus, 'unavailable');
+    assert.equal(r.installerAssetReason, 'no_platform_match');
   });
 
   it('prerelease=true 标记为非正式版', () => {
-    const r = parseLatestRelease(releaseJson('v0.4.0-beta.1', { prerelease: true }));
+    const r = parseLatestRelease(
+      releaseJson('v0.4.0-beta.1', {
+        prerelease: true,
+        assets: [releaseAsset('AutoPlan-0.4.0-beta.1-win-x64-Setup.exe')],
+      }),
+      { platform: 'win32', arch: 'x64' }
+    );
     assert.equal(r.isPrerelease, true);
     assert.equal(r.isStable, false);
+    assert.equal(r.installerAssetAvailable, false);
+    assert.equal(r.installerAssetStatus, 'not_applicable');
+    assert.equal(r.installerAssetReason, 'prerelease');
   });
 
   it('draft=true 标记为非正式版', () => {
-    const r = parseLatestRelease(releaseJson('v0.4.0', { draft: true }));
+    const r = parseLatestRelease(
+      releaseJson('v0.4.0', { draft: true, assets: [releaseAsset('AutoPlan-0.4.0-win-x64-Setup.exe')] }),
+      { platform: 'win32', arch: 'x64' }
+    );
     assert.equal(r.isDraft, true);
     assert.equal(r.isStable, false);
+    assert.equal(r.installerAssetAvailable, false);
+    assert.equal(r.installerAssetStatus, 'not_applicable');
+    assert.equal(r.installerAssetReason, 'draft');
+  });
+
+  it('非法版本不触发可下载安装包状态', () => {
+    const r = parseLatestRelease(
+      releaseJson('release-candidate', { assets: [releaseAsset('AutoPlan-release-candidate-win-x64-Setup.exe')] }),
+      { platform: 'win32', arch: 'x64' }
+    );
+    assert.equal(r.isVersionValid, false);
+    assert.equal(r.isStable, false);
+    assert.equal(r.installerAsset, null);
+    assert.equal(r.installerAssetStatus, 'not_applicable');
+    assert.equal(r.installerAssetReason, 'invalid_version');
   });
 
   it('name 缺失时回退到 tag', () => {
@@ -220,6 +366,49 @@ describe('createUpdateChecker.check', () => {
     assert.ok(db.getSetting('update.lastCheckedAt'), '应写入上次检查时间');
   });
 
+  it('成功抓取后把当前平台安装包资产写入状态', async () => {
+    const db = createSettingsDb();
+    const installer = releaseAsset('AutoPlan-0.3.0-win-x64-Setup.exe', { size: 777 });
+    const checker = createUpdateChecker({
+      app: { getVersion: () => '0.2.2' },
+      db,
+      fetch: fetchStub(releaseJson('v0.3.0', { assets: [installer] })),
+      runtime: { platform: 'win32', arch: 'x64' },
+    });
+    const result = await checker.check();
+    assert.equal(result.installerAssetAvailable, true);
+    assert.equal(result.installerAssetStatus, 'available');
+    assert.equal(result.installerAsset.name, 'AutoPlan-0.3.0-win-x64-Setup.exe');
+    assert.equal(result.installerAsset.downloadUrl, installer.browser_download_url);
+    assert.equal(result.installerAsset.size, 777);
+    assert.equal(result.installerAsset.platform, 'win32');
+    assert.equal(result.installerAsset.arch, 'x64');
+    assert.equal(result.installerAsset.kind, 'nsis');
+    assert.equal(db.getSetting('update.installerAssetName'), 'AutoPlan-0.3.0-win-x64-Setup.exe');
+    assert.equal(db.getSetting('update.installerAssetDownloadUrl'), installer.browser_download_url);
+  });
+
+  it('无匹配安装包时状态明确标记不可用并清空旧资产', async () => {
+    const db = createSettingsDb({
+      'update.installerAssetName': 'old.exe',
+      'update.installerAssetDownloadUrl': 'https://example.test/old.exe',
+      'update.installerAssetStatus': 'available',
+    });
+    const checker = createUpdateChecker({
+      app: { getVersion: () => '0.2.2' },
+      db,
+      fetch: fetchStub(releaseJson('v0.3.0', { assets: [releaseAsset('AutoPlan-0.3.0-mac-x64.dmg')] })),
+      runtime: { platform: 'win32', arch: 'x64' },
+    });
+    const result = await checker.check();
+    assert.equal(result.installerAsset, null);
+    assert.equal(result.installerAssetAvailable, false);
+    assert.equal(result.installerAssetStatus, 'unavailable');
+    assert.equal(result.installerAssetReason, 'no_platform_match');
+    assert.equal(db.getSetting('update.installerAssetName'), '');
+    assert.equal(db.getSetting('update.installerAssetDownloadUrl'), '');
+  });
+
   it('非 2xx 响应返回结构化失败且不抛崩', async () => {
     const db = createSettingsDb();
     const fetch = async () => ({ ok: false, status: 404, text: async () => '' });
@@ -261,6 +450,222 @@ describe('createUpdateChecker.check', () => {
     const [a, b] = await Promise.all([checker.check(), checker.check()]);
     assert.equal(inner.calls, 1, '并发应仅抓取一次');
     assert.equal(a, b, '并发 check 应返回同一结果对象');
+  });
+});
+
+describe('createUpdateChecker 安装包自动下载状态机', () => {
+  it('检测到可用更新与当前平台安装包后自动下载并落库本地路径', async () => {
+    const downloadDir = makeTempDir();
+    try {
+      const db = createSettingsDb();
+      const installer = releaseAsset('AutoPlan-0.3.0-win-x64-Setup.exe', { size: 1024 });
+      const progressEvents = [];
+      let downloadCalls = 0;
+      const downloadFile = async ({ asset, tempPath, onProgress }) => {
+        downloadCalls += 1;
+        assert.equal(asset.name, installer.name);
+        await fs.promises.mkdir(path.dirname(tempPath), { recursive: true });
+        onProgress({ bytesReceived: 512, totalBytes: 1024 });
+        progressEvents.push(checker.status().downloadProgress);
+        await fs.promises.writeFile(tempPath, Buffer.alloc(1024));
+        return { bytesReceived: 1024, totalBytes: 1024 };
+      };
+      const checker = createUpdateChecker({
+        app: { getVersion: () => '0.2.2' },
+        db,
+        fetch: fetchStub(releaseJson('v0.3.0', { assets: [installer] })),
+        runtime: { platform: 'win32', arch: 'x64' },
+        downloadDir,
+        downloadFile,
+      });
+
+      const result = await checker.check();
+      assert.equal(result.hasUpdate, true);
+
+      const status = await waitForStatus(checker, (next) => next.downloadPhase === 'downloaded', '安装包应下载完成');
+      const expectedPath = expectedInstallerPath(downloadDir, '0.3.0', installer.name);
+      assert.equal(downloadCalls, 1);
+      assert.deepEqual(progressEvents, [50]);
+      assert.equal(status.downloadReason, 'completed');
+      assert.equal(status.downloadProgress, 100);
+      assert.equal(status.downloadBytesReceived, 1024);
+      assert.equal(status.downloadTotalBytes, 1024);
+      assert.equal(status.downloadVersion, '0.3.0');
+      assert.equal(status.localInstallerPath, expectedPath);
+      assert.equal(status.downloadedInstallerPath, expectedPath);
+      assert.ok(status.downloadAssetKey.includes(installer.browser_download_url));
+      assert.equal(db.getSetting('update.localInstallerPath'), expectedPath);
+      assert.equal(fs.statSync(expectedPath).size, 1024);
+    } finally {
+      cleanupTempDir(downloadDir);
+    }
+  });
+
+  it('已存在同尺寸本地安装包时复用文件且不重复下载', async () => {
+    const downloadDir = makeTempDir();
+    try {
+      const db = createSettingsDb();
+      const installer = releaseAsset('AutoPlan-0.3.0-win-x64-Setup.exe', { size: 1024 });
+      const expectedPath = expectedInstallerPath(downloadDir, '0.3.0', installer.name);
+      fs.mkdirSync(path.dirname(expectedPath), { recursive: true });
+      fs.writeFileSync(expectedPath, Buffer.alloc(1024));
+      let downloadCalls = 0;
+      const checker = createUpdateChecker({
+        app: { getVersion: () => '0.2.2' },
+        db,
+        fetch: fetchStub(releaseJson('v0.3.0', { assets: [installer] })),
+        runtime: { platform: 'win32', arch: 'x64' },
+        downloadDir,
+        downloadFile: async () => {
+          downloadCalls += 1;
+          throw new Error('should not download existing installer');
+        },
+      });
+
+      const result = await checker.check();
+      assert.equal(result.downloadPhase, 'downloaded');
+      assert.equal(result.downloadReason, 'existing_file');
+      assert.equal(result.localInstallerPath, expectedPath);
+      assert.equal(result.downloadProgress, 100);
+      assert.equal(result.downloadBytesReceived, 1024);
+      assert.equal(result.downloadTotalBytes, 1024);
+      assert.equal(downloadCalls, 0);
+    } finally {
+      cleanupTempDir(downloadDir);
+    }
+  });
+
+  it('下载失败时记录 failed 阶段、错误信息与已知字节数', async () => {
+    const downloadDir = makeTempDir();
+    try {
+      const db = createSettingsDb();
+      const installer = releaseAsset('AutoPlan-0.3.0-win-x64-Setup.exe', { size: 512 });
+      let downloadCalls = 0;
+      const checker = createUpdateChecker({
+        app: { getVersion: () => '0.2.2' },
+        db,
+        fetch: fetchStub(releaseJson('v0.3.0', { assets: [installer] })),
+        runtime: { platform: 'win32', arch: 'x64' },
+        downloadDir,
+        downloadFile: async ({ onProgress }) => {
+          downloadCalls += 1;
+          onProgress({ bytesReceived: 128, totalBytes: 512 });
+          throw new Error('disk full');
+        },
+      });
+
+      await checker.check();
+      const status = await waitForStatus(checker, (next) => next.downloadPhase === 'failed', '下载失败应进入 failed');
+      assert.equal(downloadCalls, 1);
+      assert.equal(status.downloadReason, 'download_failed');
+      assert.equal(status.downloadError, 'disk full');
+      assert.equal(status.downloadProgress, 25);
+      assert.equal(status.downloadBytesReceived, 128);
+      assert.equal(status.downloadTotalBytes, 512);
+      assert.equal(status.downloadVersion, '0.3.0');
+      assert.equal(status.localInstallerPath, '');
+    } finally {
+      cleanupTempDir(downloadDir);
+    }
+  });
+
+  it('相同版本与资产的活跃下载只启动一次', async () => {
+    const downloadDir = makeTempDir();
+    let releaseDownload;
+    try {
+      const db = createSettingsDb();
+      const installer = releaseAsset('AutoPlan-0.3.0-win-x64-Setup.exe', { size: 1024 });
+      let downloadCalls = 0;
+      const downloadGate = new Promise((resolve) => {
+        releaseDownload = resolve;
+      });
+      const checker = createUpdateChecker({
+        app: { getVersion: () => '0.2.2' },
+        db,
+        fetch: fetchStub(releaseJson('v0.3.0', { assets: [installer] })),
+        runtime: { platform: 'win32', arch: 'x64' },
+        downloadDir,
+        downloadFile: async ({ tempPath }) => {
+          downloadCalls += 1;
+          await downloadGate;
+          await fs.promises.mkdir(path.dirname(tempPath), { recursive: true });
+          await fs.promises.writeFile(tempPath, Buffer.alloc(1024));
+          return { bytesReceived: 1024, totalBytes: 1024 };
+        },
+      });
+
+      await checker.check();
+      await waitForStatus(checker, (next) => next.downloadPhase === 'downloading', '首个下载应进入 downloading');
+      assert.equal(downloadCalls, 1);
+
+      await checker.check();
+      assert.equal(downloadCalls, 1, '活跃下载中的相同资产不应重复启动');
+
+      releaseDownload();
+      const status = await waitForStatus(checker, (next) => next.downloadPhase === 'downloaded', '去重下载应最终完成');
+      assert.equal(downloadCalls, 1);
+      assert.equal(status.downloadReason, 'completed');
+    } finally {
+      if (releaseDownload) releaseDownload();
+      cleanupTempDir(downloadDir);
+    }
+  });
+
+  it('忽略版本、非正式 Release 与无匹配资产时不启动下载', async () => {
+    const cases = [
+      {
+        name: 'dismissed',
+        initial: { 'update.dismissedVersion': '0.3.0' },
+        release: releaseJson('v0.3.0', { assets: [releaseAsset('AutoPlan-0.3.0-win-x64-Setup.exe')] }),
+        expectedPhase: 'skipped',
+        expectedReason: 'dismissed',
+      },
+      {
+        name: 'prerelease',
+        release: releaseJson('v0.4.0-beta.1', {
+          prerelease: true,
+          assets: [releaseAsset('AutoPlan-0.4.0-beta.1-win-x64-Setup.exe')],
+        }),
+        expectedPhase: 'idle',
+        expectedReason: 'prerelease',
+      },
+      {
+        name: 'draft',
+        release: releaseJson('v0.4.0', {
+          draft: true,
+          assets: [releaseAsset('AutoPlan-0.4.0-win-x64-Setup.exe')],
+        }),
+        expectedPhase: 'idle',
+        expectedReason: 'draft',
+      },
+      {
+        name: 'no matching asset',
+        release: releaseJson('v0.3.0', { assets: [releaseAsset('AutoPlan-0.3.0-mac-x64.dmg')] }),
+        expectedPhase: 'unavailable',
+        expectedReason: 'no_platform_match',
+      },
+    ];
+
+    for (const item of cases) {
+      const db = createSettingsDb(item.initial);
+      let downloadCalls = 0;
+      const checker = createUpdateChecker({
+        app: { getVersion: () => '0.2.2' },
+        db,
+        fetch: fetchStub(item.release),
+        runtime: { platform: 'win32', arch: 'x64' },
+        downloadFile: async () => {
+          downloadCalls += 1;
+          throw new Error(`should not download for ${item.name}`);
+        },
+      });
+
+      const result = await checker.check();
+      assert.equal(result.downloadPhase, item.expectedPhase, item.name);
+      assert.equal(result.downloadReason, item.expectedReason, item.name);
+      assert.equal(result.localInstallerPath, '', item.name);
+      assert.equal(downloadCalls, 0, item.name);
+    }
   });
 });
 

@@ -11,6 +11,7 @@ const TERMINAL_CHANNELS = Object.freeze({
   DATA: 'terminal:data',
   EXIT: 'terminal:exit',
   STATUS: 'terminal:status',
+  CLOSED: 'terminal:closed',
 });
 
 const TERMINAL_SESSION_ID_PREFIX = 'term';
@@ -39,6 +40,7 @@ const TERMINAL_SESSION_FIELDS = Object.freeze([
   'createdAt',
   'endedAt',
   'exitCode',
+  'closed',
 ]);
 
 const TERMINAL_PROFILE_FIELDS = Object.freeze(['id', 'name', 'kind', 'shellPath', 'args', 'env']);
@@ -83,6 +85,7 @@ const TERMINAL_EVENT_TYPES = Object.freeze({
   DATA: 'data',
   EXIT: 'exit',
   STATUS: 'status',
+  CLOSED: 'closed',
 });
 
 const TERMINAL_ERROR_CODES = Object.freeze({

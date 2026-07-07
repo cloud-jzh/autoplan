@@ -111,6 +111,13 @@ export function WorkspaceTerminalView({
     }
   }, [commandShortcuts, selectedShortcutId]);
 
+  useEffect(() => {
+    if (!renameSessionId) return;
+    if (terminal.sessions.some((session) => session.id === renameSessionId)) return;
+    setRenameSessionId(null);
+    setRenameDraft('');
+  }, [renameSessionId, terminal.sessions]);
+
   const updateTerminalSettings = useCallback((patch: Partial<TerminalSettingsFormState>) => {
     setTerminalSettings((current) => {
       const next = normalizeTerminalSettingsForProfiles({ ...current, ...patch });
@@ -171,13 +178,9 @@ export function WorkspaceTerminalView({
 
   const insertCommandIntoTerminal = useCallback(async () => {
     const command = commandDraft.trim();
-    if (!command) return;
-    const target = activeSession && isTerminalActive(activeSession)
-      ? activeSession
-      : await createTerminalWithOptions({ cwd: selectedShortcut?.cwd || cwdDraft.trim() || undefined });
-    if (!target) return;
-    await terminal.write(target.id, command);
-  }, [activeSession, commandDraft, createTerminalWithOptions, cwdDraft, selectedShortcut, terminal]);
+    if (!command || !activeSession || !isTerminalActive(activeSession)) return;
+    await terminal.write(activeSession.id, command);
+  }, [activeSession, commandDraft, terminal]);
 
   const startRename = useCallback((session: TerminalSession) => {
     setRenameSessionId(session.id);
@@ -344,8 +347,8 @@ export function WorkspaceTerminalView({
           type="button"
           className="btn btn-sm"
           onClick={() => { void insertCommandIntoTerminal(); }}
-          disabled={!commandDraft.trim() || terminal.busyAction === 'write' || terminal.busyAction === 'create'}
-          title={selectedShortcut ? terminalShortcutTitle(selectedShortcut) : '插入到当前终端'}
+          disabled={!activeRunning || !commandDraft.trim() || terminal.busyAction === 'write'}
+          title={!activeRunning ? '无活动终端' : selectedShortcut ? terminalShortcutTitle(selectedShortcut) : '插入到当前终端'}
         >
           <Icon name="terminal" size={14} aria-hidden />
           插入
@@ -467,7 +470,12 @@ function TerminalPane({
 
   useEffect(() => {
     const host = hostRef.current;
-    if (!host || !activeSession) return undefined;
+    if (!host) return undefined;
+    if (!activeSession) {
+      host.textContent = '';
+      lastSizeRef.current = '';
+      return undefined;
+    }
 
     host.textContent = '';
     lastSizeRef.current = '';
@@ -617,7 +625,17 @@ function TerminalTab({
         <span className={`terminal-tab-dot ${running ? 'running' : 'stopped'}`} />
         <span className="terminal-tab-title">{terminalTitle(session)}</span>
       </button>
-      <button type="button" className="terminal-tab-close" onClick={onClose} title="关闭终端" aria-label="关闭终端">
+      <button
+        type="button"
+        className="terminal-tab-close"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onClose();
+        }}
+        title="关闭终端"
+        aria-label="关闭终端"
+      >
         <Icon name="close" size={12} aria-hidden />
       </button>
     </div>

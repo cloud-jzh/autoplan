@@ -58,6 +58,7 @@ function makePlan(overrides: Record<string, unknown> = {}) {
     status: (overrides.status as PlanStatus) ?? PLAN_STATUS.COMPLETED,
     sort_order: (overrides.sort_order as number) ?? id,
     is_draft: false,
+    plan_generation_duration_ms: (overrides.plan_generation_duration_ms as number) ?? 0,
     total_tasks: (overrides.total_tasks as number) ?? 3,
     completed_tasks: (overrides.completed_tasks as number) ?? 3,
     validation_passed: (overrides.validation_passed as number) ?? 0,
@@ -105,6 +106,8 @@ const {
   isAcceptancePendingPlan,
   isAcceptancePendingTask,
   acceptanceSelectionKey,
+  formatPlanDurationSummary,
+  formatPlanGenerationDuration,
 } = require('./planTasks.ts') as typeof import('./planTasks');
 
 function sortedAcceptDates(groups: Array<{ plan: { accepted_at?: string | null } | null; tasks: Array<{ accepted_at?: string | null }> }>) {
@@ -115,6 +118,25 @@ function sortedAcceptDates(groups: Array<{ plan: { accepted_at?: string | null }
   return dates;
 }
 
+describe('P006 - plan generation duration formatting', () => {
+  it('formats recorded generation duration with the existing duration style', () => {
+    expectEqual(formatPlanGenerationDuration(makePlan({ plan_generation_duration_ms: 65000 })), '生成耗时 1分5秒');
+  });
+
+  it('uses a clear fallback for missing, zero, or invalid old data', () => {
+    expectEqual(formatPlanGenerationDuration({}), '生成耗时 未记录');
+    expectEqual(formatPlanGenerationDuration(makePlan({ plan_generation_duration_ms: 0 })), '生成耗时 未记录');
+    expectEqual(formatPlanGenerationDuration({ plan_generation_duration_ms: Number.NaN }), '生成耗时 未记录');
+  });
+
+  it('keeps generation duration out of task duration summaries', () => {
+    const plan = makePlan({ id: 99, plan_generation_duration_ms: 65000 });
+    const tasks = [makeTask({ plan_id: plan.id, status: 'completed', duration_ms: 1000 })];
+
+    expectEqual(formatPlanGenerationDuration(plan), '生成耗时 1分5秒');
+    expectEqual(formatPlanDurationSummary(tasks), '总耗时 1秒 · 已完成 1秒');
+  });
+});
 describe('Requirement #52 – groupTasksByPlan sequence sorting', () => {
   it('sorts tasks within a plan group by sort_order before task activity time', () => {
     const tasks = [

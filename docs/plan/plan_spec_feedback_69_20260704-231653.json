@@ -1,0 +1,69 @@
+{
+  "title": "修复终端关闭无效与最后一个终端无法关闭",
+  "summary": "反馈 #69 指出终端关闭操作无效，尤其最后一个终端会话无法关闭。项目现有终端链路涉及 TerminalService、terminal IPC/preload、WorkspacePage 的会话列表同步、useTerminalSessions hook 以及 WorkspaceTerminalView 的标签页与空态渲染；需要确保关闭成功后服务端和前端状态都移除目标会话，最后一个会话关闭后进入稳定空态，且退出/status 事件或旧快照不会把已关闭会话重新插回。",
+  "tasks": [
+    {
+      "title": "统一终端关闭后的服务端语义与事件回流",
+      "scope": [
+        "src/terminal/terminalService.js",
+        "src/terminal/terminalIpc.js",
+        "src/terminal/terminalTypes.js",
+        "src/preload.js",
+        "src/renderer/types.ts"
+      ],
+      "acceptance": [
+        "关闭运行中终端、已退出终端时，closeTerminal 均返回成功结果，并且 TerminalService.listSessions 不再包含被关闭的 session。",
+        "关闭运行中终端触发 PTY 退出清理时，不会再通过 terminal:exit 或 terminal:status 让渲染端把已关闭 session 当作可展示会话重新插入。",
+        "如果引入 closed 标记或关闭事件，IPC 通道、preload 暴露接口和 renderer 类型声明保持字段一致，至少包含 projectId 与 sessionId，且不破坏现有 create/list/write/kill/replay 行为。"
+      ]
+    },
+    {
+      "title": "修复工作区终端列表的关闭态同步",
+      "scope": [
+        "src/renderer/pages/WorkspacePage.tsx",
+        "src/renderer/hooks/useTerminalSessions.ts"
+      ],
+      "acceptance": [
+        "页面层接收到关闭结果、关闭事件或关闭态 session 时执行删除语义，而不是走 upsert 逻辑。",
+        "关闭非当前会话、当前会话和最后一个会话后，useTerminalSessions 的 sessions、activeSessionId 与 activeSession 保持一致；最后一个关闭后 activeSession 为 null。",
+        "关闭后的 session 不会被 activeSnapshot.terminals、terminal:exit、terminal:status 或后续 refresh 重新带回当前项目终端列表。",
+        "其它项目的终端事件仍被忽略，不会影响当前项目的终端数量与活动会话选择。"
+      ]
+    },
+    {
+      "title": "完善终端标签关闭交互与空态渲染",
+      "scope": [
+        "src/renderer/components/workspace/WorkspaceTerminalView.tsx"
+      ],
+      "acceptance": [
+        "终端标签关闭按钮对任意标签都调用后端 close 语义，并且关闭最后一个标签后 xterm 实例被释放，界面展示无终端会话空态。",
+        "关闭按钮点击不会误触发选择、重命名或重连逻辑，也不会因为活动会话为空而立即重新创建终端。",
+        "无活动终端时，重命名、回放、清屏、重连、停止等依赖活动会话的控件保持禁用或无副作用，新建终端入口仍可使用。"
+      ]
+    },
+    {
+      "title": "补充终端关闭回归覆盖",
+      "scope": [
+        "src/terminal/terminalService.test.js",
+        "src/renderer/hooks/useTerminalSessions.test.ts",
+        "src/renderer/pages/WorkspacePage.test.tsx",
+        "src/renderer/components/workspace/WorkspaceTerminalView.test.tsx",
+        "scripts/smoke-test.js"
+      ],
+      "acceptance": [
+        "服务层覆盖运行中会话关闭、已退出会话关闭、最后一个会话关闭后 listSessions 为空的场景。",
+        "hook 覆盖关闭当前会话后切换到剩余会话、关闭最后一个会话后 activeSession 为 null、关闭事件不会重新 upsert 的场景。",
+        "工作区页面或终端视图覆盖最后一个标签关闭后进入空态、终端计数归零、刷新后不复现已关闭会话的场景。",
+        "若关闭事件或类型契约发生变化，smoke 检查同步更新，继续覆盖 main、preload、renderer 之间的终端 IPC 接线。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm run check && npm test",
+    "criteria": [
+      "TypeScript 类型检查、主进程脚本语法检查、文件长度检查和 smoke 检查全部通过。",
+      "终端服务、hook、工作区页面和终端视图相关回归测试全部通过。",
+      "最终行为满足：可关闭任意终端标签，最后一个终端关闭后终端列表为空、活动会话为空、界面停留在空态且刷新不会恢复已关闭会话。"
+    ]
+  }
+}

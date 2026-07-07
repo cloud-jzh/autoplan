@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   TerminalCreateInput,
+  TerminalEvent,
   TerminalReplayResult,
   TerminalSession,
   TerminalSessionResult,
@@ -52,6 +53,7 @@ export function useTerminalSessions({
   const [busyAction, setBusyAction] = useState<TerminalBusyAction | null>(null);
   const projectIdRef = useRef(projectId);
   const dataHandlersRef = useRef(new Map<string, Set<TerminalDataHandler>>());
+  const closedSessionKeysRef = useRef(new Set<string>());
   projectIdRef.current = projectId;
 
   const setActiveSessionId = useCallback((sessionId: string | null) => {
@@ -68,17 +70,37 @@ export function useTerminalSessions({
     });
   }, []);
 
+  const removeSession = useCallback((sessionId: string, sessionProjectId: number | string = projectIdRef.current) => {
+    rememberClosedSession(sessionId, sessionProjectId, closedSessionKeysRef.current);
+    removeSessionFromState(sessionId, setSessions, setActiveSessionIdState, dataHandlersRef);
+  }, []);
+
   const upsertSession = useCallback((session: TerminalSession | null | undefined) => {
     if (!session || !belongsToProject(session, projectIdRef.current)) return;
+    if (shouldRemoveSession(session, projectIdRef.current, closedSessionKeysRef.current)) {
+      removeSession(session.id, session.projectId);
+      return;
+    }
     setSessions((current) => {
       const next = sortSessions([
-        ...current.filter((item) => item.id !== session.id),
+        ...normalizeSessions(current, projectIdRef.current, closedSessionKeysRef.current)
+          .filter((item) => item.id !== session.id),
         session,
       ]);
       selectExistingSession(next);
       return next;
     });
-  }, [selectExistingSession]);
+  }, [removeSession, selectExistingSession]);
+
+  const applyTerminalEvent = useCallback((event: TerminalEvent) => {
+    if (!eventBelongsToProject(event, projectIdRef.current)) return;
+    const sessionId = terminalEventSessionId(event);
+    if (terminalEventClosed(event, projectIdRef.current, closedSessionKeysRef.current)) {
+      removeSession(sessionId, terminalEventProjectId(event) ?? projectIdRef.current);
+      return;
+    }
+    upsertSession(event.session);
+  }, [removeSession, upsertSession]);
 
   const refresh = useCallback(async () => {
     const requestProjectId = projectId;
@@ -99,7 +121,8 @@ export function useTerminalSessions({
         setActiveSessionIdState(null);
         return;
       }
-      const nextSessions = normalizeSessions(result.sessions, requestProjectId);
+      rememberClosedSessions(result.sessions, requestProjectId, closedSessionKeysRef.current);
+      const nextSessions = normalizeSessions(result.sessions, requestProjectId, closedSessionKeysRef.current);
       setSessions(nextSessions);
       selectExistingSession(nextSessions);
     } catch (err) {
@@ -113,9 +136,10 @@ export function useTerminalSessions({
   }, [projectId, selectExistingSession]);
 
   useEffect(() => {
-    const normalized = normalizeSessions(initialSessions, projectId);
+    rememberClosedSessions(initialSessions, projectId, closedSessionKeysRef.current);
+    const normalized = normalizeSessions(initialSessions, projectId, closedSessionKeysRef.current);
     setSessions((current) => {
-      const next = mergeSessions(current, normalized, projectId);
+      const next = mergeSessions(current, normalized, projectId, closedSessionKeysRef.current);
       if (sameSessionList(current, next)) {
         selectExistingSession(current);
         return current;
@@ -126,15 +150,22 @@ export function useTerminalSessions({
   }, [initialSessions, projectId, selectExistingSession]);
 
   useEffect(() => {
-    setSessions(normalizeSessions(initialSessions, projectId));
-    selectExistingSession(normalizeSessions(initialSessions, projectId));
+    rememberClosedSessions(initialSessions, projectId, closedSessionKeysRef.current);
+    const normalized = normalizeSessions(initialSessions, projectId, closedSessionKeysRef.current);
+    setSessions(normalized);
+    selectExistingSession(normalized);
     setError('');
     if (autoRefresh) void refresh();
   }, [autoRefresh, projectId, refresh, selectExistingSession]);
 
   useEffect(() => {
     const unsubscribeData = window.autoplan.onTerminalData((event) => {
-      if (!event.session || !belongsToProject(event.session, projectIdRef.current)) return;
+      if (!eventBelongsToProject(event, projectIdRef.current)) return;
+      if (terminalEventClosed(event, projectIdRef.current, closedSessionKeysRef.current)) {
+        removeSession(terminalEventSessionId(event), terminalEventProjectId(event) ?? projectIdRef.current);
+        return;
+      }
+      if (!event.session) return;
       upsertSession(event.session);
       const data = String(event.data ?? '');
       if (!data) return;
@@ -142,14 +173,16 @@ export function useTerminalSessions({
       if (!handlers || handlers.size === 0) return;
       handlers.forEach((handler) => handler(data, event.session));
     });
-    const unsubscribeExit = window.autoplan.onTerminalExit((event) => upsertSession(event.session));
-    const unsubscribeStatus = window.autoplan.onTerminalStatus((event) => upsertSession(event.session));
+    const unsubscribeExit = window.autoplan.onTerminalExit(applyTerminalEvent);
+    const unsubscribeStatus = window.autoplan.onTerminalStatus(applyTerminalEvent);
+    const unsubscribeClosed = window.autoplan.onTerminalClosed(applyTerminalEvent);
     return () => {
       unsubscribeData();
       unsubscribeExit();
       unsubscribeStatus();
+      unsubscribeClosed();
     };
-  }, [upsertSession]);
+  }, [applyTerminalEvent, removeSession, upsertSession]);
 
   const createSession = useCallback(async (input: Partial<TerminalCreateInput> = {}) => {
     if (!isValidProjectId(projectId)) {
@@ -219,7 +252,7 @@ export function useTerminalSessions({
         setError(result.message || '关闭终端失败');
         return false;
       }
-      removeSessionFromState(sessionId, setSessions, setActiveSessionIdState, dataHandlersRef);
+      removeSession(result.session?.id || sessionId, result.session?.projectId ?? projectIdRef.current);
       return true;
     } catch (err) {
       setError(errorMessage(err, '关闭终端失败'));
@@ -227,7 +260,7 @@ export function useTerminalSessions({
     } finally {
       setBusyAction((current) => (current === 'close' ? null : current));
     }
-  }, []);
+  }, [removeSession]);
 
   const rename = useCallback(async (sessionId: string, title: string) => runSessionAction(
     'rename',
@@ -274,8 +307,8 @@ export function useTerminalSessions({
   }, [upsertSession]);
 
   const removeLocal = useCallback((sessionId: string) => {
-    removeSessionFromState(sessionId, setSessions, setActiveSessionIdState, dataHandlersRef);
-  }, []);
+    removeSession(sessionId);
+  }, [removeSession]);
 
   const subscribeData = useCallback((sessionId: string, handler: TerminalDataHandler) => {
     if (!sessionId) return () => {};
@@ -336,14 +369,26 @@ function belongsToProject(session: TerminalSession, projectId: number) {
   return Number(session.projectId) === Number(projectId);
 }
 
-function normalizeSessions(sessions: TerminalSession[] = [], projectId: number) {
-  return sortSessions(sessions.filter((session) => belongsToProject(session, projectId)));
+function normalizeSessions(
+  sessions: TerminalSession[] = [],
+  projectId: number,
+  closedSessionKeys: ReadonlySet<string> = new Set(),
+) {
+  return sortSessions(sessions.filter((session) => (
+    belongsToProject(session, projectId)
+    && !shouldRemoveSession(session, projectId, closedSessionKeys)
+  )));
 }
 
-function mergeSessions(current: TerminalSession[], incoming: TerminalSession[], projectId: number) {
+function mergeSessions(
+  current: TerminalSession[],
+  incoming: TerminalSession[],
+  projectId: number,
+  closedSessionKeys: ReadonlySet<string>,
+) {
   const byId = new Map<string, TerminalSession>();
-  normalizeSessions(current, projectId).forEach((session) => byId.set(session.id, session));
-  normalizeSessions(incoming, projectId).forEach((session) => byId.set(session.id, session));
+  normalizeSessions(current, projectId, closedSessionKeys).forEach((session) => byId.set(session.id, session));
+  normalizeSessions(incoming, projectId, closedSessionKeys).forEach((session) => byId.set(session.id, session));
   return sortSessions(Array.from(byId.values()));
 }
 
@@ -372,6 +417,7 @@ function sessionSignature(session: TerminalSession) {
     session.profile?.id ?? '',
     session.profile?.name ?? '',
     session.profile?.shellPath ?? '',
+    session.closed ? 'closed' : '',
   ].join('\0');
 }
 
@@ -384,10 +430,76 @@ function removeSessionFromState(
   if (!sessionId) return;
   setSessions((current) => {
     const next = current.filter((session) => session.id !== sessionId);
-    setActiveSessionIdState((active) => (active === sessionId ? next[0]?.id ?? null : active));
+    setActiveSessionIdState((active) => (
+      active && next.some((session) => session.id === active) ? active : next[0]?.id ?? null
+    ));
     dataHandlersRef.current.delete(sessionId);
     return next;
   });
+}
+
+function shouldRemoveSession(
+  session: TerminalSession,
+  projectId: number,
+  closedSessionKeys: ReadonlySet<string>,
+) {
+  return Boolean(session.closed) || closedSessionKeys.has(closedSessionKey(projectId, session.id));
+}
+
+function rememberClosedSessions(
+  sessions: TerminalSession[] = [],
+  projectId: number,
+  closedSessionKeys: Set<string>,
+) {
+  sessions.forEach((session) => {
+    if (belongsToProject(session, projectId) && session.closed) {
+      rememberClosedSession(session.id, session.projectId, closedSessionKeys);
+    }
+  });
+}
+
+function rememberClosedSession(
+  sessionId: string | null | undefined,
+  projectId: number | string,
+  closedSessionKeys: Set<string>,
+) {
+  const id = String(sessionId || '').trim();
+  if (!id) return;
+  closedSessionKeys.add(closedSessionKey(projectId, id));
+}
+
+function closedSessionKey(projectId: number | string, sessionId: string) {
+  return `${projectKey(projectId)}:${sessionId}`;
+}
+
+function projectKey(projectId: number | string) {
+  const number = Number(projectId);
+  return Number.isFinite(number) ? String(number) : String(projectId || '');
+}
+
+function terminalEventSessionId(event: TerminalEvent) {
+  return String(event.sessionId || event.session?.id || '').trim();
+}
+
+function terminalEventProjectId(event: TerminalEvent) {
+  return event.projectId ?? event.session?.projectId;
+}
+
+function eventBelongsToProject(event: TerminalEvent, projectId: number) {
+  if (event.session) return belongsToProject(event.session, projectId);
+  return Number(event.projectId) === Number(projectId);
+}
+
+function terminalEventClosed(
+  event: TerminalEvent,
+  projectId: number,
+  closedSessionKeys: ReadonlySet<string>,
+) {
+  if (event.closed || event.session?.closed) return true;
+  const sessionId = terminalEventSessionId(event);
+  if (!sessionId) return false;
+  return closedSessionKeys.has(closedSessionKey(projectId, sessionId))
+    || closedSessionKeys.has(closedSessionKey(terminalEventProjectId(event) ?? projectId, sessionId));
 }
 
 function sessionFromResult(

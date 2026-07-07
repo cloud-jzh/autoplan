@@ -138,8 +138,10 @@ describe('WorkspaceTerminalView regression', () => {
     expectIncludes(view, 'scripts,', '快捷命令应接入脚本模块');
     expectIncludes(view, 'executors,', '快捷命令应接入执行器模块');
     expectIncludes(view, 'if (shortcut) setCommandDraft(terminalShortcutCommandText(shortcut));', '选择快捷入口应把可见命令写入命令输入框');
-    expectIncludes(view, 'await terminal.write(target.id, command);', '插入快捷命令应通过当前终端写入可见文本');
+    expectIncludes(view, 'await terminal.write(activeSession.id, command);', '插入快捷命令应通过当前终端写入可见文本');
+    expectIncludes(view, 'if (!command || !activeSession || !isTerminalActive(activeSession)) return;', '无活动终端时快捷命令不应隐式新建会话');
     expectNotIncludes(view, "await terminal.write(target.id, `${command}\\r`);", '插入快捷命令不应隐式回车执行');
+    expectNotIncludes(view, 'const target = activeSession && isTerminalActive(activeSession)', '快捷命令不应在无活动会话时创建临时 target');
     expectNotIncludes(view, 'runExecutor', '终端快捷入口不应调用执行器运行接口');
     expectNotIncludes(view, 'lastStatus', '终端快捷入口不应修改执行器最近状态');
 
@@ -166,5 +168,23 @@ describe('WorkspaceTerminalView regression', () => {
     expectNotIncludes(terminalBlock, 'LoopFormState', '终端设置不应污染 loop 表单');
     expectNotIncludes(terminalBlock, 'McpConfigFormState', '终端设置不应污染 MCP 表单');
     expectNotIncludes(terminalBlock, 'FileAccessFormState', '终端设置不应污染文件访问表单');
+  });
+
+  it('keeps terminal tab closing isolated and renders a stable empty state after the last close', () => {
+    const view = source('src', 'renderer', 'components', 'workspace', 'WorkspaceTerminalView.tsx');
+
+    expectIncludes(view, 'onClose={() => { void terminal.close(session.id); }}', '任意标签关闭都应调用后端 close');
+    expectIncludes(view, 'event.preventDefault();', '关闭按钮点击不应触发默认按钮行为');
+    expectIncludes(view, 'event.stopPropagation();', '关闭按钮点击不应冒泡到标签选择或重命名');
+    expectIncludes(view, 'onClose();', '关闭按钮应只触发关闭回调');
+    expectIncludes(view, 'if (!renameSessionId) return;', '关闭重命名中的会话后应能清理重命名状态');
+    expectIncludes(view, 'if (terminal.sessions.some((session) => session.id === renameSessionId)) return;', '重命名目标仍存在时不应误清理');
+    expectIncludes(view, "if (!activeSession) {\n      host.textContent = '';", '最后一个会话关闭后应清空 xterm 宿主节点');
+    expectIncludes(view, '<h3>暂无终端会话</h3>', '无活动终端时应展示空态');
+    expectIncludes(view, '<button type="button" className="btn btn-primary btn-sm" onClick={() => { void onCreate(); }}>', '空态应保留新建终端入口');
+    expectIncludes(view, "disabled={!activeRunning || !commandDraft.trim() || terminal.busyAction === 'write'}", '无活动终端时插入命令应禁用');
+    expectIncludes(view, "title={!activeRunning ? '无活动终端' : selectedShortcut ? terminalShortcutTitle(selectedShortcut) : '插入到当前终端'}", '无活动终端时插入命令应说明不可用原因');
+    expectIncludes(view, 'disabled={!activeSession}', '依赖活动会话的控件应在空态禁用');
+    expectIncludes(view, 'disabled={!activeSession || !activeRunning}', '停止按钮应在无活动或已退出时禁用');
   });
 });

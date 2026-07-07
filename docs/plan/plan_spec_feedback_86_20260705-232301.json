@@ -1,0 +1,52 @@
+{
+  "title": "修复脚本定时任务不触发",
+  "summary": "反馈指出“定时任务没有作用”。项目中脚本已有 trigger_mode='schedule'、schedule_cron、cron 解析和 runScheduledScripts 执行逻辑，但全局调度器 startScheduler 未在主进程启动时接入，导致定时脚本保存后不会产生周期 tick。计划修复调度器生命周期，校准到点执行链路，并补齐服务级回归测试。",
+  "tasks": [
+    {
+      "title": "接入全局定时调度器生命周期",
+      "scope": [
+        "src/main.js",
+        "src/loopService.js"
+      ],
+      "acceptance": [
+        "应用启动并创建 LoopService 后会启动脚本定时调度器，定时脚本无需先启动工作循环也能等待 tick",
+        "应用退出或主进程关闭时会停止脚本定时器，避免残留 interval 或退出期间继续触发脚本",
+        "重复启动或停止调度器保持幂等，不影响 MCP、更新检查和工作循环原有启停行为"
+      ]
+    },
+    {
+      "title": "修正定时脚本到点执行链路",
+      "scope": [
+        "src/loopService.js",
+        "src/loop/scriptHooks.js"
+      ],
+      "acceptance": [
+        "启用且 trigger_mode 为 schedule 的脚本在 schedule_cron 命中当前分钟时会执行一次",
+        "同一分钟内多次调度 tick 不会重复执行同一个已运行的定时脚本",
+        "空 cron 或非法 cron 不会阻断其他定时脚本，并会留下可见失败状态或事件用于排查",
+        "定时执行复用现有脚本运行能力，正确回写 last_status、last_run_at、last_log、last_exit_code 并写入事件流"
+      ]
+    },
+    {
+      "title": "补齐定时任务回归测试覆盖",
+      "scope": [
+        "src/loopService.test.js",
+        "src/loop/scriptHooks.cron.test.js"
+      ],
+      "acceptance": [
+        "测试覆盖 startScheduler 创建全局调度器、stopScheduler 清理调度器的幂等行为",
+        "测试覆盖 runScheduledScripts 会执行到期脚本，并跳过禁用、未到期、已在本分钟运行过的脚本",
+        "测试覆盖一个定时脚本失败或 cron 非法时，不影响其他到期脚本继续执行"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm run check && npm test",
+    "criteria": [
+      "TypeScript、主进程脚本语法检查和文件长度检查全部通过",
+      "node:test 全量测试通过，新增定时调度生命周期和到点执行用例通过",
+      "手动或自动场景确认：创建启用的每分钟定时脚本后，即使工作循环未启动，也会在调度 tick 后更新最近运行时间、状态、日志和事件流",
+      "禁用脚本、未到点脚本、同一分钟已运行脚本不会被误触发"
+    ]
+  }
+}

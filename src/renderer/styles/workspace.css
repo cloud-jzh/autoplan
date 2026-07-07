@@ -618,6 +618,16 @@
 input, textarea, select { width: 100%; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 9px 11px; font: inherit; font-size: 13px; color: var(--text-1); background: var(--bg-elevated); font-weight: 400; }
 input:focus, textarea:focus, select:focus { outline: none; border-color: var(--brand-500); box-shadow: var(--focus-ring); }
 .readonly-field span { display: block; margin-top: 6px; color: var(--text-3); font-size: 12px; font-weight: 500; }
+.readonly-field .mono { max-width: 100%; overflow: hidden; font-family: var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.update-installer-card .field-hint { margin-top: 4px; }
+.readonly-field .update-download-badge { display: inline-flex; width: fit-content; max-width: 100%; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg-soft); color: var(--text-2); font-size: 11.5px; font-weight: 800; }
+.update-download-badge::before { content: ""; width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: currentColor; }
+.update-download-badge.ok { border-color: var(--success-border); background: var(--success-bg); color: var(--success); }
+.update-download-badge.warn { border-color: var(--warning-border); background: var(--warning-bg); color: var(--warning); }
+.update-download-badge.info { border-color: var(--info-border); background: var(--info-bg); color: var(--info); }
+.update-download-progress { width: min(380px, 100%); height: 6px; overflow: hidden; border-radius: 999px; background: var(--line); }
+.readonly-field .update-download-progress > span { display: block; height: 100%; margin-top: 0; border-radius: inherit; background: var(--info); transition: width 0.25s; }
+.update-installer-actions .spacer { flex-wrap: wrap; }
 textarea { min-height: 80px; resize: vertical; }
 
 .backend-config-card + .backend-config-card { margin-top: 14px; }

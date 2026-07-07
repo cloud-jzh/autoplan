@@ -957,11 +957,14 @@ function assertTerminalModuleSourceSmoke() {
   const executorStoreSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'executors', 'executorStore.js'), 'utf8');
 
   // 模块边界：终端常量、错误码和默认值集中在 terminalTypes，服务层不暴露 PTY 对象。
-  assert.match(terminalTypesSource, /CREATE: 'terminal:create'[\s\S]*STATUS: 'terminal:status'/, 'terminalTypes 应定义终端 IPC 与事件通道');
+  assert.match(terminalTypesSource, /CREATE: 'terminal:create'[\s\S]*STATUS: 'terminal:status'[\s\S]*CLOSED: 'terminal:closed'/, 'terminalTypes 应定义终端 IPC 与事件通道');
   assert.match(terminalTypesSource, /PTY_UNAVAILABLE[\s\S]*CWD_OUTSIDE_WORKSPACE[\s\S]*SESSION_NOT_FOUND/, 'terminalTypes 应定义结构化错误码');
   assert.match(terminalServiceSource, /class TerminalService extends EventEmitter/, 'terminalService 应提供事件化终端会话服务');
   assert.match(terminalServiceSource, /function resolveTerminalCwd[\s\S]*isInsidePath\(workspace, cwd\)/, 'terminalService 应限制 cwd 位于项目工作区内');
   assert.match(terminalServiceSource, /function appendScrollback\(session, text\)[\s\S]*while \(session\.scrollback\.length > session\.scrollbackLimit\)/, 'terminalService 应限制 scrollback 增长');
+  assert.match(terminalServiceSource, /close\(sessionId\)[\s\S]*terminateSession\(found\.session, \{ remove: true, emit: true \}\)[\s\S]*closed: true/, 'terminalService close 应返回关闭成功语义');
+  assert.match(terminalServiceSource, /if \(remove\) \{[\s\S]*session\.closed = true;[\s\S]*this\.sessions\.delete\(session\.id\);[\s\S]*session\.suppressExitEvents = true/, 'terminalService close 应先删除并抑制 exit\/status 回流');
+  assert.match(terminalServiceSource, /emitClosed\(session\)[\s\S]*TERMINAL_CHANNELS\.CLOSED/, 'terminalService close 应发出 closed 事件');
   const publicSessionBody = terminalServiceSource.slice(
     terminalServiceSource.indexOf('function publicSession'),
     terminalServiceSource.indexOf('function appendScrollback'),
@@ -975,18 +978,23 @@ function assertTerminalModuleSourceSmoke() {
   assert.match(mainSource, /if \(terminalService\) terminalService\.disposeProject\(projectId\);/, '删除项目应清理项目终端会话');
   assert.match(terminalIpcSource, /ipcMain\.handle\(TERMINAL_CHANNELS\.CREATE[\s\S]*terminalService\.createSession/, 'terminalIpc 应注册 create 并调用服务层');
   assert.match(terminalIpcSource, /terminalService\.on\(TERMINAL_CHANNELS\.DATA[\s\S]*send\(TERMINAL_CHANNELS\.DATA/, 'terminalIpc 应转发 data 事件');
+  assert.match(terminalIpcSource, /terminalService\.on\(TERMINAL_CHANNELS\.CLOSED[\s\S]*send\(TERMINAL_CHANNELS\.CLOSED/, 'terminalIpc 应转发 closed 事件');
   assert.match(terminalIpcSource, /function safeTerminalSession[\s\S]*profile: safeTerminalProfile/, 'terminalIpc 应清洗 session 快照');
+  assert.match(terminalIpcSource, /Object\.prototype\.hasOwnProperty\.call\(event, 'closed'\)[\s\S]*payload\.closed = event\.closed === true/, 'terminalIpc 应保留 closed 事件字段');
   assert.match(preloadSource, /createTerminal: \(input\) => ipcRenderer\.invoke\('terminal:create', terminalCreatePayload\(input\)\)/, 'preload 应暴露 createTerminal');
   assert.match(preloadSource, /writeTerminal: \(input\) => ipcRenderer\.invoke\('terminal:write', terminalWritePayload\(input\)\)/, 'preload 应暴露 writeTerminal');
   assert.match(preloadSource, /onTerminalData: \(handler\) => \{[\s\S]*ipcRenderer\.on\('terminal:data'[\s\S]*removeListener\('terminal:data'/, 'preload 应暴露可清理的 terminal:data 订阅');
   assert.match(preloadSource, /onTerminalExit: \(handler\) => \{[\s\S]*ipcRenderer\.on\('terminal:exit'[\s\S]*removeListener\('terminal:exit'/, 'preload 应暴露可清理的 terminal:exit 订阅');
   assert.match(preloadSource, /onTerminalStatus: \(handler\) => \{[\s\S]*ipcRenderer\.on\('terminal:status'[\s\S]*removeListener\('terminal:status'/, 'preload 应暴露可清理的 terminal:status 订阅');
+  assert.match(preloadSource, /onTerminalClosed: \(handler\) => \{[\s\S]*ipcRenderer\.on\('terminal:closed'[\s\S]*removeListener\('terminal:closed'/, 'preload 应暴露可清理的 terminal:closed 订阅');
 
   // 类型与快照：renderer API 和 AppSnapshot 带终端会话列表。
   assert.match(typeSource, /export interface TerminalSession \{[\s\S]*profile: TerminalProfile;/, 'types 应定义 TerminalSession');
+  assert.match(typeSource, /export type TerminalCloseResult = \{ ok: true; session: TerminalSession; closed: true \}/, 'types 应定义 close 返回关闭结果');
   assert.match(typeSource, /interface AppSnapshot[\s\S]*terminals: TerminalSession\[\]/, 'AppSnapshot 应包含 terminals');
   assert.match(typeSource, /createTerminal: \(input: TerminalCreateInput\) => Promise<TerminalSessionResult>;/, 'AutoplanApi 应声明 createTerminal');
   assert.match(typeSource, /onTerminalStatus: \(handler: \(event: TerminalEvent\) => void\) => \(\) => void;/, 'AutoplanApi 应声明终端状态订阅');
+  assert.match(typeSource, /onTerminalClosed: \(handler: \(event: TerminalClosedEvent\) => void\) => \(\) => void;/, 'AutoplanApi 应声明终端关闭订阅');
 
   // 配置：默认 profile、cwd、字号、scrollback、保留退出和停止确认通过 settings/config helper 管理。
   assert.match(databaseSource, /'terminal\.defaultProfile': 'default'[\s\S]*'terminal\.confirmBeforeKill': 'true'/, 'database 应写入终端默认 settings');
@@ -1019,7 +1027,10 @@ function assertTerminalModuleSourceSmoke() {
   // Renderer hook 与视图：xterm 渲染、事件订阅、设置持久化和快捷命令插入。
   assert.match(terminalHookSource, /window\.autoplan\.listTerminals\(\{ projectId: requestProjectId \}\)/, 'useTerminalSessions 应通过 preload 读取终端列表');
   assert.match(terminalHookSource, /window\.autoplan\.onTerminalData[\s\S]*handlers\.forEach\(\(handler\) => handler\(data, event\.session\)\)/, 'useTerminalSessions 应把 data 事件分发给订阅者');
-  assert.match(terminalHookSource, /return \(\) => \{[\s\S]*unsubscribeData\(\);[\s\S]*unsubscribeExit\(\);[\s\S]*unsubscribeStatus\(\);[\s\S]*\};/, 'useTerminalSessions 应清理终端事件订阅');
+  assert.match(terminalHookSource, /return \(\) => \{[\s\S]*unsubscribeData\(\);[\s\S]*unsubscribeExit\(\);[\s\S]*unsubscribeStatus\(\);[\s\S]*unsubscribeClosed\(\);[\s\S]*\};/, 'useTerminalSessions 应清理终端事件订阅');
+  assert.match(terminalHookSource, /closedSessionKeysRef = useRef\(new Set<string>\(\)\)/, 'useTerminalSessions 应记录关闭态 tombstone');
+  assert.match(terminalHookSource, /removeSession\(result\.session\?\.id \|\| sessionId, result\.session\?\.projectId \?\? projectIdRef\.current\)/, 'useTerminalSessions close 成功后应删除本地会话');
+  assert.match(terminalHookSource, /terminalEventClosed[\s\S]*event\.closed \|\| event\.session\?\.closed/, 'useTerminalSessions 应把 closed 事件作为删除语义');
   assert.match(terminalViewSource, /import \{ FitAddon \} from '@xterm\/addon-fit';/, 'WorkspaceTerminalView 应导入 xterm fit addon');
   assert.match(terminalViewSource, /import \{ Terminal as XTerm \} from '@xterm\/xterm';/, 'WorkspaceTerminalView 应导入 xterm runtime');
   assert.match(terminalViewSource, /import type \{ IDisposable \} from '@xterm\/xterm';/, 'WorkspaceTerminalView 应保持 xterm 类型导入为 type-only');
@@ -1030,7 +1041,10 @@ function assertTerminalModuleSourceSmoke() {
   assert.match(terminalViewSource, /<div className=\{`terminal-pane\$\{empty \? ' is-empty' : ''\}`\}>[\s\S]*<div className="terminal-screen" ref=\{hostRef\} aria-label="终端输出" \/>/, 'WorkspaceTerminalView 应提供 xterm pane 与输出挂载点');
   assert.match(terminalViewSource, /<div className="terminal-controlbar">/, 'WorkspaceTerminalView 应提供终端控制栏');
   assert.match(terminalViewSource, /buildTerminalCommandShortcuts\(\{[\s\S]*packageScripts,[\s\S]*scripts,[\s\S]*executors/, 'WorkspaceTerminalView 应从 package/scripts/executors 构建快捷入口');
-  assert.match(terminalViewSource, /await terminal\.write\(target\.id, command\);/, 'WorkspaceTerminalView 快捷入口应只插入可见命令文本');
+  assert.match(terminalViewSource, /await terminal\.write\(activeSession\.id, command\);/, 'WorkspaceTerminalView 快捷入口应只插入可见命令文本');
+  assert.match(terminalViewSource, /if \(!command \|\| !activeSession \|\| !isTerminalActive\(activeSession\)\) return;/, 'WorkspaceTerminalView 无活动终端时不应隐式创建会话');
+  assert.match(terminalViewSource, /event\.stopPropagation\(\);[\s\S]*onClose\(\);/, 'WorkspaceTerminalView 标签关闭按钮不应冒泡到选择逻辑');
+  assert.match(terminalViewSource, /if \(!activeSession\) \{[\s\S]*host\.textContent = '';[\s\S]*暂无终端会话/, 'WorkspaceTerminalView 关闭最后一个会话后应清空 xterm 并显示空态');
   assert.doesNotMatch(terminalViewSource, /runExecutor|runScript|lastStatus/, 'WorkspaceTerminalView 不应直接执行执行器/脚本或修改最近状态');
   assert.match(workspaceFormsSource, /TERMINAL_SETTINGS_STORAGE_PREFIX = 'autoplan\.terminalSettings\.'/, 'workspaceForms 应隔离终端设置本地存储前缀');
   assert.match(workspaceFormsSource, /function scriptFileCommand[\s\S]*if \(runtime === 'bash'\)[\s\S]*return `node \$\{quotedPath\}`/, 'workspaceForms 应把文件脚本转换为可见命令');
@@ -1042,7 +1056,10 @@ function assertTerminalModuleSourceSmoke() {
   assert.match(workspacePageSource, /tabParam === 'executors' \|\| tabParam === 'terminal'/, 'WorkspacePage 应支持 URL tab=terminal');
   assert.match(workspacePageSource, /terminalCount=\{activeTerminalCount\}/, 'WorkspacePage 应把活动终端数量传给侧栏');
   assert.match(workspacePageSource, /window\.autoplan\.listTerminals\(\{ projectId \}\)/, 'WorkspacePage 应通过 IPC 刷新终端列表');
-  assert.match(workspacePageSource, /window\.autoplan\.onTerminalStatus[\s\S]*window\.autoplan\.onTerminalExit/, 'WorkspacePage 应订阅终端状态与退出事件');
+  assert.match(workspacePageSource, /window\.autoplan\.onTerminalStatus[\s\S]*window\.autoplan\.onTerminalExit[\s\S]*window\.autoplan\.onTerminalClosed/, 'WorkspacePage 应订阅终端状态、退出与关闭事件');
+  assert.match(workspacePageSource, /closedTerminalSessionKeysRef = useRef\(new Set<string>\(\)\)/, 'WorkspacePage 应记录关闭态 tombstone');
+  assert.match(workspacePageSource, /terminalEventClosed[\s\S]*removeTerminalSession/, 'WorkspacePage 应按删除语义处理 terminal closed 事件');
+  assert.match(workspacePageSource, /normalizeTerminalSessions\([\s\S]*closedTerminalSessionKeysRef\.current/, 'WorkspacePage 应过滤旧 snapshot 中已关闭终端');
   assert.match(workspacePageSource, /const workspacePath = activeSnapshot\.activeProject\?\.workspace_path \|\| routeProject\?\.workspace_path \|\| '';/, 'WorkspacePage 应为终端视图解析 workspacePath');
   assert.match(workspacePageSource, /<WorkspaceTerminalView[\s\S]*executors=\{activeSnapshot\.executors \|\| \[\]\}[\s\S]*projectId=\{projectId\}[\s\S]*scripts=\{activeSnapshot\.scripts\}[\s\S]*terminals=\{currentTerminalSessions\}[\s\S]*workspacePath=\{workspacePath\}[\s\S]*\/>/, 'WorkspacePage 终端页应接入完整终端视图并传入当前项目数据');
   assert.doesNotMatch(workspacePageSource, /function WorkspaceTerminalMetadataSection/, 'WorkspacePage 不应保留终端元数据伪页面');

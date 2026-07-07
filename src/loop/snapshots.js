@@ -30,11 +30,27 @@ const PLAN_BACKEND_SNAPSHOT_COLUMNS = Object.freeze([
   'plan_generation_command',
   'plan_generation_model',
   'plan_generation_codex_reasoning_effort',
+  'plan_generation_claude_base_url',
+  'plan_generation_claude_auth_token',
+  'plan_generation_claude_model',
+  'plan_generation_claude_config_id',
   'plan_execution_strategy',
   'plan_execution_provider',
   'plan_execution_command',
   'plan_execution_model',
   'plan_execution_codex_reasoning_effort',
+  'plan_execution_claude_base_url',
+  'plan_execution_claude_auth_token',
+  'plan_execution_claude_model',
+  'plan_execution_claude_config_id',
+]);
+
+// Claude authToken 列在 snapshot 中需脱敏（仅保留末 4 位 + 前缀 ····），并附加 *_has_claude_auth_token
+// 布尔位让 UI 判断是否已有密钥（输入框 placeholder 显示 ····1234 或「留空不改动」）。原始明文仅留在
+// 数据库，供 spawn 时注入 ANTHROPIC_AUTH_TOKEN 环境变量；永不回填到 renderer。
+const PLAN_BACKEND_CLAUDE_AUTH_TOKEN_COLUMNS = Object.freeze([
+  'plan_generation_claude_auth_token',
+  'plan_execution_claude_auth_token',
 ]);
 
 function snapshot(service, helpers, projectId = null) {
@@ -705,6 +721,7 @@ function planSnapshotRow(service, workspace, plan, concurrencySuggestion = null,
     ...plan,
     ...planBackendSnapshotFields(plan),
     status,
+    plan_generation_duration_ms: normalizeNonNegativeInteger(plan.plan_generation_duration_ms),
     sort_order: normalizePlanSortOrder(plan.sort_order),
     is_draft: status === 'draft',
     agent_cli_provider: planAgentCliConfig.provider,
@@ -721,7 +738,15 @@ function planSnapshotRow(service, workspace, plan, concurrencySuggestion = null,
 function planBackendSnapshotFields(row = {}) {
   const fields = {};
   for (const column of PLAN_BACKEND_SNAPSHOT_COLUMNS) {
-    if (Object.prototype.hasOwnProperty.call(row || {}, column)) fields[column] = row[column];
+    if (!Object.prototype.hasOwnProperty.call(row || {}, column)) continue;
+    // authToken 列脱敏：用 mask 串替换明文，并新增 *_has_claude_auth_token 布尔位供 UI 判断。
+    if (PLAN_BACKEND_CLAUDE_AUTH_TOKEN_COLUMNS.includes(column)) {
+      const rawToken = String(row[column] || '');
+      fields[column] = maskAuthToken(rawToken);
+      fields[`${column.replace('_claude_auth_token', '_has_claude_auth_token')}`] = Boolean(rawToken);
+    } else {
+      fields[column] = row[column];
+    }
   }
   return fields;
 }
@@ -825,6 +850,7 @@ module.exports = {
   groupPlanTasksByPlanId,
   mcpStatusSnapshot,
   parseEventMeta,
+  planBackendSnapshotFields,
   planSnapshotRow,
   readPlanMarkdownTitle,
   snapshot,

@@ -46,7 +46,7 @@ describe('parseCron 校验与解析', () => {
     const parsed = parseCron('*/5 * * * *');
     assert.ok(parsed, '*/5 * * * * 应解析成功');
     assert.ok(parsed.minute instanceof Set);
-    assert.equal(parsed.minute.has(0), false, '每分钟字段 */5 不含 0');
+    assert.equal(parsed.minute.has(0), true, '每分钟字段 */5 应包含 0');
     assert.equal(parsed.minute.has(5), true, '*/5 应命中 5');
     assert.equal(parsed.minute.has(55), true, '*/5 应命中 55');
   });
@@ -121,13 +121,13 @@ describe('isCronDue 命中判定', () => {
 describe('isRunThisMinute 同分钟去重', () => {
   it('同一分钟内返回 true', () => {
     const now = new Date(2026, 5, 29, 12, 5, 30);
-    const lastRun = '2026-06-29T12:05:10.000Z';
+    const lastRun = localIso(2026, 5, 29, 12, 5, 10);
     assert.equal(isRunThisMinute(lastRun, now), true);
   });
 
   it('不同分钟返回 false', () => {
     const now = new Date(2026, 5, 29, 12, 6, 0);
-    const lastRun = '2026-06-29T12:05:10.000Z';
+    const lastRun = localIso(2026, 5, 29, 12, 5, 10);
     assert.equal(isRunThisMinute(lastRun, now), false);
   });
 
@@ -162,7 +162,7 @@ describe('dueScheduledScripts 综合筛选', () => {
 
   it('本分钟已运行过的脚本不入选（同分钟去重）', () => {
     const now = new Date(2026, 5, 29, 12, 5, 30);
-    const script = makeSchedScript({ last_run_at: '2026-06-29T12:05:01.000Z' }); // same minute
+    const script = makeSchedScript({ last_run_at: localIso(2026, 5, 29, 12, 5, 1) });
     const due = dueScheduledScripts([script], now);
     assert.equal(due.length, 0, '本分钟已运行应排除');
   });
@@ -189,4 +189,20 @@ describe('dueScheduledScripts 综合筛选', () => {
       assert.equal(due.length, 0, '非法 cron 应排除不抛错');
     });
   });
+
+  it('空或非法 cron 不影响其他到期脚本入选', () => {
+    const now = new Date(2026, 5, 29, 12, 5, 0);
+    const invalid = makeSchedScript({ schedule_cron: 'bad cron' });
+    const dueScript = makeSchedScript({ schedule_cron: '* * * * *' });
+    const empty = makeSchedScript({ schedule_cron: '' });
+    const notDue = makeSchedScript({ schedule_cron: '0 0 1 1 *' });
+
+    const due = dueScheduledScripts([invalid, dueScript, empty, notDue], now);
+
+    assert.deepEqual(due.map((script) => script.id), [dueScript.id]);
+  });
 });
+
+function localIso(year, monthIndex, day, hour, minute, second = 0) {
+  return new Date(year, monthIndex, day, hour, minute, second).toISOString();
+}

@@ -15,7 +15,7 @@ const BUILTIN_DEFAULT_CONFIG = {
   provider: 'openai',
   baseUrl: 'https://api.openai.com',
   apiKey: '',
-  model: 'gpt-4o',
+  model: 'gpt-5.5',
   temperature: '0.3',
 };
 
@@ -23,10 +23,15 @@ const PROVIDER_DEFAULT_BASE_URLS = Object.freeze({
   openai: 'https://api.openai.com/v1',
   deepseek: 'https://api.deepseek.com',
   anthropic: 'https://api.anthropic.com',
+  codex: '',
 });
 
-const AI_CONFIG_PROVIDERS = new Set(['openai', 'deepseek', 'anthropic']);
-const THINKING_DEPTHS = new Set(['low', 'medium', 'high']);
+const AI_CONFIG_PROVIDERS = new Set(['openai', 'deepseek', 'anthropic', 'codex']);
+const THINKING_DEPTHS_BY_PROVIDER = Object.freeze({
+  openai: new Set(['low', 'medium', 'high', 'xhigh']),
+  deepseek: new Set(['low', 'medium', 'high']),
+  codex: new Set(['low', 'medium', 'high', 'xhigh']),
+});
 
 /**
  * 创建 AI 配置。
@@ -62,6 +67,12 @@ function updateAiConfig(db, id, fields = {}) {
   const existing = db.get('SELECT * FROM ai_configs WHERE id = ? AND project_id IS NULL', [id]);
   if (!existing) throw new Error('AI 配置不存在');
 
+  const provider = normalizeProvider(fields.provider ?? existing.provider);
+  const thinkingDepthInput = fields.thinkingDepth !== undefined ? fields.thinkingDepth : existing.thinking_depth;
+  const thinkingBudgetTokensInput = fields.thinkingBudgetTokens !== undefined
+    ? fields.thinkingBudgetTokens
+    : existing.thinking_budget_tokens;
+
   const now = nowIso();
   db.run(
     `UPDATE ai_configs
@@ -70,15 +81,13 @@ function updateAiConfig(db, id, fields = {}) {
      WHERE id = ?`,
     [
       fields.name !== undefined ? String(fields.name).trim() : existing.name,
-      fields.provider ?? existing.provider,
+      provider,
       fields.baseUrl ?? existing.base_url,
       fields.apiKey ?? existing.api_key,
       fields.model ?? existing.model,
       fields.temperature ?? existing.temperature,
-      fields.thinkingDepth !== undefined ? (fields.thinkingDepth || null) : existing.thinking_depth,
-      fields.thinkingBudgetTokens !== undefined
-        ? (fields.thinkingBudgetTokens != null ? Number(fields.thinkingBudgetTokens) : null)
-        : existing.thinking_budget_tokens,
+      normalizeThinkingDepth(thinkingDepthInput, provider),
+      supportsThinkingBudget(provider) ? normalizeThinkingBudgetTokens(thinkingBudgetTokensInput) : null,
       now,
       id,
     ],
@@ -180,7 +189,7 @@ function resolveAiConfigForPlanGeneration(db, planGenerationConfig = {}) {
     apiKey: normalizeText(base.apiKey),
     model: modelOverride || normalizeText(base.model),
     temperature: normalizeTemperature(base.temperature),
-    thinkingDepth: supportsThinkingDepth(provider) ? normalizeThinkingDepth(base.thinkingDepth) : null,
+    thinkingDepth: normalizeThinkingDepth(base.thinkingDepth, provider),
     thinkingBudgetTokens: supportsThinkingBudget(provider)
       ? normalizeThinkingBudgetTokens(base.thinkingBudgetTokens)
       : null,
@@ -201,7 +210,7 @@ function normalizeCreateAiConfigInput(input = {}) {
     apiKey: normalizeText(input.apiKey),
     model: normalizeText(input.model),
     temperature: normalizeTemperature(input.temperature),
-    thinkingDepth: supportsThinkingDepth(provider) ? normalizeThinkingDepth(input.thinkingDepth) : null,
+    thinkingDepth: normalizeThinkingDepth(input.thinkingDepth, provider),
     thinkingBudgetTokens: supportsThinkingBudget(provider)
       ? normalizeThinkingBudgetTokens(input.thinkingBudgetTokens)
       : null,
@@ -232,9 +241,10 @@ function normalizeTemperature(value) {
   return temperature || BUILTIN_DEFAULT_CONFIG.temperature;
 }
 
-function normalizeThinkingDepth(value) {
+function normalizeThinkingDepth(value, provider) {
   const depth = normalizeText(value).toLowerCase();
-  return THINKING_DEPTHS.has(depth) ? depth : null;
+  const supportedDepths = THINKING_DEPTHS_BY_PROVIDER[provider];
+  return supportedDepths?.has(depth) ? depth : null;
 }
 
 function normalizeThinkingBudgetTokens(value) {
@@ -242,10 +252,6 @@ function normalizeThinkingBudgetTokens(value) {
   const tokens = Number(value);
   if (!Number.isFinite(tokens) || tokens <= 0) return null;
   return Math.floor(tokens);
-}
-
-function supportsThinkingDepth(provider) {
-  return provider === 'openai' || provider === 'deepseek';
 }
 
 function supportsThinkingBudget(provider) {
@@ -256,17 +262,20 @@ function supportsThinkingBudget(provider) {
  * 将数据库行转换为配置对象（含原始 apiKey）。
  */
 function rowToConfig(row) {
+  const provider = normalizeProvider(row.provider);
   return {
     id: row.id,
     projectId: row.project_id,
     name: row.name,
-    provider: row.provider,
+    provider,
     baseUrl: row.base_url,
     apiKey: row.api_key,
-    model: row.model,
+    model: normalizeText(row.model) || BUILTIN_DEFAULT_CONFIG.model,
     temperature: row.temperature,
-    thinkingDepth: row.thinking_depth,
-    thinkingBudgetTokens: row.thinking_budget_tokens,
+    thinkingDepth: normalizeThinkingDepth(row.thinking_depth, provider),
+    thinkingBudgetTokens: supportsThinkingBudget(provider)
+      ? normalizeThinkingBudgetTokens(row.thinking_budget_tokens)
+      : null,
   };
 }
 
@@ -275,19 +284,22 @@ function rowToConfig(row) {
  */
 function sanitizeAiConfig(row) {
   if (!row) return null;
+  const provider = normalizeProvider(row.provider);
   const apiKey = row.api_key || '';
   return {
     id: row.id,
     projectId: row.project_id,
     name: row.name,
-    provider: row.provider,
+    provider,
     baseUrl: row.base_url,
     hasApiKey: Boolean(apiKey),
     maskedKey: maskApiKey(apiKey),
-    model: row.model,
+    model: normalizeText(row.model) || BUILTIN_DEFAULT_CONFIG.model,
     temperature: row.temperature,
-    thinkingDepth: row.thinking_depth,
-    thinkingBudgetTokens: row.thinking_budget_tokens,
+    thinkingDepth: normalizeThinkingDepth(row.thinking_depth, provider),
+    thinkingBudgetTokens: supportsThinkingBudget(provider)
+      ? normalizeThinkingBudgetTokens(row.thinking_budget_tokens)
+      : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

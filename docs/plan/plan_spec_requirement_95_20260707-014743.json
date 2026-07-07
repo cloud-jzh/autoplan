@@ -1,0 +1,46 @@
+{
+  "title": "验收视图支持阅读 Plan 全文（复用 PlanReaderModal）",
+  "summary": "需求 #95「验收环节，也要看到 plan，阅读全文」。当前验收视图（AcceptanceView）的待验收/已验收计划卡只展示计划文件名、标题、进度与任务列表，无法查看计划 Markdown 正文。项目已有可复用的「阅读全文」机制：页面级 PlanReaderModal（WorkspacePage 中以 planReadState 单实例挂载）+ useWorkspaceController 暴露的 openPlanReader(plan) / openTaskPlanReader(task)，PlanList 与 TaskList 已分别经 onOpenReader / onOpenPlan 接入。本次只需在验收视图的计划卡（及其下任务行）增加「查看 Plan 全文」触发器，并在 WorkspacePage 把 openPlanReader / openTaskPlanReader 透传给 AcceptanceView，点击即复用既有只读 Modal 展示该计划全文，不新增第二个 reader 实例、不改后端验收逻辑。",
+  "tasks": [
+    {
+      "title": "AcceptanceView 增加「阅读 Plan 全文」入口（新回调 prop + 计划卡/任务行触发器 + 样式）",
+      "scope": [
+        "src/renderer/components/workspace/AcceptanceView.tsx",
+        "src/renderer/components/workspace/AcceptanceView.test.tsx",
+        "src/renderer/styles/workspace.css",
+        "src/renderer/styles/components.css"
+      ],
+      "acceptance": [
+        "AcceptanceViewProps 新增并声明 onOpenPlan?: (plan: Plan) => void 回调（类型与既有 openPlanReader 兼容），用于从验收视图打开计划全文阅读；如任务行也支持打开所属计划，则一并声明 onOpenTaskPlan?: (task: PlanTask) => void。",
+        "待验收计划卡（PendingPlanCard）与已验收计划卡（AcceptedPlanCard）的计划头各提供一个「查看 Plan 全文」触发器（按钮或 btn-link 链接），点击时以本组 group.plan 调用 onOpenPlan；计划不存在（未分组）时不渲染该入口或禁用。",
+        "触发器具备可访问的 aria-label/title（如「查看 Plan 全文」），与既有逐项验收 checkbox、多选 sel-check、批量验收/取消验收按钮不冲突，不抢占同一点击语义。",
+        "任务行（PendingTaskRow / AcceptedTaskRow）若实现入口，则点击经 onOpenTaskPlan 打开其所属计划全文，与 TaskList 的 onOpenPlan 行为一致；不实现时不应出现死链或未接线按钮。",
+        "样式（workspace.css / components.css 增量）使新触发器与计划头既有操作按钮（全部验收本计划 / 取消验收）视觉对齐，紧凑不溢出，不遮挡标题、进度条与状态 chip；hover/focus 态可见，窄宽下合理换行或归入操作区。",
+        "既有验收/取消验收/多选/批量/折叠交互、计数（pendingTaskCount、acceptedItemCount 等）行为完全不受影响。"
+      ]
+    },
+    {
+      "title": "WorkspacePage 接线：将 openPlanReader / openTaskPlanRunner 透传给 AcceptanceView",
+      "scope": [
+        "src/renderer/pages/WorkspacePage.tsx",
+        "src/renderer/pages/WorkspacePage.test.tsx"
+      ],
+      "acceptance": [
+        "<AcceptanceView> 渲染处（acceptance section）新增 onOpenPlan={openPlanReader}；若任务行入口已实现，则同时传入 onOpenTaskPlan={openTaskPlanReader}，二者均来自 useWorkspaceController 已解构的现有回调。",
+        "点击验收计划卡的「阅读全文」后，复用页面级已挂载的 PlanReaderModal（readerState={planReadState}、latestPlan={latestReadingPlan}）展示对应计划的 Markdown 全文，不新增第二个 PlanReaderModal 实例。",
+        "reader 的关闭/刷新复用既有 closePlanReader / refreshPlanReader，行为与 Plan 列表、任务列表一致；切换其他 Tab 或离开验收视图不应遗留脏的 reader 状态。",
+        "WorkspacePage.test.tsx 增补断言：AcceptanceView 被传入 onOpenPlan（指向 openPlanReader），且页面仍只挂载复用的 PlanReaderModal 一次（不出现重复 reader）。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm test",
+    "criteria": [
+      "npm test 全量单测通过：覆盖 AcceptanceView 新增 onOpenPlan/onOpenTaskPlan prop 声明与「查看 Plan 全文」触发器（源码断言），以及 WorkspacePage 将 openPlanReader 透传给 AcceptanceView 且仍只挂载单个 PlanReaderModal 的接线断言。",
+      "端到端场景：进入工作界面「验收」Tab，待验收与已验收计划卡上均可见「查看 Plan 全文」入口；点击后弹出复用的只读 PlanReaderModal，展示该计划 Markdown 正文（含状态/CLI/更新时间/哈希摘要与正文），刷新/关闭行为正常；任务行入口（若实现）能打开所属计划全文。",
+      "回归：验收逐项验收/取消验收、多选、批量验收/取消验收、全部验收、已完成验收折叠等既有交互与计数均不受影响；Plan 列表、任务列表既有「阅读全文」入口行为不回归。",
+      "解耦：本次仅渲染层接入既有 reader，不改动 acceptance.js 后端验收态写入逻辑（accepted_at/事件），不执行任何脚本/任务/验证命令。",
+      "类型与构建：tsc --noEmit（npm run build 前置步骤）无新增类型错误，AcceptanceViewProps 新回调与 Plan/PlanTask 类型一致，新触发器样式类名在 workspace.css/components.css 中有对应定义。"
+    ]
+  }
+}

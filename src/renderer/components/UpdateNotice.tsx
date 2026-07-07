@@ -1,40 +1,58 @@
-import { AUTOPLAN_RELEASES_URL } from '../types';
+import { AUTOPLAN_RELEASES_URL, type UpdateStatus } from '../types';
 import { useUpdateStatus } from '../hooks/useUpdateStatus';
+import { Icon } from './icons';
 
-/**
- * 全局正式版本更新提醒横幅（需求 #24）。
- * 仅当存在可用正式版更新（status.hasUpdate 已扣除被忽略版本）时渲染；提供「前往下载」
- * （经主进程 shell.openExternal 打开 Release 页面）与「稍后提醒」（写 update.dismissedVersion，
- * 本轮不再提醒）。无更新或检查失败时不打扰用户。
- * 样式复用既有 .inline-banner / .btn，自动适配明暗主题；布局用内联样式微调，不新增 CSS。
- */
 export function UpdateNotice() {
-  const { status } = useUpdateStatus();
+  const { status, openInstaller, openingInstaller, installerOpenError } = useUpdateStatus();
   if (!status.hasUpdate) return null;
 
   const versionLabel = status.latestVersion ? `v${status.latestVersion}` : '新版本';
   const releaseUrl = status.htmlUrl || AUTOPLAN_RELEASES_URL;
+  const phase = status.downloadPhase || 'idle';
+  const progress = clampProgress(status.downloadProgress);
+  const canOpenInstaller = phase === 'downloaded' && Boolean(status.localInstallerPath || status.downloadedInstallerPath);
 
   return (
-    <div
-      className="inline-banner info update-notice"
-      role="status"
-      style={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}
-    >
-      <span>
-        🆕 检测到新正式版本 <b>{versionLabel}</b> 可用
-        {status.latestName ? <span> · {status.latestName}</span> : null}
-        {status.publishedAt ? <span> · {status.publishedAt}</span> : null}
-      </span>
-      <span style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+    <div className={`inline-banner info update-notice update-notice--${phase}`} role="status">
+      <div className="update-notice__main">
+        <div className="update-notice__title">
+          检测到正式版本 <b>{versionLabel}</b>
+          {status.latestName ? <span> · {status.latestName}</span> : null}
+        </div>
+        <div className="update-notice__meta">
+          <span>{updateDownloadText(status)}</span>
+          {status.installerAsset?.name ? <span className="mono">{status.installerAsset.name}</span> : null}
+          {installerOpenError ? <span className="danger-text">{installerOpenError}</span> : null}
+        </div>
+        {phase === 'downloading' || phase === 'pending' ? (
+          <div className="update-notice__progress" aria-label={`下载进度 ${progress}%`}>
+            <span style={{ width: `${progress}%` }} />
+          </div>
+        ) : null}
+      </div>
+      <div className="update-notice__actions">
+        {canOpenInstaller ? (
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            disabled={openingInstaller}
+            onClick={() => {
+              void openInstaller();
+            }}
+          >
+            <Icon name="open" size={14} aria-hidden="true" />
+            {openingInstaller ? '打开中' : '打开安装包'}
+          </button>
+        ) : null}
         <button
           type="button"
-          className="btn btn-sm btn-primary"
+          className={`btn btn-sm${canOpenInstaller ? '' : ' btn-primary'}`}
           onClick={() => {
             void window.autoplan.openExternal(releaseUrl);
           }}
         >
-          前往下载
+          <Icon name="open" size={14} aria-hidden="true" />
+          打开 Releases
         </button>
         <button
           type="button"
@@ -43,9 +61,27 @@ export function UpdateNotice() {
             void window.autoplan.dismissUpdate();
           }}
         >
+          <Icon name="close" size={14} aria-hidden="true" />
           稍后提醒
         </button>
-      </span>
+      </div>
     </div>
   );
+}
+
+function updateDownloadText(status: UpdateStatus) {
+  const phase = status.downloadPhase || 'idle';
+  const progress = clampProgress(status.downloadProgress);
+  if (phase === 'pending') return '已找到当前平台安装包，等待自动下载。';
+  if (phase === 'downloading') return `正在自动下载安装包：${progress}%`;
+  if (phase === 'downloaded') return '安装包已下载，可直接打开。';
+  if (phase === 'failed') return status.downloadError ? `安装包下载失败：${status.downloadError}` : '安装包下载失败。';
+  if (phase === 'unavailable') return '未找到适用于当前平台的安装包，可前往 Releases 手动下载。';
+  return status.installerAssetAvailable ? '已找到当前平台安装包。' : '未找到当前平台安装包，可前往 Releases 手动下载。';
+}
+
+function clampProgress(value: unknown) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.max(0, Math.min(100, Math.trunc(number)));
 }

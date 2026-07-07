@@ -17,6 +17,7 @@ function registerTerminalIpc({ ipcMain, terminalService, getProject, sendToRende
   terminalService.on(TERMINAL_CHANNELS.DATA, (event) => send(TERMINAL_CHANNELS.DATA, safeTerminalEvent(event)));
   terminalService.on(TERMINAL_CHANNELS.EXIT, (event) => send(TERMINAL_CHANNELS.EXIT, safeTerminalEvent(event)));
   terminalService.on(TERMINAL_CHANNELS.STATUS, (event) => send(TERMINAL_CHANNELS.STATUS, safeTerminalEvent(event)));
+  terminalService.on(TERMINAL_CHANNELS.CLOSED, (event) => send(TERMINAL_CHANNELS.CLOSED, safeTerminalEvent(event)));
 
   ipcMain.handle(TERMINAL_CHANNELS.CREATE, (_event, input = {}) => withTerminalError(() => {
     const payload = createPayload(input);
@@ -218,6 +219,7 @@ function normalizeTerminalResult(result) {
   if (Array.isArray(next.sessions)) next.sessions = next.sessions.map(safeTerminalSession);
   if (Array.isArray(next.chunks)) next.chunks = next.chunks.map((chunk) => String(chunk ?? ''));
   if (next.data !== undefined) next.data = String(next.data ?? '');
+  if (Object.prototype.hasOwnProperty.call(next, 'closed')) next.closed = next.closed === true;
   return next;
 }
 
@@ -230,12 +232,13 @@ function safeTerminalEvent(event = {}) {
   if (event.data !== undefined) payload.data = String(event.data ?? '');
   if (Object.prototype.hasOwnProperty.call(event, 'exitCode')) payload.exitCode = event.exitCode ?? null;
   if (Object.prototype.hasOwnProperty.call(event, 'signal')) payload.signal = event.signal ?? null;
+  if (Object.prototype.hasOwnProperty.call(event, 'closed')) payload.closed = event.closed === true;
   return payload;
 }
 
 function safeTerminalSession(session = {}) {
   const source = session && typeof session === 'object' ? session : {};
-  return {
+  const payload = {
     id: String(source.id || ''),
     projectId: normalizePublicProjectId(source.projectId),
     title: String(source.title || ''),
@@ -249,6 +252,8 @@ function safeTerminalSession(session = {}) {
     rows: Number.isInteger(source.rows) ? source.rows : null,
     profile: safeTerminalProfile(source.profile),
   };
+  if (Object.prototype.hasOwnProperty.call(source, 'closed')) payload.closed = source.closed === true;
+  return payload;
 }
 
 function safeTerminalProfile(profile = {}) {

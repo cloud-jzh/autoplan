@@ -8,6 +8,7 @@ const {
   WIN_CMD_LIMIT,
   WIN_CREATEPROCESS_LIMIT,
   agentCliSpawnSpec,
+  buildClaudeEnv,
   claudeCliArgs,
   claudeSessionArgs,
   codexNewSessionArgs,
@@ -53,7 +54,7 @@ describe('Codex reasoning effort', () => {
   it('passes xhigh to new and resumed Codex sessions', () => {
     const expectedArg = 'model_reasoning_effort="xhigh"';
 
-    expectIncludes(codexNewSessionArgs('D:/workspace', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
+    expectIncludes(codexNewSessionArgs('last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
     expectIncludes(codexResumeSessionArgs('session-id', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
   });
 
@@ -62,6 +63,53 @@ describe('Codex reasoning effort', () => {
 
     expectEqual(spec.agentCliProvider, 'claude');
     expectNotIncludes(spec.args, 'model_reasoning_effort="xhigh"');
+  });
+});
+
+describe('Codex 新会话参数构造（反馈 #92：移除 --cd）', () => {
+  it('不包含 --cd / -C，且 workspace 值不会作为裸位置参数泄漏到末尾 - 之前', () => {
+    const args = codexNewSessionArgs('last.txt', { reasoningEffort: 'medium' });
+
+    expectNotIncludes(args, '--cd');
+    expectNotIncludes(args, '-C');
+    // 反馈 #92 前 workspace（如 'D:/workspace'）会被作为 args 元素注入；移除后不应再泄漏。
+    expectNotIncludes(args, 'D:/workspace');
+    expectNotIncludes(args, '/workspace');
+    // stdin prompt 占位符 '-' 仍是末尾元素，前面不应混入 workspace 之类的裸位置参数。
+    expectEqual(args[args.length - 1], '-');
+    expectNotIncludes(args.slice(0, -1), 'D:/workspace');
+  });
+
+  it('保留 exec / --color / never / -o / --sandbox / danger-full-access / - 关键元素及顺序', () => {
+    const args = codexNewSessionArgs('last.txt', { reasoningEffort: 'medium' });
+    const ordered = ['exec', '--color', 'never', '-o', 'last.txt', '--sandbox', 'danger-full-access', '-'];
+
+    let prev = -1;
+    for (const item of ordered) {
+      expectIncludes(args, item);
+      const idx = args.indexOf(item);
+      expectTruthy(idx > prev);
+      prev = idx;
+    }
+  });
+
+  it('reasoningEffort 取 low/medium/high/xhigh 及缺省回退时结构稳定且始终无 --cd', () => {
+    for (const effort of ['low', 'medium', 'high', 'xhigh']) {
+      const args = codexNewSessionArgs('last.txt', { reasoningEffort: effort });
+
+      expectNotIncludes(args, '--cd');
+      expectIncludes(args, `model_reasoning_effort="${effort}"`);
+      expectIncludes(args, 'exec');
+      expectIncludes(args, '--sandbox');
+      expectIncludes(args, 'danger-full-access');
+      expectEqual(args[args.length - 1], '-');
+    }
+
+    // 缺省回退到 medium，结构同样稳定且无 --cd。
+    const fallbackArgs = codexNewSessionArgs('last.txt');
+    expectNotIncludes(fallbackArgs, '--cd');
+    expectIncludes(fallbackArgs, 'model_reasoning_effort="medium"');
+    expectEqual(fallbackArgs[fallbackArgs.length - 1], '-');
   });
 });
 
@@ -123,6 +171,49 @@ describe('Claude session spec', () => {
     expectEqual(spec.agentCliSessionId, '');
     expectEqual(spec.agentCliSessionRequestedId, '');
     expectEqual(spec.agentCliSessionMode, 'continue');
+  });
+});
+
+describe('Claude custom connection env injection', () => {
+  it('buildClaudeEnv maps fields to ANTHROPIC_* variables and skips empties', () => {
+    // 全部非空：三个变量都注入。
+    const full = buildClaudeEnv({
+      baseUrl: 'https://gateway.example.com',
+      authToken: 'sk-test-123',
+      model: 'claude-sonnet-4-5',
+    });
+    expectEqual(full.ANTHROPIC_BASE_URL, 'https://gateway.example.com');
+    expectEqual(full.ANTHROPIC_AUTH_TOKEN, 'sk-test-123');
+    expectEqual(full.ANTHROPIC_MODEL, 'claude-sonnet-4-5');
+
+    // 部分为空：仅注入非空字段，避免覆盖用户 settings.json 的合法配置。
+    const partial = buildClaudeEnv({ baseUrl: '', authToken: 'sk-only', model: '  ' });
+    expectEqual(partial.ANTHROPIC_AUTH_TOKEN, 'sk-only');
+    expectEqual(partial.ANTHROPIC_BASE_URL, undefined);
+    expectEqual(partial.ANTHROPIC_MODEL, undefined);
+
+    // 全空：返回 null，调用方跳过合并。
+    expectEqual(buildClaudeEnv({}), null);
+    expectEqual(buildClaudeEnv(undefined), null);
+  });
+
+  it('agentCliSpawnSpec exposes env only when claudeEnv options are provided', () => {
+    const withEnv = agentCliSpawnSpec('claude', 'claude', 'last.txt', [], {
+      claudeEnv: { baseUrl: 'https://plan.example.com', authToken: 'sk-plan', model: 'claude-plan' },
+    });
+    expectEqual(withEnv.env.ANTHROPIC_BASE_URL, 'https://plan.example.com');
+    expectEqual(withEnv.env.ANTHROPIC_AUTH_TOKEN, 'sk-plan');
+    expectEqual(withEnv.env.ANTHROPIC_MODEL, 'claude-plan');
+
+    // 未提供 claudeEnv：env 为 null，spawn 时不会合并任何 ANTHROPIC_* 变量（保留 settings.json）。
+    const withoutEnv = agentCliSpawnSpec('claude', 'claude', 'last.txt', [], {});
+    expectEqual(withoutEnv.env, null);
+  });
+
+  it('agentCliSpawnSpec env not present for non-claude providers', () => {
+    // codex/opencode/oh-my-pi 分支不应注入 Claude env（buildClaudeEnv 仅在 claude 分支调用）。
+    const codexSpec = agentCliSpawnSpec('codex', 'codex', 'last.txt', ['-c', 'model_reasoning_effort="high"']);
+    expectEqual(codexSpec.env, undefined);
   });
 });
 

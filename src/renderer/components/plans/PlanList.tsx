@@ -1,11 +1,12 @@
-import type { KeyboardEvent, MouseEvent, ReactNode } from 'react';
+import { type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { useEffect, useId, useState } from 'react';
-import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
+import type { AgentCliProvider, Plan, PlanTask, WorkspacePlanReadState } from '../../types';
 import { planCliSummaryLabel } from '../shared';
 import { formatChinaDateTime } from '../../utils/time';
 import { Icon } from '../icons';
 import {
   formatPlanDurationSummary,
+  formatPlanGenerationDuration,
   planTitle,
   tasksForPlan,
   type ParallelRunRequest,
@@ -64,6 +65,21 @@ function planCardChipClass(state: string) {
   return 'chip-pending';
 }
 
+const CLI_PROVIDER_OPTIONS: ReadonlyArray<{ value: AgentCliProvider; label: string }> = Object.freeze([
+  { value: 'codex', label: 'Codex CLI' },
+  { value: 'claude', label: 'Claude CLI' },
+  { value: 'opencode', label: 'OpenCode CLI' },
+  { value: 'oh-my-pi', label: 'Oh My Pi' },
+]);
+
+function providerDisplayLabel(provider: AgentCliProvider | string): string {
+  if (provider === 'codex') return 'Codex';
+  if (provider === 'claude') return 'Claude';
+  if (provider === 'opencode') return 'OpenCode';
+  if (provider === 'oh-my-pi') return 'Oh My Pi';
+  return provider || '—';
+}
+
 function canStopPlan(plan: Plan, hasRunningTask: boolean) {
   return hasRunningTask || plan.status === 'running';
 }
@@ -72,12 +88,17 @@ export function PlanList({
   emptyText = '暂无 plan。',
   latestReadingPlan,
   onCloseReader,
+  onAppendPlanTask,
   onDeletePlan,
   onOpenReader,
+  onRecreatePlanFromIntake,
+  onReExecutePlan,
+  onResumePlan,
   onRunParallel,
   onSelectPlan,
   onRefreshReader,
   onStopPlan,
+  onUpdatePlanExecutionConfig,
   plans,
   readerState,
   renderPlanControls,
@@ -88,12 +109,17 @@ export function PlanList({
   emptyText?: string;
   latestReadingPlan?: Plan | null;
   onCloseReader: () => void;
+  onAppendPlanTask?: (plan: Plan, title: string) => Promise<void> | void;
   onDeletePlan?: (plan: Plan) => Promise<void> | void;
   onOpenReader: (plan: Plan) => void;
+  onRecreatePlanFromIntake?: (plan: Plan) => Promise<void> | void;
+  onReExecutePlan?: (plan: Plan) => Promise<void> | void;
+  onResumePlan?: (plan: Plan) => Promise<void> | void;
   onRunParallel?: (request: ParallelRunRequest) => void;
   onSelectPlan?: (plan: Plan) => void;
   onRefreshReader: () => void;
   onStopPlan?: (plan: Plan) => Promise<void> | void;
+  onUpdatePlanExecutionConfig?: (plan: Plan, provider: AgentCliProvider) => Promise<void> | void;
   plans: Plan[];
   readerState: WorkspacePlanReadState;
   renderPlanControls?: (plan: Plan) => ReactNode;
@@ -107,6 +133,8 @@ export function PlanList({
   const menuBaseId = useId();
   const [confirmingPlan, setConfirmingPlan] = useState<Plan | null>(null);
   const [deletingPlan, setDeletingPlan] = useState<Plan | null>(null);
+  const [appendingTaskPlan, setAppendingTaskPlan] = useState<Plan | null>(null);
+  const [appendingTaskTitle, setAppendingTaskTitle] = useState('');
   const [openMenuPlanId, setOpenMenuPlanId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -137,6 +165,7 @@ export function PlanList({
           {plans.map((plan) => {
             const planTasks = tasksForPlan(tasks, plan, totalPlanCount);
             const durationSummary = formatPlanDurationSummary(planTasks);
+            const generationDurationSummary = formatPlanGenerationDuration(plan);
             const title = planTitle(plan);
             const progressPercent = getPlanProgressPercent(plan);
             const cliSummary = planCliSummaryLabel(plan);
@@ -194,7 +223,7 @@ export function PlanList({
                   <div className={`progress${progressTone}`} aria-hidden="true">
                     <span style={{ width: `${progressPercent}%` }} />
                   </div>
-                  <div className="plan-progress-subline">{durationSummary}</div>
+                  <div className="plan-progress-subline">{durationSummary} · {generationDurationSummary}</div>
                 </div>
 
                 <div className="concurrency-row">
@@ -212,31 +241,127 @@ export function PlanList({
                   <span>{formatChinaDateTime(plan.updated_at)}</span>
                 </div>
 
-                <div className="plan-actions">
-                  <div className="plan-primary-actions">
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-primary plan-parallel-link"
-                      disabled={!canRunParallel}
-                      title={parallelDisabledReason || undefined}
-                      onClick={() => setConfirmingPlan(plan)}
-                    >
-                      并发执行
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm plan-read-link"
-                      aria-haspopup="dialog"
-                      aria-controls={readingThisPlan ? readerDialogId : undefined}
-                      aria-expanded={readingThisPlan}
-                      aria-label={`${disableRead ? '正在读取' : '阅读全文'}：${plan.file_path}`}
-                      disabled={disableRead}
-                      onClick={() => onOpenReader(plan)}
-                    >
-                      {disableRead ? '读取中…' : '阅读全文'}
-                    </button>
+                {plan.status === 'interrupted' && (onUpdatePlanExecutionConfig || onResumePlan) ? (
+                  <div className="plan-cli-switch">
+                    {onUpdatePlanExecutionConfig ? (
+                      <label className="cli-switch-field">
+                        <span className="cli-switch-label">CLI 工具：</span>
+                        <select
+                          className="cli-switch-select"
+                          value={plan.plan_execution_provider || plan.agent_cli_provider || 'codex'}
+                          onChange={(event) => {
+                            event.stopPropagation();
+                            void onUpdatePlanExecutionConfig(plan, event.target.value as AgentCliProvider);
+                          }}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          {CLI_PROVIDER_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : (
+                      <span className="cli-switch-label">
+                        执行：{providerDisplayLabel(plan.plan_execution_provider || plan.agent_cli_provider || '')}
+                      </span>
+                    )}
+                    {onResumePlan ? (
+                      <button
+                        type="button"
+                        className="btn btn-sm plan-resume-link"
+                        title="恢复计划执行"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void onResumePlan(plan);
+                        }}
+                      >
+                        <Icon name="play" size={14} aria-hidden="true" />
+                        恢复
+                      </button>
+                    ) : null}
                   </div>
-                  {renderPlanControls ? <div className="plan-secondary-actions">{renderPlanControls(plan)}</div> : null}
+                ) : null}
+
+                {plan.status === 'completed' && (onReExecutePlan || onRecreatePlanFromIntake || onAppendPlanTask) ? (
+                  <div className="plan-cli-switch plan-completed-actions">
+                    {onReExecutePlan ? (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        title="重置任务状态后重新执行"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void onReExecutePlan(plan);
+                        }}
+                      >
+                        <Icon name="play" size={14} aria-hidden="true" />
+                        重新执行
+                      </button>
+                    ) : null}
+                    {onRecreatePlanFromIntake ? (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        title="基于原需求重新生成计划"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void onRecreatePlanFromIntake(plan);
+                        }}
+                      >
+                        <Icon name="refresh" size={14} aria-hidden="true" />
+                        重新创建
+                      </button>
+                    ) : null}
+                    {onAppendPlanTask ? (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        title="向已完成计划追加新任务并重新激活"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setAppendingTaskPlan(plan);
+                          setAppendingTaskTitle('');
+                        }}
+                      >
+                        <Icon name="plus" size={14} aria-hidden="true" />
+                        附加内容
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="plan-actions">
+                  <div className="plan-action-main">
+                    <div className="plan-primary-actions">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary plan-parallel-link"
+                        disabled={!canRunParallel}
+                        title={parallelDisabledReason || undefined}
+                        onClick={() => setConfirmingPlan(plan)}
+                      >
+                        并发执行
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm plan-read-link"
+                        aria-haspopup="dialog"
+                        aria-controls={readingThisPlan ? readerDialogId : undefined}
+                        aria-expanded={readingThisPlan}
+                        aria-label={`${disableRead ? '正在读取' : '阅读全文'}：${plan.file_path}`}
+                        disabled={disableRead}
+                        onClick={() => onOpenReader(plan)}
+                      >
+                        {disableRead ? '读取中…' : '阅读全文'}
+                      </button>
+                    </div>
+                    {renderPlanControls ? <div className="plan-secondary-actions">{renderPlanControls(plan)}</div> : null}
+                    <span className={`plan-validation ${plan.validation_passed ? 'passed' : 'pending'}`}>
+                      验收 {plan.validation_passed ? 'passed' : 'pending'}
+                    </span>
+                  </div>
                   <div
                     className="plan-action-menu-wrap"
                     data-plan-action-menu="true"
@@ -297,9 +422,6 @@ export function PlanList({
                       </div>
                     ) : null}
                   </div>
-                  <span className={`plan-validation ${plan.validation_passed ? 'passed' : 'pending'}`}>
-                    验收 {plan.validation_passed ? 'passed' : 'pending'}
-                  </span>
                 </div>
               </article>
             );
@@ -398,6 +520,62 @@ export function PlanList({
                 }}
               >
                 删除计划
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {appendingTaskPlan ? (
+        <div className="modal-mask" onClick={() => setAppendingTaskPlan(null)}>
+          <div className="modal plan-append-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <h3>附加内容</h3>
+              <button type="button" className="modal-close" onClick={() => setAppendingTaskPlan(null)} aria-label="关闭附加内容">
+                ×
+              </button>
+            </div>
+            <div className="plan-append-body">
+              <p>为已完成计划 #{appendingTaskPlan.id} 追加新任务，计划将自动重新激活。</p>
+              <div className="plan-append-target" title={appendingTaskPlan.file_path}>
+                {planTitle(appendingTaskPlan) || appendingTaskPlan.file_path || `Plan #${appendingTaskPlan.id}`}
+              </div>
+              <label className="field" style={{ marginTop: 14 }}>
+                <span className="field-label">新任务标题 <span className="req">*</span></span>
+                <input
+                  className="field-input"
+                  value={appendingTaskTitle}
+                  onChange={(event) => setAppendingTaskTitle(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && appendingTaskTitle.trim()) {
+                      const plan = appendingTaskPlan;
+                      const title = appendingTaskTitle.trim();
+                      setAppendingTaskPlan(null);
+                      setAppendingTaskTitle('');
+                      void onAppendPlanTask?.(plan, title);
+                    }
+                  }}
+                  placeholder="输入新任务标题，如 P006 补充测试"
+                  autoFocus
+                />
+              </label>
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="btn" onClick={() => setAppendingTaskPlan(null)}>取消</button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!appendingTaskTitle.trim()}
+                onClick={() => {
+                  const plan = appendingTaskPlan;
+                  const title = appendingTaskTitle.trim();
+                  if (!title) return;
+                  setAppendingTaskPlan(null);
+                  setAppendingTaskTitle('');
+                  void onAppendPlanTask?.(plan, title);
+                }}
+              >
+                追加任务
               </button>
             </div>
           </div>

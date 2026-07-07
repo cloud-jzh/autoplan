@@ -7,6 +7,7 @@ const PERSIST_RETRY_DELAYS_MS = [20, 50, 100, 200, 400];
 const RETRYABLE_FS_ERROR_CODES = new Set(['EACCES', 'EBUSY', 'EPERM']);
 const READ_ONLY_SQL_COMMANDS = new Set(['', 'SELECT', 'EXPLAIN']);
 const ROW_MODIFYING_SQL_COMMANDS = new Set(['UPDATE', 'DELETE', 'INSERT', 'REPLACE']);
+const DEFAULT_CHAT_MODEL = 'gpt-5.5';
 
 class AppDatabase {
   constructor(dbPath) {
@@ -75,11 +76,17 @@ class AppDatabase {
         plan_generation_command TEXT NOT NULL DEFAULT '',
         plan_generation_model TEXT NOT NULL DEFAULT '',
         plan_generation_codex_reasoning_effort TEXT,
+        plan_generation_claude_base_url TEXT NOT NULL DEFAULT '',
+        plan_generation_claude_auth_token TEXT NOT NULL DEFAULT '',
+        plan_generation_claude_model TEXT NOT NULL DEFAULT '',
         plan_execution_strategy TEXT NOT NULL DEFAULT 'external-cli',
         plan_execution_provider TEXT,
         plan_execution_command TEXT NOT NULL DEFAULT '',
         plan_execution_model TEXT NOT NULL DEFAULT '',
         plan_execution_codex_reasoning_effort TEXT,
+        plan_execution_claude_base_url TEXT NOT NULL DEFAULT '',
+        plan_execution_claude_auth_token TEXT NOT NULL DEFAULT '',
+        plan_execution_claude_model TEXT NOT NULL DEFAULT '',
         last_issue_hash TEXT,
         last_error TEXT,
         env_vars TEXT NOT NULL DEFAULT '',
@@ -100,6 +107,9 @@ class AppDatabase {
         plan_generation_command TEXT NOT NULL DEFAULT '',
         plan_generation_model TEXT NOT NULL DEFAULT '',
         plan_generation_codex_reasoning_effort TEXT,
+        plan_generation_claude_base_url TEXT NOT NULL DEFAULT '',
+        plan_generation_claude_auth_token TEXT NOT NULL DEFAULT '',
+        plan_generation_claude_model TEXT NOT NULL DEFAULT '',
         generate_fail_count INTEGER DEFAULT 0,
         last_generate_fail_at TEXT,
         last_generate_error TEXT,
@@ -127,6 +137,9 @@ class AppDatabase {
         plan_generation_command TEXT NOT NULL DEFAULT '',
         plan_generation_model TEXT NOT NULL DEFAULT '',
         plan_generation_codex_reasoning_effort TEXT,
+        plan_generation_claude_base_url TEXT NOT NULL DEFAULT '',
+        plan_generation_claude_auth_token TEXT NOT NULL DEFAULT '',
+        plan_generation_claude_model TEXT NOT NULL DEFAULT '',
         agent_cli_session_id TEXT,
         generate_fail_count INTEGER DEFAULT 0,
         last_generate_fail_at TEXT,
@@ -184,11 +197,18 @@ class AppDatabase {
         plan_generation_command TEXT NOT NULL DEFAULT '',
         plan_generation_model TEXT NOT NULL DEFAULT '',
         plan_generation_codex_reasoning_effort TEXT,
+        plan_generation_claude_base_url TEXT NOT NULL DEFAULT '',
+        plan_generation_claude_auth_token TEXT NOT NULL DEFAULT '',
+        plan_generation_claude_model TEXT NOT NULL DEFAULT '',
+        plan_generation_duration_ms INTEGER NOT NULL DEFAULT 0,
         plan_execution_strategy TEXT NOT NULL DEFAULT 'external-cli',
         plan_execution_provider TEXT,
         plan_execution_command TEXT NOT NULL DEFAULT '',
         plan_execution_model TEXT NOT NULL DEFAULT '',
         plan_execution_codex_reasoning_effort TEXT,
+        plan_execution_claude_base_url TEXT NOT NULL DEFAULT '',
+        plan_execution_claude_auth_token TEXT NOT NULL DEFAULT '',
+        plan_execution_claude_model TEXT NOT NULL DEFAULT '',
         agent_cli_session_id TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -323,6 +343,21 @@ class AppDatabase {
       CREATE INDEX IF NOT EXISTS idx_ai_configs_project
       ON ai_configs (project_id);
 
+      CREATE TABLE IF NOT EXISTS claude_cli_configs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        name TEXT NOT NULL,
+        base_url TEXT NOT NULL DEFAULT '',
+        auth_token TEXT NOT NULL DEFAULT '',
+        model TEXT NOT NULL DEFAULT '',
+        is_default INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_claude_cli_configs_project
+      ON claude_cli_configs (project_id);
+
       CREATE TABLE IF NOT EXISTS conversations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_id INTEGER,
@@ -363,6 +398,10 @@ class AppDatabase {
     this.ensureColumn('requirements', 'plan_generation_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('requirements', 'plan_generation_model', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('requirements', 'plan_generation_codex_reasoning_effort', 'TEXT');
+    this.ensureColumn('requirements', 'plan_generation_claude_base_url', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('requirements', 'plan_generation_claude_auth_token', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('requirements', 'plan_generation_claude_model', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('requirements', 'plan_generation_claude_config_id', "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn('requirements', 'generate_fail_count', 'INTEGER DEFAULT 0');
     this.ensureColumn('requirements', 'last_generate_fail_at', 'TEXT');
     this.ensureColumn('requirements', 'last_generate_error', 'TEXT');
@@ -379,6 +418,10 @@ class AppDatabase {
     this.ensureColumn('feedback', 'plan_generation_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('feedback', 'plan_generation_model', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('feedback', 'plan_generation_codex_reasoning_effort', 'TEXT');
+    this.ensureColumn('feedback', 'plan_generation_claude_base_url', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('feedback', 'plan_generation_claude_auth_token', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('feedback', 'plan_generation_claude_model', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('feedback', 'plan_generation_claude_config_id', "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn('feedback', 'agent_cli_session_id', 'TEXT');
     this.ensureColumn('feedback', 'generate_fail_count', 'INTEGER DEFAULT 0');
     this.ensureColumn('feedback', 'last_generate_fail_at', 'TEXT');
@@ -397,11 +440,20 @@ class AppDatabase {
     this.ensureColumn('plans', 'plan_generation_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('plans', 'plan_generation_model', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('plans', 'plan_generation_codex_reasoning_effort', 'TEXT');
+    this.ensureColumn('plans', 'plan_generation_claude_base_url', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('plans', 'plan_generation_claude_auth_token', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('plans', 'plan_generation_claude_model', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('plans', 'plan_generation_claude_config_id', "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn('plans', 'plan_generation_duration_ms', 'INTEGER NOT NULL DEFAULT 0');
     this.ensureColumn('plans', 'plan_execution_strategy', "TEXT NOT NULL DEFAULT 'external-cli'");
     this.ensureColumn('plans', 'plan_execution_provider', 'TEXT');
     this.ensureColumn('plans', 'plan_execution_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('plans', 'plan_execution_model', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('plans', 'plan_execution_codex_reasoning_effort', 'TEXT');
+    this.ensureColumn('plans', 'plan_execution_claude_base_url', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('plans', 'plan_execution_claude_auth_token', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('plans', 'plan_execution_claude_model', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('plans', 'plan_execution_claude_config_id', "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn('plans', 'agent_cli_session_id', 'TEXT');
     this.ensureColumn('plans', 'accepted_at', 'TEXT');
     this.ensureIntakePlanLinksTable();
@@ -450,11 +502,19 @@ class AppDatabase {
     this.ensureColumn('project_states', 'plan_generation_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('project_states', 'plan_generation_model', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('project_states', 'plan_generation_codex_reasoning_effort', 'TEXT');
+    this.ensureColumn('project_states', 'plan_generation_claude_base_url', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('project_states', 'plan_generation_claude_auth_token', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('project_states', 'plan_generation_claude_model', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('project_states', 'plan_generation_claude_config_id', "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn('project_states', 'plan_execution_strategy', "TEXT NOT NULL DEFAULT 'external-cli'");
     this.ensureColumn('project_states', 'plan_execution_provider', 'TEXT');
     this.ensureColumn('project_states', 'plan_execution_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('project_states', 'plan_execution_model', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('project_states', 'plan_execution_codex_reasoning_effort', 'TEXT');
+    this.ensureColumn('project_states', 'plan_execution_claude_base_url', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('project_states', 'plan_execution_claude_auth_token', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('project_states', 'plan_execution_claude_model', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('project_states', 'plan_execution_claude_config_id', "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn('project_states', 'env_vars', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('chat_messages', 'project_id', 'INTEGER');
     this.ensureColumn('chat_messages', 'conversation_id', 'INTEGER');
@@ -464,6 +524,7 @@ class AppDatabase {
     this.ensureColumn('conversations', 'project_id', 'INTEGER');
     this.ensureColumn('conversations', 'ai_config_id', 'INTEGER');
     this.ensureColumn('conversations', 'pinned_at', 'TEXT');
+    this.ensureColumn('conversations', 'codex_session_id', 'TEXT');
     this.db.run(`
       CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation
       ON chat_messages (conversation_id, created_at)
@@ -591,11 +652,31 @@ class AppDatabase {
       'update.intervalMinutes': '360',
       'update.lastCheckedAt': '',
       'update.dismissedVersion': '',
+      'update.installerAssetAvailable': 'false',
+      'update.installerAssetStatus': '',
+      'update.installerAssetReason': '',
+      'update.installerAssetName': '',
+      'update.installerAssetDownloadUrl': '',
+      'update.installerAssetSize': '',
+      'update.installerAssetPlatform': '',
+      'update.installerAssetArch': '',
+      'update.installerAssetKind': '',
+      'update.downloadPhase': 'idle',
+      'update.downloadProgress': '0',
+      'update.downloadError': '',
+      'update.downloadReason': '',
+      'update.downloadStartedAt': '',
+      'update.downloadCompletedAt': '',
+      'update.downloadBytesReceived': '0',
+      'update.downloadTotalBytes': '0',
+      'update.downloadAssetKey': '',
+      'update.downloadVersion': '',
+      'update.localInstallerPath': '',
       // 对话模块（需求 #26）：LLM 接口默认配置
       'chat.provider': 'openai',
       'chat.baseUrl': 'https://api.openai.com',
       'chat.apiKey': '',
-      'chat.model': 'gpt-4o',
+      'chat.model': DEFAULT_CHAT_MODEL,
       'chat.temperature': '0.3',
       'terminal.defaultProfile': 'default',
       'terminal.initialCwd': '',
@@ -669,7 +750,7 @@ class AppDatabase {
     const provider = this.getSetting('chat.provider') || 'openai';
     const baseUrl = this.getSetting('chat.baseUrl') || '';
     const apiKey = this.getSetting('chat.apiKey') || '';
-    const model = this.getSetting('chat.model') || '';
+    const model = this.getSetting('chat.model') || DEFAULT_CHAT_MODEL;
     const temperature = this.getSetting('chat.temperature') || '0.3';
 
     const now = nowIso();

@@ -16,6 +16,8 @@ const {
   updateConversation,
 } = require('./chatController');
 
+const DEFAULT_OPENAI_MODEL = 'gpt-5.5';
+
 function createChatController(options = {}) {
   return createRealChatController({
     ...options,
@@ -31,7 +33,7 @@ function chatSettings(overrides = {}) {
     'chat.provider': 'openai',
     'chat.baseUrl': 'https://api.openai.com/v1',
     'chat.apiKey': 'sk-test',
-    'chat.model': 'gpt-4o',
+    'chat.model': DEFAULT_OPENAI_MODEL,
     'chat.temperature': '0.3',
   };
   return { ...defaults, ...overrides };
@@ -45,7 +47,7 @@ function aiConfigFromSettings(settings, overrides = {}) {
     provider: overrides.provider ?? settings['chat.provider'] ?? 'openai',
     base_url: overrides.base_url ?? settings['chat.baseUrl'] ?? 'https://api.openai.com',
     api_key: overrides.api_key ?? settings['chat.apiKey'] ?? '',
-    model: overrides.model ?? settings['chat.model'] ?? 'gpt-4o',
+    model: overrides.model ?? settings['chat.model'] ?? DEFAULT_OPENAI_MODEL,
     temperature: overrides.temperature ?? settings['chat.temperature'] ?? '0.3',
     thinking_depth: overrides.thinking_depth ?? null,
     thinking_budget_tokens: overrides.thinking_budget_tokens ?? null,
@@ -202,6 +204,13 @@ function createMemoryDb(settings = chatSettings(), options = {}) {
         const [updatedAt, id] = params;
         const row = store.conversations.find((item) => item.id === id);
         if (row) row.updated_at = updatedAt;
+      } else if (sql.includes('UPDATE conversations SET codex_session_id = ?, updated_at = ?')) {
+        const [sessionId, updatedAt, id, projectId] = params;
+        const row = store.conversations.find((item) => item.id === id && item.project_id === projectId);
+        if (row) {
+          row.codex_session_id = sessionId;
+          row.updated_at = updatedAt;
+        }
       } else if (sql.includes('DELETE FROM chat_messages') && sql.includes('project_id = ?')) {
         const [cid, projectId] = params;
         store.chat_messages = store.chat_messages.filter((r) => r.conversation_id !== cid || r.project_id !== projectId);
@@ -797,7 +806,7 @@ describe('单轮纯文本对话', () => {
     const cfg = llm.lastConfig;
     assert.ok(cfg, 'llmClient 应收到 config');
     assert.equal(cfg.provider, 'openai');
-    assert.equal(cfg.model, 'gpt-4o');
+    assert.equal(cfg.model, DEFAULT_OPENAI_MODEL);
     assert.equal(cfg.temperature, 0.3);
     assert.ok(Array.isArray(cfg.messages), 'messages 应为数组');
     assert.ok(cfg.messages.length >= 1);
@@ -1454,7 +1463,21 @@ describe('getConfig / isActive', () => {
 
     const cfg = ctrl.getConfig();
     assert.equal(cfg.provider, 'openai');
-    assert.equal(cfg.model, 'gpt-4o');
+    assert.equal(cfg.model, DEFAULT_OPENAI_MODEL);
+    assert.equal(cfg.baseUrl, 'https://api.openai.com');
+    assert.equal(cfg.apiKey, '');
+    assert.equal(cfg.temperature, '0.3');
+  });
+
+  it('getConfig 无全局 ai_configs 时回退到新的 OpenAI 默认模型', () => {
+    const db = createMemoryDb({}, { aiConfigs: [] });
+    const ctrl = createChatController({
+      db, llmClient: textResponseStub(), chatTools: testTools, projectId: 1, workspacePath: '/tmp',
+    });
+
+    const cfg = ctrl.getConfig();
+    assert.equal(cfg.provider, 'openai');
+    assert.equal(cfg.model, DEFAULT_OPENAI_MODEL);
     assert.equal(cfg.baseUrl, 'https://api.openai.com');
     assert.equal(cfg.apiKey, '');
     assert.equal(cfg.temperature, '0.3');
@@ -1487,6 +1510,297 @@ describe('对话队列：续跑与上下文隔离（需求 #37）', () => {
     const msgs = (llm.lastConfig && llm.lastConfig.messages) || [];
     assert.ok(!msgs.some((m) => m.content === 'queued-msg'), 'queued 行不应进入 LLM 上下文');
     await col.waitForDone();
+  });
+});
+
+describe('Codex provider 对话路径', () => {
+  /** 创建 codex runCodexChat mock，返回给定的结果 */
+  function mockRunCodexChat(result) {
+    const fn = async (opts) => {
+      fn.calls += 1;
+      fn.lastOpts = opts;
+      return result;
+    };
+    return Object.assign(fn, { calls: 0, lastOpts: null });
+  }
+
+  /** 创建 codex AI 配置的 settings + aiConfigs */
+  function codexConfig(overrides = {}) {
+    const settings = chatSettings({
+      'chat.provider': 'codex',
+      'chat.apiKey': '',
+      'chat.baseUrl': '',
+      'chat.model': '',
+    });
+    const aiConfigs = [
+      aiConfigFromSettings(settings, {
+        id: 1,
+        project_id: null,
+        name: 'Codex Config',
+        provider: 'codex',
+        base_url: '',
+        api_key: '',
+        model: '',
+        thinking_depth: overrides.thinkingDepth ?? 'medium',
+      }),
+    ];
+    return { settings, aiConfigs };
+  }
+
+  it('codex provider 不检查 apiKey，直接调用 runCodexChat', async () => {
+    const { settings, aiConfigs } = codexConfig();
+    const db = createMemoryDb(settings, { aiConfigs });
+    const mockRun = mockRunCodexChat({ sessionId: 'sess-1', content: 'Codex answered.', aborted: false, error: '' });
+    const col = createCollector();
+    const ctrl = createChatController({
+      db,
+      llmClient: textResponseStub(), // 不应被调用
+      chatTools: testTools,
+      projectId: 1,
+      workspacePath: '/tmp/codex-test',
+      onEvent: col.onEvent,
+      onDone: col.onDone,
+      codexBackendConfig: { command: 'test-codex-cli', defaultReasoningEffort: 'low' },
+      codexChatBackend: { runCodexChat: mockRun },
+    });
+
+    ctrl.send('Explain this code');
+    const done = await col.waitForDone();
+
+    assert.equal(done.status, 'done');
+    assert.equal(mockRun.calls, 1);
+    assert.equal(mockRun.lastOpts.workspacePath, '/tmp/codex-test');
+    assert.equal(mockRun.lastOpts.prompt, 'Explain this code');
+    assert.equal(mockRun.lastOpts.sessionId, '');
+    assert.equal(mockRun.lastOpts.reasoningEffort, 'medium');
+    assert.equal(mockRun.lastOpts.command, 'test-codex-cli');
+
+    // 验证 assistant 消息落库
+    const messages = ctrl.getHistory(1);
+    assert.equal(messages.length, 2, 'user + assistant');
+    assert.equal(messages[0].role, 'user');
+    assert.equal(messages[1].role, 'assistant');
+    assert.equal(messages[1].content, 'Codex answered.');
+    assert.equal(messages[1].tool_calls, null);
+  });
+
+  it('codex 对话回写 codex_session_id 到 conversations', async () => {
+    const { settings, aiConfigs } = codexConfig();
+    const db = createMemoryDb(settings, { aiConfigs });
+    const mockRun = mockRunCodexChat({ sessionId: 'resume-sess-abc', content: 'Continued.', aborted: false, error: '' });
+    const col = createCollector();
+
+    // 预设 conversations 含 codex_session_id = null（首次消息）
+    const conv = db._store.conversations[0];
+    assert.strictEqual(conv.codex_session_id, undefined);
+
+    const ctrl = createChatController({
+      db,
+      llmClient: textResponseStub(),
+      chatTools: testTools,
+      projectId: 1,
+      workspacePath: '/tmp/codex-resume',
+      onEvent: col.onEvent,
+      onDone: col.onDone,
+      codexBackendConfig: { command: 'codex' },
+      codexChatBackend: { runCodexChat: mockRun },
+    });
+
+    ctrl.send('first message');
+    await col.waitForDone();
+
+    assert.equal(conv.codex_session_id, 'resume-sess-abc', 'codex_session_id 应写回 conversation');
+  });
+
+  it('codex 路径复用已有 codex_session_id 做 resume', async () => {
+    const { settings, aiConfigs } = codexConfig();
+    const db = createMemoryDb(settings, {
+      aiConfigs,
+      conversations: [
+        { id: 1, project_id: 1, title: 'Codex Chat', ai_config_id: null, codex_session_id: 'previous-sess-xyz' },
+      ],
+    });
+    const mockRun = mockRunCodexChat({ sessionId: 'previous-sess-xyz', content: 'Resumed context.', aborted: false, error: '' });
+    const col = createCollector();
+    const ctrl = createChatController({
+      db,
+      llmClient: textResponseStub(),
+      chatTools: testTools,
+      projectId: 1,
+      workspacePath: '/tmp/codex-resume',
+      onEvent: col.onEvent,
+      onDone: col.onDone,
+      codexBackendConfig: { command: 'codex' },
+      codexChatBackend: { runCodexChat: mockRun },
+    });
+
+    ctrl.send('second message');
+    await col.waitForDone();
+
+    assert.equal(mockRun.calls, 1);
+    assert.equal(mockRun.lastOpts.sessionId, 'previous-sess-xyz', '应传入已有 codex_session_id 用于 resume');
+  });
+
+  it('codex 首条消息使用本地截断标题（首条 user 前 30 字）', async () => {
+    const { settings, aiConfigs } = codexConfig();
+    const db = createMemoryDb(settings, {
+      aiConfigs,
+      conversations: [
+        { id: 1, project_id: 1, title: '', ai_config_id: null },
+      ],
+    });
+    const mockRun = mockRunCodexChat({ sessionId: 'sess-title', content: 'ok', aborted: false, error: '' });
+    const col = createCollector();
+    const ctrl = createChatController({
+      db,
+      llmClient: textResponseStub(),
+      chatTools: testTools,
+      projectId: 1,
+      workspacePath: '/tmp/codex-title',
+      onEvent: col.onEvent,
+      onDone: col.onDone,
+      codexBackendConfig: { command: 'codex' },
+      codexChatBackend: { runCodexChat: mockRun },
+    });
+
+    ctrl.send('请帮我分析这段代码的安全性并提供修复建议');
+    const done = await col.waitForDone();
+
+    assert.equal(done.status, 'done');
+    const titled = db._store.conversations[0];
+    assert.ok(titled.title.length <= 30);
+    assert.ok(titled.title.length > 0);
+    assert.ok(titled.title.startsWith('请帮我分析'));
+    assert.equal(done.title, titled.title);
+  });
+
+  it('codex 已有非占位标题不被截断覆盖', async () => {
+    const { settings, aiConfigs } = codexConfig();
+    const db = createMemoryDb(settings, {
+      aiConfigs,
+      conversations: [
+        { id: 1, project_id: 1, title: '用户自己写的标题', ai_config_id: null },
+      ],
+    });
+    const mockRun = mockRunCodexChat({ sessionId: 'sess-keep', content: 'ok', aborted: false, error: '' });
+    const col = createCollector();
+    const ctrl = createChatController({
+      db,
+      llmClient: textResponseStub(),
+      chatTools: testTools,
+      projectId: 1,
+      workspacePath: '/tmp/codex-keep-title',
+      onEvent: col.onEvent,
+      onDone: col.onDone,
+      codexBackendConfig: { command: 'codex' },
+      codexChatBackend: { runCodexChat: mockRun },
+    });
+
+    ctrl.send('不会被生成新标题');
+    const doneResult = await col.waitForDone();
+
+    assert.equal(db._store.conversations[0].title, '用户自己写的标题');
+    assert.strictEqual(doneResult.title, undefined);
+  });
+
+  it('codex abort → onDone aborted', async () => {
+    const { settings, aiConfigs } = codexConfig();
+    const db = createMemoryDb(settings, { aiConfigs });
+    // runCodexChat 返回 aborted=true 的结果（abort 由外部 AbortSignal 触发）
+    const mockRun = mockRunCodexChat({ sessionId: '', content: '', aborted: true, error: '' });
+    const col = createCollector();
+    const ctrl = createChatController({
+      db,
+      llmClient: textResponseStub(),
+      chatTools: testTools,
+      projectId: 1,
+      workspacePath: '/tmp/codex-abort',
+      onEvent: col.onEvent,
+      onDone: col.onDone,
+      codexBackendConfig: { command: 'codex' },
+      codexChatBackend: { runCodexChat: mockRun },
+    });
+
+    ctrl.send('cancel me');
+    const done = await col.waitForDone();
+
+    assert.equal(done.status, 'aborted');
+  });
+
+  it('codex 错误（无内容）→ onDone error + system 错误消息落库', async () => {
+    const { settings, aiConfigs } = codexConfig();
+    const db = createMemoryDb(settings, { aiConfigs });
+    const mockRun = mockRunCodexChat({ sessionId: '', content: '', aborted: false, error: 'codex not found' });
+    const col = createCollector();
+    const ctrl = createChatController({
+      db,
+      llmClient: textResponseStub(),
+      chatTools: testTools,
+      projectId: 1,
+      workspacePath: '/tmp/codex-err',
+      onEvent: col.onEvent,
+      onDone: col.onDone,
+      codexBackendConfig: { command: 'codex' },
+      codexChatBackend: { runCodexChat: mockRun },
+    });
+
+    ctrl.send('try');
+    const done = await col.waitForDone();
+
+    assert.equal(done.status, 'error');
+    assert.match(done.error, /codex not found/);
+
+    const messages = ctrl.getHistory(1);
+    const sysMsg = messages.find((m) => m.role === 'system');
+    assert.ok(sysMsg);
+    assert.match(sysMsg.content, /Codex 执行失败：codex not found/);
+  });
+
+  it('codex 路径不调用 llmClient 也不挂 chatTools', async () => {
+    const { settings, aiConfigs } = codexConfig();
+    const db = createMemoryDb(settings, { aiConfigs });
+    const llm = textResponseStub();
+    const mockRun = mockRunCodexChat({ sessionId: 'sess-no-http', content: 'From codex.', aborted: false, error: '' });
+    const col = createCollector();
+    const ctrl = createChatController({
+      db,
+      llmClient: llm,
+      chatTools: testTools,
+      projectId: 1,
+      workspacePath: '/tmp/codex-no-http',
+      onEvent: col.onEvent,
+      onDone: col.onDone,
+      codexBackendConfig: { command: 'codex' },
+      codexChatBackend: { runCodexChat: mockRun },
+    });
+
+    ctrl.send('hello');
+    await col.waitForDone();
+
+    assert.equal(llm.calls, 0, 'codex 路径不应调用 llmClient');
+  });
+
+  it('codex reasoningEffort 来自 config.thinkingDepth 并优先于 codexBackendConfig', async () => {
+    const { settings, aiConfigs } = codexConfig({ thinkingDepth: 'xhigh' });
+    const db = createMemoryDb(settings, { aiConfigs });
+    const mockRun = mockRunCodexChat({ sessionId: 'sess-effort', content: 'ok', aborted: false, error: '' });
+    const col = createCollector();
+    const ctrl = createChatController({
+      db,
+      llmClient: textResponseStub(),
+      chatTools: testTools,
+      projectId: 1,
+      workspacePath: '/tmp/codex-effort',
+      onEvent: col.onEvent,
+      onDone: col.onDone,
+      codexBackendConfig: { command: 'codex', defaultReasoningEffort: 'low' },
+      codexChatBackend: { runCodexChat: mockRun },
+    });
+
+    ctrl.send('test');
+    await col.waitForDone();
+
+    assert.equal(mockRun.lastOpts.reasoningEffort, 'xhigh', 'thinkingDepth 应优先于 defaultReasoningEffort');
   });
 });
 

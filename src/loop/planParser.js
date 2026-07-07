@@ -10,6 +10,21 @@ const TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${TASK_SCOPE_LABEL_RE}\\s*
 const TASK_SCOPE_SPLIT_RE = /[,\uFF0C\u3001;\uFF1B]+/;
 const TASK_PATH_RE = /[\\w./\\\\-]+\\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
 
+// AutoPlan \u8BA1\u5212 markdown \u5FC5\u9700\u7684\u4E09\u4E2A\u4E8C\u7EA7\u6807\u9898\uFF1BvalidatePlanContent / validatePhasePlanContent
+// \u4F9D\u8D56\u5176\u7CBE\u786E\u5199\u6CD5\uFF08`##` \u540E\u53EA\u5141\u8BB8\u7A7A\u767D\u518D\u63A5\u6807\u9898\u6587\u672C\uFF09\u3002
+const PLAN_REQUIRED_HEADINGS = ['\u4EFB\u52A1\u62C6\u89E3', '\u603B\u4F53\u9A8C\u6536\u6807\u51C6', '\u8FDB\u5EA6\u533A'];
+// LLM \u5076\u53D1\u6DFB\u52A0\u7684\u7F16\u53F7\u524D\u7F00\uFF1A\u963F\u62C9\u4F2F\u6570\u5B57\uFF082. / 2\u3001 / 2) / 2\uFF1A\uFF09\u6216\u4E2D\u6587\u6570\u5B57\uFF08\u4E8C\u3001 / \u4E8C.\uFF09\u3002
+const PLAN_HEADING_NUMBER_PREFIX = '(?:\\d{1,3}\\s*[.\u3001)\uFF09:\uFF1A]|[\u4E00\u4E8C\u4E09\u56DB\u4E94\u516D\u4E03\u516B\u4E5D\u5341\u767E]+\\s*[\u3001.])';
+// \u5339\u914D\u8FD9\u4E09\u7C7B\u6807\u9898\u7684\u4EFB\u610F\u5C42\u7EA7\uFF08#~######\uFF09\u4E0E\u7F16\u53F7\u524D\u7F00\u53D8\u4F53\uFF1B\u6355\u83B7\uFF1A1=#\u6807\u8BB0 2=\u6807\u9898\u6587\u672C 3=\u884C\u5C3E\u5269\u4F59\u3002
+const PLAN_HEADING_NORMALIZE_RE = new RegExp(
+  '^(#{1,6})[^\\S\\r\\n]*(?:' + PLAN_HEADING_NUMBER_PREFIX + '[^\\S\\r\\n]*)?(' +
+    PLAN_REQUIRED_HEADINGS.join('|') + ')([^\\n]*)$',
+);
+// \u5339\u914D\u4EFB\u52A1\u590D\u9009\u6846\u884C\uFF1B\u6355\u83B7\uFF1A1=\u7F29\u8FDB 2=\u5217\u8868\u6807\u8BB0 3=\u52FE\u9009\u72B6\u6001 4=\u6B63\u6587\u3002
+const PLAN_TASK_CHECKBOX_LINE_RE = /^(\s*)([-*])\s*\[\s*([ xX]?)\s*\]\s+(.*)$/;
+// \u5339\u914D\u56F4\u680F\u4EE3\u7801\u5757\u884C\uFF08``` \u6216 ~~~\uFF09\uFF0C\u7528\u4E8E\u89C4\u8303\u5316\u65F6\u8DF3\u8FC7\u4EE3\u7801\u5757\u5185\u5BB9\u3002
+const CODE_FENCE_LINE_RE = /^(\s*)(`{3,}|~{3,})/;
+
 function appendTask(service, helpers, projectId, planId, title) {
     const project = service.project(projectId);
     const workspace = project?.workspace_path;
@@ -263,6 +278,91 @@ function cleanMarkdownHeadingTitle(value) {
     .trim();
 }
 
+// 对 plan markdown 做确定性规范化（反馈 #95）：
+//  - 把带数字/中文编号前缀或错误层级（# / ### 等）的 任务拆解 / 总体验收标准 / 进度区 标题
+//    改写为规范二级标题（`## 任务拆解` / `## 总体验收标准` / `## 进度区`）；
+//  - 对任务复选框行按出现顺序补齐连续 P0NN 编号（P001、P002…，不跳号），缺失 scope 注释的
+//    复用 ensureTaskScopeComment 补 unknown，已有 scope 予以保留；
+//  - 跳过围栏代码块，且只动上述已知标题与任务行，正文段落/表格等其它内容原样保留。
+// 规范化幂等：已是规范内容的 plan 经本函数处理后字符串不变。
+function normalizePlanMarkdown(content) {
+  const text = String(content || '');
+  if (!text) return text;
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const lines = text.split(/\r?\n/);
+  let inFence = false;
+  let fenceChar = '';
+  let taskIndex = 0;
+  const out = [];
+  for (const line of lines) {
+    const fence = line.match(CODE_FENCE_LINE_RE);
+    if (fence) {
+      const ch = fence[2][0];
+      if (!inFence) {
+        inFence = true;
+        fenceChar = ch;
+      } else if (ch === fenceChar) {
+        inFence = false;
+        fenceChar = '';
+      }
+      out.push(line);
+      continue;
+    }
+    if (inFence) {
+      out.push(line);
+      continue;
+    }
+    const heading = normalizePlanHeadingLine(line);
+    if (heading !== null) {
+      out.push(heading);
+      continue;
+    }
+    const task = normalizePlanTaskLine(line, taskIndex + 1);
+    if (task !== null) {
+      taskIndex += 1;
+      out.push(task);
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join(eol);
+}
+
+// 把单行标题改写为规范二级标题；非目标标题行返回 null。
+function normalizePlanHeadingLine(line) {
+  const m = line.match(PLAN_HEADING_NORMALIZE_RE);
+  if (!m) return null;
+  return `## ${m[2]}${m[3] || ''}`;
+}
+
+// 把单行任务复选框改写为规范 `P0NN: title <!-- scope: ... -->`；非任务行（或空标题）返回 null。
+function normalizePlanTaskLine(line, index) {
+  const m = line.match(PLAN_TASK_CHECKBOX_LINE_RE);
+  if (!m) return null;
+  const [, indent, marker, check, body] = m;
+  const scopeMatch = body.match(TASK_SCOPE_COMMENT_RE);
+  const scopeValue = scopeMatch ? scopeMatch[1].trim() : '';
+  const title = stripTaskScopeComment(body)
+    .replace(/^P0*\d+\s*[:：]\s*/i, '')
+    .trim();
+  if (!title) return null;
+  const checkChar = check && check.toLowerCase() === 'x' ? 'x' : ' ';
+  const taskKey = `P${String(index).padStart(3, '0')}`;
+  const base = `${taskKey}: ${title}`;
+  const newBody = scopeValue ? `${base} <!-- scope: ${scopeValue} -->` : ensureTaskScopeComment(base);
+  return `${indent}${marker} [${checkChar}] ${newBody}`;
+}
+
+// 文件级规范化：读盘 -> 规范化 -> 仅在内容变化时写回（幂等，无变化不写盘）。
+function normalizePlanMarkdownFile(planFile) {
+  if (!fs.existsSync(planFile)) return false;
+  const original = fs.readFileSync(planFile, 'utf8');
+  const normalized = normalizePlanMarkdown(original);
+  if (normalized === original) return false;
+  fs.writeFileSync(planFile, normalized, 'utf8');
+  return true;
+}
+
 module.exports = {
   addScopeParts,
   appendTask,
@@ -271,6 +371,8 @@ module.exports = {
   explicitTaskScopeParts,
   extractMarkdownTitle,
   insertTaskLineBeforeTask,
+  normalizePlanMarkdown,
+  normalizePlanMarkdownFile,
   normalizePlanTaskScopes,
   normalizeTaskScope,
   stripTaskScopeComment,

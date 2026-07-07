@@ -250,4 +250,6 @@ class ClaudeStreamJsonPrinter {
   }
 }
 
-module.exports = { ClaudeStreamJsonPrinter };
+// 导出 normalizeSessionId 供 codexJsonPrinter 复用（与 normalizeAgentCliSessionId 保持一致），
+// 避免 chat 模块重复实现会话 id 规范化逻辑。
+module.exports = { ClaudeStreamJsonPrinter, normalizeSessionId };

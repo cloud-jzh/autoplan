@@ -1,0 +1,55 @@
+{
+  "title": "反馈 #67：AI 配置默认模型改为 gpt-5.5",
+  "summary": "根据反馈 #67，需要将应用内 AI 配置的 OpenAI 默认模型从 gpt-4o 调整为 gpt-5.5。结合代码现状，默认模型分布在后端 AI 配置服务、数据库默认 settings、前端表单默认值、Provider 默认模型工具以及对话状态兜底配置中；实现时应只改变默认值和默认展示，不覆盖用户已经保存的自定义模型。",
+  "tasks": [
+    {
+      "title": "统一后端 AI 配置默认模型",
+      "scope": [
+        "src/chat/aiConfigService.js",
+        "src/database.js"
+      ],
+      "acceptance": [
+        "内置 AI 默认配置中的 OpenAI 模型从 gpt-4o 改为 gpt-5.5，用于无全局 ai_configs 时的对话配置兜底。",
+        "新建数据库默认 settings 中的 chat.model 使用 gpt-5.5，使首次初始化和从 legacy chat settings 迁移出的默认全局 AI 配置采用新模型。",
+        "getLegacyChatConfig、resolveAiConfigForConversation、resolveAiConfigForPlanGeneration 在没有显式模型或全局配置可用时回退到 gpt-5.5。",
+        "已有 ai_configs.model、已有 chat.model、用户显式填写的 planGenerationModel 或输入模型值不被强制改写，仍按持久化数据或调用入参优先。"
+      ]
+    },
+    {
+      "title": "更新前端 AI 配置默认展示与提交默认值",
+      "scope": [
+        "src/renderer/utils/workspaceForms.ts",
+        "src/renderer/hooks/useChat.ts"
+      ],
+      "acceptance": [
+        "AI 配置新增表单、空配置表单和 OpenAI provider 的模型占位符默认显示 gpt-5.5。",
+        "Provider 切换逻辑在当前模型仍是旧 provider 默认值时，切回 OpenAI 应替换为 gpt-5.5；用户手动输入的自定义模型保持不变。",
+        "对话 composer 在没有加载到可用 AI 配置的兜底状态下展示 gpt-5.5，不再展示 gpt-4o。",
+        "DeepSeek 默认模型 deepseek-chat 和 Anthropic 默认模型 claude-sonnet-4-6 保持不变；共用 planBackendDefaultModel 的 OpenAI 内置 LLM 默认展示同步为 gpt-5.5。"
+      ]
+    },
+    {
+      "title": "同步默认模型相关回归断言",
+      "scope": [
+        "src/chat/aiConfigService.test.js",
+        "src/chat/chatController.test.js",
+        "src/renderer/components/shared.test.tsx"
+      ],
+      "acceptance": [
+        "后端 AI 配置测试覆盖无全局配置、legacy chat 默认配置和计划生成配置兜底时模型为 gpt-5.5。",
+        "对话控制器测试覆盖默认 AI 配置解析和发送请求时未显式覆盖模型的场景使用 gpt-5.5。",
+        "前端共享工具或静态断言覆盖 planBackendDefaultModel('openai')、OpenAI 默认模型占位符或默认表单模型为 gpt-5.5。",
+        "测试中用于表达用户显式选择 gpt-4o 的夹具可继续保留为自定义模型场景，不应被无差别替换导致覆盖范围变窄。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm run check && npm test",
+    "criteria": [
+      "TypeScript 检查、主进程和脚本语法检查、文件长度检查全部通过。",
+      "Node 测试全部通过，并包含 AI 配置默认模型从 gpt-4o 切换到 gpt-5.5 的后端与前端回归覆盖。",
+      "新安装或无全局 AI 配置时，OpenAI 默认模型展示和解析结果均为 gpt-5.5；已有保存配置和用户自定义模型不被覆盖。",
+      "DeepSeek、Anthropic 默认模型和现有多 Provider AI 配置创建、编辑、删除、脱敏展示行为无回归。"
+    ]
+  }
+}

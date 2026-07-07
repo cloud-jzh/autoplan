@@ -49,6 +49,7 @@ function getConversationAiConfigId(conversation: Conversation | null | undefined
 }
 
 const AUTO_TITLE_PLACEHOLDERS = new Set(['新对话', '默认对话']);
+const DEFAULT_OPENAI_MODEL = 'gpt-5.5';
 
 function normalizeDoneConversationId(value: unknown): number | null {
   const id = Number(value || 0);
@@ -114,7 +115,7 @@ function toChatConfig(aiConfig: AiConfig | null): ChatConfig {
       baseUrl: 'https://api.openai.com',
       hasApiKey: false,
       maskedKey: '',
-      model: 'gpt-4o',
+      model: DEFAULT_OPENAI_MODEL,
       temperature: '0.3',
       thinkingDepth: null,
       thinkingBudgetTokens: null,

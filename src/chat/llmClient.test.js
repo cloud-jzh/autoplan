@@ -189,6 +189,38 @@ describe('createLlmClient OpenAI 协议', () => {
     assert.equal(fetch.body.tools[0].function.name, 'read_file');
   });
 
+  it('OpenAI thinkingDepth=xhigh 时透传 reasoning_effort', async () => {
+    const fetch = capturingFetch(() => ({
+      ok: true,
+      body: sseStream(['data: {"id":"1","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":"stop"}]}\n\n']),
+    }));
+
+    await collectEvents(
+      createLlmClient({ config: { ...baseOpenAiConfig, thinkingDepth: 'xhigh' }, fetch }),
+    );
+
+    assert.equal(fetch.body.reasoning_effort, 'xhigh');
+  });
+
+  it('OpenAI thinkingDepth 为空时不发送 reasoning_effort', async () => {
+    for (const thinkingDepth of ['', null, undefined]) {
+      const fetch = capturingFetch(() => ({
+        ok: true,
+        body: sseStream(['data: {"id":"1","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":"stop"}]}\n\n']),
+      }));
+
+      await collectEvents(
+        createLlmClient({ config: { ...baseOpenAiConfig, thinkingDepth }, fetch }),
+      );
+
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(fetch.body, 'reasoning_effort'),
+        false,
+        `thinkingDepth=${String(thinkingDepth)} 时不应发送 reasoning_effort`,
+      );
+    }
+  });
+
   it('OpenAI SDK 归一化保留 function.strict 与严格 parameters', async () => {
     const fetch = capturingFetch(() => ({
       ok: true,

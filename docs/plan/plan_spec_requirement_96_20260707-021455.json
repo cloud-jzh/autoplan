@@ -1,0 +1,130 @@
+{
+  "title": "对话窗口支持 Codex CLI 作为后端（spawn codex exec 替代 HTTP API）",
+  "summary": "在现有对话窗口（ChatView → chatController → llmClient 的 HTTP API 直连 + 主进程内 agent loop + chatTools 本地工具）之外，新增 Codex CLI 后端：把对话后端从 HTTP API 换成 spawn `codex exec`，Codex 在工作区里自主完成工具调用。实现纯 Codex 自主执行（不挂 chatTools、跳过 runAgentLoop 的 agent loop、一次 codex exec 完成对话），通过 ai_configs 新增 codex provider 作为配置入口，并复用 Codex session resume 做会话保持（每条对话绑定一个 codex sessionId 存到 conversations 表，后续消息走 codex exec resume）。改动分七部分：1) database 给 conversations 加 codex_session_id 列；2) 新增 codexJsonPrinter 把 codex --json NDJSON 事件翻译成 chatController 现有事件协议；3) 新增 codexChatBackend 驱动 runCodexChat（复用 agentCli 的 codex 参数封装 / spawn / chunk 解码 / session 提取 / resume 失败回退）；4) chatController 按 provider 分流到 runCodexAgentLoop；5) aiConfigService 扩展 codex provider；6) main.js 的 controller 工厂注入 codex 后端启动参数；7) 前端最小改动（types 与配置表单支持选择 codex 并隐藏无关字段，useChat.ts 因事件协议不变而无需改动）。",
+  "tasks": [
+    {
+      "title": "数据库迁移：conversations 表新增 codex_session_id 列",
+      "scope": [
+        "src/database.js"
+      ],
+      "acceptance": [
+        "在 migrate() 中通过幂等 ensureColumn 给 conversations 表新增 codex_session_id TEXT 列，用于持久化每条对话绑定的 codex sessionId",
+        "重复 init 不报错（ensureColumn 幂等，依赖现有 schema 无版本表机制）",
+        "仅此一处 schema 变更，不新建表、不改既有列，provider 列无需改动（provider 为 free-text）"
+      ]
+    },
+    {
+      "title": "新增 codex --json 事件流解析器 codexJsonPrinter",
+      "scope": [
+        "src/chat/codexJsonPrinter.js",
+        "src/chat/codexJsonPrinter.test.js",
+        "src/claudeActivity.js"
+      ],
+      "acceptance": [
+        "仿 ClaudeStreamJsonPrinter 提供 offer(rawChunk)/flush()/getResultText()/getSessionId() API，处理跨 chunk 拆断与尾部残行",
+        "session_configured 事件提取 session_id（作为 resume id 来源与落库值，供 getSessionId 返回）",
+        "reasoning 事件（含 .text delta）翻译为 thinking_start / thinking_delta / thinking_end",
+        "item 里 type 为 message 的 .text delta 翻译为 text_delta（最终渲染文本）",
+        "item 里 type 为 function_call 翻译为 tool_call + tool_start；type 为 function_call_output 翻译为 tool_result",
+        "task_complete 与流结束翻译为 done 事件",
+        "累计最终助手文本，getResultText() 返回该文本（供 chatController 落库为 assistant 消息内容）",
+        "对未知事件静默跳过容错（仿 Claude printer，最坏退化为 getResultText 单条文本）",
+        "单元测试喂入真实样例 NDJSON（session_configured / reasoning / item message / function_call / function_call_output / task_complete）断言 emit 调用序列、getSessionId、getResultText"
+      ]
+    },
+    {
+      "title": "新增 Codex 对话后端驱动 codexChatBackend",
+      "scope": [
+        "src/chat/codexChatBackend.js",
+        "src/chat/codexChatBackend.test.js",
+        "src/agentCli.js",
+        "src/loop/agentCliConfig.js",
+        "src/chat/codexJsonPrinter.js"
+      ],
+      "acceptance": [
+        "导出 runCodexChat({ workspacePath, prompt, sessionId, reasoningEffort, command, signal, onEvent })，返回 { sessionId, content, aborted, error }",
+        "新会话复用 codexNewSessionArgs 并追加 --json 参数，保留 --sandbox danger-full-access；resume 复用 codexResumeSessionArgs 并注入 -c model_reasoning_effort",
+        "prompt 经 child.stdin.end(prompt) 投递（codex 走 stdin）",
+        "stdout/stderr 每个 chunk 经 createChunkDecoder 解码后喂给 codexJsonPrinter.offer，事件经 onEvent 透传",
+        "复用 agentCliExecutionSpec 处理 Windows .bat/.cmd shim 与 windowsVerbatimArguments，spawn 使用 { cwd: workspacePath, env, shell }",
+        "child exit 后 printer.flush() 并返回结果（sessionId/content）",
+        "支持 AbortSignal：监听 signal.abort → child.kill('SIGTERM')，返回 aborted=true",
+        "resume 失败（isCodexResumeFailure）时自动用 codexNewSessionArgs 重跑一次新会话并更新返回的 sessionId",
+        "自建轻量 spawn，不复用 runAgentCliAttempt（避免其 runtime/operation 状态机对 chat 过重）",
+        "单元测试 mock child_process 验证新会话 vs resume 参数拼装、stdin 写入、session 提取、abort 杀进程、resume 失败回退新会话"
+      ]
+    },
+    {
+      "title": "aiConfigService 扩展 codex provider 支持",
+      "scope": [
+        "src/chat/aiConfigService.js",
+        "src/chat/aiConfigService.test.js"
+      ],
+      "acceptance": [
+        "AI_CONFIG_PROVIDERS 集合加入 'codex'",
+        "PROVIDER_DEFAULT_BASE_URLS 加 codex:''（codex 不用 baseUrl）",
+        "THINKING_DEPTHS_BY_PROVIDER 加 codex: Set(['low','medium','high','xhigh'])（映射到 codex 的 reasoning effort）",
+        "rowToConfig / sanitizeAiConfig 对 codex 的 thinkingDepth 直接透传（复用现有字段，语义映射为 reasoningEffort）",
+        "codex 的 thinkingBudgetTokens 恒为 null（supportsThinkingBudget 仍仅限 anthropic）",
+        "resolveAiConfigForConversation 对 codex 不要求 apiKey/baseUrl（codex 无需 HTTP 凭证）",
+        "现有 openai/deepseek/anthropic provider 行为与默认配置不受影响"
+      ]
+    },
+    {
+      "title": "chatController 按 provider 分流到 Codex 对话路径",
+      "scope": [
+        "src/chat/chatController.js",
+        "src/chat/chatController.test.js",
+        "src/chat/codexChatBackend.js"
+      ],
+      "acceptance": [
+        "runAgentLoop 开头按 provider 分流：config.provider === 'codex' 时走新增的 runCodexAgentLoop，原 HTTP agent loop 逻辑保持不变",
+        "新增 async runCodexAgentLoop(userMessage, config)：从 conversations.codex_session_id 读取上次 sessionId（首条消息为空则开新会话）",
+        "调用 runCodexChat，将 onEvent 透传给 emitEvent（事件类型与现有协议已对齐：thinking_start/delta/end、text_delta→chunk、tool_start、tool_result、done）",
+        "持久化 assistant 回复（content = resultText，无 tool_calls），并把捕获的新 sessionId 回写 UPDATE conversations SET codex_session_id = ?, updated_at = ?",
+        "标题生成：codex 路径不调 generateConversationTitle，改用首条 user 消息前 30 字截断作标题（复用现有 shouldGenerateTitle 判断）",
+        "通过 finishGeneration({ status: 'done' | 'aborted' | 'error' }) 收尾",
+        "codex 分支不挂 chatTools、不受 MAX_ROUNDS 限制（一次 codex exec 完成）、不调 buildMessages（只发当前用户消息）、不检查 config.apiKey（HTTP 分支保留原校验）",
+        "新增 codex 分支用例（mock 注入 codexChatBackend）验证：不查 apiKey、写回 codex_session_id、不挂 tools、首条本地标题",
+        "现有 HTTP 路径（含 apiKey 校验、agent loop、标题生成、工具执行）测试保持绿色"
+      ]
+    },
+    {
+      "title": "main.js controller 工厂注入 Codex 后端启动参数",
+      "scope": [
+        "src/main.js"
+      ],
+      "acceptance": [
+        "getOrCreateChatController 为 codex provider 解析 agent_cli_command 与 codex_reasoning_effort",
+        "优先从 project_states（项目 loop 配置）读取，回退到 effectiveAgentCliConfig({}) 的默认值（codex / medium）",
+        "controller 的 deps 多传 codexBackendConfig: { command, defaultReasoningEffort }，供 codex 分支构造 runCodexChat 调用参数",
+        "非 codex provider 不受影响（原有 HTTP controller 构造路径不变）"
+      ]
+    },
+    {
+      "title": "前端最小改动：支持选择 codex provider 并隐藏无关字段",
+      "scope": [
+        "src/renderer/types.ts",
+        "src/renderer/components/workspace/WorkspaceSettingsView.tsx",
+        "src/renderer/hooks/useChat.ts"
+      ],
+      "acceptance": [
+        "types.ts 中 AiConfig.provider 类型加 'codex'，ChatConfig 同步更新",
+        "AI 配置表单（WorkspaceSettingsView 等）provider 下拉框加 codex 选项",
+        "选中 codex 时隐藏 baseUrl / apiKey / model 字段，只显示 reasoning effort（复用现有 thinkingDepth 选择器，UI 文案改为「推理深度」）",
+        "useChat.ts 保持不动（事件协议不变）；toChatConfig 中 codex 的 baseUrl/hasApiKey 可为空，UI 显示时做兜底处理",
+        "配置保存路径无需改动（preload 的 aiConfigCreate/Update 已透传 provider）"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm test && npm run check",
+    "criteria": [
+      "npm test（node --test src/**/*.test.js）全部通过：现有 HTTP 对话路径测试（apiKey 校验、agent loop、标题生成、工具执行、chat 队列）保持绿色，无回归",
+      "新增单元测试通过：codexJsonPrinter.test.js（事件翻译/getSessionId/getResultText）、codexChatBackend.test.js（新会话 vs resume 参数/stdin/abort/resume 回退）、chatController.test.js 的 codex 分支用例（不查 apiKey、写回 codex_session_id、不挂 tools）",
+      "npm run check 通过：tsc --noEmit 校验前端 types.ts / WorkspaceSettingsView.tsx / useChat.ts 类型变更无错误，node --check 关键主进程文件无语法错误，文件长度检查通过",
+      "对话窗口绑定 codex 配置后走 codex exec：思考增量、文本增量、工具调用/结果、完成事件能正确经 useChat 渲染；切换回 openai/deepseek/anthropic 仍走原 HTTP 路径",
+      "Codex 会话保持生效：同一对话连续消息复用 codex_session_id resume，resume 失败时自动回退新会话并更新该 id"
+    ]
+  }
+}

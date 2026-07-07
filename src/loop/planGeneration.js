@@ -20,6 +20,7 @@ const {
   parsePlanSpecJson,
 } = require('./structuredPlanSpec');
 const workspaceFiles = require('./workspaceFiles');
+const { normalizePlanMarkdownFile } = require('./planParser');
 
 const PHASED_PLAN_BODY_LENGTH_THRESHOLD = 3000;
 const PHASED_PLAN_HEADING_THRESHOLD = 4;
@@ -34,8 +35,28 @@ const PHASED_PLAN_SIGNAL_RE = /分阶段|阶段化|阶段性计划|阶段性\s*p
 const PLAN_TASK_CHECKBOX_LINE_RE = /^[^\S\r\n]*[-*]\s*\[\s*[ xX]?\s*\]\s+(.+)$/;
 const PLAN_TASK_LINE_RE = /^[^\S\r\n]*[-*]\s*\[\s*[ xX]?\s*\]\s+P0*(\d+)\s*[:：]\s*(.*?)\s*<!--\s*scope\s*[:=：]\s*([^>]*?)\s*-->\s*$/i;
 const FINAL_ACCEPTANCE_RE = /完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation/i;
+// markdown plan 三个必需二级标题的硬性约束（反馈 #95）：LLM 偶发添加编号前缀或错误层级（如
+// `## 2. 任务拆解` / `### 任务拆解`）会被 validatePlanContent 判为格式不合规、整份 plan 不落库。
+// 供 generatePlan / generatePlanForIntake / buildPhasedPlanPrompt 复用，从源头降低漂移概率。
+const PLAN_HEADING_HARD_CONSTRAINT_LINES = [
+  '二级标题必须使用精确写法（## 后只允许空白；禁止任何编号前缀，禁止 # / ### 等其它层级）：',
+  '- 正确：`## 任务拆解`、`## 总体验收标准`、`## 进度区`',
+  '- 错误：`## 2. 任务拆解`、`## 2、任务拆解`、`## 二、任务拆解`、`### 任务拆解` 等带编号前缀或错误层级的形式一律禁止',
+  '- 上述三个二级标题缺一不可，标题文本必须与“正确”示例逐字一致。',
+];
+
+function planGenerationTimerStart() {
+  return Date.now();
+}
+
+function planGenerationDurationSince(startedAt) {
+  const durationMs = Date.now() - Number(startedAt);
+  if (!Number.isFinite(durationMs)) return 0;
+  return Math.max(0, Math.floor(durationMs));
+}
 
 async function generatePlan(service, helpers, projectId, workspace, issueScan) {
+  const planGenerationStartedAt = planGenerationTimerStart();
   const { timestampForPath, readSnippet, normalizeRelative, hashFile } = helpers;
     service.setPhase(projectId, 'generate-plan');
     const projectStatus = service.status(projectId);
@@ -46,6 +67,7 @@ async function generatePlan(service, helpers, projectId, workspace, issueScan) {
         projectStatus,
         planGenerationConfig,
         planExecutionConfig,
+        planGenerationStartedAt,
       });
     }
     if (isBuiltinLlmStructuredPlanGeneration(planGenerationConfig)) {
@@ -53,6 +75,7 @@ async function generatePlan(service, helpers, projectId, workspace, issueScan) {
         projectStatus,
         planGenerationConfig,
         planExecutionConfig,
+        planGenerationStartedAt,
       });
     }
     if (!isExternalCliMarkdownPlanGeneration(planGenerationConfig)) {
@@ -60,6 +83,7 @@ async function generatePlan(service, helpers, projectId, workspace, issueScan) {
         projectId,
         planGenerationConfig,
         planExecutionConfig,
+        planGenerationStartedAt,
       });
     }
     const planAgentCliOperation = planGenerationAgentCliOperationFieldsForService(service, planGenerationConfig);
@@ -91,6 +115,7 @@ async function generatePlan(service, helpers, projectId, workspace, issueScan) {
       '- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准',
       '- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试',
       '- 必须包含总体验收标准和进度区',
+      ...PLAN_HEADING_HARD_CONSTRAINT_LINES,
       '- 只写 plan 文件，不要改业务代码',
       '',
       '需求快照：',
@@ -113,6 +138,7 @@ async function generatePlan(service, helpers, projectId, workspace, issueScan) {
       service.addEvent(projectId, 'plan.generate.failed', `${agentLabel} 计划生成失败：${result.logFile}`, {
         ...agentContext,
         ...planBackendEventMeta(planGenerationSnapshot, planExecutionConfig),
+        durationMs: planGenerationDurationSince(planGenerationStartedAt),
       });
       await service.runHookScripts(projectId, 'on:fail', {
         failedStage: 'plan',
@@ -122,6 +148,7 @@ async function generatePlan(service, helpers, projectId, workspace, issueScan) {
       return;
     }
 
+    const planGenerationDurationMs = planGenerationDurationSince(planGenerationStartedAt);
     const id = service.insertPlan({
       projectId,
       issueHash: issueScan.aggregateHash,
@@ -131,6 +158,7 @@ async function generatePlan(service, helpers, projectId, workspace, issueScan) {
       agentCliConfig: planAgentCliSnapshot,
       planGenerationConfig: planGenerationSnapshot,
       planExecutionConfig,
+      planGenerationDurationMs,
     });
     service.syncPlanTasks(id, planFile);
     service.db.run('UPDATE project_states SET last_issue_hash = ?, updated_at = ? WHERE project_id = ?', [
@@ -141,6 +169,7 @@ async function generatePlan(service, helpers, projectId, workspace, issueScan) {
     service.addEvent(projectId, 'plan.generated', `${agentLabel} 生成计划：${normalizeRelative(workspace, planFile)}`, {
       ...agentContext,
       ...planBackendEventMeta(planGenerationSnapshot, planExecutionConfig),
+      durationMs: planGenerationDurationMs,
       planId: id,
     });
     await service.runHookScripts(projectId, 'plan:after', {
@@ -150,6 +179,7 @@ async function generatePlan(service, helpers, projectId, workspace, issueScan) {
   }
 
 async function generatePlanForIntake(service, helpers, projectId, workspace, intake) {
+  const planGenerationStartedAt = planGenerationTimerStart();
   const { timestampForPath, readSnippet, normalizeRelative, hashFile, hashText } = helpers;
     const table = intake.__type === 'feedback' ? 'feedback' : 'requirements';
     const sourceName = intake.__type === 'feedback' ? '反馈' : '需求';
@@ -164,6 +194,7 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
         sourceName,
         planGenerationConfig,
         planExecutionConfig,
+        planGenerationStartedAt,
       });
     }
     if (isBuiltinLlmStructuredPlanGeneration(planGenerationConfig)) {
@@ -173,6 +204,7 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
         sourceName,
         planGenerationConfig,
         planExecutionConfig,
+        planGenerationStartedAt,
       });
     }
     if (!isExternalCliMarkdownPlanGeneration(planGenerationConfig)) {
@@ -183,6 +215,7 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
         sourceName,
         planGenerationConfig,
         planExecutionConfig,
+        planGenerationStartedAt,
       });
     }
     const planAgentCliOperation = planGenerationAgentCliOperationFieldsForService(service, planGenerationConfig);
@@ -203,6 +236,7 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
         planAgentCliConfig,
         isOpenCodeProvider,
         phasing,
+        planGenerationStartedAt,
       });
     }
     const safeId = String(intake.id).replace(/[^0-9a-zA-Z_-]/g, '');
@@ -239,6 +273,7 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
       '- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准',
       '- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试',
       '- 必须包含总体验收标准和进度区',
+      ...PLAN_HEADING_HARD_CONSTRAINT_LINES,
       '- 只写 plan 文件，不要改业务代码',
       '',
       ...explorationGuidance,
@@ -313,6 +348,7 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
         agentContext,
         agentCliConfig: planAgentCliSnapshot,
         result,
+        planGenerationStartedAt,
         eventType: 'plan.generate.failed',
         message: `${agentLabel} 生成${sourceName} #${intake.id} 计划失败：${result.logFile}`,
         error: intakePlanGenerationFailureError({
@@ -331,6 +367,11 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
       });
     }
 
+    // 校验前对落盘 / recoverPlanFromStdout 兜底恢复的 plan markdown 做确定性规范化：修复 LLM 偶发的
+    // 标题编号前缀与层级漂移（如 `## 2. 任务拆解` / `### 任务拆解`）、补齐任务行 P0NN 编号与 scope 注释，
+    // 避免畸形标题被 validatePlanContent 误判为格式不合规、整份计划不落库（反馈 #95）。幂等，无变化不写盘。
+    normalizePlanMarkdownFile(planFile);
+
     // 校验产物格式（stdout 兜底落盘与 opencode 直接写盘两条路径均经此）：必须含 `## 任务拆解`
     // 二级标题与至少一行 `- [ ] P0NN: ... <!-- scope: ... -->`。畸形 plan 不落库（不 insertPlan/syncPlanTasks），
     // 记录 plan.format.invalid 事件并按既有计划生成失败链路处理（on:fail + generate_fail_count 自增）。
@@ -346,6 +387,7 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
         agentContext,
         agentCliConfig: planAgentCliSnapshot,
         result,
+        planGenerationStartedAt,
         eventType: 'plan.format.invalid',
         message: `${agentLabel} 生成${sourceName} #${intake.id} 的计划格式不合规（${contentValidation.reason}）：${result.logFile}`,
         error: `生成${sourceName} #${intake.id} 的计划格式不合规：${contentValidation.reason}`,
@@ -360,6 +402,7 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
 
     const issueHash = `${intake.__type}-${intake.id}-${hashText(String(intake.body || '')).slice(0, 16)}`;
     const planStatus = draftPlanRequested(intake) ? 'draft' : 'pending';
+    const planGenerationDurationMs = planGenerationDurationSince(planGenerationStartedAt);
     const id = service.insertPlan({
       projectId,
       issueHash,
@@ -369,6 +412,7 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
       agentCliConfig: planAgentCliSnapshot,
       planGenerationConfig: planGenerationSnapshot,
       planExecutionConfig,
+      planGenerationDurationMs,
     });
     service.syncPlanTasks(id, planFile);
     if (planStatus === 'draft') {
@@ -381,6 +425,7 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
     service.addEvent(projectId, 'plan.generated', `${agentLabel} 为${sourceName} #${intake.id} 生成计划：${normalizeRelative(workspace, planFile)}`, {
       ...agentContext,
       ...planBackendEventMeta(planGenerationSnapshot, planExecutionConfig),
+      durationMs: planGenerationDurationMs,
       planId: id,
       intakeType: intake.__type,
       intakeId: intake.id,
@@ -405,7 +450,9 @@ async function generatePhasedPlansForIntake(service, helpers, projectId, workspa
     planAgentCliConfig,
     isOpenCodeProvider,
     phasing,
+    planGenerationStartedAt: contextPlanGenerationStartedAt,
   } = context;
+  const planGenerationStartedAt = contextPlanGenerationStartedAt ?? planGenerationTimerStart();
   const safeId = String(intake.id).replace(/[^0-9a-zA-Z_-]/g, '');
   const timestamp = timestampForPath();
   const planDir = path.join(workspace, 'docs', 'plan');
@@ -449,6 +496,7 @@ async function generatePhasedPlansForIntake(service, helpers, projectId, workspa
       agentContext,
       agentCliConfig: planAgentCliSnapshot,
       result,
+      planGenerationStartedAt,
       eventType: 'plan.generate.failed',
       message: `${agentLabel} 生成${sourceName} #${intake.id} 阶段计划失败：${result.logFile}`,
       error: intakePlanGenerationFailureError({
@@ -489,6 +537,7 @@ async function generatePhasedPlansForIntake(service, helpers, projectId, workspa
       agentContext,
       agentCliConfig: planAgentCliSnapshot,
       result,
+      planGenerationStartedAt,
       eventType: 'plan.format.invalid',
       message: `${agentLabel} 生成${sourceName} #${intake.id} 的阶段计划格式不合规：${error.message}`,
       error: `生成${sourceName} #${intake.id} 的阶段计划格式不合规：${error.message}`,
@@ -503,6 +552,7 @@ async function generatePhasedPlansForIntake(service, helpers, projectId, workspa
 
   const issueHashBase = `${intake.__type}-${intake.id}-${hashText(String(intake.body || '')).slice(0, 16)}`;
   const sortOrderStart = service.nextPlanSortOrder(projectId);
+  const planGenerationDurationMs = planGenerationDurationSince(planGenerationStartedAt);
   const insertedPlans = [];
   validated.phases.forEach((phase, index) => {
     const phaseKey = `phase${String(phase.phaseIndex).padStart(2, '0')}`;
@@ -516,6 +566,7 @@ async function generatePhasedPlansForIntake(service, helpers, projectId, workspa
       agentCliConfig: planAgentCliSnapshot,
       planGenerationConfig: planGenerationSnapshot,
       planExecutionConfig,
+      planGenerationDurationMs,
     });
     insertedPlans.push({ ...phase, planId });
   });
@@ -540,6 +591,7 @@ async function generatePhasedPlansForIntake(service, helpers, projectId, workspa
   service.addEvent(projectId, 'plan.generated', `${agentLabel} 为${sourceName} #${intake.id} 生成 ${planIds.length} 个阶段计划`, {
     ...agentContext,
     ...planBackendEventMeta(planGenerationSnapshot, planExecutionConfig),
+    durationMs: planGenerationDurationMs,
     planId: planIds[0] || null,
     planIds,
     generatedPlanIds: planIds,
@@ -575,7 +627,9 @@ async function generateStructuredPlan(service, helpers, projectId, workspace, is
     projectStatus,
     planGenerationConfig,
     planExecutionConfig,
+    planGenerationStartedAt: contextPlanGenerationStartedAt,
   } = context;
+  const planGenerationStartedAt = contextPlanGenerationStartedAt ?? planGenerationTimerStart();
   const planAgentCliOperation = planGenerationAgentCliOperationFieldsForService(service, planGenerationConfig);
   const planAgentCliConfig = effectiveAgentCliConfig({}, planAgentCliOperation);
   const timestamp = timestampForPath();
@@ -628,6 +682,7 @@ async function generateStructuredPlan(service, helpers, projectId, workspace, is
       agentLabel,
       agentContext,
       result,
+      planGenerationStartedAt,
       eventType: 'plan.generate.failed',
       message: `${agentLabel} 结构化计划生成失败：${result.logFile}`,
       error: planGenerationFailureError({
@@ -658,6 +713,7 @@ async function generateStructuredPlan(service, helpers, projectId, workspace, is
       agentLabel,
       agentContext,
       result,
+      planGenerationStartedAt,
       eventType: 'plan.format.invalid',
       message: `${agentLabel} 生成的 PlanSpec 不合规（${structuredPlanErrorMessage(error)}）：${result.logFile}`,
       error: `生成的 PlanSpec 不合规：${structuredPlanErrorMessage(error)}`,
@@ -670,6 +726,7 @@ async function generateStructuredPlan(service, helpers, projectId, workspace, is
     });
   }
 
+  const planGenerationDurationMs = planGenerationDurationSince(planGenerationStartedAt);
   const id = service.insertPlan({
     projectId,
     issueHash: issueScan.aggregateHash,
@@ -679,6 +736,7 @@ async function generateStructuredPlan(service, helpers, projectId, workspace, is
     agentCliConfig: planAgentCliSnapshot,
     planGenerationConfig: planGenerationSnapshot,
     planExecutionConfig,
+    planGenerationDurationMs,
   });
   service.syncPlanTasks(id, rendered.planFilePath);
   service.db.run('UPDATE project_states SET last_issue_hash = ?, updated_at = ? WHERE project_id = ?', [
@@ -689,6 +747,7 @@ async function generateStructuredPlan(service, helpers, projectId, workspace, is
   service.addEvent(projectId, 'plan.generated', `${agentLabel} 生成结构化计划：${rendered.planFileRelativePath}`, {
     ...agentContext,
     ...backendMeta,
+    durationMs: planGenerationDurationMs,
     planId: id,
     planSpecFilePath: rendered.planSpecRelativePath,
   });
@@ -707,7 +766,9 @@ async function generateStructuredPlanForIntake(service, helpers, projectId, work
     sourceName,
     planGenerationConfig,
     planExecutionConfig,
+    planGenerationStartedAt: contextPlanGenerationStartedAt,
   } = context;
+  const planGenerationStartedAt = contextPlanGenerationStartedAt ?? planGenerationTimerStart();
   const planAgentCliOperation = planGenerationAgentCliOperationFieldsForService(service, planGenerationConfig);
   const planAgentCliConfig = effectiveAgentCliConfig({}, planAgentCliOperation);
   const isOpenCodeProvider = planAgentCliConfig.provider === 'opencode';
@@ -769,6 +830,7 @@ async function generateStructuredPlanForIntake(service, helpers, projectId, work
       agentContext,
       agentCliConfig: planAgentCliSnapshot,
       result,
+      planGenerationStartedAt,
       eventType: 'plan.generate.failed',
       message: `${agentLabel} 生成${sourceName} #${intake.id} 结构化计划失败：${result.logFile}`,
       error: intakePlanGenerationFailureError({
@@ -805,6 +867,7 @@ async function generateStructuredPlanForIntake(service, helpers, projectId, work
       agentContext,
       agentCliConfig: planAgentCliSnapshot,
       result,
+      planGenerationStartedAt,
       eventType: 'plan.format.invalid',
       message: `${agentLabel} 生成${sourceName} #${intake.id} 的 PlanSpec 不合规（${structuredPlanErrorMessage(error)}）：${result.logFile}`,
       error: `生成${sourceName} #${intake.id} 的 PlanSpec 不合规：${structuredPlanErrorMessage(error)}`,
@@ -819,6 +882,7 @@ async function generateStructuredPlanForIntake(service, helpers, projectId, work
 
   const issueHash = `${intake.__type}-${intake.id}-${hashText(String(intake.body || '')).slice(0, 16)}`;
   const planStatus = draftPlanRequested(intake) ? 'draft' : 'pending';
+  const planGenerationDurationMs = planGenerationDurationSince(planGenerationStartedAt);
   const id = service.insertPlan({
     projectId,
     issueHash,
@@ -828,6 +892,7 @@ async function generateStructuredPlanForIntake(service, helpers, projectId, work
     agentCliConfig: planAgentCliSnapshot,
     planGenerationConfig: planGenerationSnapshot,
     planExecutionConfig,
+    planGenerationDurationMs,
   });
   service.syncPlanTasks(id, rendered.planFilePath);
   if (planStatus === 'draft') {
@@ -838,6 +903,7 @@ async function generateStructuredPlanForIntake(service, helpers, projectId, work
   service.addEvent(projectId, 'plan.generated', `${agentLabel} 为${sourceName} #${intake.id} 生成结构化计划：${rendered.planFileRelativePath}`, {
     ...agentContext,
     ...backendMeta,
+    durationMs: planGenerationDurationMs,
     planId: id,
     intakeType: intake.__type,
     intakeId: intake.id,
@@ -858,7 +924,9 @@ async function generateBuiltinStructuredPlan(service, helpers, projectId, worksp
     projectStatus,
     planGenerationConfig,
     planExecutionConfig,
+    planGenerationStartedAt: contextPlanGenerationStartedAt,
   } = context;
+  const planGenerationStartedAt = contextPlanGenerationStartedAt ?? planGenerationTimerStart();
   const timestamp = timestampForPath();
   const suffix = issueScan.aggregateHash.slice(0, 8);
   const planSpecFile = path.join(workspace, 'docs', 'plan', `plan_spec_${timestamp}_${suffix}.json`);
@@ -893,6 +961,7 @@ async function generateBuiltinStructuredPlan(service, helpers, projectId, worksp
       agentLabel: failureContext.agentLabel,
       agentContext: failureContext.agentContext,
       result,
+      planGenerationStartedAt,
       eventType: builtinFailureEventType(error),
       message: `${failureContext.agentLabel} 内置结构化计划生成失败：${result.errorMessage}`,
       error: result.errorMessage,
@@ -927,6 +996,7 @@ async function generateBuiltinStructuredPlan(service, helpers, projectId, worksp
         ...result,
         errorMessage: `写入 PlanSpec 失败：${error?.message || String(error)}`,
       },
+      planGenerationStartedAt,
       eventType: 'plan.generate.failed',
       message: `${successContext.agentLabel} 写入内置 PlanSpec 失败：${error?.message || String(error)}`,
       error: `写入 PlanSpec 失败：${error?.message || String(error)}`,
@@ -951,6 +1021,7 @@ async function generateBuiltinStructuredPlan(service, helpers, projectId, worksp
       agentLabel: successContext.agentLabel,
       agentContext: successContext.agentContext,
       result,
+      planGenerationStartedAt,
       eventType: 'plan.format.invalid',
       message: `${successContext.agentLabel} 生成的 PlanSpec 不合规（${structuredPlanErrorMessage(error)}）`,
       error: `生成的 PlanSpec 不合规：${structuredPlanErrorMessage(error)}`,
@@ -963,6 +1034,7 @@ async function generateBuiltinStructuredPlan(service, helpers, projectId, worksp
     });
   }
 
+  const planGenerationDurationMs = planGenerationDurationSince(planGenerationStartedAt);
   const id = service.insertPlan({
     projectId,
     issueHash: issueScan.aggregateHash,
@@ -972,6 +1044,7 @@ async function generateBuiltinStructuredPlan(service, helpers, projectId, worksp
     agentCliConfig: null,
     planGenerationConfig: successContext.planGenerationSnapshot,
     planExecutionConfig,
+    planGenerationDurationMs,
   });
   service.syncPlanTasks(id, rendered.planFilePath);
   service.db.run('UPDATE project_states SET last_issue_hash = ?, updated_at = ? WHERE project_id = ?', [
@@ -982,6 +1055,7 @@ async function generateBuiltinStructuredPlan(service, helpers, projectId, worksp
   service.addEvent(projectId, 'plan.generated', `${successContext.agentLabel} 生成内置结构化计划：${rendered.planFileRelativePath}`, {
     ...successContext.agentContext,
     ...successContext.backendMeta,
+    durationMs: planGenerationDurationMs,
     planId: id,
     planSpecFilePath: rendered.planSpecRelativePath,
   });
@@ -1000,7 +1074,9 @@ async function generateBuiltinStructuredPlanForIntake(service, helpers, projectI
     sourceName,
     planGenerationConfig,
     planExecutionConfig,
+    planGenerationStartedAt: contextPlanGenerationStartedAt,
   } = context;
+  const planGenerationStartedAt = contextPlanGenerationStartedAt ?? planGenerationTimerStart();
   const safeId = String(intake.id).replace(/[^0-9a-zA-Z_-]/g, '');
   const timestamp = timestampForPath();
   const planSpecFile = path.join(workspace, 'docs', 'plan', `plan_spec_${intake.__type}_${safeId}_${timestamp}.json`);
@@ -1038,6 +1114,7 @@ async function generateBuiltinStructuredPlanForIntake(service, helpers, projectI
       agentContext: failureContext.agentContext,
       agentCliConfig: null,
       result,
+      planGenerationStartedAt,
       eventType: builtinFailureEventType(error),
       message: `${failureContext.agentLabel} 生成${sourceName} #${intake.id} 内置结构化计划失败：${result.errorMessage}`,
       error: result.errorMessage,
@@ -1076,6 +1153,7 @@ async function generateBuiltinStructuredPlanForIntake(service, helpers, projectI
         ...result,
         errorMessage: `写入 PlanSpec 失败：${error?.message || String(error)}`,
       },
+      planGenerationStartedAt,
       eventType: 'plan.generate.failed',
       message: `${successContext.agentLabel} 写入${sourceName} #${intake.id} 内置 PlanSpec 失败：${error?.message || String(error)}`,
       error: `写入 PlanSpec 失败：${error?.message || String(error)}`,
@@ -1104,6 +1182,7 @@ async function generateBuiltinStructuredPlanForIntake(service, helpers, projectI
       agentContext: successContext.agentContext,
       agentCliConfig: null,
       result,
+      planGenerationStartedAt,
       eventType: 'plan.format.invalid',
       message: `${successContext.agentLabel} 生成${sourceName} #${intake.id} 的 PlanSpec 不合规（${structuredPlanErrorMessage(error)}）`,
       error: `生成${sourceName} #${intake.id} 的 PlanSpec 不合规：${structuredPlanErrorMessage(error)}`,
@@ -1118,6 +1197,7 @@ async function generateBuiltinStructuredPlanForIntake(service, helpers, projectI
 
   const issueHash = `${intake.__type}-${intake.id}-${hashText(String(intake.body || '')).slice(0, 16)}`;
   const planStatus = draftPlanRequested(intake) ? 'draft' : 'pending';
+  const planGenerationDurationMs = planGenerationDurationSince(planGenerationStartedAt);
   const id = service.insertPlan({
     projectId,
     issueHash,
@@ -1127,6 +1207,7 @@ async function generateBuiltinStructuredPlanForIntake(service, helpers, projectI
     agentCliConfig: null,
     planGenerationConfig: successContext.planGenerationSnapshot,
     planExecutionConfig,
+    planGenerationDurationMs,
   });
   service.syncPlanTasks(id, rendered.planFilePath);
   if (planStatus === 'draft') {
@@ -1137,6 +1218,7 @@ async function generateBuiltinStructuredPlanForIntake(service, helpers, projectI
   service.addEvent(projectId, 'plan.generated', `${successContext.agentLabel} 为${sourceName} #${intake.id} 生成内置结构化计划：${rendered.planFileRelativePath}`, {
     ...successContext.agentContext,
     ...successContext.backendMeta,
+    durationMs: planGenerationDurationMs,
     planId: id,
     intakeType: intake.__type,
     intakeId: intake.id,
@@ -1185,10 +1267,11 @@ function isBuiltinLlmStructuredPlanGeneration(config = {}) {
 }
 
 async function recordUnsupportedPlanGenerationStrategy(service, input) {
-  const { projectId, planGenerationConfig, planExecutionConfig } = input;
+  const { projectId, planGenerationConfig, planExecutionConfig, planGenerationStartedAt } = input;
   const error = unsupportedPlanGenerationStrategyError(planGenerationConfig);
   service.addEvent(projectId, 'plan.generate.failed', error, {
     ...planBackendEventMeta(planGenerationConfig, planExecutionConfig),
+    durationMs: planGenerationDurationSince(planGenerationStartedAt),
     error,
     unsupportedPlanGenerationStrategy: planGenerationConfig?.strategy || planGenerationConfig?.planGenerationStrategy || null,
   });
@@ -1208,6 +1291,7 @@ async function recordUnsupportedIntakePlanGenerationStrategy(service, input) {
     sourceName,
     planGenerationConfig,
     planExecutionConfig,
+    planGenerationStartedAt,
   } = input;
   const error = unsupportedPlanGenerationStrategyError(planGenerationConfig);
   const agentCliConfig = safeExternalPlanGenerationAgentCliConfig(service, planGenerationConfig);
@@ -1226,6 +1310,7 @@ async function recordUnsupportedIntakePlanGenerationStrategy(service, input) {
       errorMessage: error,
       logFile: null,
     },
+    planGenerationStartedAt,
     eventType: 'plan.generate.failed',
     message: `${sourceName} #${intake.id} 计划生成失败：${error}`,
     error,
@@ -1607,7 +1692,9 @@ async function recordIssuePlanGenerationFailure(service, input) {
     message,
     error,
     meta,
+    planGenerationStartedAt,
   } = input;
+  const durationMs = planGenerationDurationSince(planGenerationStartedAt);
   const failureError = normalizeGenerateFailureError(
     error || result?.errorMessage || `${agentLabel} 计划生成失败`,
   );
@@ -1615,6 +1702,7 @@ async function recordIssuePlanGenerationFailure(service, input) {
   service.addEvent(projectId, eventType || 'plan.generate.failed', message, {
     ...agentContext,
     ...(meta || {}),
+    durationMs,
     error: failureError,
     logFile,
   });
@@ -1704,6 +1792,7 @@ function buildPhasedPlanPrompt(input) {
     '- 每个任务要有验收要点。',
     '- 每个阶段 plan 的最后一个任务必须是“完整验收”，scope 写 validation。',
     '- 必须包含总体验收标准和进度区。',
+    ...PLAN_HEADING_HARD_CONSTRAINT_LINES,
     '- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；只在最后的完整验收节点写最终验收命令、范围和通过标准。',
     '- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试。',
     '- 只写 manifest 和阶段 plan 文件，不要改业务代码。',
@@ -1791,6 +1880,9 @@ function validatePhaseManifestFile({ workspace, manifestFile, intake, phaseFileP
       throw new Error(`阶段 ${expectedIndex} plan 文件名必须为 ${expectedName}`);
     }
     if (!fs.existsSync(phaseSafety.filePath)) throw new Error(`阶段 ${expectedIndex} plan 文件不存在`);
+    // 校验前对阶段 plan markdown 做确定性规范化，修复 LLM 标题编号前缀/层级漂移（反馈 #95），
+    // 使带编号前缀的阶段 plan 不再被判为格式不合规。幂等，无变化不写盘。
+    normalizePlanMarkdownFile(phaseSafety.filePath);
     const content = fs.readFileSync(phaseSafety.filePath, 'utf8');
     const contentValidation = validatePhasePlanContent(content);
     if (!contentValidation.valid) {
@@ -1909,7 +2001,9 @@ async function recordIntakePlanGenerationFailure(service, input) {
     message,
     error,
     meta,
+    planGenerationStartedAt,
   } = input;
+  const durationMs = planGenerationDurationSince(planGenerationStartedAt);
   const failureError = normalizeGenerateFailureError(
     error || result?.errorMessage || `${agentLabel} 生成${sourceName} #${intake.id} 计划失败`,
   );
@@ -1918,6 +2012,7 @@ async function recordIntakePlanGenerationFailure(service, input) {
   service.addEvent(projectId, eventType || 'plan.generate.failed', message, {
     ...agentContext,
     ...(meta || {}),
+    durationMs,
     error: failureError,
     logFile,
   });

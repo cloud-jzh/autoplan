@@ -49,8 +49,11 @@ describe('useTerminalSessions regression', () => {
 
     expectIncludes(hook, 'function belongsToProject(session: TerminalSession, projectId: number)', 'hook 应集中判断 session 是否属于当前项目');
     expectIncludes(hook, 'return Number(session.projectId) === Number(projectId);', '项目归属判断应兼容字符串/数字 projectId');
-    expectIncludes(hook, 'function normalizeSessions(sessions: TerminalSession[] = [], projectId: number)', 'hook 应归一化初始和刷新会话');
-    expectIncludes(hook, 'sessions.filter((session) => belongsToProject(session, projectId))', '归一化应过滤其它项目终端');
+    expectIncludes(hook, 'const closedSessionKeysRef = useRef(new Set<string>());', 'hook 应记录已关闭会话 tombstone');
+    expectIncludes(hook, 'function normalizeSessions(', 'hook 应归一化初始和刷新会话');
+    expectIncludes(hook, 'closedSessionKeys: ReadonlySet<string> = new Set(),', '归一化应接收 closed tombstone');
+    expectIncludes(hook, 'belongsToProject(session, projectId)', '归一化应过滤其它项目终端');
+    expectIncludes(hook, '&& !shouldRemoveSession(session, projectId, closedSessionKeys)', '归一化应过滤已关闭终端');
     expectIncludes(hook, 'String(left.createdAt || \'\').localeCompare(String(right.createdAt || \'\'))', '终端列表排序应稳定按创建时间升序');
     expectIncludes(hook, 'if (current && nextSessions.some((session) => session.id === current)) return current;', '刷新后应保留仍存在的选中会话');
     expectIncludes(hook, 'const running = nextSessions.find(isTerminalActive);', '当前会话丢失时应优先选中运行中的终端');
@@ -62,15 +65,33 @@ describe('useTerminalSessions regression', () => {
     const hook = source('src', 'renderer', 'hooks', 'useTerminalSessions.ts');
 
     expectIncludes(hook, 'const unsubscribeData = window.autoplan.onTerminalData((event) => {', 'hook 应订阅终端 data 事件');
-    expectIncludes(hook, 'const unsubscribeExit = window.autoplan.onTerminalExit((event) => upsertSession(event.session));', 'hook 应订阅终端 exit 事件');
-    expectIncludes(hook, 'const unsubscribeStatus = window.autoplan.onTerminalStatus((event) => upsertSession(event.session));', 'hook 应订阅终端 status 事件');
-    expectIncludes(hook, 'if (!event.session || !belongsToProject(event.session, projectIdRef.current)) return;', 'data 事件应过滤其它项目');
+    expectIncludes(hook, 'const unsubscribeExit = window.autoplan.onTerminalExit(applyTerminalEvent);', 'hook 应订阅终端 exit 事件');
+    expectIncludes(hook, 'const unsubscribeStatus = window.autoplan.onTerminalStatus(applyTerminalEvent);', 'hook 应订阅终端 status 事件');
+    expectIncludes(hook, 'const unsubscribeClosed = window.autoplan.onTerminalClosed(applyTerminalEvent);', 'hook 应订阅终端 closed 事件');
+    expectIncludes(hook, 'if (!eventBelongsToProject(event, projectIdRef.current)) return;', 'data 事件应过滤其它项目');
+    expectIncludes(hook, 'if (terminalEventClosed(event, projectIdRef.current, closedSessionKeysRef.current)) {', 'data 事件遇到关闭态应执行删除语义');
     expectIncludes(hook, 'const data = String(event.data ?? \'\');', 'data 事件应归一化输出文本');
     expectIncludes(hook, 'if (!data) return;', '空 data 不应触发订阅回调');
     expectIncludes(hook, 'handlers.forEach((handler) => handler(data, event.session));', 'data 事件应分发给当前 session 的订阅者');
     expectIncludes(hook, 'unsubscribeData();', '卸载时应清理 data 监听');
     expectIncludes(hook, 'unsubscribeExit();', '卸载时应清理 exit 监听');
     expectIncludes(hook, 'unsubscribeStatus();', '卸载时应清理 status 监听');
+    expectIncludes(hook, 'unsubscribeClosed();', '卸载时应清理 closed 监听');
+  });
+
+  it('treats close results and closed events as deletes instead of upserts', () => {
+    const hook = source('src', 'renderer', 'hooks', 'useTerminalSessions.ts');
+
+    expectIncludes(hook, 'const removeSession = useCallback((sessionId: string, sessionProjectId: number | string = projectIdRef.current) => {', 'hook 应集中执行关闭删除语义');
+    expectIncludes(hook, 'rememberClosedSession(sessionId, sessionProjectId, closedSessionKeysRef.current);', '删除前应记录 closed tombstone');
+    expectIncludes(hook, 'removeSessionFromState(sessionId, setSessions, setActiveSessionIdState, dataHandlersRef);', '删除应同步移除会话、活动会话和数据订阅');
+    expectIncludes(hook, 'removeSession(result.session?.id || sessionId, result.session?.projectId ?? projectIdRef.current);', 'closeTerminal 成功后应按返回 session 删除');
+    expectIncludes(hook, 'if (shouldRemoveSession(session, projectIdRef.current, closedSessionKeysRef.current)) {', 'upsert 前应识别关闭态 session');
+    expectIncludes(hook, 'removeSession(session.id, session.projectId);', '关闭态 session 应删除而不是 upsert');
+    expectIncludes(hook, 'function terminalEventClosed(', 'hook 应集中判断关闭事件');
+    expectIncludes(hook, 'if (event.closed || event.session?.closed) return true;', 'closed 事件或 closed session 均应视为删除');
+    expectIncludes(hook, 'closedSessionKeys.has(closedSessionKey(projectId, sessionId))', '旧 exit/status 事件命中 tombstone 时不应重新插入');
+    expectIncludes(hook, 'active && next.some((session) => session.id === active) ? active : next[0]?.id ?? null', '删除当前或最后一个会话后应重新选择或清空 activeSessionId');
   });
 
   it('routes actions through preload terminal APIs without executor or script side effects', () => {

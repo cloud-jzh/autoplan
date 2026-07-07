@@ -17,6 +17,7 @@ const {
   terminalSettingsFromDb,
 } = require('./terminalConfig');
 const {
+  TERMINAL_CHANNELS,
   TERMINAL_ERROR_CODES,
   TERMINAL_STATUS,
 } = require('./terminalTypes');
@@ -423,6 +424,91 @@ describe('TerminalService', () => {
     } finally {
       removeTempDir(ws1);
       removeTempDir(ws2);
+    }
+  });
+
+  it('close 运行中会话会删除服务侧引用并只回流 closed 事件', () => {
+    const ws = createTempWorkspace({});
+    const factory = createPtyFactory();
+    const service = new TerminalService({
+      ptyFactory: factory,
+      now: fixedClock(),
+      idFactory: () => 'term_close_running',
+    });
+    const events = { status: [], exit: [], closed: [] };
+    service.on(TERMINAL_CHANNELS.STATUS, (event) => events.status.push(event));
+    service.on(TERMINAL_CHANNELS.EXIT, (event) => events.exit.push(event));
+    service.on(TERMINAL_CHANNELS.CLOSED, (event) => events.closed.push(event));
+
+    try {
+      const created = service.createSession({ id: 'p1', workspace_path: ws });
+      assert.equal(created.ok, true);
+      assert.equal(service.listSessions('p1').length, 1);
+
+      events.status.length = 0;
+      const closed = service.close('term_close_running');
+      assert.equal(closed.ok, true);
+      assert.equal(closed.closed, true);
+      assert.equal(closed.session.closed, true);
+      assert.equal(closed.session.projectId, 'p1');
+      assert.equal(closed.session.id, 'term_close_running');
+      assert.equal(factory.spawns[0].pty.killed, true);
+      assert.deepEqual(service.listSessions('p1'), []);
+      assert.equal(events.exit.length, 0);
+      assert.equal(events.status.length, 0);
+      assert.equal(events.closed.length, 1);
+      assert.equal(events.closed[0].sessionId, 'term_close_running');
+      assert.equal(events.closed[0].projectId, 'p1');
+      assert.equal(events.closed[0].closed, true);
+      assert.equal(events.closed[0].session.closed, true);
+
+      factory.spawns[0].pty.emitExit({ exitCode: 0, signal: null });
+      assert.equal(events.exit.length, 0);
+      assert.equal(events.status.length, 0);
+      assert.deepEqual(service.listSessions('p1'), []);
+    } finally {
+      service.disposeAll();
+      removeTempDir(ws);
+    }
+  });
+
+  it('close 已退出会话和最后一个会话后 listSessions 保持为空', () => {
+    const ws = createTempWorkspace({});
+    const factory = createPtyFactory();
+    const service = new TerminalService({
+      ptyFactory: factory,
+      now: fixedClock(),
+      idFactory: () => 'term_close_exited',
+    });
+    const events = { status: [], exit: [], closed: [] };
+    service.on(TERMINAL_CHANNELS.STATUS, (event) => events.status.push(event));
+    service.on(TERMINAL_CHANNELS.EXIT, (event) => events.exit.push(event));
+    service.on(TERMINAL_CHANNELS.CLOSED, (event) => events.closed.push(event));
+
+    try {
+      const created = service.createSession({ id: 'p1', workspace_path: ws });
+      assert.equal(created.ok, true);
+      factory.spawns[0].pty.emitExit({ exitCode: 0, signal: null });
+      assert.equal(service.listSessions('p1').length, 1);
+      assert.equal(service.listSessions('p1')[0].status, TERMINAL_STATUS.EXITED);
+
+      events.status.length = 0;
+      events.exit.length = 0;
+      const closed = service.close('term_close_exited');
+      assert.equal(closed.ok, true);
+      assert.equal(closed.closed, true);
+      assert.equal(closed.session.status, TERMINAL_STATUS.EXITED);
+      assert.equal(closed.session.closed, true);
+      assert.equal(factory.spawns[0].pty.killed, false);
+      assert.deepEqual(service.listSessions('p1'), []);
+      assert.equal(events.exit.length, 0);
+      assert.equal(events.status.length, 0);
+      assert.equal(events.closed.length, 1);
+      assert.equal(events.closed[0].sessionId, 'term_close_exited');
+      assert.equal(events.closed[0].closed, true);
+    } finally {
+      service.disposeAll();
+      removeTempDir(ws);
     }
   });
 

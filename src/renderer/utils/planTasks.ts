@@ -257,6 +257,20 @@ export function formatPlanDurationSummary(tasks: TimedPlanTask[]) {
   return `总耗时 ${formatDuration(totalMs, '0秒')} · 已完成 ${formatDuration(completedMs, '0秒')}`;
 }
 
+type PlanGenerationDurationSource = {
+  plan_generation_duration_ms?: number | null;
+};
+
+function readPlanGenerationDurationMs(plan: PlanGenerationDurationSource) {
+  const duration = Number(plan.plan_generation_duration_ms);
+  return Number.isFinite(duration) && duration > 0 ? duration : null;
+}
+
+export function formatPlanGenerationDuration(plan: PlanGenerationDurationSource) {
+  const duration = readPlanGenerationDurationMs(plan);
+  return `生成耗时 ${duration === null ? '未记录' : formatDuration(duration, '未记录')}`;
+}
+
 export function planTitle(plan: Plan) {
   return String((plan as Plan & { title?: string | null }).title || '').trim();
 }

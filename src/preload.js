@@ -69,6 +69,30 @@ function aiConfigIdPayload(payload = {}) {
   return { configId: source.configId ?? source.id };
 }
 
+function claudeCliConfigCreatePayload(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  return {
+    name: source.name,
+    baseUrl: source.baseUrl,
+    authToken: source.authToken,
+    model: source.model,
+  };
+}
+
+function claudeCliConfigUpdatePayload(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  const next = { configId: source.configId ?? source.id };
+  for (const key of ['name', 'baseUrl', 'authToken', 'model']) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) next[key] = source[key];
+  }
+  return next;
+}
+
+function claudeCliConfigIdPayload(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  return { configId: source.configId ?? source.id };
+}
+
 function chatSendPayload(payload = {}) {
   const source = payload && typeof payload === 'object' ? payload : {};
   return {
@@ -195,6 +219,11 @@ contextBridge.exposeInMainWorld('autoplan', {
   readPlan: (input) => ipcRenderer.invoke('plans:read', input),
   reorderPlans: (input) => ipcRenderer.invoke('plans:reorder', input),
   stopPlan: (input) => ipcRenderer.invoke('plans:stop', input),
+  resumePlan: (input) => ipcRenderer.invoke('plans:resume', input),
+  updatePlanExecutionConfig: (input) => ipcRenderer.invoke('plans:updateExecutionConfig', input),
+  reExecutePlan: (input) => ipcRenderer.invoke('plans:reExecute', input),
+  recreatePlanFromIntake: (input) => ipcRenderer.invoke('plans:recreate', input),
+  appendPlanTask: (input) => ipcRenderer.invoke('plans:appendTask', input),
   deletePlan: (input) => ipcRenderer.invoke('plans:delete', input),
   openWorkspaceFile: (input) => ipcRenderer.invoke('workspace:openFile', input),
   pickDirectory: () => ipcRenderer.invoke('projects:pickDirectory'),
@@ -247,6 +276,7 @@ contextBridge.exposeInMainWorld('autoplan', {
   checkForUpdates: () => ipcRenderer.invoke('updates:check'),
   dismissUpdate: (input) => ipcRenderer.invoke('updates:dismiss', input),
   setAutoUpdateCheck: (enabled) => ipcRenderer.invoke('updates:setAutoCheck', { enabled }),
+  openUpdateInstaller: () => ipcRenderer.invoke('updates:openInstaller'),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', { url }),
   onLoopUpdate: (handler) => {
     const listener = (_event, snapshot) => handler(snapshot);
@@ -277,6 +307,11 @@ contextBridge.exposeInMainWorld('autoplan', {
     const listener = (_event, data) => handler(data);
     ipcRenderer.on('terminal:status', listener);
     return () => ipcRenderer.removeListener('terminal:status', listener);
+  },
+  onTerminalClosed: (handler) => {
+    const listener = (_event, data) => handler(data);
+    ipcRenderer.on('terminal:closed', listener);
+    return () => ipcRenderer.removeListener('terminal:closed', listener);
   },
   // Chat 对话模块（需求 #26 / #28）
   chatSend: (payload) => ipcRenderer.invoke('chat:send', chatSendPayload(payload)),
@@ -315,6 +350,18 @@ contextBridge.exposeInMainWorld('autoplan', {
     const listener = (_event, data) => handler(data);
     ipcRenderer.on('ai-config:changed', listener);
     return () => ipcRenderer.removeListener('ai-config:changed', listener);
+  },
+  // Claude CLI 配置（需求 #93）
+  claudeCliConfigList: () => ipcRenderer.invoke('claude-cli-config:list'),
+  claudeCliConfigCreate: (payload) => ipcRenderer.invoke('claude-cli-config:create', claudeCliConfigCreatePayload(payload)),
+  claudeCliConfigUpdate: (payload) => ipcRenderer.invoke('claude-cli-config:update', claudeCliConfigUpdatePayload(payload)),
+  claudeCliConfigDelete: (payload) => ipcRenderer.invoke('claude-cli-config:delete', claudeCliConfigIdPayload(payload)),
+  claudeCliConfigGet: (payload) => ipcRenderer.invoke('claude-cli-config:get', claudeCliConfigIdPayload(payload)),
+  claudeCliConfigSetDefault: (payload) => ipcRenderer.invoke('claude-cli-config:set-default', claudeCliConfigIdPayload(payload)),
+  onClaudeCliConfigChanged: (handler) => {
+    const listener = (_event, data) => handler(data);
+    ipcRenderer.on('claude-cli-config:changed', listener);
+    return () => ipcRenderer.removeListener('claude-cli-config:changed', listener);
   },
   // 对话管理（需求 #28）
   conversationList: (payload) => ipcRenderer.invoke('conversation:list', { projectId: payload?.projectId }),

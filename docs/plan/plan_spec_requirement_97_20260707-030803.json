@@ -1,0 +1,122 @@
+{
+  "title": "计划中断后可切换CLI工具执行 & 计划结束后支持重新创建/执行/附加内容",
+  "summary": "为 AutoPlan 的计划生命周期增加两个核心能力：1) 计划执行中断或停止后，允许用户在恢复前切换 CLI 执行工具（codex/claude/opencode/oh-my-pi），使同一计划可在不同后端继续执行；2) 计划完成（completed）后，支持重新创建（基于原需求重新生成计划）、重新执行（重置任务状态重新运行）以及附加内容（向已完成计划追加新任务并重新激活），避免需求变更后必须手动创建新计划。",
+  "tasks": [
+    {
+      "title": "后端：实现计划执行配置更新函数，允许在中断/停止状态下修改 plan_execution_provider/command",
+      "scope": ["src/loop/planLifecycle.js", "src/loopService.js", "src/loop/planBackendConfig.js"],
+      "acceptance": [
+        "新增 updatePlanExecutionConfig 函数，接收 planId、provider、command 等参数",
+        "仅在计划状态为 interrupted/stopped 时允许修改执行配置",
+        "修改后写入 plans 表的 plan_execution_provider、plan_execution_command 等列",
+        "通过 loopService 暴露为公共方法供 IPC/前端调用",
+        "记录 plan.execution_config.updated 事件到 events 表"
+      ]
+    },
+    {
+      "title": "后端：确保恢复执行时正确读取更新后的 CLI 配置",
+      "scope": ["src/loop/planAgentCli.js", "src/loop/taskExecution.js", "src/loop/agentCliRunner.js"],
+      "acceptance": [
+        "resumePlan 恢复后，planExecutionForTask 能读取到已更新的 plan_execution_provider/command",
+        "切换 CLI 工具后，任务执行 prompt 中的工具特定指令（如 opencode 的 --agent 参数）正确适配新后端",
+        "旧 CLI 会话 ID 在切换后不被沿用（避免跨后端会话污染）",
+        "切换后首次执行任务时 agentCliSessionMode 为 'new'（而非 'resume'）",
+        "不同 CLI 后端切换后 spawn 行为正确（如 opencode 走位置参数，codex/claude 走 stdin）"
+      ]
+    },
+    {
+      "title": "后端：实现 completed 计划的重新执行功能（重置任务状态并重新激活）",
+      "scope": ["src/loop/planLifecycle.js", "src/loopService.js"],
+      "acceptance": [
+        "新增 reExecutePlan 函数，仅允许 completed 状态计划调用",
+        "将所有 completed 任务重置为 pending 状态，计划状态从 completed 改为 pending",
+        "保留原计划文件路径不变，不重新生成 plan 文件",
+        "清除 validation_passed 标记",
+        "记录 plan.reexecuted 事件",
+        "重新加入执行队列（nextRunnablePlan 可再次选中）"
+      ]
+    },
+    {
+      "title": "后端：实现 completed 计划的重新创建功能（基于原需求重新生成计划）",
+      "scope": ["src/loop/planGeneration.js", "src/loop/planLifecycle.js", "src/loopService.js", "src/loop/intakePlanLinks.js"],
+      "acceptance": [
+        "新增 recreatePlanFromIntake 函数，根据计划关联的需求/反馈重新调用计划生成流程",
+        "可沿用原 plan 的 planGenerationConfig 或使用当前项目默认配置",
+        "生成的新计划自动关联到原需求/反馈（更新 linked_plan_id）",
+        "旧计划状态保持不变（不删除、不修改），新计划作为独立条目入库",
+        "记录 plan.recreated 事件，包含新旧 planId 关联"
+      ]
+    },
+    {
+      "title": "后端：扩展 appendTaskToIntakePlan 支持 completed 计划（重置后追加任务）",
+      "scope": ["src/loop/planLifecycle.js", "src/loopService.js"],
+      "acceptance": [
+        "appendTaskToIntakePlan 检测到所有关联计划均为 completed 时，选择最后一个 completed 计划",
+        "自动将该 completed 计划重新激活（调用 reExecutePlan），再追加新任务",
+        "追加的任务在 plan_tasks 表中正确排序（sort_order 递增）",
+        "同步更新 plan markdown 文件中的任务列表",
+        "记录 intake.task.appended 事件，包含 reExecuted 标记"
+      ]
+    },
+    {
+      "title": "前端：在 PlanList 卡片上为 interrupted/stopped 计划添加 CLI 工具切换控件",
+      "scope": ["src/renderer/components/plans/PlanList.tsx", "src/renderer/components/workspace/WorkspaceSettingsView.tsx", "src/renderer/types.ts", "src/preload.js", "src/main.js"],
+      "acceptance": [
+        "interrupted/stopped 状态的计划卡片显示 CLI 工具下拉选择器（codex/claude/opencode/oh-my-pi）",
+        "选择新 CLI 工具后通过 IPC 调用 updatePlanExecutionConfig 持久化",
+        "切换后卡片显示更新后的 CLI 工具名称",
+        "恢复按钮可见且可用（调用 resumePlan）",
+        "若当前项目未配置某 CLI 命令路径，对应选项置灰并提示"
+      ]
+    },
+    {
+      "title": "前端：在 PlanList 卡片上为 completed 计划添加重新创建/重新执行/附加内容操作按钮",
+      "scope": ["src/renderer/components/plans/PlanList.tsx", "src/renderer/pages/WorkspacePage.tsx", "src/renderer/types.ts", "src/preload.js", "src/main.js"],
+      "acceptance": [
+        "completed 状态的计划卡片显示三个操作按钮：重新创建、重新执行、附加内容",
+        "点击「重新创建」通过 IPC 调用 recreatePlanFromIntake，重新生成计划并跳转到新计划",
+        "点击「重新执行」通过 IPC 调用 reExecutePlan，计划状态变为 pending 并加入执行队列",
+        "点击「附加内容」弹出输入框，输入新任务标题后调用 appendTaskToIntakePlan",
+        "操作完成后卡片状态实时刷新",
+        "操作按钮不可用时显示 tooltip 说明原因（如无关联需求）"
+      ]
+    },
+    {
+      "title": "IPC 通道：为主进程和渲染进程添加新的 IPC 方法注册",
+      "scope": ["src/main.js", "src/preload.js", "src/renderer/types.ts"],
+      "acceptance": [
+        "主进程注册 updatePlanExecutionConfig IPC handler",
+        "主进程注册 reExecutePlan IPC handler",
+        "主进程注册 recreatePlanFromIntake IPC handler",
+        "preload.js 暴露对应的 contextBridge API",
+        "TypeScript 类型定义完整，覆盖请求参数和返回值"
+      ]
+    },
+    {
+      "title": "完整验收",
+      "scope": ["validation"],
+      "acceptance": [
+        "验证 interrupted 计划切换 CLI 工具后恢复执行，新任务使用新后端 spawn",
+        "验证 CLI 切换后旧会话 ID 未被沿用（codex/claude/opencode 各自验证）",
+        "验证 completed 计划重新执行后所有任务状态为 pending，可正常进入执行队列",
+        "验证重新创建生成的新计划关联到原需求，旧计划保持不变",
+        "验证 completed 计划附加内容后自动激活并追加新任务到 plan 文件",
+        "验证前端三种操作的按钮状态、tooltip 和操作结果通知正确",
+        "验证 npm test 全部通过且 lint 无新增问题"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm test",
+    "criteria": [
+      "所有单元测试通过（npm test 退出码为 0）",
+      "planLifecycle.test.js 覆盖 updatePlanExecutionConfig / reExecutePlan / recreatePlanFromIntake 的边界场景",
+      "taskExecution.test.js 覆盖 CLI 切换后首次执行使用 'new' 会话模式的场景",
+      "PlanList.tsx / WorkspacePage.tsx 组件的测试覆盖新增交互逻辑",
+      "loopService.test.js 覆盖新 IPC handler 的集成场景",
+      "手动验证：interrupted 计划切换 CLI → 恢复执行 → 新任务使用新后端启动",
+      "手动验证：completed 计划 → 重新执行 → 任务进入执行队列 → 执行完成后计划再次变为 completed",
+      "手动验证：completed 计划 → 重新创建 → 生成新计划文件 → 关联到原需求"
+    ]
+  }
+}

@@ -38,12 +38,13 @@ function codexReasoningConfigArgs(reasoningEffort) {
   return ['-c', `model_reasoning_effort="${normalizeCodexReasoningEffort(reasoningEffort)}"`];
 }
 
-function codexNewSessionArgs(workspace, lastFile, options = {}) {
+// 工作目录由 runAgentCliAttempt 内 spawn({ cwd: workspace }) 统一提供（与 codexResumeSessionArgs 一致）。
+// 此前注入的 `--cd <workspace>` 是 codex 的全局选项，必须出现在子命令之前；放在 `exec` 之后会被
+// exec 解析器接管并报 `unknown option '--cd'`（见反馈 #92）。故此处不再传 `--cd`，也无需 workspace 形参。
+function codexNewSessionArgs(lastFile, options = {}) {
   return [
     'exec',
     ...codexReasoningConfigArgs(options.reasoningEffort),
-    '--cd',
-    workspace,
     '--color',
     'never',
     '-o',
@@ -210,6 +211,25 @@ function ompCliArgs() {
   return ['--print'];
 }
 
+// 把 Claude 自定义连接配置拼装为 ANTHROPIC_* 环境变量映射。仅返回非空字段——空值不进 env，
+// 避免 spawn 时用空串覆盖 claude 本机 settings.json 中已有的合法配置（用户可能想保留部分本机配置、
+// 仅覆盖另一部分）。返回 null 表示无需注入任何变量，调用方可直接跳过合并。
+function buildClaudeEnv(claudeEnv = {}) {
+  const baseUrl = normalizeAgentCliString(claudeEnv?.baseUrl);
+  const authToken = normalizeAgentCliString(claudeEnv?.authToken);
+  const model = normalizeAgentCliString(claudeEnv?.model);
+  const env = {};
+  if (baseUrl) env.ANTHROPIC_BASE_URL = baseUrl;
+  if (authToken) env.ANTHROPIC_AUTH_TOKEN = authToken;
+  if (model) env.ANTHROPIC_MODEL = model;
+  return Object.keys(env).length > 0 ? env : null;
+}
+
+function normalizeAgentCliString(value) {
+  if (value === undefined || value === null) return '';
+  return String(value).trim();
+}
+
 function agentCliSpawnSpec(provider, command, lastFile, codexArgs, agentCliOptions = {}) {
   const normalizedProvider = normalizeAgentCliProvider(provider);
   const resolvedCommand = normalizeAgentCliCommand(command) || defaultAgentCliCommand(normalizedProvider);
@@ -223,6 +243,10 @@ function agentCliSpawnSpec(provider, command, lastFile, codexArgs, agentCliOptio
       lastFileSource: 'claude-stream-json',
       useShell: false,
       promptSource: 'stdin',
+      // Claude CLI 的自定义连接配置（baseUrl/authToken/model）通过环境变量覆盖 settings.json，
+      // 优先级：ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN / ANTHROPIC_MODEL > claude 本机 settings.json。
+      // 仅注入非空字段，空值不覆盖用户 settings.json 中的合法配置（见 buildClaudeEnv）。
+      env: buildClaudeEnv(agentCliOptions.claudeEnv),
       agentCliSessionId: sessionSpec.sessionId,
       agentCliSessionRequestedId: sessionSpec.requestedSessionId,
       agentCliSessionMode: sessionSpec.mode,
@@ -325,13 +349,18 @@ async function runAgentCliAttempt(options) {
   }
 
   const executionSpec = agentCliExecutionSpec(spawnSpec);
+  // Claude 自定义连接的环境变量优先级最高：覆盖 workspaceToolEnv + projectEnvVars + process.env。
+  // 空字段已在 buildClaudeEnv 中过滤，不会污染本机 claude settings.json 的合法配置。
+  const mergedEnv = spawnSpec.env
+    ? { ...(env || process.env), ...spawnSpec.env }
+    : (env || process.env);
   let child;
   try {
     child = spawn(executionSpec.command, executionSpec.args, {
       shell: executionSpec.shell,
       windowsVerbatimArguments: executionSpec.windowsVerbatimArguments,
       cwd: workspace,
-      env: env || process.env,
+      env: mergedEnv,
     });
   } catch (spawnThrow) {
     // spawn 同步抛出（如 Windows 命令行超长 → ENAMETOOLONG / WinError 206）时，
@@ -812,7 +841,9 @@ module.exports = {
   DEFAULT_AGENT_CLI_PROVIDER,
   WIN_CMD_LIMIT,
   WIN_CREATEPROCESS_LIMIT,
+  agentCliExecutionSpec,
   agentCliSpawnSpec,
+  buildClaudeEnv,
   claudeCliArgs,
   claudeSessionArgs,
   codexNewSessionArgs,

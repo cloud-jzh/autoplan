@@ -89,6 +89,7 @@ class TerminalService extends EventEmitter {
       disposables: [],
       killRequested: false,
       suppressExitEvents: false,
+      closed: false,
     };
 
     this.sessions.set(session.id, session);
@@ -153,9 +154,8 @@ class TerminalService extends EventEmitter {
   close(sessionId) {
     const found = this.findSession(sessionId);
     if (!found.ok) return found.error;
-    const session = publicSession(found.session);
     this.terminateSession(found.session, { remove: true, emit: true });
-    return { ok: true, session, closed: true };
+    return { ok: true, session: publicSession(found.session), closed: true };
   }
 
   rename(sessionId, title) {
@@ -240,11 +240,17 @@ class TerminalService extends EventEmitter {
     session.endedAt = this.now();
     disposeSubscriptions(session);
     const payload = { sessionId: session.id, projectId: session.projectId, ...exit, session: publicSession(session) };
-    if (!session.suppressExitEvents) {
+    if (!session.suppressExitEvents && this.sessions.has(session.id)) {
       this.emit(TERMINAL_CHANNELS.EXIT, payload);
       this.emit('exit', payload);
       this.emitStatus(session);
     }
+  }
+
+  emitClosed(session) {
+    const payload = { sessionId: session.id, projectId: session.projectId, closed: true, session: publicSession(session) };
+    this.emit(TERMINAL_CHANNELS.CLOSED, payload);
+    this.emit('closed', payload);
   }
 
   emitStatus(session) {
@@ -255,8 +261,13 @@ class TerminalService extends EventEmitter {
 
   terminateSession(session, options = {}) {
     const emit = options.emit !== false;
+    const remove = options.remove === true;
     session.killRequested = true;
-    if (!emit) session.suppressExitEvents = true;
+    if (remove) {
+      session.closed = true;
+      this.sessions.delete(session.id);
+    }
+    if (remove || !emit) session.suppressExitEvents = true;
     if (!session.endedAt && session.status === TERMINAL_STATUS.RUNNING) {
       try {
         if (session.pty && typeof session.pty.kill === 'function') session.pty.kill();
@@ -266,7 +277,10 @@ class TerminalService extends EventEmitter {
       if (!session.endedAt) this.handleExit(session, { exitCode: null, signal: 'SIGTERM' });
     }
     disposeSubscriptions(session);
-    if (options.remove) this.sessions.delete(session.id);
+    if (remove) {
+      this.sessions.delete(session.id);
+      if (emit) this.emitClosed(session);
+    }
   }
 
   findSession(sessionId) {
@@ -332,6 +346,7 @@ function publicSession(session) {
     exitCode: session.exitCode,
     cols: session.cols,
     rows: session.rows,
+    closed: Boolean(session.closed),
     profile: {
       id: session.profile.id,
       name: session.profile.name,

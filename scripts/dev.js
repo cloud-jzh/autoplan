@@ -3,21 +3,29 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 
 const root = path.join(__dirname, '..');
+const dependencyRoot = dependencyRootFor(root);
 const isWindows = process.platform === 'win32';
 const rendererUrl = process.env.ELECTRON_RENDERER_URL || 'http://127.0.0.1:5173';
 const children = new Set();
 let shuttingDown = false;
 let electronProcess = null;
 
+function dependencyRootFor(projectRoot) {
+  if (process.env.AUTOPLAN_NODE_MODULES) {
+    return process.env.AUTOPLAN_NODE_MODULES;
+  }
+  return path.join(projectRoot, 'node_modules');
+}
+
 function bin(name) {
-  return path.join(root, 'node_modules', '.bin', `${name}${isWindows ? '.cmd' : ''}`);
+  return path.join(dependencyRoot, '.bin', `${name}${isWindows ? '.cmd' : ''}`);
 }
 
 function spawnChild(command, args, options = {}) {
   const child = spawn(isWindows ? 'cmd.exe' : command, isWindows ? ['/d', '/c', 'call', command, ...args] : args, {
     cwd: root,
     stdio: 'inherit',
-    env: { ...process.env, ...options.env },
+    env: { ...process.env, NODE_PATH: dependencyRoot, ...options.env },
   });
 
   children.add(child);

@@ -6,6 +6,7 @@ const path = require('node:path');
 
 const { AppDatabase, nowIso } = require('./database');
 const { LoopService } = require('./loopService');
+const scriptHooks = require('./loop/scriptHooks');
 
 describe('LoopService.retryIntakePlanGeneration', () => {
   it('清理需求失败状态、保存非 Codex CLI 覆盖并触发一次生成调度', async () => {
@@ -270,6 +271,102 @@ describe('P010 LoopService lightweight runtime patch payload', () => {
   });
 });
 
+describe('LoopService scheduler lifecycle', () => {
+  it('startScheduler 创建单个全局调度器，stopScheduler 幂等清理', async () => {
+    const fixture = await createRetryFixture('scheduler-lifecycle');
+    try {
+      assert.equal(fixture.loop.scheduleTimer, null);
+
+      fixture.loop.startScheduler();
+      const timer = fixture.loop.scheduleTimer;
+      assert.ok(timer, 'startScheduler 应创建定时器句柄');
+
+      fixture.loop.startScheduler();
+      assert.equal(fixture.loop.scheduleTimer, timer, '重复 startScheduler 不应创建第二个定时器');
+
+      fixture.loop.stopScheduler();
+      assert.equal(fixture.loop.scheduleTimer, null, 'stopScheduler 应清理定时器句柄');
+
+      fixture.loop.stopScheduler();
+      assert.equal(fixture.loop.scheduleTimer, null, '重复 stopScheduler 应保持空状态');
+    } finally {
+      fixture.loop.stopScheduler();
+      fixture.cleanup();
+    }
+  });
+});
+
+describe('LoopService.runScheduledScripts', () => {
+  it('执行到期脚本，跳过禁用、未到期、同分钟已运行脚本，并隔离失败与非法 cron', async () => {
+    const fixture = await createRetryFixture('scheduled-scripts');
+    const originalRunScriptOnce = scriptHooks.runScriptOnce;
+    const originalRecordRunFailure = scriptHooks.recordRunFailure;
+    const runCalls = [];
+    const failureCalls = [];
+
+    scriptHooks.runScriptOnce = async (_service, script, stage, context) => {
+      runCalls.push({
+        id: script.id,
+        name: script.name,
+        stage,
+        trigger: context.trigger,
+        workspace: context.workspace,
+      });
+      if (script.name === 'due failure') throw new Error('scheduled failure');
+      return { scriptId: script.id, exitCode: 0, durationMs: 0, status: 'ok', log: '' };
+    };
+    scriptHooks.recordRunFailure = (_service, script, stage, context, error) => {
+      failureCalls.push({
+        id: script.id,
+        stage,
+        trigger: context.trigger,
+        error: error?.message || String(error),
+      });
+      return { scriptId: script.id, exitCode: -1, durationMs: 0, status: 'bad', log: '' };
+    };
+
+    try {
+      const now = new Date();
+      const nextMonth = ((now.getMonth() + 1) % 12) + 1;
+      const dueOk = insertScript(fixture, { name: 'due ok', hookStage: 'task:after' });
+      const dueFailure = insertScript(fixture, { name: 'due failure', hookStage: 'plan:after' });
+      const dueAfterFailure = insertScript(fixture, { name: 'due after failure' });
+      const disabled = insertScript(fixture, { name: 'disabled', enabled: 0 });
+      const notDue = insertScript(fixture, { name: 'not due', scheduleCron: `* * * ${nextMonth} *` });
+      const alreadyRan = insertScript(fixture, {
+        name: 'already ran',
+        lastRunAt: sameMinuteIso(now),
+      });
+      const invalidCron = insertScript(fixture, { name: 'invalid cron', scheduleCron: 'bad cron' });
+      const emptyCron = insertScript(fixture, { name: 'empty cron', scheduleCron: '' });
+
+      await fixture.loop.runScheduledScripts();
+
+      assert.deepEqual(
+        runCalls.map((call) => call.id).sort((a, b) => a - b),
+        [dueOk, dueFailure, dueAfterFailure].sort((a, b) => a - b),
+      );
+      assert.equal(runCalls.every((call) => call.stage === 'schedule'), true, '定时脚本应固定使用 schedule 阶段');
+      assert.equal(runCalls.every((call) => call.trigger === 'schedule'), true);
+      assert.equal(runCalls.every((call) => call.workspace === fixture.workspace), true);
+      assert.deepEqual(failureCalls.map((call) => call.id), [dueFailure]);
+      assert.equal(failureCalls[0].error, 'scheduled failure');
+
+      for (const skippedId of [disabled, notDue, alreadyRan, invalidCron, emptyCron]) {
+        assert.equal(runCalls.some((call) => call.id === skippedId), false, `脚本 ${skippedId} 不应被执行`);
+      }
+
+      assertBadScheduleCron(fixture, invalidCron, /cron 表达式格式无效/);
+      assertBadScheduleCron(fixture, emptyCron, /不能为空/);
+      assert.equal(eventCount(fixture, 'script.schedule.error'), 2, '空 cron 和非法 cron 都应写入可见事件');
+    } finally {
+      scriptHooks.runScriptOnce = originalRunScriptOnce;
+      scriptHooks.recordRunFailure = originalRecordRunFailure;
+      fixture.cleanup();
+    }
+  });
+});
+
 async function createRetryFixture(name) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `autoplan-loop-retry-${name}-`));
   const workspace = path.join(tempRoot, 'workspace');
@@ -289,6 +386,48 @@ async function createRetryFixture(name) {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     },
   };
+}
+
+function insertScript(fixture, overrides = {}) {
+  const timestamp = nowIso();
+  return fixture.db.insert(
+    `INSERT INTO scripts
+       (project_id, name, runtime, body, trigger_mode, hook_stage, schedule_cron, enabled,
+        timeout_seconds, context_inject, sort_order, source_type, last_run_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      fixture.projectId,
+      overrides.name || 'scheduled script',
+      overrides.runtime || 'node',
+      overrides.body || 'console.log("ok")',
+      overrides.triggerMode || 'schedule',
+      overrides.hookStage ?? null,
+      Object.prototype.hasOwnProperty.call(overrides, 'scheduleCron') ? overrides.scheduleCron : '* * * * *',
+      overrides.enabled ?? 1,
+      overrides.timeoutSeconds || 60,
+      overrides.contextInject || 'none',
+      overrides.sortOrder || 0,
+      overrides.sourceType || 'inline',
+      overrides.lastRunAt || null,
+      timestamp,
+      timestamp,
+    ],
+  );
+}
+
+function sameMinuteIso(date) {
+  const value = date instanceof Date ? new Date(date) : new Date();
+  value.setSeconds(1, 0);
+  return value.toISOString();
+}
+
+function assertBadScheduleCron(fixture, scriptId, messagePattern) {
+  const row = fixture.db.get('SELECT * FROM scripts WHERE id = ?', [scriptId]);
+  assert.equal(row.last_status, 'bad');
+  assert.equal(row.last_exit_code, -1);
+  assert.equal(row.last_duration_ms, 0);
+  assert.match(row.last_log, messagePattern);
+  assert.ok(row.last_run_at, '非法定时表达式应更新 last_run_at 用于同分钟去重');
 }
 
 function stubRunOnce(loop) {

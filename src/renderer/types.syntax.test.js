@@ -27,4 +27,31 @@ describe('renderer types syntax', () => {
       diagnostics.map((diagnostic) => formatParseDiagnostic(diagnostic, sourceFile)).join('\n'),
     );
   });
+
+  it('keeps AiThinkingDepth union aligned with OpenAI xhigh support', () => {
+    const sourceText = readFileSync(typesPath, 'utf8');
+
+    assert.match(
+      sourceText,
+      /export type AiThinkingDepth = 'low' \| 'medium' \| 'high' \| 'xhigh';/,
+    );
+  });
+
+  it('keeps update installer download and opening contracts exposed', () => {
+    const sourceText = readFileSync(typesPath, 'utf8');
+
+    assert.match(
+      sourceText,
+      /export interface UpdateInstallerAsset\s*{[\s\S]*name: string;[\s\S]*downloadUrl: string;[\s\S]*}/,
+    );
+    assert.match(
+      sourceText,
+      /export type UpdateDownloadPhase = 'idle' \| 'unavailable' \| 'skipped' \| 'pending' \| 'downloading' \| 'downloaded' \| 'failed';/,
+    );
+    assert.match(sourceText, /downloadPhase\?: UpdateDownloadPhase;/);
+    assert.match(sourceText, /localInstallerPath\?: string;/);
+    assert.match(sourceText, /downloadedInstallerPath\?: string;/);
+    assert.match(sourceText, /export interface UpdateInstallerOpenResult\s*{[\s\S]*ok: boolean;[\s\S]*filePath\?: string;[\s\S]*}/);
+    assert.match(sourceText, /openUpdateInstaller: \(\) => Promise<UpdateInstallerOpenResult>;/);
+  });
 });

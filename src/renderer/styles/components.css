@@ -78,6 +78,14 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .seg-note { color: var(--text-3); font-size: 11px; font-weight: 500; }
 .scope-segmented .seg-opt { flex-direction: column; align-items: flex-start; white-space: normal; }
 .effort-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; }
+.claude-custom-config { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; padding: 12px 14px; border: 1px dashed var(--line); border-radius: var(--r-md); background: var(--bg-soft); }
+.claude-custom-config-head { display: flex; flex-direction: column; gap: 4px; }
+.claude-custom-config-head .field-label { font-size: 13px; font-weight: 800; color: var(--text-1); }
+.claude-custom-config .field { margin: 0; }
+.claude-custom-config .field-hint { display: block; margin-top: 4px; color: var(--text-3); font-size: 11.5px; line-height: 1.5; }
+/* Claude CLI 多配置下拉选择（需求 #93）：复用 field-select 基础样式，轻微加重指示当前选择 */
+.claude-config-select .field-select { font-weight: 600; }
+.claude-config-select .field-hint { color: var(--text-3); }
 .effort-opt { position: relative; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elevated); text-align: left; cursor: pointer; transition: border-color 0.14s, box-shadow 0.14s, background 0.14s; }
 .effort-opt:hover { border-color: var(--brand-border); background: var(--bg-soft); }
 .effort-opt.active { border-color: var(--brand-500); background: var(--brand-50); box-shadow: var(--focus-ring); }
@@ -108,6 +116,17 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .mcp-tool-markdown table { font-size: 12px; }
 .inline-banner { display: flex; gap: 10px; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--bg-soft); color: var(--text-2); font-size: 12px; line-height: 1.55; }
 .inline-banner.info { border-color: var(--info-border); background: var(--info-bg); }
+.update-notice { align-items: center; justify-content: space-between; gap: 12px 16px; }
+.update-notice__main { display: grid; flex: 1 1 320px; gap: 5px; min-width: 0; }
+.update-notice__title, .update-notice__meta { min-width: 0; overflow-wrap: anywhere; }
+.update-notice__title { color: var(--text-1); font-weight: 650; }
+.update-notice__meta { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; color: var(--text-3); }
+.update-notice__meta .mono { max-width: min(100%, 320px); overflow: hidden; font-family: var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.update-notice__actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 0 auto; flex-wrap: wrap; }
+.update-notice__progress { width: min(360px, 100%); height: 5px; overflow: hidden; border-radius: 999px; background: var(--line); }
+.update-notice__progress > span { display: block; height: 100%; border-radius: inherit; background: var(--info); transition: width 0.25s; }
+.update-notice--downloaded { border-color: var(--success-border); background: var(--success-bg); }
+.update-notice--failed, .update-notice--unavailable { border-color: var(--warning-border); background: var(--warning-bg); }
 .dim { color: var(--text-4); }
 
 @media (max-width: 760px) {
@@ -121,6 +140,9 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
   .settings-footer { align-items: stretch; flex-direction: column; }
   .settings-footer .spacer { width: 100%; margin-left: 0; }
   .settings-footer .btn { flex: 1 1 auto; }
+  .update-notice { align-items: stretch; flex-direction: column; }
+  .update-notice__actions { width: 100%; }
+  .update-notice__actions .btn { flex: 1 1 150px; }
   .task-plan-group-head { align-items: flex-start; flex-direction: column; }
   .task-plan-group-meta { width: 100%; max-width: 100%; justify-content: flex-start; flex-wrap: wrap; }
   .task-top { align-items: flex-start; flex-wrap: wrap; }
@@ -193,7 +215,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .plain-text { line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
 .plan-card-list { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
 .plan-card {
-  position: relative; display: grid; gap: 0; min-width: 0; overflow: visible; padding: 13px 56px 13px 15px;
+  position: relative; display: grid; gap: 0; min-width: 0; overflow: visible; padding: 13px 15px;
   border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--bg-elevated);
   transition: border-color 0.14s, background 0.14s, box-shadow 0.14s;
 }
@@ -237,14 +259,24 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .meta-dot { flex: 0 0 auto; width: 3px; height: 3px; border-radius: 50%; background: var(--text-4); }
 .cli-tag { display: inline-flex; align-items: center; gap: 4px; min-width: 0; color: var(--text-2); font-size: 11px; font-weight: 600; }
 .item-title-right .cli-tag { text-transform: none; letter-spacing: 0; white-space: nowrap; flex: 0 0 auto; }
-.plan-actions { position: relative; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
-.plan-primary-actions, .plan-secondary-actions { display: inline-flex; align-items: center; gap: 4px; flex: 0 1 auto; flex-wrap: wrap; min-width: 0; }
+.plan-cli-switch { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.cli-switch-field { display: flex; align-items: center; gap: 8px; }
+.cli-switch-label { color: var(--text-3); font-size: 11px; white-space: nowrap; }
+.cli-switch-select { min-width: 120px; }
+.plan-resume-link { display: inline-flex; align-items: center; gap: 4px; color: var(--brand); }
+.plan-completed-actions { padding-top: 6px; border-top: 1px solid var(--line-soft); }
+.plan-append-body { padding: 0 2px; }
+.plan-append-target { margin-top: 10px; padding: 8px 12px; background: var(--bg-soft); border-radius: 6px; font-size: 13px; word-break: break-all; }
+.plan-append-body .field { margin-top: 12px; }
+.plan-actions { position: relative; display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; min-width: 0; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+.plan-action-main { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; flex-wrap: wrap; min-width: 0; }
+.plan-primary-actions, .plan-secondary-actions { display: inline-flex; align-items: center; gap: 4px; flex: 0 1 auto; flex-wrap: wrap; min-width: 0; max-width: 100%; }
 .plan-secondary-actions .btn-link { padding: 3px 5px; }
 .plan-select-button.active { color: var(--brand-700); text-decoration: underline; }
-.plan-validation { flex: 0 0 auto; margin-left: 0; color: var(--text-3); font-size: 11px; white-space: nowrap; }
+.plan-validation { flex: 0 0 auto; margin-left: 0; color: var(--text-3); font-size: 11px; line-height: 1.4; white-space: nowrap; }
 .plan-validation.passed { color: var(--success); }
 .plan-validation.pending { color: var(--text-3); }
-.plan-action-menu-wrap { position: absolute; right: 14px; bottom: 12px; display: inline-flex; flex: 0 0 auto; }
+.plan-action-menu-wrap { position: relative; display: inline-flex; align-items: center; justify-content: flex-end; flex: 0 0 auto; align-self: flex-end; margin-left: auto; }
 .plan-action-menu-button {
   display: grid; place-items: center; width: 34px; height: 34px; padding: 0;
   border: 1px solid var(--line); border-radius: 999px; background: var(--bg-elevated);
@@ -255,7 +287,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 }
 .plan-action-menu-button:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .plan-action-menu {
-  right: 0; bottom: calc(100% + 8px); z-index: 80; min-width: 156px; max-width: min(220px, calc(100vw - 32px));
+  right: 0; top: calc(100% + 8px); z-index: 80; min-width: 156px; max-width: min(220px, calc(100vw - 32px));
   border-radius: 8px;
 }
 .plan-action-menu-item { justify-content: flex-start; min-height: 34px; }
@@ -266,10 +298,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .plan-list-error { margin: 10px 12px 0; }
 
 @media (max-width: 760px) {
-  .plan-card { padding-right: 56px; }
-  .plan-actions { align-items: flex-start; flex-direction: column; }
-  .plan-primary-actions, .plan-secondary-actions { width: 100%; }
-  .plan-action-menu-wrap { right: 12px; bottom: 12px; }
+  .plan-actions { align-items: flex-end; }
   .plan-action-menu { right: 0; left: auto; }
   .plan-validation { margin-left: 0; white-space: normal; }
 }
@@ -517,11 +546,22 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .inline-editor .field { margin-bottom: 0; }
 .inline-editor textarea { min-height: 140px; }
 
+/* 需求/反馈 Composer：底部直接选择计划生成 CLI。 */
+.composer.compact-composer .composer-cli-controls {
+  display: inline-flex; align-items: center; flex: 0 1 auto; flex-wrap: wrap; gap: 6px; min-width: 0; max-width: 100%;
+}
+.composer.compact-composer .composer-cli-controls .composer-icon-select { flex: 0 1 auto; }
+.composer.compact-composer .composer-cli-select { max-width: 156px; }
+.composer.compact-composer .composer-reasoning-select { max-width: 142px; }
+
 @media (max-width: 760px) {
   .intake-plan-phase-head { flex-direction: column; }
   .intake-plan-phase-side { width: 100%; justify-content: flex-start; }
   .intake-item .item-foot { align-items: flex-start; flex-direction: column; }
   .intake-item .item-foot .meta { margin-left: 0; }
+  .composer.compact-composer .composer-cli-controls { flex: 1 1 auto; }
+  .composer.compact-composer .composer-cli-select,
+  .composer.compact-composer .composer-reasoning-select { justify-content: flex-start; max-width: min(100%, 180px); }
 }
 
 @media (max-width: 520px) {
@@ -533,6 +573,9 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
   .intake-retry-field, .intake-retry-actions { width: 100%; min-width: 0; }
   .intake-retry-actions .btn { width: 100%; }
   .append-row { align-items: stretch; flex-direction: column; }
+  .composer.compact-composer .composer-cli-controls { width: 100%; flex: 1 1 100%; }
+  .composer.compact-composer .composer-cli-select,
+  .composer.compact-composer .composer-reasoning-select { width: 100%; max-width: 100%; }
 }
 .attachment-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
 .attachment-thumb, .attachment-file { display: grid; gap: 6px; width: 120px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); color: var(--text-1); }

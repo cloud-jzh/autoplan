@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';
-import { AUTOPLAN_RELEASES_URL, type AiConfig, type McpStatus } from '../../types';
+import { AUTOPLAN_RELEASES_URL, type AiConfig, type ClaudeCliConfigListItem, type McpStatus, type UpdateStatus } from '../../types';
 import { useTheme, type ThemeMode } from '../../hooks/useTheme';
 import { useUpdateStatus } from '../../hooks/useUpdateStatus';
 import { formatChinaDateTime } from '../../utils/time';
@@ -18,6 +18,7 @@ import {
   isBuiltinPlanGenerationStrategy,
   isCodexPlanBackendProvider,
   maskApiKeyUtil,
+  normalizeAgentCliProvider,
   normalizePlanBackendProvider,
   normalizeCodexReasoningEffort,
   normalizePlanExecutionStrategy,
@@ -32,11 +33,13 @@ import {
   planGenerationStrategyOptions,
   scopeFileOpenModeOptions,
   aiProviderOptions,
-  thinkingDepthOptions,
+  thinkingDepthOptionsForProvider,
   defaultBaseUrlForProvider,
   defaultModelForProvider,
   providerSupportsThinkingDepth,
   providerSupportsThinkingBudget,
+  resolveClaudeConfigSelection,
+  normalizeClaudeConfigIdValue,
   type ChatConfigFormState,
   type FileAccessFormState,
   type LoopFormState,
@@ -96,8 +99,16 @@ function aiThinkingLabel(config: AiConfig) {
   if (config.thinkingDepth === 'low') return '低思考';
   if (config.thinkingDepth === 'medium') return '中思考';
   if (config.thinkingDepth === 'high') return '高思考';
+  if (config.thinkingDepth === 'xhigh') return '超高思考';
   return null;
 }
+
+/** Claude CLI 配置新建/编辑草稿（需求 #93）：name 单独管理，余下三字段成对象。 */
+type ClaudeCliConfigDraftForm = {
+  baseUrl: string;
+  authToken: string;
+  model: string;
+};
 
 export function WorkspaceSettingsView({
   loopForm,
@@ -150,6 +161,15 @@ export function WorkspaceSettingsView({
   const [aiConfigName, setAiConfigName] = useState('');
   const [aiConfigSaving, setAiConfigSaving] = useState(false);
   const [aiConfigError, setAiConfigError] = useState<string | null>(null);
+
+  // Claude CLI 多配置列表（需求 #93）：供 PlanBackendConfigCard 下拉选择；订阅广播自动刷新。
+  const [claudeCliConfigs, setClaudeCliConfigs] = useState<ClaudeCliConfigListItem[]>([]);
+  // Claude CLI 配置管理面板（需求 #93）：新建/编辑/删除/设为默认。
+  const [editingClaudeConfigId, setEditingClaudeConfigId] = useState<number | null>(null);
+  const [claudeConfigName, setClaudeConfigName] = useState('');
+  const [claudeConfigForm, setClaudeConfigForm] = useState<ClaudeCliConfigDraftForm>({ baseUrl: '', authToken: '', model: '' });
+  const [claudeConfigSaving, setClaudeConfigSaving] = useState(false);
+  const [claudeConfigError, setClaudeConfigError] = useState<string | null>(null);
 
   // 文件访问范围（需求 #35）：全局配置，与项目无关
   const [fileAccessForm, setFileAccessForm] = useState<FileAccessFormState>(() => ({ ...defaultFileAccessSettings }));
@@ -227,11 +247,29 @@ export function WorkspaceSettingsView({
     }
   }, []);
 
+  const loadClaudeCliConfigs = useCallback(async () => {
+    try {
+      const list = await window.autoplan.claudeCliConfigList();
+      setClaudeCliConfigs(Array.isArray(list) ? list : []);
+    } catch {
+      /* 加载失败忽略 */
+    }
+  }, []);
+
   useEffect(() => {
     void loadChatConfig();
     void loadAiConfigs();
     void loadFileAccess();
-  }, [loadAiConfigs, loadChatConfig, loadFileAccess]);
+    void loadClaudeCliConfigs();
+  }, [loadAiConfigs, loadChatConfig, loadFileAccess, loadClaudeCliConfigs]);
+
+  // 订阅 Claude CLI 配置变更广播（增删改/设默认后自动刷新下拉选项与摘要）。
+  useEffect(() => {
+    const unsubscribe = window.autoplan.onClaudeCliConfigChanged(() => {
+      void loadClaudeCliConfigs();
+    });
+    return unsubscribe;
+  }, [loadClaudeCliConfigs]);
 
   const chatConfigDirty = !chatConfigFormsEqual(chatConfigForm, chatConfigSaved, hasExistingApiKey);
 
@@ -339,7 +377,121 @@ export function WorkspaceSettingsView({
     }
   }, [editingConfigId, cancelEditAiConfig, loadAiConfigs, loadChatConfig]);
 
+  /* ---------------- Claude CLI 配置管理（需求 #93）---------------- */
+
+  const startNewClaudeConfig = useCallback(() => {
+    setEditingClaudeConfigId(0);
+    setClaudeConfigName('');
+    setClaudeConfigForm({ baseUrl: '', authToken: '', model: '' });
+    setClaudeConfigError(null);
+  }, []);
+
+  const startEditClaudeConfig = useCallback((cfg: ClaudeCliConfigListItem) => {
+    setEditingClaudeConfigId(cfg.id);
+    setClaudeConfigName(cfg.name);
+    // authToken 永不回填明文：编辑时留空表示不改动，仅凭 hasAuthToken 显示脱敏占位。
+    setClaudeConfigForm({ baseUrl: cfg.baseUrl, authToken: '', model: cfg.model });
+    setClaudeConfigError(null);
+  }, []);
+
+  const cancelEditClaudeConfig = useCallback(() => {
+    setEditingClaudeConfigId(null);
+    setClaudeConfigName('');
+    setClaudeConfigForm({ baseUrl: '', authToken: '', model: '' });
+    setClaudeConfigError(null);
+  }, []);
+
+  const updateClaudeConfigForm = useCallback((patch: Partial<ClaudeCliConfigDraftForm>) => {
+    setClaudeConfigError(null);
+    setClaudeConfigForm((current) => ({ ...current, ...patch }));
+  }, []);
+
+  const saveClaudeConfig = useCallback(async () => {
+    const name = claudeConfigName.trim();
+    if (!name) {
+      setClaudeConfigError('配置名称不能为空');
+      return;
+    }
+    setClaudeConfigSaving(true);
+    setClaudeConfigError(null);
+    try {
+      const authToken = claudeConfigForm.authToken.trim();
+      const baseUrl = claudeConfigForm.baseUrl.trim();
+      const model = claudeConfigForm.model.trim();
+      if (editingClaudeConfigId && editingClaudeConfigId > 0) {
+        // 编辑：authToken 仅在填写新值时下发，留空保持原值。
+        await window.autoplan.claudeCliConfigUpdate({
+          configId: editingClaudeConfigId,
+          name,
+          baseUrl,
+          model,
+          ...(authToken ? { authToken } : {}),
+        });
+      } else {
+        await window.autoplan.claudeCliConfigCreate({ name, baseUrl, authToken, model });
+      }
+      cancelEditClaudeConfig();
+      await loadClaudeCliConfigs();
+    } catch (error) {
+      setClaudeConfigError(getErrorMessage(error, 'Claude 配置保存失败'));
+    } finally {
+      setClaudeConfigSaving(false);
+    }
+  }, [claudeConfigName, claudeConfigForm, editingClaudeConfigId, cancelEditClaudeConfig, loadClaudeCliConfigs]);
+
+  const setDefaultClaudeConfig = useCallback(async (id: number) => {
+    try {
+      await window.autoplan.claudeCliConfigSetDefault({ configId: id });
+      await loadClaudeCliConfigs();
+    } catch {
+      /* 设默认失败忽略 */
+    }
+  }, [loadClaudeCliConfigs]);
+
+  const deleteClaudeConfig = useCallback(async (id: number) => {
+    // 删除当前被本项目计划引用的配置时给出明确提示，并在删除后回退到默认/空。
+    const referenced = loopForm.planGenerationClaudeConfigId === id
+      || loopForm.planExecutionClaudeConfigId === id;
+    const message = referenced
+      ? '该配置正被当前项目的计划生成/执行引用，删除后将回退到默认配置或内联字段。确认删除？'
+      : '确认删除该 Claude CLI 配置？';
+    if (typeof window !== 'undefined' && !window.confirm(message)) return;
+    try {
+      await window.autoplan.claudeCliConfigDelete({ configId: id });
+      if (editingClaudeConfigId != null && editingClaudeConfigId === id) cancelEditClaudeConfig();
+      if (referenced) {
+        setLoopForm((current) => ({
+          ...current,
+          ...(current.planGenerationClaudeConfigId === id
+            ? {
+                planGenerationClaudeConfigId: 0,
+                planGenerationClaudeBaseUrl: '',
+                planGenerationClaudeModel: '',
+                planGenerationClaudeAuthToken: '',
+                planGenerationHasClaudeAuthToken: false,
+              }
+            : {}),
+          ...(current.planExecutionClaudeConfigId === id
+            ? {
+                planExecutionClaudeConfigId: 0,
+                planExecutionClaudeBaseUrl: '',
+                planExecutionClaudeModel: '',
+                planExecutionClaudeAuthToken: '',
+                planExecutionHasClaudeAuthToken: false,
+              }
+            : {}),
+        }));
+      }
+      await loadClaudeCliConfigs();
+    } catch {
+      /* 删除失败忽略 */
+    }
+  }, [loopForm, editingClaudeConfigId, cancelEditClaudeConfig, loadClaudeCliConfigs, setLoopForm]);
+
+  const isClaudeConfigEditing = editingClaudeConfigId !== null;
+
   const isAiConfigEditing = editingConfigId !== null;
+  const aiConfigThinkingDepthOptions = thinkingDepthOptionsForProvider(aiConfigForm.provider);
 
   const navMeta: Record<SettingsPane, { label: string; tone?: string }> = {
     loop: { label: running ? '运行中' : '已停止', tone: running ? 'ok' : '' },
@@ -440,8 +592,188 @@ export function WorkspaceSettingsView({
                 <p>分别配置计划生成与任务执行方案。生成可使用外部 CLI 或内置 LLM；执行阶段一仅支持外部 CLI。</p>
               </div>
 
-              <PlanBackendConfigCard kind="generation" loopForm={loopForm} setLoopForm={setLoopForm} />
-              <PlanBackendConfigCard kind="execution" loopForm={loopForm} setLoopForm={setLoopForm} />
+              <PlanBackendConfigCard kind="generation" loopForm={loopForm} setLoopForm={setLoopForm} claudeCliConfigs={claudeCliConfigs} />
+              <PlanBackendConfigCard kind="execution" loopForm={loopForm} setLoopForm={setLoopForm} claudeCliConfigs={claudeCliConfigs} />
+
+              {/* Claude CLI 配置管理（需求 #93）*/}
+              <div className="set-card ai-config-card">
+                <div className="set-card-head ai-config-card-head">
+                  <div className="ai-config-card-title">
+                    <h3>Claude CLI 配置</h3>
+                    <div className="set-card-hint">
+                      保存多条命名的 Claude 连接，供上方「已保存配置」下拉选用；设置一条默认配置后，未选时自动生效。
+                    </div>
+                  </div>
+                  {!isClaudeConfigEditing ? (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary ai-config-new-btn"
+                      onClick={startNewClaudeConfig}
+                    >
+                      <Icon name="plus" size={14} aria-hidden="true" />
+                      新建配置
+                    </button>
+                  ) : null}
+                </div>
+                <div className="set-card-body ai-config-card-body">
+                  {claudeCliConfigs.length === 0 && !isClaudeConfigEditing ? (
+                    <div className="ai-config-empty">
+                      <span>暂无 Claude CLI 配置，点击「新建配置」添加。</span>
+                    </div>
+                  ) : (
+                    <div className="ai-config-list">
+                      {claudeCliConfigs.map((cfg) => (
+                        <div
+                          key={cfg.id}
+                          className={`ai-config-item${editingClaudeConfigId === cfg.id ? ' editing' : ''}`}
+                        >
+                          <div className="ai-config-info">
+                            <div className="ai-config-title-row">
+                              <span className="ai-config-name" title={cfg.name}>{cfg.name}</span>
+                              {cfg.isDefault ? <span className="tag">默认</span> : null}
+                            </div>
+                            <div className="ai-config-meta">
+                              <span className="ai-config-model mono" title={cfg.baseUrl || undefined}>
+                                {cfg.baseUrl || '未设置 Base URL'}
+                              </span>
+                              <span className="meta-dot" aria-hidden="true" />
+                              <span className="mono" title={cfg.model || undefined}>{cfg.model || '未设置模型'}</span>
+                            </div>
+                          </div>
+                          <span className={`ai-config-key ${cfg.hasAuthToken ? 'ready' : 'missing'}`}>
+                            <Icon name="key" size={14} aria-hidden="true" />
+                            {cfg.hasAuthToken ? `密钥 ${cfg.maskedKey}` : '未设置密钥'}
+                          </span>
+                          <div className="ai-config-actions">
+                            {!cfg.isDefault ? (
+                              <button
+                                type="button"
+                                className="icon-btn"
+                                title="设为默认"
+                                aria-label={`将 ${cfg.name} 设为默认`}
+                                onClick={() => { void setDefaultClaudeConfig(cfg.id); }}
+                              >
+                                <Icon name="check" size={16} aria-hidden="true" />
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="icon-btn"
+                              title="编辑配置"
+                              aria-label={`编辑配置 ${cfg.name}`}
+                              onClick={() => startEditClaudeConfig(cfg)}
+                            >
+                              <Icon name="edit" size={16} aria-hidden="true" />
+                            </button>
+                            <button
+                              type="button"
+                              className="icon-btn danger"
+                              title="删除配置"
+                              aria-label={`删除配置 ${cfg.name}`}
+                              onClick={() => { void deleteClaudeConfig(cfg.id); }}
+                            >
+                              <Icon name="trash" size={16} aria-hidden="true" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Claude CLI 配置编辑/新建（需求 #93）*/}
+              <Modal
+                open={isClaudeConfigEditing}
+                onClose={cancelEditClaudeConfig}
+                title={editingClaudeConfigId && editingClaudeConfigId > 0 ? '编辑 Claude 配置' : '新建 Claude 配置'}
+                size="wide"
+                className="ai-config-modal"
+                bodyClassName="ai-config-modal-body"
+                footer={(
+                  <>
+                    <span className="dirty-note">
+                      {claudeConfigSaving ? '保存中…' : '填写完成后点击保存。'}
+                    </span>
+                    <div className="spacer">
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={cancelEditClaudeConfig}
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        disabled={!claudeConfigName.trim() || claudeConfigSaving}
+                        onClick={() => { void saveClaudeConfig(); }}
+                      >
+                        <Icon name="save" size={14} aria-hidden="true" />
+                        {claudeConfigSaving ? '保存中…' : '保存'}
+                      </button>
+                    </div>
+                  </>
+                )}
+              >
+                {claudeConfigError ? (
+                  <div className="ai-config-error" role="alert">
+                    {claudeConfigError}
+                  </div>
+                ) : null}
+                <label className="field">
+                  <span className="field-label">配置名称 <span className="req">*</span></span>
+                  <input
+                    className="field-input"
+                    value={claudeConfigName}
+                    onChange={(e) => {
+                      setClaudeConfigError(null);
+                      setClaudeConfigName(e.target.value);
+                    }}
+                    placeholder="如 Claude 官方、Claude 网关"
+                  />
+                </label>
+                <label className="field">
+                  <span className="field-label">Base URL</span>
+                  <input
+                    className="field-input mono"
+                    value={claudeConfigForm.baseUrl}
+                    onChange={(e) => updateClaudeConfigForm({ baseUrl: e.target.value })}
+                    placeholder="https://api.anthropic.com"
+                  />
+                  <span className="field-hint">Claude CLI 端点地址，留空则沿用本机 settings.json。</span>
+                </label>
+                <label className="field">
+                  <span className="field-label">Auth Token</span>
+                  <input
+                    className="field-input mono"
+                    type="password"
+                    value={claudeConfigForm.authToken}
+                    onChange={(e) => updateClaudeConfigForm({ authToken: e.target.value })}
+                    placeholder={
+                      editingClaudeConfigId && editingClaudeConfigId > 0
+                        ? '····（留空不改动）'
+                        : '留空则不配置'
+                    }
+                    autoComplete="off"
+                  />
+                  <span className="field-hint">
+                    {editingClaudeConfigId && editingClaudeConfigId > 0
+                      ? '明文不回填。留空保存表示不改动；输入新值会覆盖（以 ANTHROPIC_AUTH_TOKEN 注入）。'
+                      : '配置后会以 ANTHROPIC_AUTH_TOKEN 环境变量注入子进程。'}
+                  </span>
+                </label>
+                <label className="field">
+                  <span className="field-label">模型</span>
+                  <input
+                    className="field-input mono"
+                    value={claudeConfigForm.model}
+                    onChange={(e) => updateClaudeConfigForm({ model: e.target.value })}
+                    placeholder="claude-sonnet-4-6"
+                  />
+                  <span className="field-hint">以 ANTHROPIC_MODEL 注入；留空则不覆盖。</span>
+                </label>
+              </Modal>
 
               <SettingsActions running={running} onToggleRun={onToggleRun} />
             </section>
@@ -854,47 +1186,57 @@ export function WorkspaceSettingsView({
                       </div>
                     </label>
 
-                    <label className="field">
-                      <span className="field-label">Base URL</span>
-                      <input
-                        className="field-input mono"
-                        value={aiConfigForm.baseUrl}
-                        onChange={(e) => updateAiConfigForm({ baseUrl: e.target.value })}
-                        placeholder={defaultBaseUrlForProvider(aiConfigForm.provider)}
-                      />
-                      <span className="field-hint">API 端点地址，无需包含 /chat/completions 或 /messages 后缀。</span>
-                    </label>
+                    {aiConfigForm.provider !== 'codex' ? (
+                      <>
+                        <label className="field">
+                          <span className="field-label">Base URL</span>
+                          <input
+                            className="field-input mono"
+                            value={aiConfigForm.baseUrl}
+                            onChange={(e) => updateAiConfigForm({ baseUrl: e.target.value })}
+                            placeholder={defaultBaseUrlForProvider(aiConfigForm.provider)}
+                          />
+                          <span className="field-hint">API 端点地址，无需包含 /chat/completions 或 /messages 后缀。</span>
+                        </label>
 
-                    <label className="field">
-                      <span className="field-label">API Key</span>
-                      <input
-                        className="field-input mono"
-                        type="password"
-                        value={aiConfigForm.apiKey}
-                        onChange={(e) => updateAiConfigForm({ apiKey: e.target.value })}
-                        placeholder={
-                          editingConfigId && editingConfigId > 0
-                            ? '留空保持原密钥'
-                            : 'sk-…'
-                        }
-                      />
-                      <span className="field-hint">
-                        {editingConfigId && editingConfigId > 0
-                          ? '留空则保持原密钥不变。'
-                          : '支持 OpenAI / DeepSeek / Anthropic 等服务的 API Key。'}
-                      </span>
-                    </label>
+                        <label className="field">
+                          <span className="field-label">API Key</span>
+                          <input
+                            className="field-input mono"
+                            type="password"
+                            value={aiConfigForm.apiKey}
+                            onChange={(e) => updateAiConfigForm({ apiKey: e.target.value })}
+                            placeholder={
+                              editingConfigId && editingConfigId > 0
+                                ? '留空保持原密钥'
+                                : 'sk-…'
+                            }
+                          />
+                          <span className="field-hint">
+                            {editingConfigId && editingConfigId > 0
+                              ? '留空则保持原密钥不变。'
+                              : '支持 OpenAI / DeepSeek / Anthropic 等服务的 API Key。'}
+                          </span>
+                        </label>
 
-                    <label className="field">
-                      <span className="field-label">模型</span>
-                      <input
-                        className="field-input mono"
-                        value={aiConfigForm.model}
-                        onChange={(e) => updateAiConfigForm({ model: e.target.value })}
-                        placeholder={defaultModelForProvider(aiConfigForm.provider)}
-                      />
-                      <span className="field-hint">LLM 模型名称，按 provider 文档填写。</span>
-                    </label>
+                        <label className="field">
+                          <span className="field-label">模型</span>
+                          <input
+                            className="field-input mono"
+                            value={aiConfigForm.model}
+                            onChange={(e) => updateAiConfigForm({ model: e.target.value })}
+                            placeholder={defaultModelForProvider(aiConfigForm.provider)}
+                          />
+                          <span className="field-hint">LLM 模型名称，按 provider 文档填写。</span>
+                        </label>
+                      </>
+                    ) : (
+                      <div className="field">
+                        <span className="field-hint" style={{ marginTop: 4 }}>
+                          Codex 在本地工作区通过 <code>codex exec</code> 运行，无需配置 HTTP 端点、API 密钥与模型名称。
+                        </span>
+                      </div>
+                    )}
 
                     <label className="field">
                       <span className="field-label">温度 (Temperature)</span>
@@ -912,9 +1254,9 @@ export function WorkspaceSettingsView({
 
                     {providerSupportsThinkingDepth(aiConfigForm.provider) ? (
                       <div className="field">
-                        <span className="field-label">思考深度</span>
-                        <div className="segmented" role="radiogroup" aria-label="思考深度">
-                          {thinkingDepthOptions.map((option) => {
+                        <span className="field-label">{aiConfigForm.provider === 'codex' ? '推理深度' : '思考深度'}</span>
+                        <div className="segmented" role="radiogroup" aria-label={aiConfigForm.provider === 'codex' ? '推理深度' : '思考深度'}>
+                          {aiConfigThinkingDepthOptions.map((option) => {
                             const active = aiConfigForm.thinkingDepth === option.value;
                             return (
                               <button
@@ -1059,10 +1401,12 @@ function PlanBackendConfigCard({
   kind,
   loopForm,
   setLoopForm,
+  claudeCliConfigs,
 }: {
   kind: 'generation' | 'execution';
   loopForm: LoopFormState;
   setLoopForm: Dispatch<SetStateAction<LoopFormState>>;
+  claudeCliConfigs: ClaudeCliConfigListItem[];
 }) {
   const isGeneration = kind === 'generation';
   const strategy = isGeneration ? loopForm.planGenerationStrategy : loopForm.planExecutionStrategy;
@@ -1072,10 +1416,66 @@ function PlanBackendConfigCard({
   const reasoning = isGeneration
     ? loopForm.planGenerationCodexReasoningEffort
     : loopForm.planExecutionCodexReasoningEffort;
+  // Claude 自定义连接字段：仅在外部 CLI + claude provider 下显示。
+  const claudeBaseUrl = isGeneration ? loopForm.planGenerationClaudeBaseUrl : loopForm.planExecutionClaudeBaseUrl;
+  const claudeAuthToken = isGeneration ? loopForm.planGenerationClaudeAuthToken : loopForm.planExecutionClaudeAuthToken;
+  const claudeModel = isGeneration ? loopForm.planGenerationClaudeModel : loopForm.planExecutionClaudeModel;
+  const hasClaudeAuthToken = isGeneration
+    ? loopForm.planGenerationHasClaudeAuthToken
+    : loopForm.planExecutionHasClaudeAuthToken;
+  const claudeConfigId = normalizeClaudeConfigIdValue(
+    isGeneration ? loopForm.planGenerationClaudeConfigId : loopForm.planExecutionClaudeConfigId,
+  );
+
+  // 选择已保存配置：把该配置的 baseUrl/model 填入字段（authToken 永不回填明文，仅设 hasAuthToken 标志）；
+  // 选「无（默认）」时清空内联字段，configId=0 由后端按默认配置→内联字段回退。
+  const applyClaudeConfigSelection = (rawId: number) => {
+    const id = normalizeClaudeConfigIdValue(rawId);
+    const selection = resolveClaudeConfigSelection(claudeCliConfigs, id);
+    setLoopForm((current) => {
+      if (isGeneration) {
+        return selection
+          ? {
+              ...current,
+              planGenerationClaudeConfigId: id,
+              planGenerationClaudeBaseUrl: selection.baseUrl,
+              planGenerationClaudeModel: selection.model,
+              planGenerationClaudeAuthToken: '',
+              planGenerationHasClaudeAuthToken: selection.hasAuthToken,
+            }
+          : {
+              ...current,
+              planGenerationClaudeConfigId: 0,
+              planGenerationClaudeBaseUrl: '',
+              planGenerationClaudeModel: '',
+              planGenerationClaudeAuthToken: '',
+              planGenerationHasClaudeAuthToken: false,
+            };
+      }
+      return selection
+        ? {
+            ...current,
+            planExecutionClaudeConfigId: id,
+            planExecutionClaudeBaseUrl: selection.baseUrl,
+            planExecutionClaudeModel: selection.model,
+            planExecutionClaudeAuthToken: '',
+            planExecutionHasClaudeAuthToken: selection.hasAuthToken,
+          }
+        : {
+            ...current,
+            planExecutionClaudeConfigId: 0,
+            planExecutionClaudeBaseUrl: '',
+            planExecutionClaudeModel: '',
+            planExecutionClaudeAuthToken: '',
+            planExecutionHasClaudeAuthToken: false,
+          };
+    });
+  };
   const strategyOptions = isGeneration ? planGenerationStrategyOptions : planExecutionStrategyOptions;
   const isBuiltin = isGeneration ? isBuiltinPlanGenerationStrategy(strategy) : isBuiltinPlanExecutionStrategy(strategy);
   const providerOptions = planBackendProviderOptionsForStrategy(strategy);
   const isCodexProvider = isCodexPlanBackendProvider(provider);
+  const isClaudeProvider = !isBuiltin && normalizeAgentCliProvider(provider) === 'claude';
   const title = isGeneration ? '计划生成' : '计划执行';
   const hint = isGeneration
     ? '生成 Plan Markdown 或 PlanSpec，按需求/反馈可在 Composer 单次覆盖。'
@@ -1251,6 +1651,87 @@ function PlanBackendConfigCard({
           </div>
         ) : null}
 
+        {isClaudeProvider ? (
+          <div className="claude-custom-config">
+            <div className="claude-custom-config-head">
+              <span className="field-label">Claude 自定义连接 <span className="tag">可选</span></span>
+              <span className="field-hint">留空则沿用 claude CLI 本机 settings.json 配置；填写后会通过环境变量覆盖 settings.json。</span>
+            </div>
+            <label className="field claude-config-select">
+              <span className="field-label">已保存配置</span>
+              <select
+                className="field-select"
+                value={claudeConfigId}
+                onChange={(event) => applyClaudeConfigSelection(Number(event.target.value) || 0)}
+              >
+                <option value={0}>无（默认）</option>
+                {claudeCliConfigs.map((config) => (
+                  <option key={config.id} value={config.id}>
+                    {config.name}
+                    {config.isDefault ? ' · 默认' : ''}
+                    {config.hasAuthToken ? '' : ' · 无密钥'}
+                  </option>
+                ))}
+              </select>
+              <span className="field-hint">
+                选择已保存配置后自动填入其 Base URL / 模型（密钥仅显示已配置状态）；选「无（默认）」由后端按默认配置 → 内联字段回退。下方字段仍可临时覆盖。
+              </span>
+            </label>
+            <label className="field">
+              <span className="field-label">Base URL</span>
+              <input
+                className="field-input mono"
+                value={claudeBaseUrl}
+                onChange={(event) =>
+                  setLoopForm((current) => (
+                    isGeneration
+                      ? { ...current, planGenerationClaudeBaseUrl: event.target.value }
+                      : { ...current, planExecutionClaudeBaseUrl: event.target.value }
+                  ))
+                }
+                placeholder="https://api.anthropic.com"
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">API Key</span>
+              <input
+                className="field-input mono"
+                type="password"
+                value={claudeAuthToken}
+                onChange={(event) =>
+                  setLoopForm((current) => (
+                    isGeneration
+                      ? { ...current, planGenerationClaudeAuthToken: event.target.value }
+                      : { ...current, planExecutionClaudeAuthToken: event.target.value }
+                  ))
+                }
+                placeholder={hasClaudeAuthToken ? '····（已配置，留空不改动）' : '留空使用本机 settings.json'}
+                autoComplete="off"
+              />
+              <span className="field-hint">
+                {hasClaudeAuthToken
+                  ? '已配置密钥（明文不回填）。留空保存表示不改动；输入新值会覆盖。'
+                  : '配置后会以 ANTHROPIC_AUTH_TOKEN 环境变量注入子进程。'}
+              </span>
+            </label>
+            <label className="field">
+              <span className="field-label">模型</span>
+              <input
+                className="field-input mono"
+                value={claudeModel}
+                onChange={(event) =>
+                  setLoopForm((current) => (
+                    isGeneration
+                      ? { ...current, planGenerationClaudeModel: event.target.value }
+                      : { ...current, planExecutionClaudeModel: event.target.value }
+                  ))
+                }
+                placeholder="claude-sonnet-4-5"
+              />
+            </label>
+          </div>
+        ) : null}
+
         {!isGeneration && isBuiltin ? (
           <div className="backend-warning" role="note">
             builtin-llm 执行阶段一仅允许保存配置；真正执行任务时后端会返回明确的不支持错误。
@@ -1273,8 +1754,58 @@ function nextModelForProvider(currentModel: string, currentProvider: string, nex
   return currentModel;
 }
 
+function updateDownloadLabel(status: UpdateStatus) {
+  const phase = status.downloadPhase || 'idle';
+  const progress = clampPercent(status.downloadProgress);
+  if (phase === 'pending') return '等待下载';
+  if (phase === 'downloading') return `下载中 ${progress}%`;
+  if (phase === 'downloaded') return '已下载';
+  if (phase === 'failed') return '下载失败';
+  if (phase === 'unavailable') return '无匹配安装包';
+  if (phase === 'skipped') return '已跳过';
+  return status.installerAssetAvailable ? '待下载' : '未就绪';
+}
+
+function updateDownloadMessage(status: UpdateStatus) {
+  const phase = status.downloadPhase || 'idle';
+  if (phase === 'pending') return '已匹配当前平台安装包，自动下载即将开始。';
+  if (phase === 'downloading') return '正在自动下载当前平台安装包。';
+  if (phase === 'downloaded') return '安装包已保存到本机，可直接打开。';
+  if (phase === 'failed') return status.downloadError || '自动下载失败。';
+  if (phase === 'unavailable') return '当前 Release 未提供匹配安装包。';
+  if (phase === 'skipped') return '该版本已被稍后提醒跳过。';
+  return status.installerAssetAvailable ? '已找到当前平台安装包。' : '尚未找到当前平台安装包。';
+}
+
+function updateDownloadTone(status: UpdateStatus) {
+  const phase = status.downloadPhase || 'idle';
+  if (phase === 'downloaded') return 'ok';
+  if (phase === 'failed' || phase === 'unavailable') return 'warn';
+  if (phase === 'downloading' || phase === 'pending') return 'info';
+  return '';
+}
+
+function clampPercent(value: unknown) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.max(0, Math.min(100, Math.trunc(number)));
+}
+
+function formatBytes(value: unknown) {
+  const bytes = Number(value || 0);
+  if (!Number.isFinite(bytes) || bytes <= 0) return '—';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let size = bytes;
+  let index = 0;
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024;
+    index += 1;
+  }
+  return `${size >= 10 || index === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[index]}`;
+}
+
 function AboutPane() {
-  const { status, check, checking } = useUpdateStatus();
+  const { status, check, checking, openInstaller, openingInstaller, installerOpenError } = useUpdateStatus();
   const latestLabel = status.latestVersion ? `v${status.latestVersion}` : '';
   const lastCheckedLabel = status.lastCheckedAt ? formatChinaDateTime(status.lastCheckedAt) : '尚未检查';
   const latestDisplay = status.stableUpdate
@@ -1282,12 +1813,17 @@ function AboutPane() {
     : latestLabel
       ? `${latestLabel}（已是最新）`
       : '暂无正式版信息';
+  const asset = status.installerAsset;
+  const downloadTone = updateDownloadTone(status);
+  const progress = clampPercent(status.downloadProgress);
+  const canOpenInstaller = status.downloadPhase === 'downloaded' && Boolean(status.localInstallerPath || status.downloadedInstallerPath);
+  const releaseUrl = status.htmlUrl || AUTOPLAN_RELEASES_URL;
 
   return (
     <section className="settings-pane active" aria-labelledby="settings-about-title">
       <div className="pane-head">
         <h2 id="settings-about-title"><span className="pane-ico" aria-hidden="true" />关于 / 更新</h2>
-        <p>查看当前版本与最新正式版本。仅检查与提醒，<b>不会自动下载安装</b>（避免与三端签名/公证冲突）。</p>
+        <p>查看当前版本与最新正式版本。发现可用更新后会自动下载当前平台安装包，仍不会自动安装。</p>
       </div>
 
       <div className="set-card">
@@ -1322,9 +1858,58 @@ function AboutPane() {
             </button>
             <span className="field-hint">默认每 {status.intervalMinutes || 360} 分钟检查一次，可在下方手动触发。</span>
           </label>
-          <div className="settings-footer settings-actions">
-            <span className="dirty-note">手动检查或前往 GitHub Releases 下载。</span>
+        </div>
+      </div>
+
+      <div className="set-card update-installer-card">
+        <div className="set-card-head">
+          <h3>安装包</h3>
+          <div className="set-card-hint">自动选择当前平台和架构的 Release asset</div>
+        </div>
+        <div className="set-card-body">
+          <div className="field readonly-field">
+            <span className="field-label">资产名称</span>
+            <span className="mono">{asset?.name || '—'}</span>
+          </div>
+          <div className="field readonly-field update-installer-meta">
+            <span className="field-label">资产信息</span>
+            <span>
+              {asset
+                ? `${asset.platform || 'unknown'} / ${asset.arch || 'unknown'} / ${asset.kind || 'installer'} / ${formatBytes(asset.size)}`
+                : status.installerAssetReason || '暂无可用安装包'}
+            </span>
+          </div>
+          <div className="field readonly-field">
+            <span className="field-label">下载状态</span>
+            <span className={`update-download-badge ${downloadTone}`}>{updateDownloadLabel(status)}</span>
+            <span className="field-hint">{updateDownloadMessage(status)}</span>
+            {status.downloadPhase === 'downloading' || status.downloadPhase === 'pending' ? (
+              <div className="update-download-progress" aria-label={`下载进度 ${progress}%`}>
+                <span style={{ width: `${progress}%` }} />
+              </div>
+            ) : null}
+            {installerOpenError ? <span className="field-hint danger-text">{installerOpenError}</span> : null}
+          </div>
+          <div className="field readonly-field">
+            <span className="field-label">本地文件</span>
+            <span className="mono">{status.localInstallerPath || status.downloadedInstallerPath || '—'}</span>
+          </div>
+          <div className="settings-footer settings-actions update-installer-actions">
+            <span className="dirty-note">下载失败或无匹配安装包时可从 GitHub Releases 手动下载。</span>
             <div className="spacer">
+              {canOpenInstaller ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  disabled={openingInstaller}
+                  onClick={() => {
+                    void openInstaller();
+                  }}
+                >
+                  <Icon name="open" size={14} aria-hidden="true" />
+                  {openingInstaller ? '打开中…' : '打开安装包'}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="btn btn-sm"
@@ -1333,15 +1918,17 @@ function AboutPane() {
                   void check();
                 }}
               >
+                <Icon name="refresh" size={14} aria-hidden="true" />
                 {checking ? '检查中…' : '立即检查'}
               </button>
               <button
                 type="button"
-                className="btn btn-sm btn-primary"
+                className={`btn btn-sm${canOpenInstaller ? '' : ' btn-primary'}`}
                 onClick={() => {
-                  void window.autoplan.openExternal(AUTOPLAN_RELEASES_URL);
+                  void window.autoplan.openExternal(releaseUrl);
                 }}
               >
+                <Icon name="open" size={14} aria-hidden="true" />
                 打开 GitHub Releases
               </button>
             </div>

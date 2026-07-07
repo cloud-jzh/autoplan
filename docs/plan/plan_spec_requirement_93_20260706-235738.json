@@ -1,0 +1,101 @@
+{
+  "title": "Claude CLI 模型配置支持多配置切换与默认选择",
+  "summary": "当前 Claude CLI 的自定义连接（baseUrl / authToken / model）仅作为 plan 生成与执行阶段的单一内联字段存储。需求 #93 要求将其升级为「多配置」：用户可保存多个命名的 Claude CLI 连接配置，通过下拉组件切换选用，并可指定一条默认配置。整体复用既有 ai_configs 多配置范式（全局表 + CRUD 服务 + IPC 广播 + 卡片管理 UI + 快照脱敏 + 默认回退解析）。后端在 provider=claude 时按「所选配置 ID → 默认配置 → 既有内联字段」优先级解析出 baseUrl/authToken/model 注入 buildClaudeEnv，保持对旧内联字段的向后兼容。",
+  "tasks": [
+    {
+      "title": "新增 claude_cli_configs 全局表、迁移与服务层（CRUD + 设为默认 + 脱敏解析）",
+      "scope": [
+        "src/database.js",
+        "src/chat/claudeCliConfigService.js",
+        "src/chat/claudeCliConfigService.test.js"
+      ],
+      "acceptance": [
+        "新增全局 claude_cli_configs 表（project_id IS NULL），列至少含 id / name / base_url / auth_token / model / is_default / created_at / updated_at，并在既有库上通过 ensureColumn 或等价迁移幂等建表。",
+        "提供 list / get / create / update / delete CRUD：name 必填且去空白，create/update 接受明文 auth_token 入库，list/get 输出对 auth_token 脱敏（hasAuthToken + maskedKey 末 4 位），与 aiConfigService 的 sanitize 约定一致。",
+        "提供 setDefault：同一时刻全局至多一条 is_default=1；设新默认时先把其余置 0 再置目标；删除默认配置后回退为首条或无默认。",
+        "提供 resolveDefault(db) 返回当前默认配置（无 is_default 时回退首条，再无则返回 null），供后端解析复用；返回对象含原始 auth_token（不脱敏）。",
+        "name 允许重名或对重名给出明确校验（二选一需在服务层统一，不依赖 UI）。"
+      ]
+    },
+    {
+      "title": "注册 claude-cli-config:* IPC、广播变更与 preload/渲染端类型声明",
+      "scope": [
+        "src/main.js",
+        "src/preload.js",
+        "src/renderer/types.ts"
+      ],
+      "acceptance": [
+        "main.js 注册 claude-cli-config:list / get / create / update / delete / set-default 六个 ipcMain.handle，复用数据库实例并经输入归一化后调用服务层。",
+        "create / update / delete / set-default 完成后通过 mainWindow.webContents.send 广播 claude-cli-config:changed 事件，携带变更来源与配置 id（参照 broadcastAiConfigChanged 范式）。",
+        "preload.js 暴露 claudeCliConfigList / Get / Create / Update / Delete / SetDefault 及 onClaudeCliConfigChanged（订阅 + 返回取消订阅），挂在 window.autoplan 下。",
+        "renderer/types.ts 增加 ClaudeCliConfig（明细，含脱敏标志）与 ClaudeCliConfigListItem 类型，并扩展 window.autoplan 的 IPC 通道类型声明，使渲染端调用类型安全。"
+      ]
+    },
+    {
+      "title": "后端解析与持久化：按配置 ID → 默认配置 → 内联字段回退填充 Claude 连接",
+      "scope": [
+        "src/loop/planBackendConfig.js",
+        "src/loop/planAgentCli.js",
+        "src/loopService.js",
+        "src/loop/snapshots.js",
+        "src/database.js"
+      ],
+      "acceptance": [
+        "plan 生成/执行配置流转中新增 claude_config_id 字段：planBackendConfig 的输入 key、effectivePlanGenerationConfig/effectivePlanExecutionConfig、planGeneration/ExecutionConfigFields、planExecutionEventMeta/flattenPlanExecutionSource、planAgentCliConfig 均透传 claudeConfigId，命名风格与既有 claudeBaseUrl 等字段一致。",
+        "database.js 通过 ensureColumn 为 project_states / requirements / feedback / plans（generation 与 execution 两套）新增 *_claude_config_id 整数列（NOT NULL DEFAULT 0 或 NULL，与既有列风格一致）。",
+        "loopService 持久化 claude_config_id 列；执行/生成阶段在 provider=claude 时按优先级解析连接：所选 claude_config_id 命中 → resolveDefault → 既有内联 claude 字段；解析出的 baseUrl/authToken/model 写入 activeOperation 并经 buildClaudeEnv 注入子进程环境变量。",
+        "snapshots.js 对 auth_token 维持脱敏并附加 *_has_claude_auth_token；新增 *_claude_config_id 透传进快照，不在脱敏名单内。",
+        "provider 非 claude（codex/opencode/oh-my-pi）或未选配置且无默认时，行为与现状完全一致（空 claudeEnv，沿用本机 settings.json）。"
+      ]
+    },
+    {
+      "title": "渲染端表单状态、配置下拉选择联动与载荷序列化",
+      "scope": [
+        "src/renderer/utils/workspaceForms.ts",
+        "src/renderer/types.ts"
+      ],
+      "acceptance": [
+        "LoopFormState 增加 planGenerationClaudeConfigId 与 planExecutionClaudeConfigId；loopFormFromProjectState 从快照的 *_claude_config_id 回填。",
+        "提供选择联动工具：给定配置列表与所选 id，把所选配置的 baseUrl/model 填入对应表单字段；auth_token 永不回填明文，仅依据配置 hasAuthToken 设置 hasClaudeAuthToken 标志。",
+        "loopConfigurePayloadFromForm 下发 plan{Generation,Execution}ClaudeConfigId；切到非 claude provider 或非外部 CLI 策略时清空为 0/null；同时保留既有 baseUrl/model/authToken 下发逻辑以兼容回退。",
+        "loopFormsEqual 比较两侧 claudeConfigId，避免脏检测误判。"
+      ]
+    },
+    {
+      "title": "设置面板 Claude 配置下拉切换 UI（PlanBackendConfigCard）",
+      "scope": [
+        "src/renderer/components/workspace/WorkspaceSettingsView.tsx",
+        "src/renderer/styles/components.css"
+      ],
+      "acceptance": [
+        "在 claude provider（isClaudeProvider）下的「Claude 自定义连接」区内，新增下拉组件（select）列出全部已保存配置 + 「无（默认）」选项，选中值绑定 loopForm 对应 claudeConfigId。",
+        "选择某配置后，区域内 baseUrl/model 展示为该配置取值（authToken 脱敏占位），用户仍可临时覆盖字段值；选「无（默认）」时回退默认配置或空。",
+        "订阅 onClaudeCliConfigChanged，配置增删改后下拉选项与摘要自动刷新，无需手动重开面板。",
+        "下拉组件样式与既有 segmented/select/field 风格一致（components.css 增量样式），不破坏既有 Claude 自定义连接区块布局。"
+      ]
+    },
+    {
+      "title": "Claude 配置管理面板（新建 / 编辑 / 删除 / 设为默认）",
+      "scope": [
+        "src/renderer/components/workspace/WorkspaceSettingsView.tsx",
+        "src/renderer/hooks/useWorkspaceController.ts"
+      ],
+      "acceptance": [
+        "设置面板新增「Claude CLI 配置」管理卡（沿用 ai-config-card 卡片列表 + 内联编辑范式），展示每条配置的 name、baseUrl、model、authToken 脱敏状态与「默认」标记。",
+        "支持新建/编辑：表单含 name / baseUrl / authToken / model，authToken 留空表示不改动（编辑时脱敏回显 hasAuthToken），保存经 preload 调用 create/update。",
+        "支持删除与「设为默认」（调用 set-default），删除当前被 plan 引用的配置时给出明确提示并回退到默认/空。",
+        "useWorkspaceController（或等价 hook）加载 claudeCliConfigList 并在收到 changed 广播时刷新，保证下拉与管理面板数据一致。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm test",
+    "criteria": [
+      "npm test 全量单测通过：覆盖新增 claudeCliConfigService（CRUD/设默认/脱敏/resolveDefault 回退）、planBackendConfig 的 claudeConfigId 透传、loopService 解析优先级与持久化、snapshots 脱敏、workspaceForms 的选择联动与载荷序列化。",
+      "端到端场景：claude provider 下可创建多条 Claude 配置，下拉切换后表单字段与最终注入 buildClaudeEnv 的 baseUrl/authToken/model 一致；设为默认的配置在被选「无（默认）」时自动生效。",
+      "回归：codex / opencode / oh-my-pi / builtin-llm 各路径不受 claude_config_id 引入影响；既有未选配置且无默认时 Claude 内联字段回退行为与现状一致。",
+      "安全：auth_token 在列表、单条、快照中始终脱敏，编辑回填不出现明文；明文仅存在于数据库与解析注入子进程的瞬时内存中。",
+      "类型与构建：tsc --noEmit（npm run build 前置步骤）无新增类型错误，window.autoplan 新通道与 ClaudeCliConfig 类型可用。"
+    ]
+  }
+}

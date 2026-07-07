@@ -27,6 +27,14 @@ export interface PlanGenerationSnapshotFields {
   plan_generation_command?: string | null;
   plan_generation_model?: string | null;
   plan_generation_codex_reasoning_effort?: CodexReasoningEffort | null;
+  // Claude CLI 自定义连接字段（注入为 ANTHROPIC_BASE_URL/AUTH_TOKEN/MODEL 环境变量）。
+  // auth_token 在 snapshot 中已脱敏（····1234），has_auth_token 为布尔位指示是否已配置密钥。
+  plan_generation_claude_base_url?: string | null;
+  plan_generation_claude_auth_token?: string | null;
+  plan_generation_claude_model?: string | null;
+  plan_generation_has_claude_auth_token?: boolean | null;
+  // Claude CLI 多配置（需求 #93）：选中的 claude_cli_configs.id；0/未选时回退默认配置或内联字段。
+  plan_generation_claude_config_id?: number | null;
 }
 
 export interface PlanExecutionSnapshotFields {
@@ -35,6 +43,11 @@ export interface PlanExecutionSnapshotFields {
   plan_execution_command?: string | null;
   plan_execution_model?: string | null;
   plan_execution_codex_reasoning_effort?: CodexReasoningEffort | null;
+  plan_execution_claude_base_url?: string | null;
+  plan_execution_claude_auth_token?: string | null;
+  plan_execution_claude_model?: string | null;
+  plan_execution_has_claude_auth_token?: boolean | null;
+  plan_execution_claude_config_id?: number | null;
 }
 
 export interface PlanGenerationInputFields {
@@ -43,6 +56,10 @@ export interface PlanGenerationInputFields {
   planGenerationCommand?: string | null;
   planGenerationModel?: string | null;
   planGenerationCodexReasoningEffort?: CodexReasoningEffort | null;
+  planGenerationClaudeBaseUrl?: string | null;
+  planGenerationClaudeAuthToken?: string | null;
+  planGenerationClaudeModel?: string | null;
+  planGenerationClaudeConfigId?: number | null;
 }
 
 export interface PlanExecutionInputFields {
@@ -51,6 +68,10 @@ export interface PlanExecutionInputFields {
   planExecutionCommand?: string | null;
   planExecutionModel?: string | null;
   planExecutionCodexReasoningEffort?: CodexReasoningEffort | null;
+  planExecutionClaudeBaseUrl?: string | null;
+  planExecutionClaudeAuthToken?: string | null;
+  planExecutionClaudeModel?: string | null;
+  planExecutionClaudeConfigId?: number | null;
 }
 
 export const PLAN_STATUS = {
@@ -349,6 +370,7 @@ export interface Plan extends AgentCliSessionInfo, PlanGenerationSnapshotFields,
   status: PlanStatus;
   sort_order: number;
   is_draft: boolean;
+  plan_generation_duration_ms: number;
   total_tasks: number;
   completed_tasks: number;
   validation_passed: number;
@@ -1234,6 +1256,15 @@ export interface PlanIdInput extends ProjectIdInput {
   planId: number;
 }
 
+export interface UpdatePlanExecutionConfigInput extends PlanIdInput {
+  provider?: string;
+  command?: string;
+}
+
+export interface AppendPlanTaskInput extends PlanIdInput {
+  title: string;
+}
+
 export interface ReadPlanInput extends PlanIdInput {}
 
 export interface IntakeActionInput extends ProjectIdInput {
@@ -1266,6 +1297,18 @@ export interface UpdateFeedbackInput extends UpdateRequirementInput { requiremen
 export const AUTOPLAN_RELEASES_URL = 'https://github.com/lyming99/autoplan/releases';
 
 /** 最新正式版 Release 解析结果（主进程 updateChecker.parseLatestRelease 产物） */
+export interface UpdateInstallerAsset {
+  name: string;
+  downloadUrl: string;
+  size: number;
+  platform: string;
+  arch: string;
+  kind: string;
+  contentType?: string;
+}
+
+export type UpdateDownloadPhase = 'idle' | 'unavailable' | 'skipped' | 'pending' | 'downloading' | 'downloaded' | 'failed';
+
 export interface UpdateLatestRelease {
   version: string;
   name: string;
@@ -1276,6 +1319,11 @@ export interface UpdateLatestRelease {
   isPrerelease: boolean;
   isDraft: boolean;
   isStable: boolean;
+  isVersionValid?: boolean;
+  installerAsset?: UpdateInstallerAsset | null;
+  installerAssetAvailable?: boolean;
+  installerAssetStatus?: string;
+  installerAssetReason?: string;
 }
 
 /** 更新检查状态快照（主进程 updateChecker.status() 产物） */
@@ -1289,8 +1337,32 @@ export interface UpdateStatus {
   dismissedVersion: string;
   hasUpdate: boolean;
   stableUpdate: boolean;
+  installerAsset?: UpdateInstallerAsset | null;
+  installerAssetAvailable?: boolean;
+  installerAssetStatus?: string;
+  installerAssetReason?: string;
+  downloadPhase?: UpdateDownloadPhase;
+  downloadProgress?: number;
+  downloadError?: string;
+  downloadReason?: string;
+  localInstallerPath?: string;
+  downloadedInstallerPath?: string;
+  downloadStartedAt?: string;
+  downloadCompletedAt?: string;
+  downloadBytesReceived?: number;
+  downloadTotalBytes?: number;
+  downloadAssetKey?: string;
+  downloadVersion?: string;
   autoCheck: boolean;
   intervalMinutes: number;
+}
+
+export interface UpdateInstallerOpenResult {
+  ok: boolean;
+  error: string | null;
+  filePath?: string;
+  mode?: 'open' | 'showItemInFolder';
+  openError?: string;
 }
 
 /** updates:check 结果：在 UpdateStatus 基础上附带本次抓取的 ok/error/release */
@@ -1302,22 +1374,41 @@ export interface UpdateCheckResult extends UpdateStatus {
 
 /** Chat 对话模块（需求 #26）*/
 
+export type AiThinkingDepth = 'low' | 'medium' | 'high' | 'xhigh';
+
 /** AI 配置（需求 #28）*/
 export interface AiConfig {
   id: number;
   projectId: number | null;
   name: string;
-  provider: 'openai' | 'deepseek' | 'anthropic' | string;
+  provider: 'openai' | 'deepseek' | 'anthropic' | 'codex' | string;
   baseUrl: string;
   hasApiKey: boolean;
   maskedKey: string;
   model: string;
   temperature: string;
-  thinkingDepth: 'low' | 'medium' | 'high' | null;
+  thinkingDepth: AiThinkingDepth | null;
   thinkingBudgetTokens: number | null;
   createdAt: string;
   updatedAt: string;
 }
+
+/** Claude CLI 连接配置明细（需求 #93）：auth_token 始终脱敏，仅暴露 hasAuthToken + maskedKey。 */
+export interface ClaudeCliConfig {
+  id: number;
+  projectId: number | null;
+  name: string;
+  baseUrl: string;
+  hasAuthToken: boolean;
+  maskedKey: string;
+  model: string;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Claude CLI 配置列表项（需求 #93），与明细同构。 */
+export type ClaudeCliConfigListItem = ClaudeCliConfig;
 
 /** 对话（需求 #28）*/
 export interface Conversation {
@@ -1342,13 +1433,13 @@ export interface ChatConfig {
   compatibilityOnly?: boolean;
   aiConfigId?: number | null;
   name?: string;
-  provider: 'openai' | 'deepseek' | 'anthropic' | string;
+  provider: 'openai' | 'deepseek' | 'anthropic' | 'codex' | string;
   baseUrl: string;
   hasApiKey: boolean;
   maskedKey: string;
   model: string;
   temperature: string;
-  thinkingDepth?: string | null;
+  thinkingDepth?: AiThinkingDepth | null;
   thinkingBudgetTokens?: number | null;
 }
 
@@ -1477,7 +1568,7 @@ export interface ChatSaveConfigInput {
   apiKey?: string;
   model?: string;
   temperature?: string;
-  thinkingDepth?: 'low' | 'medium' | 'high' | null;
+  thinkingDepth?: AiThinkingDepth | null;
   thinkingBudgetTokens?: number | null;
 }
 
@@ -1491,7 +1582,7 @@ export interface AiConfigCreateInput {
   apiKey?: string;
   model?: string;
   temperature?: string;
-  thinkingDepth?: 'low' | 'medium' | 'high' | null;
+  thinkingDepth?: AiThinkingDepth | null;
   thinkingBudgetTokens?: number | null;
 }
 
@@ -1503,13 +1594,43 @@ export interface AiConfigUpdateInput {
   apiKey?: string;
   model?: string;
   temperature?: string;
-  thinkingDepth?: 'low' | 'medium' | 'high' | null;
+  thinkingDepth?: AiThinkingDepth | null;
   thinkingBudgetTokens?: number | null;
 }
 
 export interface AiConfigDeleteInput { configId: number; }
 
 export interface AiConfigGetInput { configId: number; }
+
+/** Claude CLI 配置 CRUD 载荷（需求 #93）*/
+export type ClaudeCliConfigListInput = void;
+
+export interface ClaudeCliConfigCreateInput {
+  name: string;
+  baseUrl?: string;
+  authToken?: string;
+  model?: string;
+}
+
+export interface ClaudeCliConfigUpdateInput {
+  configId: number;
+  name?: string;
+  baseUrl?: string;
+  authToken?: string;
+  model?: string;
+}
+
+export interface ClaudeCliConfigDeleteInput { configId: number; }
+
+export interface ClaudeCliConfigGetInput { configId: number; }
+
+export interface ClaudeCliConfigSetDefaultInput { configId: number; }
+
+export interface ClaudeCliConfigChangedEvent {
+  source: string;
+  configId: number | null;
+  configs: ClaudeCliConfig[];
+}
 
 /** 对话 CRUD 载荷（需求 #28）*/
 export interface ConversationCreateInput { projectId: number; title?: string; aiConfigId?: number | null; }
@@ -1546,7 +1667,7 @@ export type TerminalStatus = 'starting' | 'running' | 'exited' | 'killed' | 'err
 export type TerminalProfileKind = 'default' | 'custom' | string;
 export type TerminalEnvInput = Record<string, string | number | boolean | null | undefined>;
 export interface TerminalProfile { id: string; name: string; kind: TerminalProfileKind; shellPath: string; args: string[]; env: Record<string, string>; }
-export interface TerminalSession { id: string; projectId: number | string; title: string; cwd: string; shell: string; status: TerminalStatus; createdAt: string; endedAt: string | null; exitCode: number | null; cols: number | null; rows: number | null; profile: TerminalProfile; }
+export interface TerminalSession { id: string; projectId: number | string; title: string; cwd: string; shell: string; status: TerminalStatus; createdAt: string; endedAt: string | null; exitCode: number | null; cols: number | null; rows: number | null; profile: TerminalProfile; closed?: boolean; }
 export interface TerminalProfileInput { id?: string; profileId?: string; name?: string; label?: string; kind?: TerminalProfileKind; shellPath?: string; shell?: string; path?: string; args?: string[]; env?: TerminalEnvInput; }
 export interface TerminalCreateInput { projectId: number; cwd?: string; profileId?: string; profile?: string | TerminalProfileInput; title?: string; cols?: number; rows?: number; env?: TerminalEnvInput; }
 export interface TerminalSessionIdInput { sessionId: string; }
@@ -1555,6 +1676,7 @@ export interface TerminalResizeInput extends TerminalSessionIdInput { cols: numb
 export interface TerminalRenameInput extends TerminalSessionIdInput { title: string; }
 export interface TerminalErrorResult { ok: false; code: string; message: string; details?: string; }
 export type TerminalSessionResult = { ok: true; session: TerminalSession } | TerminalErrorResult;
+export type TerminalCloseResult = { ok: true; session: TerminalSession; closed: true } | TerminalErrorResult;
 export type TerminalListResult = { ok: true; sessions: TerminalSession[] } | TerminalErrorResult;
 export type TerminalReplayResult = { ok: true; session: TerminalSession; chunks: string[]; data: string } | TerminalErrorResult;
 export interface TerminalEvent {
@@ -1564,7 +1686,9 @@ export interface TerminalEvent {
   data?: string;
   exitCode?: number | null;
   signal?: string | null;
+  closed?: boolean;
 }
+export type TerminalClosedEvent = TerminalEvent & { closed: true };
 
 export interface AutoplanApi {
   mcpToolNames: McpToolName[];
@@ -1582,6 +1706,11 @@ export interface AutoplanApi {
   saveMcpConfig: (config: McpConfigInput) => Promise<AppSnapshot>;
   readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
   stopPlan: (input: PlanIdInput) => Promise<AppSnapshot>;
+  resumePlan: (input: PlanIdInput) => Promise<AppSnapshot>;
+  updatePlanExecutionConfig: (input: UpdatePlanExecutionConfigInput) => Promise<AppSnapshot>;
+  reExecutePlan: (input: PlanIdInput) => Promise<AppSnapshot>;
+  recreatePlanFromIntake: (input: PlanIdInput) => Promise<AppSnapshot>;
+  appendPlanTask: (input: AppendPlanTaskInput) => Promise<AppSnapshot>;
   deletePlan: (input: PlanIdInput) => Promise<AppSnapshot>;
   runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
@@ -1621,7 +1750,7 @@ export interface AutoplanApi {
   writeTerminal: (input: TerminalWriteInput) => Promise<TerminalSessionResult>;
   resizeTerminal: (input: TerminalResizeInput) => Promise<TerminalSessionResult>;
   killTerminal: (input: TerminalSessionIdInput) => Promise<TerminalSessionResult>;
-  closeTerminal: (input: TerminalSessionIdInput) => Promise<TerminalSessionResult>;
+  closeTerminal: (input: TerminalSessionIdInput) => Promise<TerminalCloseResult>;
   renameTerminal: (input: TerminalRenameInput) => Promise<TerminalSessionResult>;
   replayTerminal: (input: TerminalSessionIdInput) => Promise<TerminalReplayResult>;
   clearTerminal: (input: TerminalSessionIdInput) => Promise<TerminalSessionResult>;
@@ -1635,11 +1764,13 @@ export interface AutoplanApi {
   checkForUpdates: () => Promise<UpdateCheckResult>;
   dismissUpdate: (version?: string | { version?: string } | null) => Promise<UpdateStatus>;
   setAutoUpdateCheck: (enabled: boolean) => Promise<UpdateStatus>;
+  openUpdateInstaller: () => Promise<UpdateInstallerOpenResult>;
   onUpdateStatus: (handler: (status: UpdateStatus) => void) => () => void;
   openExternal: (url: string) => Promise<{ ok: boolean; error: string | null }>;
   onTerminalData: (handler: (event: TerminalEvent & { data: string }) => void) => () => void;
   onTerminalExit: (handler: (event: TerminalEvent) => void) => () => void;
   onTerminalStatus: (handler: (event: TerminalEvent) => void) => () => void;
+  onTerminalClosed: (handler: (event: TerminalClosedEvent) => void) => () => void;
   // Chat 对话模块（需求 #26 / #28）
   chatSend: (payload: ChatSendPayload) => Promise<{ accepted: boolean; conversationId?: number; error?: string }>;
   chatStop: (payload: ChatStopPayload) => Promise<{ stopped: boolean; error?: string }>;
@@ -1662,6 +1793,14 @@ export interface AutoplanApi {
   aiConfigDelete: (payload: AiConfigDeleteInput) => Promise<{ deleted: boolean }>;
   aiConfigGet: (payload: AiConfigGetInput) => Promise<AiConfig>;
   onAiConfigChanged: (handler: (event: AiConfigChangedEvent) => void) => () => void;
+  // Claude CLI 配置（需求 #93）
+  claudeCliConfigList: () => Promise<ClaudeCliConfig[]>;
+  claudeCliConfigCreate: (payload: ClaudeCliConfigCreateInput) => Promise<ClaudeCliConfig>;
+  claudeCliConfigUpdate: (payload: ClaudeCliConfigUpdateInput) => Promise<ClaudeCliConfig>;
+  claudeCliConfigDelete: (payload: ClaudeCliConfigDeleteInput) => Promise<{ deleted: boolean }>;
+  claudeCliConfigGet: (payload: ClaudeCliConfigGetInput) => Promise<ClaudeCliConfig>;
+  claudeCliConfigSetDefault: (payload: ClaudeCliConfigSetDefaultInput) => Promise<ClaudeCliConfig>;
+  onClaudeCliConfigChanged: (handler: (event: ClaudeCliConfigChangedEvent) => void) => () => void;
   // 对话管理（需求 #28）
   conversationList: (payload: ConversationListInput) => Promise<Conversation[]>;
   conversationCreate: (payload: ConversationCreateInput) => Promise<Conversation>;

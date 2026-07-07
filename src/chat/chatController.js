@@ -15,6 +15,7 @@
 const { nowIso } = require('../database');
 const { resolveAiConfigForConversation } = require('./aiConfigService');
 const { createChatQueue } = require('./chatQueue');
+const { runCodexChat: _defaultRunCodexChat } = require('./codexChatBackend');
 
 const MAX_ROUNDS = 8;
 const MAX_MESSAGES = 20;
@@ -29,9 +30,11 @@ const MAX_MESSAGES = 20;
  * @param {string} deps.workspacePath
  * @param {Function} deps.onEvent - ({type, data}) => void
  * @param {Function} deps.onDone - ({status, error?, conversationId?, title?}) => void
+ * @param {object} [deps.codexBackendConfig] - { command?, defaultReasoningEffort? }
+ * @param {object} [deps.codexChatBackend] - 可注入 { runCodexChat }，测试用；缺省使用 ./codexChatBackend
  * @returns {{send:Function, stop:Function, getHistory:Function, clearHistory:Function, getConfig:Function, invalidateConfig:Function, isActive:Function}}
  */
-function createChatController({ db, llmClient, chatTools, conversationId, projectId, workspacePath, onEvent, onDone, onQueue }) {
+function createChatController({ db, llmClient, chatTools, conversationId, projectId, workspacePath, onEvent, onDone, onQueue, codexBackendConfig, codexChatBackend }) {
   conversationId = normalizeRequiredId(conversationId, 'conversationId');
   projectId = normalizeRequiredId(projectId, 'projectId');
   requireConversationForProject(db, conversationId, projectId);
@@ -50,6 +53,11 @@ function createChatController({ db, llmClient, chatTools, conversationId, projec
 
   // 懒加载：首次 getConfig() 时解析并缓存
   let cachedAiConfig = null;
+
+  // Codex 后端（可注入，测试用；缺省使用 ./codexChatBackend）
+  const runCodex = (codexChatBackend && typeof codexChatBackend.runCodexChat === 'function')
+    ? codexChatBackend.runCodexChat
+    : _defaultRunCodexChat;
 
   /**
    * 发送用户消息：入队（status='queued'）后尝试派发；生成中再次发送改为排队（不再丢弃）。
@@ -228,6 +236,11 @@ function createChatController({ db, llmClient, chatTools, conversationId, projec
   async function runAgentLoop(userMessage) {
     const config = getConfig();
 
+    // Codex 后端路径：一次 codex exec --json 完成，不挂 chatTools、不调 buildMessages、不检查 apiKey
+    if (config.provider === 'codex') {
+      return runCodexAgentLoop(userMessage, config);
+    }
+
     if (!config.apiKey) {
       finishGeneration({ status: 'error', error: '未配置 API Key，请在设置 AI 面板中配置 LLM 接口。' });
       storeMessage(db, conversationId, projectId, 'system', '未配置 API Key，请在设置 AI 面板中配置 LLM 接口。', null, null, 'error');
@@ -302,6 +315,93 @@ function createChatController({ db, llmClient, chatTools, conversationId, projec
       'error',
     );
     finishGeneration({ status: 'max_rounds' });
+  }
+
+  /* ------------------------------------------------------------------ Codex Agent Loop ------------------------------------------------------------------ */
+
+  /**
+   * Codex 后端对话路径：一次 codex exec --json 完成对话。
+   * 不挂 chatTools、不受 MAX_ROUNDS 限制、不调 buildMessages（只发当前用户消息）、不检查 config.apiKey。
+   */
+  async function runCodexAgentLoop(userMessage, config) {
+    const command = codexBackendConfig?.command || 'codex';
+    const reasoningEffort = config.thinkingDepth || codexBackendConfig?.defaultReasoningEffort || 'medium';
+
+    // 读取上次 codex session id（resume 保持上下文）
+    const conversation = getConversationForProject(db, conversationId, projectId);
+    const previousSessionId = conversation?.codex_session_id || '';
+
+    const result = await runCodex({
+      workspacePath,
+      prompt: userMessage,
+      sessionId: previousSessionId,
+      reasoningEffort,
+      command,
+      signal: abortController ? abortController.signal : undefined,
+      onEvent: (event) => {
+        switch (event.type) {
+          case 'thinking_start':
+            emitEvent({ type: 'thinking_start', data: {} });
+            break;
+          case 'thinking_delta':
+            emitEvent({ type: 'thinking_delta', data: { content: event.content } });
+            break;
+          case 'thinking_end':
+            emitEvent({ type: 'thinking_end', data: {} });
+            break;
+          case 'text_delta':
+            emitEvent({ type: 'chunk', data: { content: event.content } });
+            break;
+          case 'tool_start':
+            emitEvent({ type: 'tool_start', data: { name: event.name, args: event.args } });
+            break;
+          case 'tool_result':
+            emitEvent({ type: 'tool_result', data: { tool_call_id: event.tool_call_id, result: event.result } });
+            break;
+          default:
+            break;
+        }
+      },
+    });
+
+    if (result.aborted) {
+      finishGeneration({ status: 'aborted' });
+      return;
+    }
+
+    if (result.error && !result.content) {
+      finishGeneration({ status: 'error', error: result.error });
+      storeMessage(db, conversationId, projectId, 'system', `Codex 执行失败：${result.error}`, null, null, 'error');
+      return;
+    }
+
+    // 持久化 assistant 消息（无 tool_calls）
+    storeMessage(db, conversationId, projectId, 'assistant', result.content, null, null, 'done');
+
+    // 回写 codex_session_id
+    if (result.sessionId) {
+      db.run(
+        'UPDATE conversations SET codex_session_id = ?, updated_at = ? WHERE id = ? AND project_id = ?',
+        [result.sessionId, nowIso(), conversationId, projectId],
+      );
+    }
+
+    // 标题生成：codex 路径不调 generateConversationTitle，改用首条 user 消息前 30 字截断
+    const conv = getConversationForProject(db, conversationId, projectId);
+    let title = undefined;
+    if (conv && shouldGenerateTitle(conv.title)) {
+      title = normalizeTitle(userMessage);
+      if (title) {
+        db.run('UPDATE conversations SET title = ?, updated_at = ? WHERE id = ? AND project_id = ?', [
+          title,
+          nowIso(),
+          conversationId,
+          projectId,
+        ]);
+      }
+    }
+
+    finishGeneration({ status: 'done', conversationId, title: title || undefined });
   }
 
   /* ------------------------------------------------------------------ LLM 调用 ------------------------------------------------------------------ */

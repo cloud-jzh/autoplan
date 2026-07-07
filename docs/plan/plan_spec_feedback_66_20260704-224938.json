@@ -1,0 +1,38 @@
+{
+  "title": "反馈 #66：计划卡片右下角菜单右对齐",
+  "summary": "根据反馈 #66，需要修正计划卡片底部更多操作菜单的位置，使右下角菜单按钮和展开菜单保持右对齐。结合项目代码，影响范围主要在计划卡片组件 `src/renderer/components/plans/PlanList.tsx`、公共组件样式 `src/renderer/styles/components.css`，以及已有的计划菜单回归测试 `src/renderer/pages/WorkspacePage.planMenu.test.js`。",
+  "tasks": [
+    {
+      "title": "调整计划卡片菜单锚点与右对齐布局",
+      "scope": [
+        "src/renderer/components/plans/PlanList.tsx",
+        "src/renderer/styles/components.css"
+      ],
+      "acceptance": [
+        "计划卡片底部操作区的更多菜单按钮对齐到卡片右下角，不被并发执行、阅读全文、查看任务、验收状态等前置内容挤到中间或左侧。",
+        "菜单展开后右边缘与触发按钮右边缘保持对齐，并在桌面和窄屏宽度下不超出视口或被卡片裁切。",
+        "菜单按钮、停止、删除、点击外部关闭、Esc 关闭和失焦关闭等现有交互行为保持不变。"
+      ]
+    },
+    {
+      "title": "补充计划菜单右对齐回归覆盖",
+      "scope": [
+        "src/renderer/pages/WorkspacePage.planMenu.test.js",
+        "src/renderer/styles/components.css"
+      ],
+      "acceptance": [
+        "回归测试覆盖 `.plan-actions` 和 `.plan-action-menu-wrap` 的右侧对齐约束，防止菜单按钮再次回到普通左侧流式位置。",
+        "测试继续覆盖菜单相对按钮向下展开、右对齐、宽度限制和窄屏视口保护规则。",
+        "测试继续确认菜单区域保留 `data-plan-action-menu` 标记、`menu`/`menuitem` 语义和停止、删除操作入口。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm run check && npm test && npm run build",
+    "criteria": [
+      "验收命令全部成功退出，无 TypeScript、语法检查、文件长度、单元/回归测试或 Vite 构建错误。",
+      "计划卡片菜单在全部、执行中、已完成、草稿等计划列表状态下保持右下角对齐，展开菜单右边缘与触发按钮右边缘对齐。",
+      "桌面和窄屏布局下菜单不遮挡或挤压主要操作按钮，不超出视口，既有停止、删除、阅读、并发执行和计划选择交互无回归。"
+    ]
+  }
+}

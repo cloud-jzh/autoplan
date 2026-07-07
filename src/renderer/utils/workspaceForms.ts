@@ -10,7 +10,9 @@ import type {
   AgentCliOption,
   AgentCliProvider,
   AiConfigCreateInput,
+  AiThinkingDepth,
   ChatConfig,
+  ClaudeCliConfigListItem,
   CodexReasoningEffort,
   CreateScriptInput,
   EnvVarEntry,
@@ -48,6 +50,9 @@ import type {
   WorkspaceTab,
 } from '../types';
 import { getFilePath, toSafeFileUrl } from '../components/shared';
+
+const DEFAULT_OPENAI_MODEL = 'gpt-5.5';
+const LEGACY_OPENAI_DEFAULT_MODELS = new Set(['gpt-4o']);
 
 const workspaceTabIds: WorkspaceTab[] = [
   'overview',
@@ -153,7 +158,6 @@ export const builtinPlanBackendProviderOptions: Array<SettingsChoiceOption<PlanB
 ];
 
 export type ComposerPlanGenerationSelection = {
-  useProjectDefault: boolean;
   strategy: PlanGenerationStrategy;
   provider: PlanBackendProvider;
   command: string;
@@ -167,7 +171,6 @@ export function createDefaultPlanGenerationSelection(
   const strategy = normalizePlanGenerationStrategy(overrides.strategy);
   const provider = normalizePlanBackendProvider(overrides.provider, strategy);
   return {
-    useProjectDefault: overrides.useProjectDefault ?? true,
     strategy,
     provider,
     command: String(overrides.command ?? ''),
@@ -193,11 +196,24 @@ export type LoopFormState = {
   planGenerationCommand: string;
   planGenerationModel: string;
   planGenerationCodexReasoningEffort: CodexReasoningEffort;
+  // Claude CLI 自定义连接字段。authToken 输入框永不回填明文——hasAuthToken=true 时显示脱敏占位，
+  // 用户输入新值才会覆盖；留空（且未 touch）时不下发字段，保留数据库原值。
+  planGenerationClaudeBaseUrl: string;
+  planGenerationClaudeAuthToken: string;
+  planGenerationClaudeModel: string;
+  planGenerationHasClaudeAuthToken: boolean;
+  // Claude CLI 多配置（需求 #93）：所选 claude_cli_configs.id；0 = 未选（回退默认配置或内联字段）。
+  planGenerationClaudeConfigId: number;
   planExecutionStrategy: PlanExecutionStrategy;
   planExecutionProvider: PlanBackendProvider;
   planExecutionCommand: string;
   planExecutionModel: string;
   planExecutionCodexReasoningEffort: CodexReasoningEffort;
+  planExecutionClaudeBaseUrl: string;
+  planExecutionClaudeAuthToken: string;
+  planExecutionClaudeModel: string;
+  planExecutionHasClaudeAuthToken: boolean;
+  planExecutionClaudeConfigId: number;
   envVars: EnvVarEntry[];
 };
 
@@ -783,14 +799,13 @@ function firstNonEmptyString(...values: Array<string | null | undefined>) {
   return '';
 }
 
-function generationSelectionFromSource(source: ProjectState | null | undefined, useProjectDefault = true): ComposerPlanGenerationSelection {
+function generationSelectionFromSource(source: ProjectState | null | undefined): ComposerPlanGenerationSelection {
   const legacyProvider = normalizeAgentCliProvider(source?.agent_cli_provider);
   const legacyCommand = String(source?.agent_cli_command || '');
   const legacyReasoning = normalizeCodexReasoningEffort(source?.codex_reasoning_effort);
   const strategy = normalizePlanGenerationStrategy(source?.plan_generation_strategy);
   const provider = normalizePlanBackendProvider(firstNonEmptyString(source?.plan_generation_provider, legacyProvider), strategy);
   return createDefaultPlanGenerationSelection({
-    useProjectDefault,
     strategy,
     provider,
     command: isExternalPlanGenerationStrategy(strategy)
@@ -805,25 +820,56 @@ function generationSelectionFromSource(source: ProjectState | null | undefined, 
   });
 }
 
+function composerGenerationSelectionFromSource(source: ProjectState | null | undefined): ComposerPlanGenerationSelection {
+  const sourceStrategy = normalizePlanGenerationStrategy(source?.plan_generation_strategy);
+  const strategy = isExternalPlanGenerationStrategy(sourceStrategy)
+    ? sourceStrategy
+    : PLAN_GENERATION_STRATEGIES.EXTERNAL_CLI_MARKDOWN;
+  const legacyProvider = normalizeAgentCliProvider(source?.agent_cli_provider);
+  const legacyCommand = String(source?.agent_cli_command || '');
+  const legacyReasoning = normalizeCodexReasoningEffort(source?.codex_reasoning_effort);
+  const provider = normalizePlanBackendProvider(
+    isExternalPlanGenerationStrategy(sourceStrategy)
+      ? firstNonEmptyString(source?.plan_generation_provider, legacyProvider)
+      : legacyProvider,
+    strategy,
+  );
+  return createDefaultPlanGenerationSelection({
+    strategy,
+    provider,
+    command: isExternalPlanGenerationStrategy(sourceStrategy)
+      ? firstNonEmptyString(source?.plan_generation_command, legacyCommand)
+      : legacyCommand,
+    model: '',
+    codexReasoningEffort: isCodexPlanBackendProvider(provider)
+      ? normalizeCodexReasoningEffort(
+          isExternalPlanGenerationStrategy(sourceStrategy)
+            ? firstNonEmptyString(source?.plan_generation_codex_reasoning_effort, legacyReasoning)
+            : legacyReasoning,
+        )
+      : defaultCodexReasoningEffort,
+  });
+}
+
 export function composerPlanGenerationSelectionFromProjectState(
   state: ProjectState | null | undefined,
 ): ComposerPlanGenerationSelection {
-  return generationSelectionFromSource(state, true);
+  return composerGenerationSelectionFromSource(state);
 }
 
 export function planGenerationInputFromComposerSelection(
   selection: ComposerPlanGenerationSelection,
 ): PlanGenerationInputFields {
-  if (selection.useProjectDefault) return {};
-  const strategy = normalizePlanGenerationStrategy(selection.strategy);
+  const selectedStrategy = normalizePlanGenerationStrategy(selection.strategy);
+  const strategy = isExternalPlanGenerationStrategy(selectedStrategy)
+    ? selectedStrategy
+    : PLAN_GENERATION_STRATEGIES.EXTERNAL_CLI_MARKDOWN;
   const provider = normalizePlanBackendProvider(selection.provider, strategy);
   const input: PlanGenerationInputFields = {
     planGenerationStrategy: strategy,
     planGenerationProvider: provider,
-    planGenerationCommand: isExternalPlanGenerationStrategy(strategy) ? selection.command.trim() : '',
-    planGenerationModel: isBuiltinPlanGenerationStrategy(strategy)
-      ? (selection.model.trim() || planBackendDefaultModel(provider))
-      : '',
+    planGenerationCommand: selection.command.trim(),
+    planGenerationModel: '',
     planGenerationCodexReasoningEffort: isCodexPlanBackendProvider(provider)
       ? normalizeCodexReasoningEffort(selection.codexReasoningEffort)
       : null,
@@ -846,7 +892,7 @@ export function loopFormFromProjectState(state: ProjectState): LoopFormState {
   const legacyProvider = normalizeAgentCliProvider(state.agent_cli_provider);
   const legacyCommand = String(state.agent_cli_command || '');
   const legacyReasoning = normalizeCodexReasoningEffort(state.codex_reasoning_effort);
-  const planGeneration = generationSelectionFromSource(state, false);
+  const planGeneration = generationSelectionFromSource(state);
   const planExecutionStrategy = normalizePlanExecutionStrategy(state.plan_execution_strategy);
   const planExecutionProvider = normalizePlanBackendProvider(
     firstNonEmptyString(state.plan_execution_provider, legacyProvider),
@@ -862,6 +908,17 @@ export function loopFormFromProjectState(state: ProjectState): LoopFormState {
     ? normalizeCodexReasoningEffort(firstNonEmptyString(state.plan_execution_codex_reasoning_effort, legacyReasoning))
     : defaultCodexReasoningEffort;
 
+  // Claude 自定义连接：baseUrl/model 直接回填；authToken 永不回填明文，仅读 has 标志位（来自 snapshot 脱敏）。
+  const planGenerationClaudeBaseUrl = String(state.plan_generation_claude_base_url || '');
+  const planGenerationClaudeModel = String(state.plan_generation_claude_model || '');
+  const planGenerationHasClaudeAuthToken = Boolean(state.plan_generation_has_claude_auth_token);
+  const planExecutionClaudeBaseUrl = String(state.plan_execution_claude_base_url || '');
+  const planExecutionClaudeModel = String(state.plan_execution_claude_model || '');
+  const planExecutionHasClaudeAuthToken = Boolean(state.plan_execution_has_claude_auth_token);
+  // Claude 多配置 id（需求 #93）：从快照 *_claude_config_id 回填，归一为非负整数（0 = 未选）。
+  const planGenerationClaudeConfigId = normalizeClaudeConfigIdValue(state.plan_generation_claude_config_id);
+  const planExecutionClaudeConfigId = normalizeClaudeConfigIdValue(state.plan_execution_claude_config_id);
+
   return {
     workspacePath: state.workspace_path || '',
     intervalSeconds: String(state.interval_seconds || 5),
@@ -874,11 +931,21 @@ export function loopFormFromProjectState(state: ProjectState): LoopFormState {
     planGenerationCommand: planGeneration.command,
     planGenerationModel: planGeneration.model,
     planGenerationCodexReasoningEffort: planGeneration.codexReasoningEffort,
+    planGenerationClaudeBaseUrl,
+    planGenerationClaudeAuthToken: '',
+    planGenerationClaudeModel,
+    planGenerationHasClaudeAuthToken,
+    planGenerationClaudeConfigId,
     planExecutionStrategy,
     planExecutionProvider,
     planExecutionCommand,
     planExecutionModel,
     planExecutionCodexReasoningEffort: planExecutionReasoning,
+    planExecutionClaudeBaseUrl,
+    planExecutionClaudeAuthToken: '',
+    planExecutionClaudeModel,
+    planExecutionHasClaudeAuthToken,
+    planExecutionClaudeConfigId,
     envVars,
   };
 }
@@ -928,7 +995,34 @@ export function loopConfigurePayloadFromForm(projectId: number, form: LoopFormSt
     planExecutionCodexReasoningEffort: planExecutionProvider === 'codex'
       ? normalizeCodexReasoningEffort(form.planExecutionCodexReasoningEffort)
       : null,
+    // Claude 自定义连接：仅在外部 CLI（claude provider）下生效。baseUrl/model 总是下发（空串=清空）；
+    // authToken 仅在用户输入新值时下发，留空则不下发以保留数据库原值（后端 hasAnyOwnProperty 判断是否更新）。
+    planGenerationClaudeBaseUrl: isExternalPlanGenerationStrategy(planGenerationStrategy)
+      ? form.planGenerationClaudeBaseUrl.trim()
+      : '',
+    planGenerationClaudeModel: isExternalPlanGenerationStrategy(planGenerationStrategy)
+      ? form.planGenerationClaudeModel.trim()
+      : '',
+    planExecutionClaudeBaseUrl: isExternalPlanExecutionStrategy(planExecutionStrategy)
+      ? form.planExecutionClaudeBaseUrl.trim()
+      : '',
+    planExecutionClaudeModel: isExternalPlanExecutionStrategy(planExecutionStrategy)
+      ? form.planExecutionClaudeModel.trim()
+      : '',
+    // Claude 多配置 id（需求 #93）：仅 claude provider + 外部 CLI 策略下下发所选 id；
+    // 切到非 claude provider 或非外部 CLI 策略时清 0（解除关联，后端回退默认/内联）。
+    planGenerationClaudeConfigId: isExternalPlanGenerationStrategy(planGenerationStrategy) && planGenerationProvider === 'claude'
+      ? normalizeClaudeConfigIdValue(form.planGenerationClaudeConfigId)
+      : 0,
+    planExecutionClaudeConfigId: isExternalPlanExecutionStrategy(planExecutionStrategy) && planExecutionProvider === 'claude'
+      ? normalizeClaudeConfigIdValue(form.planExecutionClaudeConfigId)
+      : 0,
   };
+  // authToken 单独处理：仅当用户填写了新值才下发。留空表示「不改动」（保留数据库原值）。
+  const genAuthToken = form.planGenerationClaudeAuthToken.trim();
+  if (genAuthToken) payload.planGenerationClaudeAuthToken = genAuthToken;
+  const execAuthToken = form.planExecutionClaudeAuthToken.trim();
+  if (execAuthToken) payload.planExecutionClaudeAuthToken = execAuthToken;
   if (legacyProvider === 'codex') {
     payload.codexReasoningEffort = normalizeCodexReasoningEffort(legacyReasoning);
   }
@@ -951,11 +1045,21 @@ export function loopFormsEqual(left: LoopFormState, right: LoopFormState) {
     && left.planGenerationCommand === right.planGenerationCommand
     && left.planGenerationModel === right.planGenerationModel
     && left.planGenerationCodexReasoningEffort === right.planGenerationCodexReasoningEffort
+    && left.planGenerationClaudeBaseUrl === right.planGenerationClaudeBaseUrl
+    && left.planGenerationClaudeAuthToken === right.planGenerationClaudeAuthToken
+    && left.planGenerationClaudeModel === right.planGenerationClaudeModel
+    && left.planGenerationHasClaudeAuthToken === right.planGenerationHasClaudeAuthToken
+    && left.planGenerationClaudeConfigId === right.planGenerationClaudeConfigId
     && left.planExecutionStrategy === right.planExecutionStrategy
     && left.planExecutionProvider === right.planExecutionProvider
     && left.planExecutionCommand === right.planExecutionCommand
     && left.planExecutionModel === right.planExecutionModel
     && left.planExecutionCodexReasoningEffort === right.planExecutionCodexReasoningEffort
+    && left.planExecutionClaudeBaseUrl === right.planExecutionClaudeBaseUrl
+    && left.planExecutionClaudeAuthToken === right.planExecutionClaudeAuthToken
+    && left.planExecutionClaudeModel === right.planExecutionClaudeModel
+    && left.planExecutionHasClaudeAuthToken === right.planExecutionHasClaudeAuthToken
+    && left.planExecutionClaudeConfigId === right.planExecutionClaudeConfigId
     && envVarsEqual(left.envVars, right.envVars);
 }
 
@@ -976,6 +1080,41 @@ function normalizeEnvVarEntries(entries: EnvVarEntry[]): EnvVarEntry[] {
     result.push({ name, value: String(entry.value ?? '') });
   }
   return result;
+}
+
+/** 归一化 Claude 配置 id：正整数取 floor，其余（undefined/null/''/0/负数/NaN）归 0（未选）。 */
+export function normalizeClaudeConfigIdValue(value: unknown): number {
+  if (value === undefined || value === null || value === '') return 0;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return 0;
+  return Math.floor(num);
+}
+
+/**
+ * Claude 配置下拉选择联动（需求 #93）：给定配置列表与所选 id，返回所选配置的 baseUrl/model，
+ * 以及基于配置 hasAuthToken 的脱敏标志。authToken 永不回填明文（由调用方把表单 authToken 字段置空）。
+ * 未选（id<=0）或列表中未命中时返回 null，由调用方决定回退（默认配置或清空）。
+ */
+export type ClaudeConfigSelectionFields = {
+  baseUrl: string;
+  model: string;
+  hasAuthToken: boolean;
+};
+
+export function resolveClaudeConfigSelection(
+  configs: ClaudeCliConfigListItem[] | null | undefined,
+  selectedId: number | null | undefined,
+): ClaudeConfigSelectionFields | null {
+  if (!Array.isArray(configs) || configs.length === 0) return null;
+  const id = normalizeClaudeConfigIdValue(selectedId);
+  if (id <= 0) return null;
+  const matched = configs.find((config) => normalizeClaudeConfigIdValue(config.id) === id);
+  if (!matched) return null;
+  return {
+    baseUrl: String(matched.baseUrl || ''),
+    model: String(matched.model || ''),
+    hasAuthToken: Boolean(matched.hasAuthToken),
+  };
 }
 
 /* ===================== MCP 配置 draft 表单（设置面板） ===================== */
@@ -1115,8 +1254,8 @@ export type ChatConfigFormState = {
   apiKey: string;
   model: string;
   temperature: string;
-  /** 思考深度（需求 #28）：'' | 'low' | 'medium' | 'high' */
-  thinkingDepth: string;
+  /** 思考深度（需求 #28）：'' | 'low' | 'medium' | 'high' | 'xhigh' */
+  thinkingDepth: AiThinkingDepthValue;
   /** Anthropic 思考 token 预算（需求 #28），字符串数字，空串表示未设置 */
   thinkingBudgetTokens: string;
 };
@@ -1132,19 +1271,20 @@ export function createDefaultChatConfigForm(config?: ChatConfig | null): ChatCon
       provider: 'openai',
       baseUrl: 'https://api.openai.com',
       apiKey: '',
-      model: 'gpt-4o',
+      model: DEFAULT_OPENAI_MODEL,
       temperature: '0.3',
       thinkingDepth: '',
       thinkingBudgetTokens: '',
     };
   }
+  const provider = config.provider || 'openai';
   return {
-    provider: config.provider || 'openai',
+    provider,
     baseUrl: config.baseUrl || 'https://api.openai.com',
     apiKey: '',
-    model: config.model || 'gpt-4o',
+    model: config.model || defaultModelForProvider(provider),
     temperature: config.temperature || '0.3',
-    thinkingDepth: config.thinkingDepth || '',
+    thinkingDepth: normalizeAiThinkingDepthInput(config.thinkingDepth, provider),
     thinkingBudgetTokens: config.thinkingBudgetTokens != null ? String(config.thinkingBudgetTokens) : '',
   };
 }
@@ -1194,17 +1334,30 @@ export const aiProviderOptions: Array<SettingsChoiceOption<string>> = [
   { value: 'openai', label: 'OpenAI 兼容', description: 'OpenAI / 其他兼容端点' },
   { value: 'deepseek', label: 'DeepSeek', description: 'DeepSeek API 端点' },
   { value: 'anthropic', label: 'Anthropic', description: 'Claude 系列模型' },
+  { value: 'codex', label: 'Codex', description: 'Codex CLI 本地执行' },
 ];
 
+const AI_THINKING_DEPTHS_BY_PROVIDER: Record<string, readonly AiThinkingDepth[]> = {
+  openai: ['low', 'medium', 'high', 'xhigh'],
+  deepseek: ['low', 'medium', 'high'],
+  codex: ['low', 'medium', 'high', 'xhigh'],
+};
+
+export type AiThinkingDepthValue = '' | AiThinkingDepth;
+export type AiThinkingDepthOption = {
+  value: AiThinkingDepthValue;
+  label: string;
+  description: string;
+};
+
 /** 思考深度选项（OpenAI o-series / DeepSeek 推理模型）*/
-export const thinkingDepthOptions: Array<{ value: string; label: string; description: string }> = [
+export const thinkingDepthOptions: AiThinkingDepthOption[] = [
   { value: '', label: '关闭', description: '不使用思考深度' },
   { value: 'low', label: '低', description: '快速响应' },
   { value: 'medium', label: '中', description: '默认平衡' },
   { value: 'high', label: '高', description: '深入推理' },
+  { value: 'xhigh', label: '超高', description: '最深入推理' },
 ];
-
-export type AiThinkingDepthValue = '' | 'low' | 'medium' | 'high';
 
 export function aiProviderLabel(provider?: string | null): string {
   const normalized = String(provider || '').trim();
@@ -1214,15 +1367,25 @@ export function aiProviderLabel(provider?: string | null): string {
   return normalized;
 }
 
-export function normalizeAiThinkingDepthInput(value?: string | null): AiThinkingDepthValue {
-  const depth = String(value || '').trim();
-  if (depth === 'low' || depth === 'medium' || depth === 'high') return depth;
+export function normalizeAiThinkingDepthInput(
+  value?: string | null,
+  provider = 'openai',
+): AiThinkingDepthValue {
+  const depth = String(value || '').trim().toLowerCase();
+  if (isAiThinkingDepthForProvider(depth, provider)) return depth;
   return '';
 }
 
-export function aiThinkingDepthLabel(value?: string | null): string {
-  const depth = normalizeAiThinkingDepthInput(value);
-  const option = thinkingDepthOptions.find((item) => item.value === depth);
+export function thinkingDepthOptionsForProvider(provider: string): AiThinkingDepthOption[] {
+  const providerKey = normalizeAiThinkingDepthProvider(provider);
+  if (!providerKey) return [];
+  const supported = new Set<AiThinkingDepthValue>(['', ...AI_THINKING_DEPTHS_BY_PROVIDER[providerKey]]);
+  return thinkingDepthOptions.filter((item) => supported.has(item.value));
+}
+
+export function aiThinkingDepthLabel(value?: string | null, provider = 'openai'): string {
+  const depth = normalizeAiThinkingDepthInput(value, provider);
+  const option = thinkingDepthOptionsForProvider(provider).find((item) => item.value === depth);
   return `思考 · ${option?.label || '关闭'}`;
 }
 
@@ -1230,6 +1393,7 @@ export function aiThinkingDepthLabel(value?: string | null): string {
 export function defaultBaseUrlForProvider(provider: string): string {
   if (provider === 'deepseek') return 'https://api.deepseek.com';
   if (provider === 'anthropic') return 'https://api.anthropic.com';
+  if (provider === 'codex') return '';
   return 'https://api.openai.com';
 }
 
@@ -1237,12 +1401,13 @@ export function defaultBaseUrlForProvider(provider: string): string {
 export function defaultModelForProvider(provider: string): string {
   if (provider === 'deepseek') return 'deepseek-chat';
   if (provider === 'anthropic') return 'claude-sonnet-4-6';
-  return 'gpt-4o';
+  if (provider === 'codex') return '';
+  return DEFAULT_OPENAI_MODEL;
 }
 
 /** 判断 provider 是否需要显示思考深度选择器（OpenAI 兼容 / DeepSeek）*/
 export function providerSupportsThinkingDepth(provider: string): boolean {
-  return provider === 'openai' || provider === 'deepseek';
+  return Boolean(normalizeAiThinkingDepthProvider(provider));
 }
 
 /** 判断 provider 是否需要显示思考 token 预算输入（Anthropic）*/
@@ -1258,7 +1423,7 @@ export function aiConfigFormForProviderChange(
   const baseUrl = shouldUseProviderDefault(form.baseUrl, defaultBaseUrlForProvider(currentProvider))
     ? defaultBaseUrlForProvider(provider)
     : form.baseUrl;
-  const model = shouldUseProviderDefault(form.model, defaultModelForProvider(currentProvider))
+  const model = shouldUseProviderDefaultModel(form.model, currentProvider)
     ? defaultModelForProvider(provider)
     : form.model;
   return {
@@ -1266,7 +1431,7 @@ export function aiConfigFormForProviderChange(
     provider,
     baseUrl,
     model,
-    thinkingDepth: providerSupportsThinkingDepth(provider) ? form.thinkingDepth : '',
+    thinkingDepth: normalizeAiThinkingDepthInput(form.thinkingDepth, provider),
     thinkingBudgetTokens: providerSupportsThinkingBudget(provider) ? form.thinkingBudgetTokens : '',
   };
 }
@@ -1276,15 +1441,15 @@ export function aiConfigInputFromForm(
   form: ChatConfigFormState,
   options: { preserveEmptyApiKey?: boolean } = {},
 ): AiConfigCreateInput {
-  const provider = form.provider || 'openai';
+  const provider = normalizeAiConfigProvider(form.provider || 'openai');
   const apiKey = form.apiKey.trim();
   const payload: AiConfigCreateInput = {
     name: name.trim(),
     provider,
     baseUrl: form.baseUrl.trim(),
-    model: form.model.trim(),
+    model: form.model.trim() || defaultModelForProvider(provider),
     temperature: form.temperature.trim() || '0.3',
-    thinkingDepth: providerSupportsThinkingDepth(provider) ? normalizeAiThinkingDepth(form.thinkingDepth) : null,
+    thinkingDepth: normalizeAiThinkingDepth(form.thinkingDepth, provider),
     thinkingBudgetTokens: providerSupportsThinkingBudget(provider)
       ? normalizeAiThinkingBudgetTokens(form.thinkingBudgetTokens)
       : null,
@@ -1300,9 +1465,32 @@ function shouldUseProviderDefault(value: string, providerDefault: string) {
   return !normalized || normalized === providerDefault;
 }
 
-function normalizeAiThinkingDepth(value: string): 'low' | 'medium' | 'high' | null {
-  const depth = String(value || '').trim();
-  return depth === 'low' || depth === 'medium' || depth === 'high' ? depth : null;
+function shouldUseProviderDefaultModel(value: string, provider: string) {
+  const normalized = String(value || '').trim();
+  if (!normalized || normalized === defaultModelForProvider(provider)) return true;
+  return normalizeAiConfigProvider(provider) === 'openai' && LEGACY_OPENAI_DEFAULT_MODELS.has(normalized);
+}
+
+function normalizeAiThinkingDepth(value: string, provider = 'openai'): AiThinkingDepth | null {
+  const depth = normalizeAiThinkingDepthInput(value, provider);
+  return depth || null;
+}
+
+function normalizeAiConfigProvider(value?: string | null): 'openai' | 'deepseek' | 'anthropic' {
+  const provider = String(value || '').trim().toLowerCase();
+  if (provider === 'deepseek' || provider === 'anthropic') return provider;
+  return 'openai';
+}
+
+function normalizeAiThinkingDepthProvider(value?: string | null): 'openai' | 'deepseek' | 'codex' | '' {
+  const provider = String(value || '').trim().toLowerCase();
+  if (provider === 'openai' || provider === 'deepseek' || provider === 'codex') return provider;
+  return '';
+}
+
+function isAiThinkingDepthForProvider(depth: string, provider: string): depth is AiThinkingDepth {
+  const providerKey = normalizeAiThinkingDepthProvider(provider);
+  return Boolean(providerKey && AI_THINKING_DEPTHS_BY_PROVIDER[providerKey].includes(depth as AiThinkingDepth));
 }
 
 function normalizeAiThinkingBudgetTokens(value: string): number | null {

@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { PENDING_ATTACHMENT_SOURCES } from '../types';
+import { PENDING_ATTACHMENT_SOURCES, PLAN_GENERATION_STRATEGIES } from '../types';
 import type {
   AgentCliOption,
   CodexReasoningEffort,
@@ -24,14 +24,8 @@ import { Icon } from './icons';
 import { autoGrowTextarea, formatBytes, getFilePath, toSafeFileUrl } from './shared';
 import {
   defaultComposerPlanGenerationSelections,
-  isBuiltinPlanGenerationStrategy,
   isCodexPlanBackendProvider,
-  planBackendDefaultCommand,
-  planBackendDefaultModel,
-  planBackendProviderLabel,
-  planBackendProviderOptionsForStrategy,
   planGenerationInputFromComposerSelection,
-  planGenerationStrategyOptions,
   type ComposerPlanGenerationSelection,
 } from '../utils/workspaceForms';
 
@@ -39,11 +33,8 @@ interface ComposerCliSelectionValue {
   options: AgentCliOption[];
   reasoningOptions: AgentCliOption[];
   selectedByType: Record<IntakeType, ComposerPlanGenerationSelection>;
-  onUseProjectDefaultChange: (type: IntakeType, useProjectDefault: boolean) => void;
   onStrategyChange: (type: IntakeType, strategy: PlanGenerationStrategy) => void;
   onProviderChange: (type: IntakeType, provider: PlanBackendProvider) => void;
-  onCommandChange: (type: IntakeType, command: string) => void;
-  onModelChange: (type: IntakeType, model: string) => void;
   onReasoningChange: (type: IntakeType, effort: CodexReasoningEffort) => void;
 }
 
@@ -124,19 +115,23 @@ export function Composer({
 
   const selectedGeneration = cliSelection?.selectedByType[type] || defaultComposerPlanGenerationSelections[type];
   const selectedStrategy = selectedGeneration.strategy;
-  const useProjectDefault = selectedGeneration.useProjectDefault;
-  const isBuiltinGeneration = isBuiltinPlanGenerationStrategy(selectedStrategy);
-  const providerOptions = planBackendProviderOptionsForStrategy(selectedStrategy);
-  const selectedProvider = selectedGeneration.provider;
+  const cliProviderOptions = cliSelection?.options || [];
+  const selectedProvider = cliProviderOptions.some((option) => option.value === selectedGeneration.provider)
+    ? selectedGeneration.provider
+    : 'codex';
   const isCodexProvider = isCodexPlanBackendProvider(selectedProvider);
-  const selectedStrategyOption = planGenerationStrategyOptions.find((option) => option.value === selectedStrategy);
-  const selectedProviderOption = providerOptions.find((option) => option.value === selectedProvider);
+  const selectedProviderOption = cliProviderOptions.find((option) => option.value === selectedProvider);
   const selectedReasoning = selectedGeneration.codexReasoningEffort || cliSelection?.reasoningOptions[1]?.value || 'medium';
   const selectedReasoningOption = cliSelection?.reasoningOptions.find((option) => option.value === selectedReasoning);
-  const backendValueLabel = isBuiltinGeneration
-    ? (selectedGeneration.model.trim() || planBackendDefaultModel(selectedProvider))
-    : (selectedGeneration.command.trim() || planBackendDefaultCommand(selectedProvider));
   const draftHelp = '创建为草稿后只生成计划，不会立即进入执行队列；确认后可在计划与任务中手动执行。';
+
+  const changePlanGenerationProvider = (provider: PlanBackendProvider) => {
+    if (!cliSelection) return;
+    if (selectedStrategy === PLAN_GENERATION_STRATEGIES.BUILTIN_LLM_STRUCTURED) {
+      cliSelection.onStrategyChange(type, PLAN_GENERATION_STRATEGIES.EXTERNAL_CLI_MARKDOWN);
+    }
+    cliSelection.onProviderChange(type, provider);
+  };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -230,100 +225,44 @@ export function Composer({
             <Icon name="attachment" size={20} className="attachment-trigger-icon" aria-hidden="true" />
           </div>
           {cliSelection ? (
-            <div className="composer-cli-row composer-plan-row">
+            <div className="composer-cli-row composer-plan-row composer-cli-controls">
               <label
-                className="composer-icon-select"
-                title={useProjectDefault ? '计划生成：项目默认' : '计划生成：自定义'}
+                className="composer-icon-select composer-cli-select"
+                title={`计划生成 CLI：${selectedProviderOption?.label || selectedProvider}`}
               >
-                <Icon name="plan" size={18} aria-hidden="true" />
-                <span className="composer-select-label">{useProjectDefault ? '项目默认' : '自定义生成'}</span>
+                <Icon name="cli" size={18} aria-hidden="true" />
+                <span className="composer-select-label">{selectedProviderOption?.label || selectedProvider}</span>
                 <select
-                  aria-label="选择计划生成配置来源"
-                  value={useProjectDefault ? 'default' : 'custom'}
-                  onChange={(event) => cliSelection.onUseProjectDefaultChange(type, event.target.value === 'default')}
+                  aria-label="选择计划生成 CLI 后端"
+                  value={selectedProvider}
+                  onChange={(event) => changePlanGenerationProvider(event.target.value as PlanBackendProvider)}
                 >
-                  <option value="default">项目默认</option>
-                  <option value="custom">自定义生成</option>
+                  {cliProviderOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </label>
-              {!useProjectDefault ? (
-                <>
-                  <label
-                    className="composer-icon-select composer-icon-select-wide"
-                    title={`生成策略：${selectedStrategyOption?.label || selectedStrategy}`}
+              {isCodexProvider ? (
+                <label
+                  className="composer-icon-select composer-reasoning-select"
+                  title={`Codex 思考深度：${selectedReasoningOption?.label || selectedReasoning}`}
+                >
+                  <Icon name="thinking" size={18} aria-hidden="true" />
+                  <span className="composer-select-label">{selectedReasoningOption?.label || selectedReasoning}</span>
+                  <select
+                    aria-label="选择 Codex 思考深度"
+                    value={selectedReasoning}
+                    onChange={(event) => cliSelection.onReasoningChange(type, event.target.value as CodexReasoningEffort)}
                   >
-                    <Icon name="sliders" size={18} aria-hidden="true" />
-                    <span className="composer-select-label">{selectedStrategyOption?.label || selectedStrategy}</span>
-                    <select
-                      aria-label="选择计划生成策略"
-                      value={selectedStrategy}
-                      onChange={(event) => cliSelection.onStrategyChange(type, event.target.value as PlanGenerationStrategy)}
-                    >
-                      {planGenerationStrategyOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label
-                    className="composer-icon-select"
-                    title={`生成 Provider：${selectedProviderOption?.label || planBackendProviderLabel(selectedProvider)}`}
-                  >
-                    <Icon name={isBuiltinGeneration ? 'chat' : 'cli'} size={18} aria-hidden="true" />
-                    <span className="composer-select-label">
-                      {selectedProviderOption?.label || planBackendProviderLabel(selectedProvider)}
-                    </span>
-                    <select
-                      aria-label="选择计划生成 Provider"
-                      value={selectedProvider}
-                      onChange={(event) => cliSelection.onProviderChange(type, event.target.value)}
-                    >
-                      {providerOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label
-                    className="composer-inline-input"
-                    title={isBuiltinGeneration ? `生成模型：${backendValueLabel}` : `生成命令：${backendValueLabel}`}
-                  >
-                    <Icon name={isBuiltinGeneration ? 'chat' : 'terminal'} size={18} aria-hidden="true" />
-                    <input
-                      aria-label={isBuiltinGeneration ? '计划生成模型' : '计划生成命令'}
-                      className="mono"
-                      value={isBuiltinGeneration ? selectedGeneration.model : selectedGeneration.command}
-                      onChange={(event) =>
-                        isBuiltinGeneration
-                          ? cliSelection.onModelChange(type, event.target.value)
-                          : cliSelection.onCommandChange(type, event.target.value)
-                      }
-                      placeholder={isBuiltinGeneration ? planBackendDefaultModel(selectedProvider) : planBackendDefaultCommand(selectedProvider)}
-                    />
-                  </label>
-                  {isCodexProvider ? (
-                    <label
-                      className="composer-icon-select"
-                      title={`Codex 思考深度：${selectedReasoningOption?.label || selectedReasoning}`}
-                    >
-                      <Icon name="thinking" size={18} aria-hidden="true" />
-                      <span className="composer-select-label">{selectedReasoningOption?.label || selectedReasoning}</span>
-                      <select
-                        aria-label="选择 Codex 思考深度"
-                        value={selectedReasoning}
-                        onChange={(event) => cliSelection.onReasoningChange(type, event.target.value as CodexReasoningEffort)}
-                      >
-                        {cliSelection.reasoningOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
-                </>
+                    {cliSelection.reasoningOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               ) : null}
             </div>
           ) : null}

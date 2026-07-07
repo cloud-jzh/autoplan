@@ -7,6 +7,7 @@ const { saveAttachments } = require('./attachments');
 const { AppDatabase, nowIso } = require('./database');
 const { createIntakeService, titleFromBody } = require('./intakeService');
 const { LoopService, nextIntakeAgentCliConfig, nextIntakePlanGenerationConfig } = require('./loopService');
+const intakePlanLinks = require('./loop/intakePlanLinks');
 const { parseCron } = require('./loop/scriptHooks');
 const { createExecutorStore } = require('./executors/executorStore');
 const { mcpServerConfig, saveMcpSettings } = require('./mcpConfig');
@@ -33,6 +34,15 @@ const {
   getLegacyChatConfig,
 } = require('./chat/aiConfigService');
 const {
+  listClaudeCliConfigs,
+  getClaudeCliConfig,
+  createClaudeCliConfig,
+  updateClaudeCliConfig,
+  deleteClaudeCliConfig,
+  setDefaultClaudeCliConfig,
+} = require('./chat/claudeCliConfigService');
+const { effectiveAgentCliConfig } = require('./loop/agentCliConfig');
+const {
   FILE_ACCESS_SCOPE_KEY,
   ALLOW_CROSS_PROJECT_KEY,
   ALLOWED_ROOTS_KEY,
@@ -57,6 +67,10 @@ let chatControllers;
 let terminalService;
 let fileProtocolRegistered = false;
 const UPDATE_REPO = 'lyming99/autoplan';
+
+function updateDownloadsRoot() {
+  return path.join(app.getPath('userData'), 'updates', 'downloads');
+}
 
 async function createApp() {
   Menu.setApplicationMenu(null);
@@ -84,8 +98,16 @@ async function createApp() {
   });
   // 模块级 mcpServer 在启停过程中被重新赋值，故以闭包懒读取其最新状态注入快照。
   loop.setMcpStatusProvider(() => mcpServer?.status?.());
-  // 更新检查器（需求 #24）：检查完成后经 onCheck 向渲染进程推送 updates:status。
-  updateChecker = createUpdateChecker({ app, net, db, repo: UPDATE_REPO, onCheck: broadcastUpdateStatus });
+  loop.startScheduler();
+  // 更新检查器：检查完成后经 onCheck 向渲染进程推送 updates:status；安装包只下载到 userData 受控目录。
+  updateChecker = createUpdateChecker({
+    app,
+    net,
+    db,
+    repo: UPDATE_REPO,
+    downloadDir: updateDownloadsRoot(),
+    onCheck: broadcastUpdateStatus,
+  });
 
   mainWindow = new BrowserWindow({
     width: 1220,
@@ -114,7 +136,10 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   if (mcpServer) mcpServer.stop().catch((error) => console.error('[mcp] stop failed', error));
   if (terminalService) terminalService.disposeAll();
-  if (loop) loop.stop();
+  if (loop) {
+    loop.stopScheduler();
+    loop.stop();
+  }
   if (updateChecker) updateChecker.stop();
 });
 
@@ -140,6 +165,8 @@ ipcMain.handle('updates:setAutoCheck', (_event, input = {}) => {
   return next;
 });
 
+ipcMain.handle('updates:openInstaller', async () => openDownloadedUpdateInstaller());
+
 // 外链统一经主进程 shell.openExternal 打开（需求 #24 更新提醒等），仅放行 http/https，避免渲染进程直接跳转。
 ipcMain.handle('shell:openExternal', async (_event, input = {}) => {
   const url = typeof input === 'string' ? input : input && input.url;
@@ -163,6 +190,22 @@ function defaultUpdateStatus() {
     dismissedVersion: '',
     hasUpdate: false,
     stableUpdate: false,
+    installerAsset: null,
+    installerAssetAvailable: false,
+    installerAssetStatus: '',
+    installerAssetReason: '',
+    downloadPhase: 'idle',
+    downloadProgress: 0,
+    downloadError: '',
+    downloadReason: '',
+    localInstallerPath: '',
+    downloadedInstallerPath: '',
+    downloadStartedAt: '',
+    downloadCompletedAt: '',
+    downloadBytesReceived: 0,
+    downloadTotalBytes: 0,
+    downloadAssetKey: '',
+    downloadVersion: '',
     autoCheck: true,
     intervalMinutes: 360,
   };
@@ -174,6 +217,73 @@ function broadcastUpdateStatus() {
 
 function sendToRendererWindow(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+}
+
+async function openDownloadedUpdateInstaller() {
+  if (!updateChecker) return updateInstallerOpenResult(false, 'checker unavailable');
+  const state = updateChecker.status();
+  if (state.downloadPhase !== 'downloaded') return updateInstallerOpenResult(false, 'installer not downloaded');
+  const recordedPath = String(state.localInstallerPath || state.downloadedInstallerPath || '').trim();
+  if (!recordedPath) return updateInstallerOpenResult(false, 'installer path unavailable');
+
+  try {
+    const filePath = await resolveRecordedUpdateInstallerPath(recordedPath);
+    const openError = await shell.openPath(filePath);
+    if (!openError) return updateInstallerOpenResult(true, null, { filePath, mode: 'open' });
+    shell.showItemInFolder(filePath);
+    return updateInstallerOpenResult(true, null, { filePath, mode: 'showItemInFolder', openError });
+  } catch (error) {
+    return updateInstallerOpenResult(false, updateInstallerOpenErrorMessage(error));
+  }
+}
+
+async function resolveRecordedUpdateInstallerPath(recordedPath) {
+  const root = updateDownloadsRoot();
+  const resolvedPath = path.resolve(recordedPath);
+  if (!isInsidePath(root, resolvedPath)) throw installerOpenError('OUTSIDE_DOWNLOAD_DIR', 'installer path outside update download directory');
+
+  let rootRealPath;
+  try {
+    rootRealPath = await fs.promises.realpath(root);
+  } catch {
+    throw installerOpenError('DOWNLOAD_DIR_MISSING', 'update download directory unavailable');
+  }
+
+  let fileRealPath;
+  try {
+    fileRealPath = await fs.promises.realpath(resolvedPath);
+  } catch (error) {
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') {
+      throw installerOpenError('INSTALLER_MISSING', 'installer file missing');
+    }
+    throw error;
+  }
+
+  if (!isInsidePath(rootRealPath, fileRealPath)) {
+    throw installerOpenError('OUTSIDE_DOWNLOAD_DIR', 'installer path outside update download directory');
+  }
+  const stat = await fs.promises.stat(fileRealPath);
+  if (!stat.isFile()) throw installerOpenError('INSTALLER_NOT_FILE', 'installer path is not a file');
+  return fileRealPath;
+}
+
+function installerOpenError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function updateInstallerOpenErrorMessage(error) {
+  if (error?.code === 'DOWNLOAD_DIR_MISSING') return '更新下载目录不存在';
+  if (error?.code === 'INSTALLER_MISSING') return '安装包文件不存在';
+  if (error?.code === 'INSTALLER_NOT_FILE') return '安装包路径不是文件';
+  if (error?.code === 'OUTSIDE_DOWNLOAD_DIR') return '安装包路径不在受控下载目录内';
+  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '安装包无法访问，请检查权限';
+  return error?.message || String(error || '打开安装包失败');
+}
+
+function updateInstallerOpenResult(ok, error, extra = {}) {
+  return { ok, error: error || null, ...extra };
 }
 
 function scheduleUpdateCheck() {
@@ -203,6 +313,46 @@ ipcMain.handle('plans:reorder', (_event, input = {}) => {
 ipcMain.handle('plans:stop', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   return loop.stopPlan(projectId, requiredRecordId(input, 'planId'));
+});
+
+ipcMain.handle('plans:resume', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  return loop.resumePlan(projectId, requiredRecordId(input, 'planId'));
+});
+
+ipcMain.handle('plans:updateExecutionConfig', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const planId = requiredRecordId(input, 'planId');
+  return loop.updatePlanExecutionConfig(projectId, planId, {
+    provider: input.provider,
+    command: input.command,
+  });
+});
+
+ipcMain.handle('plans:reExecute', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  return loop.reExecutePlan(projectId, requiredRecordId(input, 'planId'));
+});
+
+ipcMain.handle('plans:recreate', async (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const planId = requiredRecordId(input, 'planId');
+  return loop.recreatePlanFromIntake(projectId, planId);
+});
+
+ipcMain.handle('plans:appendTask', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const planId = requiredRecordId(input, 'planId');
+  const intake = intakePlanLinks.getIntakeForPlan(loop, projectId, planId, {
+    includeLegacyFallback: true,
+  });
+  if (!intake || !intake.intakeId) throw new Error('计划未关联需求/反馈，无法追加任务');
+  return loop.appendTaskToIntakePlan(
+    projectId,
+    intake.intakeType,
+    intake.intakeId,
+    input.title || '',
+  );
 });
 
 ipcMain.handle('plans:delete', (_event, input = {}) => {
@@ -834,6 +984,44 @@ ipcMain.handle('ai-config:delete', (_event, input = {}) => {
   return result;
 });
 
+// ------------------------------------------------------- claude-cli-config:* IPC（需求 #93）------------------------------------------------
+
+ipcMain.handle('claude-cli-config:list', () => listClaudeCliConfigs(db));
+
+ipcMain.handle('claude-cli-config:get', (_event, input = {}) => {
+  const id = requiredRecordId(input, 'configId');
+  const config = getClaudeCliConfig(db, id);
+  if (!config) throw new Error('Claude CLI 配置不存在');
+  return config;
+});
+
+ipcMain.handle('claude-cli-config:create', (_event, input = {}) => {
+  const config = createClaudeCliConfig(db, claudeCliConfigCreateInput(input));
+  broadcastClaudeCliConfigChanged('claude-cli-config:create', config.id);
+  return config;
+});
+
+ipcMain.handle('claude-cli-config:update', (_event, input = {}) => {
+  const id = requiredRecordId(input, 'configId');
+  const config = updateClaudeCliConfig(db, id, claudeCliConfigUpdateInput(input));
+  broadcastClaudeCliConfigChanged('claude-cli-config:update', id);
+  return config;
+});
+
+ipcMain.handle('claude-cli-config:delete', (_event, input = {}) => {
+  const id = requiredRecordId(input, 'configId');
+  const result = deleteClaudeCliConfig(db, id);
+  broadcastClaudeCliConfigChanged('claude-cli-config:delete', id);
+  return result;
+});
+
+ipcMain.handle('claude-cli-config:set-default', (_event, input = {}) => {
+  const id = requiredRecordId(input, 'configId');
+  const config = setDefaultClaudeCliConfig(db, id);
+  broadcastClaudeCliConfigChanged('claude-cli-config:set-default', id);
+  return config;
+});
+
 // ------------------------------------------------------- conversation:* IPC（需求 #28）-----------------------------------------
 
 ipcMain.handle('conversation:list', (_event, input = {}) => {
@@ -874,6 +1062,17 @@ function getOrCreateChatController(conversationId, projectId) {
   if (!project) throw new Error('项目不存在');
   const workspacePath = String(project.workspace_path || '').trim();
   if (!workspacePath) throw new Error('项目工作区路径为空');
+
+  // 解析 codex 后端启动参数（需求 #96）：优先项目 loop 配置，回退 effectiveAgentCliConfig({})
+  const state = db.get('SELECT agent_cli_command, codex_reasoning_effort FROM project_states WHERE project_id = ?', [projectId]);
+  const codexCommand = String(state?.agent_cli_command || '').trim();
+  const codexReasoningEffort = String(state?.codex_reasoning_effort || '').trim();
+  const fallback = effectiveAgentCliConfig({});
+  const codexBackendConfig = {
+    command: codexCommand || fallback.command || 'codex',
+    defaultReasoningEffort: codexReasoningEffort || fallback.codexReasoningEffort || 'medium',
+  };
+
   const tools = getChatToolDefinitions({
     db,
     projectId,
@@ -886,6 +1085,7 @@ function getOrCreateChatController(conversationId, projectId) {
   const send = (channel, data) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, data); };
   const controller = createChatController({
     db, llmClient: createLlmClient, chatTools: tools, conversationId, projectId, workspacePath,
+    codexBackendConfig,
     onEvent: ({ type, data }) => send('chat:chunk', { type, data }),
     onQueue: (items) => send('chat:queue', { conversationId, items, count: Array.isArray(items) ? items.length : 0 }),
     onDone: ({ status, error, conversationId: doneCid, title } = {}) => {
@@ -973,6 +1173,16 @@ function broadcastAiConfigChanged(source, configId = null) {
       source,
       configId,
       configs: listAiConfigs(db),
+    });
+  }
+}
+
+function broadcastClaudeCliConfigChanged(source, configId = null) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('claude-cli-config:changed', {
+      source,
+      configId,
+      configs: listClaudeCliConfigs(db),
     });
   }
 }
@@ -1109,6 +1319,26 @@ function aiConfigCreateInput(input = {}) {
 
 function aiConfigUpdateInput(input = {}) {
   return chatConfigToAiConfigFields(input);
+}
+
+function claudeCliConfigCreateInput(input = {}) {
+  const source = input && typeof input === 'object' ? input : {};
+  return {
+    name: source.name,
+    baseUrl: source.baseUrl,
+    authToken: source.authToken,
+    model: source.model,
+  };
+}
+
+function claudeCliConfigUpdateInput(input = {}) {
+  const source = input && typeof input === 'object' ? input : {};
+  const fields = {};
+  if (Object.prototype.hasOwnProperty.call(source, 'name')) fields.name = source.name;
+  if (Object.prototype.hasOwnProperty.call(source, 'baseUrl')) fields.baseUrl = source.baseUrl;
+  if (Object.prototype.hasOwnProperty.call(source, 'authToken')) fields.authToken = source.authToken;
+  if (Object.prototype.hasOwnProperty.call(source, 'model')) fields.model = source.model;
+  return fields;
 }
 
 function conversationCreateInput(input = {}, projectId) {

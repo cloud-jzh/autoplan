@@ -69,6 +69,10 @@ function planExecutionDisplayConfig(config = {}) {
     command: config.command ?? config.planExecutionCommand,
     model: config.model ?? config.planExecutionModel,
     codexReasoningEffort: config.codexReasoningEffort ?? config.planExecutionCodexReasoningEffort,
+    claudeBaseUrl: config.claudeBaseUrl ?? config.planExecutionClaudeBaseUrl,
+    claudeAuthToken: config.claudeAuthToken ?? config.planExecutionClaudeAuthToken,
+    claudeModel: config.claudeModel ?? config.planExecutionClaudeModel,
+    claudeConfigId: config.claudeConfigId ?? config.planExecutionClaudeConfigId,
   });
   return {
     provider: normalized.provider,
@@ -85,6 +89,10 @@ function planExecutionEventMeta(config = {}) {
     command: config.command ?? config.planExecutionCommand,
     model: config.model ?? config.planExecutionModel,
     codexReasoningEffort: config.codexReasoningEffort ?? config.planExecutionCodexReasoningEffort,
+    claudeBaseUrl: config.claudeBaseUrl ?? config.planExecutionClaudeBaseUrl,
+    claudeAuthToken: config.claudeAuthToken ?? config.planExecutionClaudeAuthToken,
+    claudeModel: config.claudeModel ?? config.planExecutionClaudeModel,
+    claudeConfigId: config.claudeConfigId ?? config.planExecutionClaudeConfigId,
   });
   return {
     planExecutionConfig: {
@@ -93,12 +101,22 @@ function planExecutionEventMeta(config = {}) {
       command: normalized.command,
       model: normalized.model,
       codexReasoningEffort: normalized.codexReasoningEffort,
+      // 嵌套快照里同时保留 Claude 字段，供 planExecutionConfig 从 event meta 回放时取回。
+      claudeBaseUrl: normalized.claudeBaseUrl,
+      claudeAuthToken: normalized.claudeAuthToken,
+      claudeModel: normalized.claudeModel,
+      claudeConfigId: normalized.claudeConfigId,
     },
     planExecutionStrategy: normalized.strategy,
     planExecutionProvider: normalized.provider,
     planExecutionCommand: normalized.command,
     planExecutionModel: normalized.model,
     planExecutionCodexReasoningEffort: normalized.codexReasoningEffort,
+    // 平铺字段会被展开进 task execution 的 operation，runCodex 据此拼装 agentCliOptions.claudeEnv。
+    planExecutionClaudeBaseUrl: normalized.claudeBaseUrl,
+    planExecutionClaudeAuthToken: normalized.claudeAuthToken,
+    planExecutionClaudeModel: normalized.claudeModel,
+    planExecutionClaudeConfigId: normalized.claudeConfigId,
   };
 }
 
@@ -133,6 +151,26 @@ function flattenPlanExecutionSource(source = {}) {
       'plan_execution_codex_reasoning_effort',
       'codexReasoningEffort',
       'codex_reasoning_effort',
+    ]),
+    planExecutionClaudeBaseUrl: readFirstPlanExecutionValue(source, nested, [
+      'planExecutionClaudeBaseUrl',
+      'plan_execution_claude_base_url',
+      'claudeBaseUrl',
+    ]),
+    planExecutionClaudeAuthToken: readFirstPlanExecutionValue(source, nested, [
+      'planExecutionClaudeAuthToken',
+      'plan_execution_claude_auth_token',
+      'claudeAuthToken',
+    ]),
+    planExecutionClaudeModel: readFirstPlanExecutionValue(source, nested, [
+      'planExecutionClaudeModel',
+      'plan_execution_claude_model',
+      'claudeModel',
+    ]),
+    planExecutionClaudeConfigId: readFirstPlanExecutionValue(source, nested, [
+      'planExecutionClaudeConfigId',
+      'plan_execution_claude_config_id',
+      'claudeConfigId',
     ]),
   };
 }

@@ -33,7 +33,7 @@ const OpenAI = require('openai').OpenAI;
  * @param {Array<object>} [opts.config.tools]
  * @param {object|string} [opts.config.toolChoice] - OpenAI/Anthropic 工具选择透传
  * @param {AbortSignal} [opts.config.signal]
- * @param {string} [opts.config.thinkingDepth] - 'low'|'medium'|'high'（OpenAI o-series / DeepSeek 推理模型）
+ * @param {string} [opts.config.thinkingDepth] - 'low'|'medium'|'high'|'xhigh'（OpenAI 支持 xhigh；DeepSeek 仅 low/medium/high）
  * @param {number} [opts.config.thinkingBudgetTokens] - Anthropic 扩展思考 token 预算
  * @param {Function} [opts.fetch] - 可注入 fetch（默认 globalThis.fetch）
  * @yields {{type:string}}
@@ -74,6 +74,7 @@ async function* createLlmClient({ config, fetch: injectedFetch }) {
   } else {
     yield* streamOpenAiCompat({
       fetchFn,
+      provider,
       baseUrl,
       apiKey,
       model,
@@ -91,6 +92,7 @@ async function* createLlmClient({ config, fetch: injectedFetch }) {
 
 async function* streamOpenAiCompat({
   fetchFn,
+  provider,
   baseUrl,
   apiKey,
   model,
@@ -122,8 +124,9 @@ async function* streamOpenAiCompat({
   if (toolChoice !== undefined && toolChoice !== null) {
     params.tool_choice = toolChoice;
   }
-  if (thinkingDepth) {
-    params.reasoning_effort = thinkingDepth;
+  const reasoningEffort = normalizeReasoningEffortForProvider(provider, thinkingDepth);
+  if (reasoningEffort) {
+    params.reasoning_effort = reasoningEffort;
   }
 
   let stream;
@@ -423,6 +426,22 @@ function buildAnthropicHeaders(apiKey) {
     'x-api-key': apiKey,
     'anthropic-version': '2023-06-01',
   };
+}
+
+const OPENAI_REASONING_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh']);
+const DEEPSEEK_REASONING_EFFORTS = new Set(['low', 'medium', 'high']);
+
+function normalizeReasoningEffortForProvider(provider, value) {
+  if (value === undefined || value === null || value === '') return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return null;
+  if (provider === 'openai') {
+    return OPENAI_REASONING_EFFORTS.has(normalized) ? normalized : null;
+  }
+  if (provider === 'deepseek') {
+    return DEEPSEEK_REASONING_EFFORTS.has(normalized) ? normalized : null;
+  }
+  return null;
 }
 
 /* ------------------------------------------------------------------ 工具函数 ------------------------------------------------------------------ */

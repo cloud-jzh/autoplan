@@ -4,6 +4,8 @@ import { DEFAULT_WORKSPACE_TAB, PLAN_GENERATION_STRATEGIES, WORKSPACE_SEARCH_SOU
 import type {
   AppSnapshot,
   CodexReasoningEffort,
+  IntakeAcceptanceHandler,
+  IntakeMentionCandidate,
   IntakeType,
   LinkedPlanSummary,
   PendingAttachment,
@@ -19,6 +21,7 @@ import type {
 import { useComposerDrafts } from './useComposerDrafts';
 import { useSnapshot } from './useSnapshot';
 import { searchWorkspaceSnapshot } from '../utils/search';
+import { buildIntakeMentionCandidates } from '../utils/intakeMentions';
 import {
   createUnavailableLinkedPlan,
   createUnavailableLinkedPlanFromSummary,
@@ -140,6 +143,10 @@ export function useWorkspaceController() {
   );
   const searchHitCount = workspaceSearch.total;
   const isSearching = !workspaceSearch.query.isEmpty;
+  const intakeMentionCandidates: IntakeMentionCandidate[] = useMemo(
+    () => buildIntakeMentionCandidates(snapshot, projectId),
+    [snapshot, projectId],
+  );
 
   const requirementItems = activeTab === 'requirement'
     ? snapshot?.requirements ?? EMPTY_WORKSPACE_FILTERABLE_ITEMS.requirements
@@ -695,6 +702,21 @@ export function useWorkspaceController() {
     }));
   };
 
+  const acceptIntake = useCallback<IntakeAcceptanceHandler>(
+    async (type, id) => {
+      if (!projectId || !id) return;
+      await runLoopAction(() => window.autoplan.acceptIntake({ projectId, type, id }));
+    },
+    [projectId, runLoopAction],
+  );
+
+  const unacceptIntake = useCallback<IntakeAcceptanceHandler>(
+    async (type, id) => {
+      if (!projectId || !id) return;
+      await runLoopAction(() => window.autoplan.unacceptIntake({ projectId, type, id }));
+    },
+    [projectId, runLoopAction],
+  );
   const interruptIntake = useCallback(
     async (type: IntakeType, id: number) => {
       try {
@@ -890,6 +912,7 @@ export function useWorkspaceController() {
     activeTab,
     acceptanceGroups,
     acceptedGroups,
+    acceptIntake,
     acceptItem,
     acceptItems,
     addPendingFiles,
@@ -907,6 +930,7 @@ export function useWorkspaceController() {
     filteredEmptyText,
     filteredItems,
     interruptIntake,
+    intakeMentionCandidates,
     isSearching,
     latestReadingPlan,
     loopForm,
@@ -949,6 +973,7 @@ export function useWorkspaceController() {
     submitLoopConfig,
     updatePlanExecutionConfig,
     switchProject,
+    unacceptIntake,
     unacceptItem,
     unacceptItems,
     updateComposerDraft,

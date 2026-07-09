@@ -278,6 +278,7 @@ function intakeLinkedPlanSnapshotRow(row = {}, planSnapshotById = new Map(), sta
   const effective = effectiveAgentCliConfig(state || {}, normalized);
   const base = {
     ...normalized,
+    accepted_at: normalizeOptionalString(normalized.accepted_at) || null,
     ...planBackendSnapshotFields(normalized),
     ...intakeGenerateFailureSnapshotFields(normalized),
     agent_cli_provider: effective.provider,

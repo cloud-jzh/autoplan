@@ -12,6 +12,7 @@ const {
   generateBuiltinPlanSpec,
 } = require('./builtinPlanGenerator');
 const intakePlanLinks = require('./intakePlanLinks');
+const { buildIntakeMentionPromptContext } = require('./intakeMentions');
 const planBackendConfig = require('./planBackendConfig');
 const { PlanRenderError, renderPlanSpecMarkdown } = require('./planRenderer');
 const {
@@ -62,6 +63,12 @@ const MARKDOWN_PLAN_PROGRESS_CONSTRAINT_LINES = [
   '- 必须包含精确二级标题 `## 进度区`。',
   '- `## 进度区` 初始内容不要预置任务状态表格；禁止写 `| 任务 | 状态 | 备注 |`、表格分隔线或任何按任务预置的表格行。',
   '- `## 进度区` 只保留给执行过程追加进度 bullet；后续记录采用 `- P001 AutoPlan 完成...；日志：docs/progress/logs/...` 模式。',
+];
+const USER_SPECIFIED_SKILL_TRANSFER_CONSTRAINT_LINES = [
+  '用户指定 skill 传递约束：',
+  '- 如果需求/反馈正文明确指定某个 skill、`$SkillName`、工具/技能调用或类似执行要求，禁止把“使用某 skill/调用某工具”拆成独立任务项。',
+  '- 必须把该 skill/工具要求写入真正需要执行的具体开发任务标题、验收要点或任务说明中，确保后续执行该任务时能识别并使用指定 skill。',
+  '- 该约束只影响任务拆解语义，不得改变 PlanSpec 契约、Markdown 任务格式、scope、完整验收任务、只写指定输出文件等 AutoPlan 硬性要求。',
 ];
 const STRUCTURED_PLAN_RENDER_CONSTRAINT_LINES = [
   '- AutoPlan 渲染出的最终 Markdown 必须包含精确二级标题 `## 任务拆解`。',
@@ -150,6 +157,7 @@ async function generatePlan(service, helpers, projectId, workspace, issueScan) {
       '- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收',
       '- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准',
       '- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试',
+      ...USER_SPECIFIED_SKILL_TRANSFER_CONSTRAINT_LINES,
       '- 必须包含总体验收标准和进度区',
       ...MARKDOWN_PLAN_PROGRESS_CONSTRAINT_LINES,
       ...PLAN_HEADING_HARD_CONSTRAINT_LINES,
@@ -225,6 +233,7 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
     const projectStatus = service.status(projectId);
     const planGenerationConfig = effectivePlanGenerationConfigForService(service, projectStatus, intake);
     const planExecutionConfig = effectivePlanExecutionConfigForService(service, projectStatus);
+    const intakeMentionPromptContext = buildIntakeMentionPromptContext(service, projectId, intake);
     if (isExternalCliStructuredPlanGeneration(planGenerationConfig)) {
       return generateStructuredPlanForIntake(service, helpers, projectId, workspace, intake, {
         projectStatus,
@@ -232,6 +241,7 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
         sourceName,
         planGenerationConfig,
         planExecutionConfig,
+        intakeMentionPromptContext,
         planGenerationStartedAt,
       });
     }
@@ -242,6 +252,7 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
         sourceName,
         planGenerationConfig,
         planExecutionConfig,
+        intakeMentionPromptContext,
         planGenerationStartedAt,
       });
     }
@@ -253,6 +264,7 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
         sourceName,
         planGenerationConfig,
         planExecutionConfig,
+        intakeMentionPromptContext,
         planGenerationStartedAt,
       });
     }
@@ -266,13 +278,15 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
     const phasing = analyzeIntakePlanPhasing(intake);
     if (phasing.enabled) {
       return generatePhasedPlansForIntake(service, helpers, projectId, workspace, intake, {
+        projectStatus,
         table,
         sourceName,
         planGenerationConfig,
         planExecutionConfig,
         planAgentCliOperation,
         planAgentCliConfig,
-      isOpenCodeProvider,
+        intakeMentionPromptContext,
+        isOpenCodeProvider,
         phasing,
         planGenerationStartedAt,
       });
@@ -310,6 +324,7 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
       '- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收',
       '- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准',
       '- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试',
+      ...USER_SPECIFIED_SKILL_TRANSFER_CONSTRAINT_LINES,
       '- 必须包含总体验收标准和进度区',
       ...MARKDOWN_PLAN_PROGRESS_CONSTRAINT_LINES,
       ...PLAN_HEADING_HARD_CONSTRAINT_LINES,
@@ -321,6 +336,7 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
       `${sourceName} #${intake.id} 内容：`,
       String(intake.body || '').trim() || '（正文为空）',
     ];
+    appendIntakeMentionPromptContext(promptParts, intakeMentionPromptContext);
     // 短正文时注入项目上下文，帮助模型判断需求涉及范围。OpenCode 后端跳过该注入：既膨胀 prompt
     // 易触发 spillover，又强化“读项目”倾向而偏离反馈正文（claude/codex/oh-my-pi 行为不变）。
     if (!isOpenCodeProvider && String(intake.body || '').trim().length < 20) {
@@ -482,12 +498,14 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
 async function generatePhasedPlansForIntake(service, helpers, projectId, workspace, intake, context) {
   const { timestampForPath, readSnippet, normalizeRelative, hashFile, hashText } = helpers;
   const {
+    projectStatus,
     table,
     sourceName,
     planGenerationConfig,
     planExecutionConfig,
     planAgentCliOperation,
     planAgentCliConfig,
+    intakeMentionPromptContext,
     isOpenCodeProvider,
     phasing,
     planGenerationStartedAt: contextPlanGenerationStartedAt,
@@ -508,6 +526,7 @@ async function generatePhasedPlansForIntake(service, helpers, projectId, workspa
     phasing,
     attachmentPrompt,
     readSnippet,
+    intakeMentionPromptContext,
     isOpenCodeProvider,
     projectStatus,
   });
@@ -835,6 +854,7 @@ async function generateStructuredPlanForIntake(service, helpers, projectId, work
     sourceName,
     planGenerationConfig,
     planExecutionConfig,
+    intakeMentionPromptContext,
     planGenerationStartedAt: contextPlanGenerationStartedAt,
   } = context;
   const planGenerationStartedAt = contextPlanGenerationStartedAt ?? planGenerationTimerStart();
@@ -855,6 +875,7 @@ async function generateStructuredPlanForIntake(service, helpers, projectId, work
     projectStatus,
     attachmentPrompt,
     readSnippet,
+    intakeMentionPromptContext,
     isOpenCodeProvider,
   });
 
@@ -1173,6 +1194,7 @@ async function generateBuiltinStructuredPlanForIntake(service, helpers, projectI
     sourceName,
     planGenerationConfig,
     planExecutionConfig,
+    intakeMentionPromptContext,
     planGenerationStartedAt: contextPlanGenerationStartedAt,
   } = context;
   const planGenerationStartedAt = contextPlanGenerationStartedAt ?? planGenerationTimerStart();
@@ -1188,6 +1210,7 @@ async function generateBuiltinStructuredPlanForIntake(service, helpers, projectI
     projectStatus,
     attachmentPrompt,
     readSnippet,
+    intakeMentionPromptContext,
   });
 
   let builtinResult;
@@ -1570,6 +1593,7 @@ function buildStructuredIntakePlanPrompt(input) {
     projectStatus,
     attachmentPrompt,
     readSnippet,
+    intakeMentionPromptContext,
     isOpenCodeProvider,
   } = input;
   const explorationGuidance = isOpenCodeProvider
@@ -1593,6 +1617,7 @@ function buildStructuredIntakePlanPrompt(input) {
     `${sourceName} #${intake.id} 内容：`,
     String(intake.body || '').trim() || '（正文为空）',
   ];
+  appendIntakeMentionPromptContext(promptParts, intakeMentionPromptContext);
   if (!isOpenCodeProvider && typeof readSnippet === 'function' && String(intake.body || '').trim().length < 20) {
     appendProjectContext(promptParts, workspace, readSnippet);
   }
@@ -1625,6 +1650,7 @@ function buildBuiltinStructuredIntakePlanPrompt(input) {
     projectStatus,
     attachmentPrompt,
     readSnippet,
+    intakeMentionPromptContext,
   } = input;
   const promptParts = [
     '你是需求整理与开发计划生成者。',
@@ -1638,6 +1664,7 @@ function buildBuiltinStructuredIntakePlanPrompt(input) {
     `${sourceName} #${intake.id} 内容：`,
     String(intake.body || '').trim() || '（正文为空）',
   ];
+  appendIntakeMentionPromptContext(promptParts, intakeMentionPromptContext);
   if (typeof readSnippet === 'function' && String(intake.body || '').trim().length < 20) {
     appendProjectContext(promptParts, workspace, readSnippet);
   }
@@ -1658,6 +1685,7 @@ function builtinPlanSpecPromptContract({ projectStatus }) {
     '- scope 必须是字符串数组，写预计修改的文件或模块；无法判断时使用 ["unknown"]。',
     '- acceptance 必须是字符串数组，只描述该任务应覆盖的场景，不要求在该任务内运行测试。',
     '- 不要把运行测试/回归/验收/构建拆成普通开发任务；最终验收写入 finalValidation。',
+    ...USER_SPECIFIED_SKILL_TRANSFER_CONSTRAINT_LINES,
     '- finalValidation.command 必须是最终验收命令字符串；如果项目中无法明确判断，请根据技术栈推断合理命令。',
     '- finalValidation.criteria 必须列出最终验收范围和通过标准。',
     ...(validationCommand ? [`- 当前项目配置的最终验收命令：${validationCommand}`] : []),
@@ -1686,6 +1714,7 @@ function structuredPlanSpecPromptContract({ planSpecFile, planFile, projectStatu
     '- scope 必须是字符串数组，写预计修改的文件或模块；无法判断时使用 ["unknown"]。',
     '- acceptance 必须是字符串数组，只描述该任务应覆盖的场景，不要求在该任务内运行测试。',
     '- 不要把运行测试/回归/验收/构建拆成普通开发任务；最终验收写入 finalValidation。',
+    ...USER_SPECIFIED_SKILL_TRANSFER_CONSTRAINT_LINES,
     '- finalValidation.command 必须是最终验收命令字符串；如果项目中无法明确判断，请根据技术栈推断合理命令。',
     '- finalValidation.criteria 必须列出最终验收范围和通过标准。',
     ...(validationCommand ? [`- 当前项目配置的最终验收命令：${validationCommand}`] : []),
@@ -2077,6 +2106,7 @@ function buildPhasedPlanPrompt(input) {
     phasing,
     attachmentPrompt,
     readSnippet,
+    intakeMentionPromptContext,
     isOpenCodeProvider,
     projectStatus,
   } = input;
@@ -2130,6 +2160,7 @@ function buildPhasedPlanPrompt(input) {
     ...PLAN_HEADING_HARD_CONSTRAINT_LINES,
     '- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；只在最后的完整验收节点写最终验收命令、范围和通过标准。',
     '- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试。',
+    ...USER_SPECIFIED_SKILL_TRANSFER_CONSTRAINT_LINES,
     '- 只写 manifest 和阶段 plan 文件，不要改业务代码。',
     ...projectPromptConstraintLines(projectStatus),
     '',
@@ -2144,11 +2175,17 @@ function buildPhasedPlanPrompt(input) {
     `${sourceName} #${intake.id} 内容：`,
     String(intake.body || '').trim() || '（正文为空）',
   ];
+  appendIntakeMentionPromptContext(promptParts, intakeMentionPromptContext);
   if (!isOpenCodeProvider && typeof readSnippet === 'function' && String(intake.body || '').trim().length < 20) {
     appendProjectContext(promptParts, workspace, readSnippet);
   }
   if (attachmentPrompt) promptParts.push('', attachmentPrompt);
   return promptParts.join('\n');
+}
+
+function appendIntakeMentionPromptContext(promptParts, intakeMentionPromptContext) {
+  const context = normalizeNullableString(intakeMentionPromptContext);
+  if (context) promptParts.push('', context);
 }
 
 function appendProjectContext(promptParts, workspace, readSnippet) {

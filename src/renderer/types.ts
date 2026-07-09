@@ -1,4 +1,31 @@
 export type IntakeType = 'requirement' | 'feedback';
+export type IntakeMentionType = IntakeType;
+
+export interface IntakeMentionReference {
+  type: IntakeMentionType;
+  id: number;
+  rawText: string;
+  start: number;
+  end: number;
+}
+
+export interface IntakeMentionQuery {
+  rawText: string;
+  query: string;
+  start: number;
+  end: number;
+}
+
+export interface IntakeMentionCandidate {
+  type: IntakeMentionType;
+  id: number;
+  projectId: number;
+  title: string;
+  summary: string;
+  status: string | null;
+  updatedAt: string;
+  canonicalText: string;
+}
 export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'acceptance' | 'tasks' | 'terminal' | 'executors' | 'scripts' | 'events' | 'settings' | 'chat';
 export const DEFAULT_WORKSPACE_TAB: WorkspaceTab = 'requirement';
 export type AgentCliProvider = 'codex' | 'claude' | 'opencode' | 'oh-my-pi' | string;
@@ -326,6 +353,7 @@ export interface Requirement extends IntakeGenerateFailureState, IntakeLinkedPla
   plan_total?: number | null;
   created_at: string;
   updated_at: string;
+  accepted_at: string | null;
 }
 
 export interface Feedback extends AgentCliSessionInfo, IntakeGenerateFailureState, IntakeLinkedPlanSnapshotFields, PlanGenerationSnapshotFields {
@@ -347,6 +375,7 @@ export interface Feedback extends AgentCliSessionInfo, IntakeGenerateFailureStat
   plan_total?: number | null;
   created_at: string;
   updated_at: string;
+  accepted_at: string | null;
 }
 
 export interface Attachment {
@@ -1303,6 +1332,13 @@ export interface IntakeActionInput extends ProjectIdInput {
   title?: string;
 }
 
+export interface IntakeAcceptanceInput extends ProjectIdInput {
+  type: IntakeType;
+  id: number;
+}
+
+export type IntakeAcceptanceHandler = (type: IntakeType, id: number) => Promise<void> | void;
+
 export interface RetryIntakePlanGenerationOptions extends PlanGenerationInputFields {
   agentCliProvider?: AgentCliProvider;
   agentCliCommand?: string;
@@ -1769,6 +1805,8 @@ export interface AutoplanApi {
   redoAcceptanceItem: (input: AcceptanceRedoInput) => Promise<AppSnapshot>;
   acceptItems: (input: AcceptBatchInput) => Promise<AppSnapshot>;
   unacceptItems: (input: AcceptBatchInput) => Promise<AppSnapshot>;
+  acceptIntake: (input: IntakeAcceptanceInput) => Promise<AppSnapshot>;
+  unacceptIntake: (input: IntakeAcceptanceInput) => Promise<AppSnapshot>;
   createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
   updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
   deleteRequirement: (input: RecordIdInput) => Promise<AppSnapshot>;

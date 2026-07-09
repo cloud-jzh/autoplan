@@ -120,7 +120,8 @@ class AppDatabase {
         source_path TEXT,
         source_hash TEXT,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        accepted_at TEXT
       );
 
       CREATE TABLE IF NOT EXISTS feedback (
@@ -149,7 +150,8 @@ class AppDatabase {
         last_generate_agent_cli_provider TEXT,
         last_generate_codex_reasoning_effort TEXT,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        accepted_at TEXT
       );
 
       CREATE TABLE IF NOT EXISTS attachments (
@@ -391,6 +393,7 @@ class AppDatabase {
 
     this.ensureColumn('requirements', 'project_id', 'INTEGER');
     this.ensureColumn('requirements', 'linked_plan_id', 'INTEGER');
+    this.ensureColumn('requirements', 'accepted_at', 'TEXT');
     this.ensureColumn('requirements', 'agent_cli_provider', 'TEXT');
     this.ensureColumn('requirements', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('requirements', 'codex_reasoning_effort', 'TEXT');
@@ -411,6 +414,7 @@ class AppDatabase {
     this.ensureColumn('requirements', 'last_generate_codex_reasoning_effort', 'TEXT');
     this.ensureColumn('feedback', 'project_id', 'INTEGER');
     this.ensureColumn('feedback', 'linked_plan_id', 'INTEGER');
+    this.ensureColumn('feedback', 'accepted_at', 'TEXT');
     this.ensureColumn('feedback', 'agent_cli_provider', 'TEXT');
     this.ensureColumn('feedback', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('feedback', 'codex_reasoning_effort', 'TEXT');

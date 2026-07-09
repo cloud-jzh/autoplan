@@ -1007,6 +1007,15 @@ class LoopService extends EventEmitter {
     return acceptance.unacceptItem(this, projectId, target);
   }
 
+  /** 需求/反馈人工验收：只置 accepted_at，不改变 status，不触发计划/任务验收链路。 */
+  acceptIntakeItem(projectId, target) {
+    return acceptance.acceptIntakeItem(this, projectId, target);
+  }
+
+  /** 需求/反馈取消人工验收：清空 accepted_at，不改变 status。 */
+  unacceptIntakeItem(projectId, target) {
+    return acceptance.unacceptIntakeItem(this, projectId, target);
+  }
   /** 验收重做：清空人工验收态，将已完成/已验收目标退回 pending，并记录 redo 事件。 */
   redoAcceptanceItem(projectId, target) {
     return acceptance.redoAcceptanceItem(this, projectId, target);

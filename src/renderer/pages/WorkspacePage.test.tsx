@@ -1450,3 +1450,53 @@ describe('P004 new project default CLI regression contracts', () => {
   });
 });
 
+
+describe('Workspace intake mention wiring contracts', () => {
+  it('builds mention candidates once from the active snapshot and passes them to both intake panels', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+    const controller = source('src', 'renderer', 'hooks', 'useWorkspaceController.ts');
+
+    expectIncludes(controller, "import { buildIntakeMentionCandidates } from '../utils/intakeMentions';", 'Workspace controller should import the intake mention candidate builder');
+    expectIncludes(controller, 'const intakeMentionCandidates: IntakeMentionCandidate[] = useMemo(', 'Workspace controller should memoize intake mention candidates');
+    expectIncludes(controller, '() => buildIntakeMentionCandidates(snapshot, projectId)', 'Workspace controller should build mention candidates from the active snapshot/project');
+    expectIncludes(controller, '[snapshot, projectId]', 'Workspace mention candidates should update when snapshot or project changes');
+    expectIncludes(controller, 'intakeMentionCandidates,', 'Workspace controller return value should expose mention candidates');
+
+    expectIncludes(page, 'intakeMentionCandidates,', 'WorkspacePage should read mention candidates from the controller');
+    expectCountExactly(page, 'mentionCandidates={intakeMentionCandidates}', 2, 'Both requirement and feedback panels should receive the same mention candidate source');
+    expectIncludes(page, "type=\"requirement\"", 'Requirement panel should remain typed as requirement');
+    expectIncludes(page, "type=\"feedback\"", 'Feedback panel should remain typed as feedback');
+  });
+
+  it('keeps requirement and feedback composer payload paths unchanged while adding mention candidates', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+    const requirementPanel = sliceBetween(
+      page,
+      "<section className={`view ${activeTab === 'requirement' ? 'active' : ''}`}",
+      "</ComposerCliSelectionProvider>",
+      'should locate requirement intake panel section',
+    );
+    const feedbackPanel = sliceBetween(
+      page,
+      "<section className={`view ${activeTab === 'feedback' ? 'active' : ''}`}",
+      "</ComposerCliSelectionProvider>",
+      'should locate feedback intake panel section',
+    );
+
+    expectIncludes(requirementPanel, 'mentionCandidates={intakeMentionCandidates}', 'Requirement panel should receive mention candidates');
+    expectIncludes(requirementPanel, 'pendingAttachments={pendingAttachments.requirement}', 'Requirement panel should keep requirement attachment state');
+    expectIncludes(requirementPanel, 'onSubmit={createRequirementFromComposer}', 'Requirement panel should keep createRequirement submit path');
+    expectIncludes(requirementPanel, "draftValue={composerDrafts.requirement}", 'Requirement panel should keep requirement draft value');
+    expectIncludes(requirementPanel, "onDraftChange={(next) => updateComposerDraft('requirement', next)}", 'Requirement panel should keep requirement draft update path');
+    expectIncludes(requirementPanel, 'retryAgentCliOptions={composerCliSelection.options}', 'Requirement panel should keep CLI retry options');
+    expectIncludes(requirementPanel, 'retryCodexReasoningOptions={composerCliSelection.reasoningOptions}', 'Requirement panel should keep Codex retry options');
+
+    expectIncludes(feedbackPanel, 'mentionCandidates={intakeMentionCandidates}', 'Feedback panel should receive mention candidates');
+    expectIncludes(feedbackPanel, 'pendingAttachments={pendingAttachments.feedback}', 'Feedback panel should keep feedback attachment state');
+    expectIncludes(feedbackPanel, 'onSubmit={createFeedbackFromComposer}', 'Feedback panel should keep createFeedback submit path');
+    expectIncludes(feedbackPanel, "draftValue={composerDrafts.feedback}", 'Feedback panel should keep feedback draft value');
+    expectIncludes(feedbackPanel, "onDraftChange={(next) => updateComposerDraft('feedback', next)}", 'Feedback panel should keep feedback draft update path');
+    expectIncludes(feedbackPanel, 'retryAgentCliOptions={composerCliSelection.options}', 'Feedback panel should keep CLI retry options');
+    expectIncludes(feedbackPanel, 'retryCodexReasoningOptions={composerCliSelection.reasoningOptions}', 'Feedback panel should keep Codex retry options');
+  });
+});

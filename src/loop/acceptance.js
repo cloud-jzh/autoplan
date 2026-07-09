@@ -1,11 +1,25 @@
 const { nowIso } = require('../database');
 const planLifecycle = require('./planLifecycle');
 
-// 人工验收态与执行态正交：只允许对「已完成」项验收（计划 status='completed'、任务 status ∈ 已完成集合），
+// 计划/任务人工验收态与执行态正交：只允许对「已完成」项验收（计划 status='completed'、任务 status ∈ 已完成集合），
 // 与渲染层 matchesTaskStatusFilter 的「已完成」语义一致，不新增 status 取值。
 const ACCEPTABLE_PLAN_STATUS = 'completed';
 const ACCEPTABLE_TASK_STATUSES = Object.freeze(['completed', 'done', 'passed']);
 const REDO_SUPPLEMENT_MAX_LENGTH = 2000;
+const INTAKE_ACCEPTANCE_TARGETS = Object.freeze({
+  requirement: {
+    table: 'requirements',
+    eventPrefix: 'requirement',
+    label: '需求',
+    metaIdKey: 'requirementId',
+  },
+  feedback: {
+    table: 'feedback',
+    eventPrefix: 'feedback',
+    label: '反馈',
+    metaIdKey: 'feedbackId',
+  },
+});
 
 /** 单项人工验收：对已完成的计划/任务置 accepted_at（不改变执行态 status），并记事件；重复验收覆盖时间戳。 */
 function acceptItem(service, projectId, { targetType, id } = {}) {
@@ -21,6 +35,26 @@ function unacceptItem(service, projectId, { targetType, id } = {}) {
   const target = acceptanceTargetRow(service, projectId, targetType, id, { requireCompleted: false });
   const updatedAt = nowIso();
   const result = writeAcceptance(service, targetType, target, null, projectId, updatedAt);
+  service.emitUpdate(projectId);
+  return result;
+}
+
+/** 需求/反馈人工验收：只写 accepted_at，不改 status，不触发计划/任务验收或执行链路。 */
+function acceptIntakeItem(service, projectId, { intakeType, type, id } = {}) {
+  const normalizedType = normalizeIntakeAcceptanceType(intakeType ?? type);
+  const target = intakeAcceptanceTargetRow(service, projectId, normalizedType, id);
+  const acceptedAt = nowIso();
+  const result = writeIntakeAcceptance(service, normalizedType, target, acceptedAt, projectId);
+  service.emitUpdate(projectId);
+  return result;
+}
+
+/** 需求/反馈取消人工验收：清空 accepted_at，不改 status。 */
+function unacceptIntakeItem(service, projectId, { intakeType, type, id } = {}) {
+  const normalizedType = normalizeIntakeAcceptanceType(intakeType ?? type);
+  const target = intakeAcceptanceTargetRow(service, projectId, normalizedType, id);
+  const updatedAt = nowIso();
+  const result = writeIntakeAcceptance(service, normalizedType, target, null, projectId, updatedAt);
   service.emitUpdate(projectId);
   return result;
 }
@@ -106,6 +140,25 @@ function acceptanceTargetRow(service, projectId, targetType, id, options = {}) {
     return task;
   }
   throw new Error('验收目标类型无效');
+}
+
+function intakeAcceptanceTargetRow(service, projectId, intakeType, id) {
+  const normalizedType = normalizeIntakeAcceptanceType(intakeType);
+  const normalizedId = Number(id);
+  if (!Number.isFinite(normalizedId) || normalizedId <= 0) throw new Error('需求/反馈 ID 无效');
+  const config = INTAKE_ACCEPTANCE_TARGETS[normalizedType];
+  const target = service.db.get(
+    `SELECT * FROM ${config.table} WHERE id = ? AND project_id = ?`,
+    [normalizedId, projectId],
+  );
+  if (!target) throw new Error(`${config.label}不存在或不属于当前项目`);
+  return target;
+}
+
+function normalizeIntakeAcceptanceType(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(INTAKE_ACCEPTANCE_TARGETS, normalized)) return normalized;
+  throw new Error('需求/反馈类型无效');
 }
 
 function ensureRedoTargetAllowed(service, projectId, targetType, target) {
@@ -228,6 +281,41 @@ function writeAcceptance(service, targetType, row, acceptedAt, projectId, update
   return { targetType, id: row.id, accepted_at: acceptedAt ?? null };
 }
 
+function writeIntakeAcceptance(service, intakeType, row, acceptedAt, projectId, updatedAt = acceptedAt ?? nowIso()) {
+  const normalizedType = normalizeIntakeAcceptanceType(intakeType);
+  const config = INTAKE_ACCEPTANCE_TARGETS[normalizedType];
+  const id = Number(row.id);
+  const meta = {
+    targetType: normalizedType,
+    intakeType: normalizedType,
+    id,
+    [config.metaIdKey]: id,
+    previousAcceptedAt: row.accepted_at || null,
+    accepted_at: acceptedAt ?? null,
+  };
+
+  if (acceptedAt) {
+    service.db.run(
+      `UPDATE ${config.table} SET accepted_at = ?, updated_at = ? WHERE id = ? AND project_id = ?`,
+      [acceptedAt, acceptedAt, id, projectId],
+    );
+    service.addEvent(projectId, `${config.eventPrefix}.accepted`, `${config.label} #${id} 已验收`, meta);
+  } else {
+    service.db.run(
+      `UPDATE ${config.table} SET accepted_at = NULL, updated_at = ? WHERE id = ? AND project_id = ?`,
+      [updatedAt, id, projectId],
+    );
+    service.addEvent(projectId, `${config.eventPrefix}.unaccepted`, `${config.label} #${id} 已取消验收`, meta);
+  }
+
+  return {
+    targetType: normalizedType,
+    intakeType: normalizedType,
+    id,
+    accepted_at: acceptedAt ?? null,
+  };
+}
+
 /**
  * 批量人工验收：对一组已完成的计划/任务一次性置 accepted_at（不改变执行态 status）。
  * 先全量预校验（acceptanceTargetRow，requireCompleted:true），任一目标非法即整体抛中文错误、
@@ -297,9 +385,14 @@ function normalizeAcceptanceTargets(targets, emptyMessage) {
 module.exports = {
   acceptItem,
   unacceptItem,
+  acceptIntakeItem,
+  unacceptIntakeItem,
   redoAcceptanceItem,
   acceptanceTargetRow,
+  intakeAcceptanceTargetRow,
+  normalizeIntakeAcceptanceType,
   writeAcceptance,
+  writeIntakeAcceptance,
   acceptItems,
   unacceptItems,
   normalizeAcceptanceTargets,

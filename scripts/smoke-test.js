@@ -313,6 +313,7 @@ async function main() {
     assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
     assertWorkspaceSearchRegression(snapshot);
     assertFrontendInteractionSourceSmoke();
+    assertIntakeMentionSourceSmoke();
     assertMarkdownPlanReaderSourceSmoke();
     assertEventPresentationCopyRegression();
     assertScriptsModuleSourceSmoke();
@@ -4049,6 +4050,55 @@ function assertNewProjectDefaultCliSourceSmoke() {
   assert.match(controllerSource, /planGenerationInputFromComposerSelection\(composerPlanGeneration\[type\]\)/, 'workspace composer submissions should use normalized generation defaults');
   assert.match(intakeSource, /const projectState = this\.loop\.status\(projectId\) \|\| \{\};[\s\S]*nextIntakePlanGenerationConfig\(projectState, input\)/, 'intake creation should default generation config from project state');
   assert.match(loopSource, /const projectStatus = this\.status\(normalizedProjectId\) \|\| \{\};\s*const planGenerationConfig = nextIntakePlanGenerationConfig\(projectStatus, \{ \.\.\.intake, \.\.\.input \}\);/, 'intake retry should default generation config from project state');
+}
+function assertIntakeMentionSourceSmoke() {
+  const typesSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'types.ts'), 'utf8');
+  const mentionUtilSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'utils', 'intakeMentions.ts'), 'utf8');
+  const composerSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'components', 'Composer.tsx'), 'utf8');
+  const intakePanelSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'components', 'IntakePanel.tsx'), 'utf8');
+  const workspacePageSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
+  const controllerSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'hooks', 'useWorkspaceController.ts'), 'utf8');
+  const loopMentionSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'loop', 'intakeMentions.js'), 'utf8');
+  const planGenerationSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'loop', 'planGeneration.js'), 'utf8');
+
+  assert.match(typesSource, /export interface IntakeMentionReference/, 'renderer types should define intake mention references');
+  assert.match(typesSource, /export interface IntakeMentionCandidate/, 'renderer types should define intake mention candidates');
+  assert.match(mentionUtilSource, /export function parseIntakeMentions/, 'renderer mention utility should parse references');
+  assert.match(mentionUtilSource, /export function buildIntakeMentionCandidates/, 'renderer mention utility should build candidate lists');
+  assert.match(mentionUtilSource, /export function filterIntakeMentionCandidates/, 'renderer mention utility should filter candidates');
+  assert.match(mentionUtilSource, /export function splitIntakeMentionText/, 'renderer mention utility should split mention render segments');
+  assert.match(mentionUtilSource, /Number\(requirement\.project_id\) === currentProjectId/, 'renderer mention candidates should stay scoped to the active project');
+  assert.match(mentionUtilSource, /canonicalText: formatIntakeMentionReference\(type, id\)/, 'renderer mention candidates should expose canonical insertion text');
+
+  assert.match(composerSource, /mentionCandidates\?: IntakeMentionCandidate\[\];/, 'Composer should accept mention candidates');
+  assert.match(composerSource, /filterIntakeMentionCandidates\(mentionCandidates, mentionQuery\.query\)\.slice\(0, 8\)/, 'Composer should filter and cap mention candidates');
+  assert.match(composerSource, /findActiveIntakeMentionQuery\(text, cursorIndex\)/, 'Composer should derive active mention query from the cursor');
+  assert.match(composerSource, /candidate\.canonicalText/, 'Composer should insert and display canonical mention text');
+  assert.match(composerSource, /role="listbox"/, 'Composer mention popover should expose listbox semantics');
+  assert.match(composerSource, /role="option"/, 'Composer mention choices should expose option semantics');
+  assert.match(composerSource, /event\.key === 'ArrowDown'[,\s\S]*event\.key === 'ArrowUp'[,\s\S]*event\.key === 'Enter' \|\| event\.key === 'Tab'/, 'Composer should support keyboard navigation and insertion for mentions');
+  assert.match(composerSource, /body: value,[\s\S]*createAsDraft,[\s\S]*planGenerationInputFromComposerSelection\(selectedGeneration\)/, 'Composer mention support should not bypass draft or CLI payload fields');
+
+  assert.match(intakePanelSource, /mentionCandidates\?: IntakeMentionCandidate\[\];/, 'IntakePanel should accept mention candidates');
+  assert.match(intakePanelSource, /mentionCandidates=\{mentionCandidates\}/, 'IntakePanel should pass mention candidates to Composer');
+  assert.match(intakePanelSource, /renderIntakeBodyMentions\(item\.body, mentionCandidates, openMentionReference\)/, 'IntakePanel should render resolvable mention links in item bodies');
+  assert.match(intakePanelSource, /splitIntakeMentionText\(body, candidates\)/, 'IntakePanel mention renderer should use the shared split utility');
+  assert.match(intakePanelSource, /openMentionReference\(mention: IntakeMentionReference\)/, 'IntakePanel should handle mention link activation');
+  assert.match(intakePanelSource, /locateIntakeMentionAnchor\(anchorId\)/, 'IntakePanel should locate mention targets after tab navigation');
+
+  assert.match(controllerSource, /buildIntakeMentionCandidates\(snapshot, projectId\)/, 'Workspace controller should build mention candidates from snapshot and project id');
+  assert.match(controllerSource, /intakeMentionCandidates,[\s\S]*latestReadingPlan/, 'Workspace controller should expose mention candidates in its return object');
+  assert.equal((workspacePageSource.match(/mentionCandidates=\{intakeMentionCandidates\}/g) || []).length, 2, 'WorkspacePage should pass mention candidates to both requirement and feedback panels');
+
+  assert.match(loopMentionSource, /function buildIntakeMentionPromptContext/, 'loop mention utility should build prompt context');
+  assert.match(loopMentionSource, /SELECT id, project_id, title, body, status, updated_at FROM/, 'loop mention utility should read only the fields needed for prompt context');
+  assert.match(loopMentionSource, /WHERE project_id = \? AND id = \?/, 'loop mention utility should scope lookups to the current project');
+  assert.match(loopMentionSource, /isSelfMention\(intake, mention\)/, 'loop mention utility should handle self references without duplicating body text');
+  assert.match(planGenerationSource, /buildIntakeMentionPromptContext\(service, projectId, intake\)/, 'plan generation should build mention prompt context for intake records');
+  assert.match(planGenerationSource, /appendIntakeMentionPromptContext\(promptParts, intakeMentionPromptContext\)/, 'plan generation should append mention context to prompt parts');
+  assert.match(planGenerationSource, /buildStructuredIntakePlanPrompt\([\s\S]*intakeMentionPromptContext/, 'external structured intake prompt should receive mention context');
+  assert.match(planGenerationSource, /buildBuiltinStructuredIntakePlanPrompt\([\s\S]*intakeMentionPromptContext/, 'builtin structured intake prompt should receive mention context');
+  assert.match(planGenerationSource, /buildPhasedPlanPrompt\([\s\S]*intakeMentionPromptContext/, 'phased intake prompt should receive mention context');
 }
 function assertPlanCliSnapshot(plan, expected, label) {
   assert.ok(plan, `${label} 应存在`);

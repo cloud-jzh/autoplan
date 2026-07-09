@@ -515,6 +515,24 @@ ipcMain.handle('acceptance:unacceptBatch', (_event, input = {}) => {
   return loop.snapshot(projectId);
 });
 
+ipcMain.handle('intake:accept', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  loop.acceptIntakeItem(projectId, {
+    intakeType: normalizeStrictIntakeType(input.intakeType ?? input.type),
+    id: requiredRecordId(input),
+  });
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('intake:unaccept', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  loop.unacceptIntakeItem(projectId, {
+    intakeType: normalizeStrictIntakeType(input.intakeType ?? input.type),
+    id: requiredRecordId(input),
+  });
+  return loop.snapshot(projectId);
+});
+
 ipcMain.handle('requirements:create', (_event, input = {}) => {
   return intakeService().createRequirement(normalizeDraftIntakeInput(input));
 });
@@ -1677,6 +1695,12 @@ function requiredRecordId(input = {}, key = 'id') {
 
 function normalizeIntakeType(value) {
   return value === 'feedback' ? 'feedback' : 'requirement';
+}
+
+function normalizeStrictIntakeType(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'requirement' || normalized === 'feedback') return normalized;
+  throw new Error('需求/反馈类型无效');
 }
 
 function normalizeDraftIntakeInput(input = {}) {

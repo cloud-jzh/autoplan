@@ -38,6 +38,26 @@ function insertProject(db, name = '其它项目') {
   );
 }
 
+function insertRequirement(db, projectId, { status = 'open', title = '需求验收目标' } = {}) {
+  const now = nowIso();
+  return db.insert(
+    `INSERT INTO requirements
+       (project_id, title, body, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [projectId, title, `${title} body`, status, now, now],
+  );
+}
+
+function insertFeedback(db, projectId, { status = 'open', title = '反馈验收目标', requirementId = null } = {}) {
+  const now = nowIso();
+  return db.insert(
+    `INSERT INTO feedback
+       (project_id, requirement_id, title, body, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [projectId, requirementId, title, `${title} body`, status, now, now],
+  );
+}
+
 /** 插入一条任务，覆盖 plan_tasks 表必填字段；status 由调用方指定。 */
 function insertTask(db, planId, taskKey, status) {
   const now = nowIso();
@@ -243,6 +263,193 @@ describe('unacceptItem 取消验收', () => {
       assert.doesNotThrow(() => fixture.loop.unacceptItem(fixture.projectId, { targetType: 'task', id: fixture.completedTaskId }));
       const task = fixture.db.get('SELECT accepted_at FROM plan_tasks WHERE id = ?', [fixture.completedTaskId]);
       assert.equal(task.accepted_at, null, '重复取消后 accepted_at 应保持 NULL');
+    } finally {
+      fixture.destroy();
+    }
+  });
+});
+
+describe('acceptIntakeItem / unacceptIntakeItem 需求反馈人工验收', () => {
+  it('可分别验收 requirement 与 feedback，写入 accepted_at 并记录事件，且不改变 status', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      const requirementId = insertRequirement(fixture.db, fixture.projectId, { status: 'open' });
+      const feedbackId = insertFeedback(fixture.db, fixture.projectId, { status: 'reviewing' });
+
+      const requirementResult = fixture.loop.acceptIntakeItem(fixture.projectId, {
+        type: 'requirement',
+        id: requirementId,
+      });
+      const feedbackResult = fixture.loop.acceptIntakeItem(fixture.projectId, {
+        intakeType: 'feedback',
+        id: feedbackId,
+      });
+
+      assert.equal(requirementResult.targetType, 'requirement');
+      assert.equal(feedbackResult.targetType, 'feedback');
+      assertIsoString(requirementResult.accepted_at, 'acceptIntakeItem(requirement) 返回 accepted_at');
+      assertIsoString(feedbackResult.accepted_at, 'acceptIntakeItem(feedback) 返回 accepted_at');
+
+      const requirement = fixture.db.get('SELECT * FROM requirements WHERE id = ?', [requirementId]);
+      const feedback = fixture.db.get('SELECT * FROM feedback WHERE id = ?', [feedbackId]);
+      assertIsoString(requirement.accepted_at, 'requirements.accepted_at');
+      assertIsoString(feedback.accepted_at, 'feedback.accepted_at');
+      assert.equal(requirement.status, 'open', '需求验收不应改变 status');
+      assert.equal(feedback.status, 'reviewing', '反馈验收不应改变 status');
+
+      const requirementEvent = latestEvent(fixture.db, fixture.projectId, 'requirement.accepted');
+      const feedbackEvent = latestEvent(fixture.db, fixture.projectId, 'feedback.accepted');
+      assert.ok(requirementEvent, '应记录 requirement.accepted 事件');
+      assert.ok(feedbackEvent, '应记录 feedback.accepted 事件');
+      const requirementMeta = JSON.parse(requirementEvent.meta);
+      const feedbackMeta = JSON.parse(feedbackEvent.meta);
+      assert.equal(requirementMeta.targetType, 'requirement');
+      assert.equal(requirementMeta.intakeType, 'requirement');
+      assert.equal(requirementMeta.requirementId, requirementId);
+      assertIsoString(requirementMeta.accepted_at, 'requirement.accepted meta.accepted_at');
+      assert.equal(feedbackMeta.targetType, 'feedback');
+      assert.equal(feedbackMeta.intakeType, 'feedback');
+      assert.equal(feedbackMeta.feedbackId, feedbackId);
+      assertIsoString(feedbackMeta.accepted_at, 'feedback.accepted meta.accepted_at');
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('取消需求/反馈验收幂等：清空 accepted_at，重复取消不报错并记录 unaccepted 事件', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      const requirementId = insertRequirement(fixture.db, fixture.projectId, { status: 'triaged' });
+      const feedbackId = insertFeedback(fixture.db, fixture.projectId, { status: 'open' });
+      fixture.loop.acceptIntakeItem(fixture.projectId, { type: 'requirement', id: requirementId });
+      fixture.loop.acceptIntakeItem(fixture.projectId, { type: 'feedback', id: feedbackId });
+
+      const requirementResult = fixture.loop.unacceptIntakeItem(fixture.projectId, {
+        type: 'requirement',
+        id: requirementId,
+      });
+      const feedbackResult = fixture.loop.unacceptIntakeItem(fixture.projectId, {
+        type: 'feedback',
+        id: feedbackId,
+      });
+      assert.equal(requirementResult.accepted_at, null);
+      assert.equal(feedbackResult.accepted_at, null);
+      assert.doesNotThrow(() =>
+        fixture.loop.unacceptIntakeItem(fixture.projectId, { type: 'requirement', id: requirementId }),
+      );
+
+      const requirement = fixture.db.get('SELECT * FROM requirements WHERE id = ?', [requirementId]);
+      const feedback = fixture.db.get('SELECT * FROM feedback WHERE id = ?', [feedbackId]);
+      assert.equal(requirement.accepted_at, null, '取消需求验收后 accepted_at 应为 NULL');
+      assert.equal(feedback.accepted_at, null, '取消反馈验收后 accepted_at 应为 NULL');
+      assert.equal(requirement.status, 'triaged', '取消需求验收不应改变 status');
+      assert.equal(feedback.status, 'open', '取消反馈验收不应改变 status');
+
+      const requirementEvents = fixture.db.all(
+        'SELECT * FROM events WHERE project_id = ? AND type = ? ORDER BY id ASC',
+        [fixture.projectId, 'requirement.unaccepted'],
+      );
+      const feedbackEvent = latestEvent(fixture.db, fixture.projectId, 'feedback.unaccepted');
+      assert.equal(requirementEvents.length, 2, '重复取消需求验收应保持幂等并记录事件');
+      assert.ok(feedbackEvent, '应记录 feedback.unaccepted 事件');
+      assert.equal(JSON.parse(requirementEvents[0].meta).accepted_at, null);
+      assert.equal(JSON.parse(feedbackEvent.meta).accepted_at, null);
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('重复验收已验收需求不报错，并在事件 meta 中保留 previousAcceptedAt', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      const requirementId = insertRequirement(fixture.db, fixture.projectId);
+      const first = fixture.loop.acceptIntakeItem(fixture.projectId, { type: 'requirement', id: requirementId });
+      assert.doesNotThrow(() =>
+        fixture.loop.acceptIntakeItem(fixture.projectId, { type: 'requirement', id: requirementId }),
+      );
+
+      const requirement = fixture.db.get('SELECT * FROM requirements WHERE id = ?', [requirementId]);
+      assertIsoString(requirement.accepted_at, '重复需求验收后 accepted_at');
+      assert.equal(requirement.status, 'open', '重复需求验收不应改变 status');
+
+      const acceptedEvents = fixture.db.all(
+        'SELECT * FROM events WHERE project_id = ? AND type = ? ORDER BY id ASC',
+        [fixture.projectId, 'requirement.accepted'],
+      );
+      assert.equal(acceptedEvents.length, 2, '重复需求验收应记录两次 accepted 事件');
+      const secondMeta = JSON.parse(acceptedEvents[1].meta);
+      assert.equal(secondMeta.previousAcceptedAt, first.accepted_at);
+      assertIsoString(secondMeta.accepted_at, '重复需求验收第二次事件 accepted_at');
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('非法类型、非法 id 与跨项目目标均拒绝，且不写入错误目标', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      const otherProjectId = insertProject(fixture.db, '需求反馈验收其它项目');
+      const otherRequirementId = insertRequirement(fixture.db, otherProjectId);
+      const otherFeedbackId = insertFeedback(fixture.db, otherProjectId);
+
+      assert.throws(
+        () => fixture.loop.acceptIntakeItem(fixture.projectId, { type: 'unknown', id: otherRequirementId }),
+        /需求\/反馈类型无效/,
+      );
+      assert.throws(
+        () => fixture.loop.acceptIntakeItem(fixture.projectId, { type: 'requirement', id: 0 }),
+        /需求\/反馈 ID 无效/,
+      );
+      assert.throws(
+        () => fixture.loop.acceptIntakeItem(fixture.projectId, { type: 'requirement', id: otherRequirementId }),
+        /需求不存在或不属于当前项目/,
+      );
+      assert.throws(
+        () => fixture.loop.unacceptIntakeItem(fixture.projectId, { type: 'feedback', id: otherFeedbackId }),
+        /反馈不存在或不属于当前项目/,
+      );
+
+      const otherRequirement = fixture.db.get('SELECT accepted_at FROM requirements WHERE id = ?', [otherRequirementId]);
+      const otherFeedback = fixture.db.get('SELECT accepted_at FROM feedback WHERE id = ?', [otherFeedbackId]);
+      assert.equal(otherRequirement.accepted_at, null, '跨项目需求不应被写入 accepted_at');
+      assert.equal(otherFeedback.accepted_at, null, '跨项目反馈不应被写入 accepted_at');
+      assert.equal(rowCount(fixture.db, 'events', 'type IN (?, ?, ?, ?)', [
+        'requirement.accepted',
+        'requirement.unaccepted',
+        'feedback.accepted',
+        'feedback.unaccepted',
+      ]), 0);
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('需求/反馈验收不触发计划验收或脚本执行链路', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      const requirementId = insertRequirement(fixture.db, fixture.projectId);
+      const feedbackId = insertFeedback(fixture.db, fixture.projectId);
+      let validateCalled = false;
+      let shellCalled = false;
+      const origValidate = fixture.loop.validatePlan;
+      const origRunShell = fixture.loop.runShell;
+      fixture.loop.validatePlan = async () => { validateCalled = true; };
+      fixture.loop.runShell = async () => { shellCalled = true; return { exitCode: 0 }; };
+
+      fixture.loop.acceptIntakeItem(fixture.projectId, { type: 'requirement', id: requirementId });
+      fixture.loop.unacceptIntakeItem(fixture.projectId, { type: 'feedback', id: feedbackId });
+
+      assert.equal(validateCalled, false, 'acceptIntakeItem/unacceptIntakeItem 不应调用 validatePlan');
+      assert.equal(shellCalled, false, 'acceptIntakeItem/unacceptIntakeItem 不应调用 runShell');
+      assert.equal(rowCount(fixture.db, 'events', 'type IN (?, ?, ?, ?)', [
+        'plan.accepted',
+        'plan.unaccepted',
+        'task.accepted',
+        'task.unaccepted',
+      ]), 0);
+
+      fixture.loop.validatePlan = origValidate;
+      fixture.loop.runShell = origRunShell;
     } finally {
       fixture.destroy();
     }

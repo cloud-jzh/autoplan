@@ -237,6 +237,8 @@ contextBridge.exposeInMainWorld('autoplan', {
   redoAcceptanceItem: (input) => ipcRenderer.invoke('acceptance:redo', input),
   acceptItems: (input) => ipcRenderer.invoke('acceptance:acceptBatch', input),
   unacceptItems: (input) => ipcRenderer.invoke('acceptance:unacceptBatch', input),
+  acceptIntake: (input) => ipcRenderer.invoke('intake:accept', input),
+  unacceptIntake: (input) => ipcRenderer.invoke('intake:unaccept', input),
   createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
   updateRequirement: (input) => ipcRenderer.invoke('requirements:update', input),
   deleteRequirement: (input) => ipcRenderer.invoke('requirements:delete', input),

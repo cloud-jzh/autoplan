@@ -1,0 +1,90 @@
+{
+  "title": "需求/反馈输入框支持 @ 引用其它需求与反馈",
+  "summary": "在工作区的需求和反馈 Composer 中增加 @ 引用能力：用户输入 @ 后可从当前项目的需求、反馈记录中检索并插入规范引用；已提交内容中的引用可识别、展示并定位到对应记录；计划生成时解析正文中的引用并注入被引用记录摘要，使引用不仅是文本标记，也能为后续计划拆解提供上下文。实现应优先复用现有 intake 快照、草稿、搜索定位和计划生成链路，避免新增数据库迁移，引用以可持久化的正文文本形式兼容既有 create/update/MCP 流程。",
+  "tasks": [
+    {
+      "title": "定义 intake @ 引用语法、解析与候选构造工具",
+      "scope": [
+        "src/renderer/utils/intakeMentions.ts",
+        "src/renderer/types.ts"
+      ],
+      "acceptance": [
+        "支持从需求/反馈正文中识别 @需求#12、@反馈#3、@requirement#12、@feedback#3 等规范引用形式，并返回 type、id、rawText、文本区间等结构化结果。",
+        "支持基于当前项目 snapshot 的 requirements 与 feedback 构造候选列表，候选包含类型、id、标题、正文摘要、状态与更新时间，且只包含当前项目内记录。",
+        "支持按用户在 @ 后输入的关键字过滤候选，关键字可匹配类型中文名、英文类型、编号、标题和正文摘要。",
+        "对不存在、跨项目或格式不完整的 @ 文本保持普通文本语义，不阻断提交和编辑。"
+      ]
+    },
+    {
+      "title": "为需求/反馈 Composer 增加 @ 候选弹层与键盘插入交互",
+      "scope": [
+        "src/renderer/components/Composer.tsx",
+        "src/renderer/components/IntakePanel.tsx",
+        "src/renderer/pages/WorkspacePage.tsx",
+        "src/renderer/hooks/useWorkspaceController.ts",
+        "src/renderer/types.ts"
+      ],
+      "acceptance": [
+        "需求输入框和反馈输入框在输入 @ 后展示同一套当前项目需求/反馈候选，不影响附件、CLI 选择、创建草稿和 Enter 发送等既有控件。",
+        "候选弹层支持键盘上下选择、Enter/Tab 插入、Escape 关闭、鼠标点击插入，并能在中文输入法 composing 状态下避免误提交或误选。",
+        "插入后的正文使用稳定可读的规范文本引用，例如 @需求#12 或 @反馈#3，并在光标位置正确替换当前 @ 查询片段。",
+        "候选为空、正文为空但有附件、粘贴图片、拖拽附件、Shift+Enter 换行和项目切换后的草稿恢复行为均保持原有语义。"
+      ]
+    },
+    {
+      "title": "在 intake 列表中渲染并定位 @ 引用",
+      "scope": [
+        "src/renderer/components/IntakePanel.tsx",
+        "src/renderer/utils/intakeMentions.ts",
+        "src/renderer/utils/chatIntents.ts",
+        "src/renderer/styles/workspace.css"
+      ],
+      "acceptance": [
+        "需求/反馈卡片正文中的有效 @ 引用渲染为轻量可点击引用标记，普通正文仍保持换行和纯文本显示效果。",
+        "点击 @需求#N 或 @反馈#N 能切换到对应需求/反馈 tab，并复用现有锚点定位与高亮行为；目标不存在时不抛出运行时错误。",
+        "编辑已有需求/反馈时保留原始正文文本，保存后引用仍可重新识别和渲染。",
+        "引用标记样式在浅色/深色主题下可读，不挤压正文、不遮挡附件、Plan 绑定卡片和操作按钮。"
+      ]
+    },
+    {
+      "title": "将 @ 引用上下文注入 intake 计划生成 prompt",
+      "scope": [
+        "src/loop/planGeneration.js",
+        "src/loop/intakeMentions.js",
+        "src/loop/planGeneration.test.js"
+      ],
+      "acceptance": [
+        "计划生成处理单条需求或反馈时解析正文中的 @ 引用，并从同项目 requirements/feedback 表读取被引用记录的标题、正文摘要、状态和更新时间。",
+        "Markdown、外部 CLI 结构化 PlanSpec、内置 LLM 结构化 PlanSpec 三种计划生成路径都能在原始正文之外附加引用上下文区块，且不削弱现有格式约束、项目级 Prompt 和附件上下文。",
+        "重复引用同一记录时只注入一次；引用自身、目标不存在或目标不属于当前项目时以可读提示处理，不中断计划生成。",
+        "引用上下文有长度上限，长正文只截取摘要，避免显著膨胀 prompt 或泄露无关项目内容。"
+      ]
+    },
+    {
+      "title": "补充 @ 引用回归覆盖与源码断言",
+      "scope": [
+        "src/renderer/components/Composer.test.tsx",
+        "src/renderer/pages/WorkspacePage.test.tsx",
+        "src/renderer/utils/intakeMentions.test.ts",
+        "src/loop/planGeneration.test.js",
+        "scripts/smoke-test.js"
+      ],
+      "acceptance": [
+        "覆盖引用解析、候选过滤、规范引用插入文本、无效引用容错和重复引用去重等工具层场景。",
+        "覆盖需求与反馈两个 Composer 都接入 @ 候选数据源，并保持草稿、附件、CLI 选择和提交 payload 的既有链路。",
+        "覆盖计划生成 prompt 能包含被 @ 引用的需求/反馈摘要，且项目级 Prompt、PlanSpec 契约和 Markdown 任务格式约束仍存在。",
+        "smoke 源码断言覆盖新增工具、Composer 接线、IntakePanel 引用渲染和 planGeneration 引用上下文注入关键路径。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm run check && npm run smoke && npm run build",
+    "criteria": [
+      "自动化验收命令退出码为 0，无 TypeScript、Node 语法、文件长度、smoke 或 Vite 构建错误。",
+      "需求输入框和反馈输入框均支持输入 @ 后检索当前项目内其它需求、反馈，支持键盘和鼠标选择并插入规范引用文本。",
+      "已提交的需求/反馈正文能正确展示有效 @ 引用，并可点击定位到对应需求或反馈；无效引用按普通文本处理且不影响编辑保存。",
+      "基于含 @ 引用的需求或反馈生成计划时，计划生成 prompt 包含被引用记录摘要，且不破坏 AutoPlan 的 PlanSpec/Markdown 格式硬性约束。",
+      "附件、草稿、CLI 后端选择、创建/更新需求、创建/更新反馈、搜索定位、计划预览和原有 intake 列表交互无回归。"
+    ]
+  }
+}

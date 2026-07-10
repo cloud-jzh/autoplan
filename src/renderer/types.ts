@@ -1,4 +1,31 @@
 export type IntakeType = 'requirement' | 'feedback';
+export type IntakeMentionType = IntakeType;
+
+export interface IntakeMentionReference {
+  type: IntakeMentionType;
+  id: number;
+  rawText: string;
+  start: number;
+  end: number;
+}
+
+export interface IntakeMentionQuery {
+  rawText: string;
+  query: string;
+  start: number;
+  end: number;
+}
+
+export interface IntakeMentionCandidate {
+  type: IntakeMentionType;
+  id: number;
+  projectId: number;
+  title: string;
+  summary: string;
+  status: string | null;
+  updatedAt: string;
+  canonicalText: string;
+}
 export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'acceptance' | 'tasks' | 'terminal' | 'executors' | 'scripts' | 'events' | 'settings' | 'chat';
 export const DEFAULT_WORKSPACE_TAB: WorkspaceTab = 'requirement';
 export type AgentCliProvider = 'codex' | 'claude' | 'opencode' | 'oh-my-pi' | string;
@@ -236,6 +263,7 @@ export interface Project extends PlanGenerationSnapshotFields, PlanExecutionSnap
   phase?: string;
   interval_seconds?: number;
   validation_command?: string;
+  project_prompt?: string;
   agent_cli_provider?: AgentCliProvider;
   agent_cli_command?: string;
   codex_reasoning_effort?: CodexReasoningEffort | null;
@@ -248,6 +276,7 @@ export interface ProjectState extends PlanGenerationSnapshotFields, PlanExecutio
   phase: string;
   interval_seconds: number;
   validation_command: string;
+  project_prompt?: string;
   last_issue_hash?: string | null;
   last_error?: string | null;
   agent_cli_provider?: AgentCliProvider;
@@ -324,6 +353,7 @@ export interface Requirement extends IntakeGenerateFailureState, IntakeLinkedPla
   plan_total?: number | null;
   created_at: string;
   updated_at: string;
+  accepted_at: string | null;
 }
 
 export interface Feedback extends AgentCliSessionInfo, IntakeGenerateFailureState, IntakeLinkedPlanSnapshotFields, PlanGenerationSnapshotFields {
@@ -345,6 +375,7 @@ export interface Feedback extends AgentCliSessionInfo, IntakeGenerateFailureStat
   plan_total?: number | null;
   created_at: string;
   updated_at: string;
+  accepted_at: string | null;
 }
 
 export interface Attachment {
@@ -1074,6 +1105,22 @@ export interface CreateProjectInput extends PlanGenerationInputFields, PlanExecu
   codexReasoningEffort?: CodexReasoningEffort;
 }
 
+export interface NewProjectDefaultCliPreferences {
+  agentCliProvider: AgentCliProvider;
+  agentCliCommand: string;
+  codexReasoningEffort: CodexReasoningEffort | null;
+  planGenerationStrategy: PlanGenerationStrategy;
+  planGenerationProvider: PlanBackendProvider;
+  planGenerationCommand: string;
+  planGenerationModel: string;
+  planGenerationCodexReasoningEffort: CodexReasoningEffort | null;
+  planExecutionStrategy: PlanExecutionStrategy;
+  planExecutionProvider: PlanBackendProvider;
+  planExecutionCommand: string;
+  planExecutionModel: string;
+  planExecutionCodexReasoningEffort: CodexReasoningEffort | null;
+}
+
 export const MCP_TOOL_NAMES = {
   LIST_PROJECTS: 'list_projects',
   GET_PROJECT: 'get_project',
@@ -1134,6 +1181,12 @@ export interface McpConfigForm {
   host: string;
   port: number | string;
   path: string;
+  authToken: string;
+}
+
+/** 专用受控读取结果：仅在用户显式触发显示密钥时读取已保存 MCP 明文密钥。 */
+export interface McpAuthTokenReadResult {
+  hasAuthToken: boolean;
   authToken: string;
 }
 
@@ -1227,6 +1280,8 @@ export interface LoopConfigInput extends PlanGenerationInputFields, PlanExecutio
   intervalSeconds?: number;
   validationCommand?: string;
   validation_command?: string;
+  projectPrompt?: string;
+  project_prompt?: string;
   agentCliProvider?: AgentCliProvider;
   agentCliCommand?: string;
   codexReasoningEffort?: CodexReasoningEffort;
@@ -1242,6 +1297,10 @@ export interface RecordIdInput extends ProjectIdInput {
 
 export interface AcceptanceItemInput extends RecordIdInput {
   targetType: 'plan' | 'task';
+}
+
+export interface AcceptanceRedoInput extends AcceptanceItemInput {
+  supplement?: string | null;
 }
 
 export interface AcceptBatchInput extends ProjectIdInput {
@@ -1272,6 +1331,13 @@ export interface IntakeActionInput extends ProjectIdInput {
   id: number;
   title?: string;
 }
+
+export interface IntakeAcceptanceInput extends ProjectIdInput {
+  type: IntakeType;
+  id: number;
+}
+
+export type IntakeAcceptanceHandler = (type: IntakeType, id: number) => Promise<void> | void;
 
 export interface RetryIntakePlanGenerationOptions extends PlanGenerationInputFields {
   agentCliProvider?: AgentCliProvider;
@@ -1375,6 +1441,9 @@ export interface UpdateCheckResult extends UpdateStatus {
 /** Chat 对话模块（需求 #26）*/
 
 export type AiThinkingDepth = 'low' | 'medium' | 'high' | 'xhigh';
+
+/** Chat / AI 配置使用的后端提供方（需求 #28）*/
+export type ChatProvider = 'openai' | 'deepseek' | 'anthropic' | 'codex';
 
 /** AI 配置（需求 #28）*/
 export interface AiConfig {
@@ -1690,6 +1759,22 @@ export interface TerminalEvent {
 }
 export type TerminalClosedEvent = TerminalEvent & { closed: true };
 
+/** 打开工作区文件（scope 文件）的输入参数（需求 #95）*/
+export interface OpenWorkspaceFileInput {
+  projectId: number;
+  filePath: string;
+  mode?: 'system' | 'folder' | 'vscode' | 'command';
+  command?: string;
+}
+
+/** 打开工作区文件的结果（需求 #95）*/
+export interface OpenWorkspaceFileResult {
+  ok: boolean;
+  error: string | null;
+  filePath?: string;
+  mode?: 'system' | 'folder' | 'vscode' | 'command';
+}
+
 export interface AutoplanApi {
   mcpToolNames: McpToolName[];
   snapshot: (projectId?: number | null) => Promise<AppSnapshot>;
@@ -1703,6 +1788,7 @@ export interface AutoplanApi {
   startMcp: (input: ProjectIdInput) => Promise<AppSnapshot>;
   stopMcp: (input: ProjectIdInput) => Promise<AppSnapshot>;
   mcpStatus: (input?: ProjectIdInput | null) => Promise<AppSnapshot>;
+  readMcpAuthToken: () => Promise<McpAuthTokenReadResult>;
   saveMcpConfig: (config: McpConfigInput) => Promise<AppSnapshot>;
   readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
   stopPlan: (input: PlanIdInput) => Promise<AppSnapshot>;
@@ -1716,8 +1802,11 @@ export interface AutoplanApi {
   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
   acceptItem: (input: AcceptanceItemInput) => Promise<AppSnapshot>;
   unacceptItem: (input: AcceptanceItemInput) => Promise<AppSnapshot>;
+  redoAcceptanceItem: (input: AcceptanceRedoInput) => Promise<AppSnapshot>;
   acceptItems: (input: AcceptBatchInput) => Promise<AppSnapshot>;
   unacceptItems: (input: AcceptBatchInput) => Promise<AppSnapshot>;
+  acceptIntake: (input: IntakeAcceptanceInput) => Promise<AppSnapshot>;
+  unacceptIntake: (input: IntakeAcceptanceInput) => Promise<AppSnapshot>;
   createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
   updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
   deleteRequirement: (input: RecordIdInput) => Promise<AppSnapshot>;
@@ -1760,6 +1849,7 @@ export interface AutoplanApi {
   onLoopPatch: (handler: (patch: WorkspaceSnapshotPatch) => void) => () => void;
   pickDirectory: () => Promise<string | null>;
   openProjectFolder: (input: ProjectIdInput) => Promise<{ ok: boolean; error: string | null }>;
+  openWorkspaceFile: (input: OpenWorkspaceFileInput) => Promise<OpenWorkspaceFileResult>;
   updateStatus: () => Promise<UpdateStatus>;
   checkForUpdates: () => Promise<UpdateCheckResult>;
   dismissUpdate: (version?: string | { version?: string } | null) => Promise<UpdateStatus>;

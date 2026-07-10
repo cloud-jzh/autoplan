@@ -1,0 +1,83 @@
+{
+  "title": "需求与反馈条目支持人工验收状态",
+  "summary": "在需求、反馈记录完成后，于条目下方显示独立的人工验收状态，并提供标记验收与取消验收能力。实现应复用现有 accepted_at 正交状态思路，但目标对象扩展到 requirements 与 feedback，不改变原有执行状态、计划/任务验收流程和计划生成逻辑。",
+  "tasks": [
+    {
+      "title": "补齐需求和反馈的验收数据模型",
+      "scope": [
+        "src/database.js",
+        "src/loop/snapshots.js",
+        "src/renderer/types.ts"
+      ],
+      "acceptance": [
+        "requirements 与 feedback 表迁移出 accepted_at 字段，新库和旧库升级后都可保存验收时间",
+        "项目快照中的需求和反馈记录包含 accepted_at，前端类型能直接读取该字段",
+        "accepted_at 与 status 保持独立，标记验收不要求把 status 改写为 accepted"
+      ]
+    },
+    {
+      "title": "新增需求和反馈验收后端能力",
+      "scope": [
+        "src/loop/acceptance.js",
+        "src/loopService.js",
+        "src/main.js",
+        "src/preload.js",
+        "src/renderer/types.ts"
+      ],
+      "acceptance": [
+        "支持对当前项目内的 requirement 与 feedback 单条标记验收，写入非空 ISO accepted_at 并记录事件",
+        "支持对已验收或未验收的 requirement 与 feedback 取消验收，清空 accepted_at 并记录事件",
+        "非法 id、跨项目对象、非法 intake 类型返回明确错误，不写入错误目标",
+        "需求/反馈验收不触发计划验收命令、不执行任务、不影响现有 plan/task 验收接口"
+      ]
+    },
+    {
+      "title": "在工作区控制器接入需求反馈验收操作",
+      "scope": [
+        "src/renderer/hooks/useWorkspaceController.ts",
+        "src/renderer/pages/WorkspacePage.tsx",
+        "src/renderer/types.ts"
+      ],
+      "acceptance": [
+        "需求列表和反馈列表分别能调用对应的标记验收与取消验收 IPC，并在成功后刷新 snapshot",
+        "验收操作失败时沿用现有错误提示与 snapshot 不更新逻辑",
+        "现有创建、编辑、删除、中断、恢复、追加任务、重试生成计划操作保持原行为"
+      ]
+    },
+    {
+      "title": "在需求和反馈条目下方展示验收状态与操作",
+      "scope": [
+        "src/renderer/components/IntakePanel.tsx",
+        "src/renderer/styles/components.css"
+      ],
+      "acceptance": [
+        "每条需求/反馈在正文、附件和计划绑定信息下方显示验收状态区域",
+        "未验收时显示未验收状态和标记验收按钮，已验收时显示已验收状态、验收时间和取消验收按钮",
+        "按钮点击后调用对应处理函数，加载中或重复点击不会造成布局抖动或文本溢出",
+        "验收状态区域在无计划、单计划、多阶段计划、生成失败等条目状态下均不遮挡原有内容"
+      ]
+    },
+    {
+      "title": "补充需求反馈验收回归测试",
+      "scope": [
+        "src/loop/acceptance.test.js",
+        "src/renderer/components/IntakePanel.test.tsx",
+        "src/renderer/types.syntax.test.js"
+      ],
+      "acceptance": [
+        "后端测试覆盖 requirement 与 feedback 的验收、取消验收、幂等、跨项目拒绝和事件记录",
+        "前端测试覆盖 IntakePanel 渲染验收状态、按钮文案和处理函数接入",
+        "类型或语法检查覆盖新增 API 字段，避免 preload、controller、组件之间接口漂移"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm test && npm run check",
+    "criteria": [
+      "所有 node:test 回归测试通过，包括现有 plan/task 验收测试和新增 requirement/feedback 验收测试",
+      "TypeScript、关键主进程脚本语法检查和文件长度检查通过",
+      "需求/反馈验收仅改变对应 intake 的 accepted_at 与事件记录，不改变原有 status、计划绑定和计划/任务验收行为",
+      "工作区需求页和反馈页能显示未验收/已验收状态，并能完成标记验收与取消验收后的快照刷新"
+    ]
+  }
+}

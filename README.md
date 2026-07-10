@@ -1,4 +1,4 @@
-﻿# AutoPlan
+# AutoPlan
 
 ## 简介
 

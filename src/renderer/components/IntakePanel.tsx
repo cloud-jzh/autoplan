@@ -1,10 +1,13 @@
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
+import { FormEvent, ReactNode, type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AgentCliOption,
   AgentCliProvider,
   Attachment,
   CodexReasoningEffort,
   Feedback,
+  IntakeAcceptanceHandler,
+  IntakeMentionCandidate,
+  IntakeMentionReference,
   IntakeType,
   LinkedPlanSummary,
   PendingAttachment,
@@ -21,6 +24,9 @@ import {
 } from './shared';
 import { Composer, type ComposerSubmitPayload } from './Composer';
 import { formatChinaDateTime } from '../utils/time';
+import { buildIntakeAnchorId } from '../utils/chatIntents';
+import { splitIntakeMentionText } from '../utils/intakeMentions';
+import { locateWorkspaceAnchor } from '../utils/workspaceLocate';
 import {
   currentLinkedPlanSummary,
   normalizeLinkedPlanId,
@@ -50,6 +56,7 @@ type IntakeGenerateFailure = {
 
 const INTAKE_INITIAL_VISIBLE_COUNT = 80;
 const INTAKE_LOAD_MORE_COUNT = 80;
+const INTAKE_MENTION_LOCATE_DELAY_MS = 120;
 const EMPTY_ATTACHMENTS: Attachment[] = [];
 
 interface IntakePanelProps {
@@ -60,6 +67,7 @@ interface IntakePanelProps {
   heading: string;
   items: IntakeItem[];
   locateItemId?: number | null;
+  mentionCandidates?: IntakeMentionCandidate[];
   pendingAttachments: PendingAttachment[];
   placeholder: string;
   plans?: Plan[];
@@ -75,6 +83,8 @@ interface IntakePanelProps {
   onInterrupt: (type: IntakeType, id: number) => Promise<void>;
   onResume: (type: IntakeType, id: number) => Promise<void>;
   onAppendTask: (type: IntakeType, id: number, title: string) => Promise<void>;
+  onAcceptIntake: IntakeAcceptanceHandler;
+  onUnacceptIntake: IntakeAcceptanceHandler;
   onPreviewPlan?: PlanPreviewHandler;
   onRetryGeneratePlan?: (type: IntakeType, id: number, options?: RetryIntakePlanGenerationOptions) => Promise<void> | void;
   retryAgentCliOptions?: AgentCliOption[];
@@ -89,6 +99,7 @@ export function IntakePanel({
   heading,
   items,
   locateItemId = null,
+  mentionCandidates = [],
   pendingAttachments,
   placeholder,
   plans = [],
@@ -104,6 +115,8 @@ export function IntakePanel({
   onInterrupt,
   onResume,
   onAppendTask,
+  onAcceptIntake,
+  onUnacceptIntake,
   onPreviewPlan,
   onRetryGeneratePlan,
   retryAgentCliOptions = agentCliOptions,
@@ -114,6 +127,8 @@ export function IntakePanel({
   const [appendId, setAppendId] = useState<number | null>(null);
   const [appendText, setAppendText] = useState('');
   const [retryingKey, setRetryingKey] = useState<string | null>(null);
+  const [acceptingKey, setAcceptingKey] = useState<string | null>(null);
+  const acceptingKeyRef = useRef<string | null>(null);
   const [retryDrafts, setRetryDrafts] = useState<Record<string, IntakeRetryDraft>>({});
   const [visibleLimit, setVisibleLimit] = useState(INTAKE_INITIAL_VISIBLE_COUNT);
 
@@ -141,6 +156,53 @@ export function IntakePanel({
     if (targetIndex < 0) return;
     setVisibleLimit((current) => Math.max(current, targetIndex + 1));
   }, [items, locateItemId]);
+  useEffect(() => {
+    const target = readIntakeMentionHashTarget();
+    if (!target || target.type !== type) return undefined;
+
+    const targetIndex = items.findIndex((item) => Number(item.id) === Number(target.id));
+    if (targetIndex < 0) return undefined;
+
+    setVisibleLimit((current) => Math.max(current, targetIndex + 1));
+    const timer = window.setTimeout(() => {
+      locateIntakeMentionAnchor(buildIntakeAnchorId(target.type, target.id));
+    }, INTAKE_MENTION_LOCATE_DELAY_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [items, type]);
+
+  const revealMentionTarget = (targetType: IntakeType, id: number) => {
+    const anchorId = buildIntakeAnchorId(targetType, id);
+    const targetIndex = targetType === type
+      ? items.findIndex((item) => Number(item.id) === Number(id))
+      : -1;
+
+    if (targetType === type && targetIndex >= 0) {
+      setVisibleLimit((current) => Math.max(current, targetIndex + 1));
+      window.setTimeout(() => {
+        locateIntakeMentionAnchor(anchorId);
+      }, INTAKE_MENTION_LOCATE_DELAY_MS);
+      return;
+    }
+
+    if (targetType === type) {
+      locateIntakeMentionAnchor(anchorId);
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', targetType);
+    url.hash = anchorId;
+    window.history.pushState({}, '', url);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    window.setTimeout(() => {
+      locateIntakeMentionAnchor(anchorId);
+    }, INTAKE_MENTION_LOCATE_DELAY_MS);
+  };
+
+  const openMentionReference = (mention: IntakeMentionReference) => {
+    revealMentionTarget(mention.type, mention.id);
+  };
 
   const visibleCount = Math.min(visibleLimit, items.length);
   const visibleItems = useMemo(() => items.slice(0, visibleCount), [items, visibleCount]);
@@ -197,6 +259,21 @@ export function IntakePanel({
       await onRetryGeneratePlan(type, item.id, retryOptionsFromDraft(draft));
     } finally {
       setRetryingKey((current) => (current === key ? null : current));
+    }
+  };
+
+  const toggleIntakeAcceptance = async (item: IntakeItem, accepted: boolean) => {
+    const action = accepted ? 'unaccept' : 'accept';
+    const key = intakeAcceptanceKey(type, item.id, action);
+    if (acceptingKeyRef.current) return;
+    acceptingKeyRef.current = key;
+    setAcceptingKey(key);
+    try {
+      if (accepted) await onUnacceptIntake(type, item.id);
+      else await onAcceptIntake(type, item.id);
+    } finally {
+      acceptingKeyRef.current = null;
+      setAcceptingKey((current) => (current === key ? null : current));
     }
   };
 
@@ -286,7 +363,11 @@ export function IntakePanel({
                       <span className={`chip ${statusChip(item.status)}`}>{item.status}</span>
                     </span>
                   </div>
-                  {item.body ? <div className="item-body plain-text">{item.body}</div> : null}
+                  {item.body ? (
+                    <div className="item-body plain-text">
+                      {renderIntakeBodyMentions(item.body, mentionCandidates, openMentionReference)}
+                    </div>
+                  ) : null}
                   <AttachmentGrid attachments={itemAttachments} />
 
                   {hasPlan ? (
@@ -305,6 +386,13 @@ export function IntakePanel({
                       retrying={retryingKey === retryKey}
                     />
                   ) : null}
+
+                  <IntakeAcceptanceStatus
+                    acceptingKey={acceptingKey}
+                    item={item}
+                    onToggle={() => void toggleIntakeAcceptance(item, Boolean(item.accepted_at))}
+                    type={type}
+                  />
 
                   <div className="item-foot">
                     <div className="item-actions">
@@ -397,6 +485,7 @@ export function IntakePanel({
         key={composerIdentityKey || type}
         identityKey={composerIdentityKey || type}
         pendingAttachments={pendingAttachments}
+        mentionCandidates={mentionCandidates}
         placeholder={placeholder}
         submitLabel={submitLabel}
         type={type}
@@ -406,6 +495,73 @@ export function IntakePanel({
         onRemoveAttachment={onRemoveAttachment}
         onSubmit={onSubmit}
       />
+    </div>
+  );
+}
+
+function IntakeAcceptanceStatus({
+  acceptingKey,
+  item,
+  onToggle,
+  type,
+}: {
+  acceptingKey: string | null;
+  item: IntakeItem;
+  onToggle: () => void;
+  type: IntakeType;
+}) {
+  const acceptedAt = String(item.accepted_at || '').trim();
+  const accepted = Boolean(acceptedAt);
+  const action = accepted ? 'unaccept' : 'accept';
+  const loading = acceptingKey === intakeAcceptanceKey(type, item.id, action);
+  const label = accepted ? '已验收' : '未验收';
+
+  return (
+    <div
+      className={`intake-acceptance ${accepted ? 'is-accepted' : 'is-pending'}`}
+      style={{
+        alignItems: 'center',
+        background: accepted ? 'var(--success-bg)' : 'var(--bg-soft)',
+        border: `1px solid ${accepted ? 'var(--success-border)' : 'var(--line-soft)'}`,
+        borderRadius: 'var(--r-md)',
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '10px 12px',
+        justifyContent: 'space-between',
+        marginTop: 12,
+        minWidth: 0,
+        padding: '10px 12px',
+      }}
+    >
+      <div
+        className="intake-acceptance-main"
+        style={{ alignItems: 'center', display: 'flex', flex: '1 1 260px', flexWrap: 'wrap', gap: '7px 10px', minWidth: 0 }}
+      >
+        <span
+          className="intake-acceptance-label"
+          style={{ color: 'var(--text-3)', flex: '0 0 auto', fontSize: 11, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase' }}
+        >
+          人工验收
+        </span>
+        <strong style={{ color: accepted ? 'var(--success)' : 'var(--text-1)', flex: '0 0 auto', fontSize: 12.5, lineHeight: 1.4 }}>{label}</strong>
+        {accepted ? (
+          <span
+            className="intake-acceptance-time"
+            style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)', fontSize: 11.5, minWidth: 0, overflowWrap: 'anywhere' }}
+          >
+            {formatChinaDateTime(acceptedAt)}
+          </span>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        className={`btn btn-sm ${accepted ? '' : 'btn-primary'}`}
+        disabled={loading}
+        onClick={onToggle}
+        style={{ flex: '0 0 auto', minWidth: 104, whiteSpace: 'nowrap' }}
+      >
+        {accepted ? (loading ? '正在取消...' : '取消验收') : (loading ? '正在标记...' : '标记验收')}
+      </button>
     </div>
   );
 }
@@ -771,6 +927,76 @@ export function RecordCard({
   );
 }
 
+
+const intakeMentionLinkStyle: CSSProperties = {
+  alignItems: 'center',
+  background: 'var(--brand-50)',
+  border: '1px solid var(--brand-border)',
+  borderRadius: 999,
+  color: 'var(--brand-700)',
+  cursor: 'pointer',
+  display: 'inline-flex',
+  font: 'inherit',
+  fontSize: '0.92em',
+  fontWeight: 700,
+  lineHeight: 1.35,
+  margin: '0 2px',
+  maxWidth: '100%',
+  minWidth: 0,
+  overflowWrap: 'anywhere',
+  padding: '1px 6px',
+  verticalAlign: 'baseline',
+};
+function locateIntakeMentionAnchor(anchorId: string) {
+  const target = document.getElementById(anchorId);
+  const previousOutline = target instanceof HTMLElement ? target.style.outline : '';
+  const previousOutlineOffset = target instanceof HTMLElement ? target.style.outlineOffset : '';
+  const located = locateWorkspaceAnchor(anchorId);
+
+  if (located && target instanceof HTMLElement) {
+    target.style.outline = '2px solid var(--brand-500)';
+    target.style.outlineOffset = '2px';
+    window.setTimeout(() => {
+      target.style.outline = previousOutline;
+      target.style.outlineOffset = previousOutlineOffset;
+    }, 2400);
+  }
+
+  return located;
+}
+function renderIntakeBodyMentions(
+  body: string,
+  candidates: readonly IntakeMentionCandidate[],
+  onOpenMention: (mention: IntakeMentionReference) => void,
+): ReactNode[] {
+  return splitIntakeMentionText(body, candidates).map((segment, index) => {
+    if (segment.kind === 'text') return segment.text;
+
+    const title = `${segment.candidate.title}\n${segment.candidate.summary}`;
+    return (
+      <button
+        type="button"
+        className="intake-mention-link"
+        style={intakeMentionLinkStyle}
+        key={`${segment.mention.type}:${segment.mention.id}:${segment.mention.start}:${index}`}
+        onClick={() => onOpenMention(segment.mention)}
+        title={title}
+      >
+        {segment.text}
+      </button>
+    );
+  });
+}
+
+function readIntakeMentionHashTarget(): { type: IntakeType; id: number } | null {
+  const hash = decodeURIComponent(String(window.location.hash || '').replace(/^#/, ''));
+  const match = hash.match(/^workspace-(requirement|feedback)-(\d+)$/);
+  if (!match) return null;
+
+  const id = Number(match[2]);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  return { type: match[1] as IntakeType, id };
+}
 function workspaceSearchAnchorId(type: IntakeType, id: number) {
   return `workspace-${type}-${id}`;
 }
@@ -781,6 +1007,10 @@ function intakeAttachmentKey(type: IntakeType | string, id: number | string) {
 
 function retryDraftKey(type: IntakeType, id: number) {
   return `${type}:${id}`;
+}
+
+function intakeAcceptanceKey(type: IntakeType, id: number, action: 'accept' | 'unaccept') {
+  return `${type}:${id}:${action}`;
 }
 
 function retryDraftFromItem(item: IntakeItem): IntakeRetryDraft {

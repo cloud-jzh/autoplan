@@ -452,6 +452,8 @@ ipcMain.handle('mcp:stop', async (_event, input = {}) => { await stopMcpServer()
 
 ipcMain.handle('mcp:status', (_event, input = {}) => loop.snapshot(input.projectId || null));
 
+ipcMain.handle('mcp:readAuthToken', () => readSavedMcpAuthToken());
+
 ipcMain.handle('mcp:saveConfig', (_event, config = {}) => {
   const projectId = config.projectId || null;
   const mcpConfigChanged = saveMcpSettings(db, config);
@@ -489,6 +491,16 @@ ipcMain.handle('acceptance:unaccept', (_event, input = {}) => {
   return loop.snapshot(projectId);
 });
 
+ipcMain.handle('acceptance:redo', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  loop.redoAcceptanceItem(projectId, {
+    targetType: normalizeAcceptanceTargetType(input.targetType),
+    id: requiredRecordId(input),
+    supplement: input.supplement == null ? '' : String(input.supplement),
+  });
+  return loop.snapshot(projectId);
+});
+
 ipcMain.handle('acceptance:acceptBatch', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   const targets = normalizeAcceptanceBatchTargets(input.targets, '批量验收目标列表为空');
@@ -500,6 +512,24 @@ ipcMain.handle('acceptance:unacceptBatch', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   const targets = normalizeAcceptanceBatchTargets(input.targets, '批量取消验收目标列表为空');
   loop.unacceptItems(projectId, targets);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('intake:accept', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  loop.acceptIntakeItem(projectId, {
+    intakeType: normalizeStrictIntakeType(input.intakeType ?? input.type),
+    id: requiredRecordId(input),
+  });
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('intake:unaccept', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  loop.unacceptIntakeItem(projectId, {
+    intakeType: normalizeStrictIntakeType(input.intakeType ?? input.type),
+    id: requiredRecordId(input),
+  });
   return loop.snapshot(projectId);
 });
 
@@ -1263,6 +1293,14 @@ function recordMcpStartupError(error) {
 
 function mcpStatusMessage(state = {}) { return state.transport === 'stdio' ? 'MCP 服务已启动：stdio' : `MCP 服务已启动：${state.url || 'http://127.0.0.1:43847/mcp'}`; }
 
+function readSavedMcpAuthToken() {
+  const authToken = String(db?.getSetting?.('mcp.authToken', '') || '');
+  return {
+    hasAuthToken: authToken.length > 0,
+    authToken,
+  };
+}
+
 function registerFileProtocol() {
   if (fileProtocolRegistered || !protocol?.handle || !net?.fetch) return;
   fileProtocolRegistered = true;
@@ -1395,6 +1433,11 @@ function requireConversationInProject(conversationId, projectId) {
  * 规范化批量验收目标的 IPC 入参：非数组/空数组抛中文错误；每项取 targetType/Number(id)；
  * targetType/id 合法性交由 loop.acceptItems/unacceptItems 内部的 acceptanceTargetRow 复用校验。
  */
+function normalizeAcceptanceTargetType(value) {
+  if (value === 'plan' || value === 'task') return value;
+  throw new Error('验收目标类型无效');
+}
+
 function normalizeAcceptanceBatchTargets(raw, emptyMessage) {
   if (!Array.isArray(raw) || raw.length === 0) throw new Error(emptyMessage);
   return raw.map((entry, index) => {
@@ -1652,6 +1695,12 @@ function requiredRecordId(input = {}, key = 'id') {
 
 function normalizeIntakeType(value) {
   return value === 'feedback' ? 'feedback' : 'requirement';
+}
+
+function normalizeStrictIntakeType(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'requirement' || normalized === 'feedback') return normalized;
+  throw new Error('需求/反馈类型无效');
 }
 
 function normalizeDraftIntakeInput(input = {}) {

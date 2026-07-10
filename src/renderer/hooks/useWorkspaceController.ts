@@ -4,6 +4,8 @@ import { DEFAULT_WORKSPACE_TAB, PLAN_GENERATION_STRATEGIES, WORKSPACE_SEARCH_SOU
 import type {
   AppSnapshot,
   CodexReasoningEffort,
+  IntakeAcceptanceHandler,
+  IntakeMentionCandidate,
   IntakeType,
   LinkedPlanSummary,
   PendingAttachment,
@@ -19,6 +21,7 @@ import type {
 import { useComposerDrafts } from './useComposerDrafts';
 import { useSnapshot } from './useSnapshot';
 import { searchWorkspaceSnapshot } from '../utils/search';
+import { buildIntakeMentionCandidates } from '../utils/intakeMentions';
 import {
   createUnavailableLinkedPlan,
   createUnavailableLinkedPlanFromSummary,
@@ -87,6 +90,7 @@ export function useWorkspaceController() {
     workspacePath: '',
     intervalSeconds: '5',
     validationCommand: '',
+    projectPrompt: '',
     agentCliProvider: 'codex',
     agentCliCommand: '',
     codexReasoningEffort: defaultCodexReasoningEffort,
@@ -139,6 +143,10 @@ export function useWorkspaceController() {
   );
   const searchHitCount = workspaceSearch.total;
   const isSearching = !workspaceSearch.query.isEmpty;
+  const intakeMentionCandidates: IntakeMentionCandidate[] = useMemo(
+    () => buildIntakeMentionCandidates(snapshot, projectId),
+    [snapshot, projectId],
+  );
 
   const requirementItems = activeTab === 'requirement'
     ? snapshot?.requirements ?? EMPTY_WORKSPACE_FILTERABLE_ITEMS.requirements
@@ -249,6 +257,22 @@ export function useWorkspaceController() {
     window.alert(msg);
   }, [setError]);
 
+  const openScopeFile = useCallback((filePath: string) => {
+    void (async () => {
+      try {
+        const result = await window.autoplan.openWorkspaceFile({
+          projectId,
+          filePath,
+          mode: scopeFileOpenSettings.mode,
+          command: scopeFileOpenSettings.command,
+        });
+        if (!result.ok) throw new Error(result.error || '打开 scope 文件失败');
+      } catch (e) {
+        showError(e);
+      }
+    })();
+  }, [projectId, scopeFileOpenSettings.mode, scopeFileOpenSettings.command, showError]);
+
   const resetPlanReaderState = useCallback(() => {
     planReadRequestRef.current += 1;
     setPlanReadState(createEmptyPlanReadState());
@@ -282,6 +306,7 @@ export function useWorkspaceController() {
     state?.workspace_path,
     state?.interval_seconds,
     state?.validation_command,
+    state?.project_prompt,
     state?.agent_cli_provider,
     state?.agent_cli_command,
     state?.codex_reasoning_effort,
@@ -304,6 +329,7 @@ export function useWorkspaceController() {
   }, [projectId]);
 
   useEffect(() => {
+    if (!state || Number(state.project_id) !== Number(projectId)) return;
     setComposerPlanGeneration({
       requirement: composerPlanGenerationSelectionFromProjectState(state),
       feedback: composerPlanGenerationSelectionFromProjectState(state),
@@ -658,6 +684,8 @@ export function useWorkspaceController() {
     runLoopAction(() => window.autoplan.acceptItem({ projectId, targetType, id }));
   const unacceptItem = (targetType: 'plan' | 'task', id: number) =>
     runLoopAction(() => window.autoplan.unacceptItem({ projectId, targetType, id }));
+  const redoAcceptanceItem = (targetType: 'plan' | 'task', id: number, supplement?: string) =>
+    runLoopAction(() => window.autoplan.redoAcceptanceItem({ projectId, targetType, id, supplement }));
 
   const acceptItems = (targets: { targetType: 'plan' | 'task'; id: number }[]) => {
     if (!targets || targets.length === 0) return; // 空列表短路，不发 IPC（后端亦拒绝）
@@ -674,6 +702,21 @@ export function useWorkspaceController() {
     }));
   };
 
+  const acceptIntake = useCallback<IntakeAcceptanceHandler>(
+    async (type, id) => {
+      if (!projectId || !id) return;
+      await runLoopAction(() => window.autoplan.acceptIntake({ projectId, type, id }));
+    },
+    [projectId, runLoopAction],
+  );
+
+  const unacceptIntake = useCallback<IntakeAcceptanceHandler>(
+    async (type, id) => {
+      if (!projectId || !id) return;
+      await runLoopAction(() => window.autoplan.unacceptIntake({ projectId, type, id }));
+    },
+    [projectId, runLoopAction],
+  );
   const interruptIntake = useCallback(
     async (type: IntakeType, id: number) => {
       try {
@@ -869,6 +912,7 @@ export function useWorkspaceController() {
     activeTab,
     acceptanceGroups,
     acceptedGroups,
+    acceptIntake,
     acceptItem,
     acceptItems,
     addPendingFiles,
@@ -886,6 +930,7 @@ export function useWorkspaceController() {
     filteredEmptyText,
     filteredItems,
     interruptIntake,
+    intakeMentionCandidates,
     isSearching,
     latestReadingPlan,
     loopForm,
@@ -893,12 +938,14 @@ export function useWorkspaceController() {
     navigate,
     openIntakePlanReader,
     openPlanReader,
+    openScopeFile,
     openTaskPlanReader,
     pendingAttachments,
     planReadState,
     project,
     projectId,
     projects,
+    redoAcceptanceItem,
     recentAccepted,
     refreshPlanReader,
     removePendingAttachment,
@@ -926,6 +973,7 @@ export function useWorkspaceController() {
     submitLoopConfig,
     updatePlanExecutionConfig,
     switchProject,
+    unacceptIntake,
     unacceptItem,
     unacceptItems,
     updateComposerDraft,

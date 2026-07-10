@@ -5,6 +5,7 @@ import type {
   AgentCliOption,
   AppSnapshot,
   ChatIntakeOpenRef,
+  IntakeAcceptanceHandler,
   IntakeType,
   Plan,
   Project,
@@ -46,6 +47,8 @@ type WorkspaceSidebarWithChatProps = ComponentProps<typeof WorkspaceSidebar> & {
 const WorkspaceSidebarWithChat = WorkspaceSidebar as ComponentType<WorkspaceSidebarWithChatProps>;
 
 type WorkspaceIntakePanelProps = ComponentProps<typeof IntakePanel> & {
+  onAcceptIntake: IntakeAcceptanceHandler;
+  onUnacceptIntake: IntakeAcceptanceHandler;
   onRetryGeneratePlan: (
     type: IntakeType,
     id: number,
@@ -64,10 +67,17 @@ type WorkspacePlanListProps = ComponentProps<typeof PlanList> & {
 
 const WorkspacePlanList = PlanList as ComponentType<WorkspacePlanListProps>;
 
+type WorkspaceTaskListProps = ComponentProps<typeof TaskList> & {
+  onOpenScopeFile?: (filePath: string) => void;
+};
+
+const WorkspaceTaskList = TaskList as ComponentType<WorkspaceTaskListProps>;
+
 type PendingIntakeTarget = { tab: WorkspaceTab; id: number; anchorId: string };
 
 export function WorkspacePage() {
   const {
+    acceptIntake,
     acceptItem,
     acceptItems,
     acceptanceGroups,
@@ -91,12 +101,14 @@ export function WorkspacePage() {
     filteredEmptyText,
     filteredItems,
     interruptIntake,
+    intakeMentionCandidates,
     latestReadingPlan,
     loopForm,
     mcpForm,
     navigate,
     openIntakePlanReader,
     openPlanReader,
+    openScopeFile,
     openTaskPlanReader,
     pendingAttachments,
     planReadState,
@@ -126,6 +138,7 @@ export function WorkspacePage() {
     submitLoopConfig,
     switchProject,
     updatePlanExecutionConfig,
+    unacceptIntake,
     unacceptItem,
     unacceptItems,
     updateComposerDraft,
@@ -543,6 +556,7 @@ export function WorkspacePage() {
                 heading="需求记录"
                 items={filteredItems.requirements}
                 locateItemId={intakeLocateItemId('requirement', pendingSearchTarget, pendingIntakeTarget)}
+                mentionCandidates={intakeMentionCandidates}
                 pendingAttachments={pendingAttachments.requirement}
                 placeholder="输入需求，Enter 发送，Shift+Enter 换行"
                 submitLabel="发送需求"
@@ -559,6 +573,8 @@ export function WorkspacePage() {
                 onResume={resumeIntake}
                 onAppendTask={appendIntakeTask}
                 onRetryGeneratePlan={retryIntakePlanGeneration}
+                onAcceptIntake={acceptIntake}
+                onUnacceptIntake={unacceptIntake}
                 retryAgentCliOptions={composerCliSelection.options}
                 retryCodexReasoningOptions={composerCliSelection.reasoningOptions}
                 composerIdentityKey={`project:${projectId}:requirement`}
@@ -577,6 +593,7 @@ export function WorkspacePage() {
                 heading="反馈记录"
                 items={filteredItems.feedback}
                 locateItemId={intakeLocateItemId('feedback', pendingSearchTarget, pendingIntakeTarget)}
+                mentionCandidates={intakeMentionCandidates}
                 pendingAttachments={pendingAttachments.feedback}
                 placeholder="输入反馈，Enter 发送，Shift+Enter 换行"
                 submitLabel="发送反馈"
@@ -593,6 +610,8 @@ export function WorkspacePage() {
                 onResume={resumeIntake}
                 onAppendTask={appendIntakeTask}
                 onRetryGeneratePlan={retryIntakePlanGeneration}
+                onAcceptIntake={acceptIntake}
+                onUnacceptIntake={unacceptIntake}
                 retryAgentCliOptions={composerCliSelection.options}
                 retryCodexReasoningOptions={composerCliSelection.reasoningOptions}
                 composerIdentityKey={`project:${projectId}:feedback`}
@@ -675,11 +694,12 @@ export function WorkspacePage() {
                   <div className="card-head">
                     <h2>任务</h2>
                   </div>
-                  <TaskList
+                  <WorkspaceTaskList
                     emptyText={filteredEmptyText}
                     locateTarget={pendingSearchTarget}
                     planFilter={selectedPlanTaskFilter}
                     tasks={taskListTasks}
+                    onOpenScopeFile={openScopeFile}
                     onOpenPlan={openTaskPlanReader}
                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}

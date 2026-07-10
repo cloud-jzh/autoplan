@@ -6,12 +6,15 @@ const path = require('path');
 const {
   analyzeIntakePlanPhasing,
   recoverPlanFromStdout,
+  recoverPlanSpecFromStdoutResult,
   generatePlanForIntake,
   isPlanContentValid,
+  validatePlanContent,
   shouldGeneratePhasedPlans,
 } = require('./planGeneration');
 const { BUILTIN_PLAN_GENERATION_ERROR_CODES } = require('./builtinPlanGenerator');
 const { normalizePlanMarkdown, normalizePlanMarkdownFile } = require('./planParser');
+const { parsePlanTasksFromMarkdown } = require('./planTaskSync');
 
 /**
  * planGeneration 模块单元测试（node:test 风格，对齐 acceptance.test.js）。
@@ -29,7 +32,7 @@ describe('recoverPlanFromStdout', () => {
         '## 任务拆解',
         '',
         '- [ ] P001: 任务一 <!-- scope: src/foo.js -->',
-        '- [ ] P002: 任务二 <!-- scope: src/bar.js -->',
+        '- [ ] P002: 完整验收 <!-- scope: validation -->',
       ].join('\n');
 
       const result = recoverPlanFromStdout(planFile, stdout);
@@ -68,6 +71,67 @@ describe('recoverPlanFromStdout', () => {
 
       assert.equal(result, false);
       assert.ok(!fs.existsSync(planFile));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+
+describe('recoverPlanSpecFromStdoutResult', () => {
+  it('recovers a balanced PlanSpec JSON object from stdout and writes the target file', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-spec-stdout-'));
+    try {
+      const planSpecFile = path.join(dir, 'docs', 'plan', 'plan_spec_stdout.json');
+      const spec = strategyPlanSpec('stdout recovery spec');
+      const result = recoverPlanSpecFromStdoutResult(
+        planSpecFile,
+        `prefix\n${JSON.stringify(spec)}\nsuffix`,
+        { workspace: dir, helpers: strategyHelpers(dir) },
+      );
+
+      assert.equal(result.recovered, true);
+      assert.equal(result.classification, 'valid_json');
+      assert.equal(result.reason, 'stdout_json_recovered');
+      assert.equal(result.targetPath, 'docs/plan/plan_spec_stdout.json');
+      assert.equal(JSON.parse(fs.readFileSync(planSpecFile, 'utf8')).title, 'stdout recovery spec');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('classifies markdown stdout without writing a PlanSpec file', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-spec-markdown-'));
+    try {
+      const planSpecFile = path.join(dir, 'docs', 'plan', 'plan_spec_missing.json');
+      const result = recoverPlanSpecFromStdoutResult(
+        planSpecFile,
+        ['# Generated plan', '', '## 任务拆解', '- [ ] P001: wrong artifact <!-- scope: src/a.js -->'].join('\n'),
+        { workspace: dir, helpers: strategyHelpers(dir) },
+      );
+
+      assert.equal(result.recovered, false);
+      assert.equal(result.classification, 'markdown');
+      assert.equal(result.reason, 'stdout_markdown_not_json');
+      assert.ok(result.error, 'parse error should be retained for diagnostics');
+      assert.equal(fs.existsSync(planSpecFile), false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('classifies greeting-only stdout as non-json text', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-spec-greeting-'));
+    try {
+      const result = recoverPlanSpecFromStdoutResult(
+        path.join(dir, 'docs', 'plan', 'plan_spec_missing.json'),
+        'I need more information before I can create the plan.',
+        { workspace: dir, helpers: strategyHelpers(dir) },
+      );
+
+      assert.equal(result.recovered, false);
+      assert.equal(result.classification, 'non_json_text');
+      assert.equal(result.reason, 'stdout_non_json_text');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -288,7 +352,7 @@ describe('isPlanContentValid plan 格式校验（P005）', () => {
     '## 任务拆解',
     '',
     '- [ ] P001: 任务一 <!-- scope: src/foo.js -->',
-    '- [ ] P002: 任务二 <!-- scope: src/bar.js -->',
+    '- [ ] P002: 完整验收 <!-- scope: validation -->',
     '',
     '## 总体验收标准',
     '',
@@ -307,7 +371,7 @@ describe('isPlanContentValid plan 格式校验（P005）', () => {
   });
 
   it('任务行缺 <!-- scope --> → 校验失败', () => {
-    const noScope = ['## 任务拆解', '', '- [ ] P001: 任务一'].join('\n');
+    const noScope = ['## 任务拆解', '', '- [ ] P001: 任务一', '- [ ] P002: 完整验收 <!-- scope: validation -->'].join('\n');
     assert.equal(isPlanContentValid(noScope), false);
   });
 
@@ -315,6 +379,48 @@ describe('isPlanContentValid plan 格式校验（P005）', () => {
     assert.equal(isPlanContentValid(''), false);
     assert.equal(isPlanContentValid(null), false);
     assert.equal(isPlanContentValid(undefined), false);
+  });
+
+  it('rejects a task list whose final task is not validation scoped acceptance', () => {
+    const invalid = [
+      '## 任务拆解',
+      '',
+      '- [ ] P001: implement feature <!-- scope: src/feature.js -->',
+      '- [ ] P002: follow-up work <!-- scope: src/follow.js -->',
+    ].join('\n');
+    const result = validatePlanContent(invalid);
+
+    assert.equal(result.valid, false);
+    assert.match(result.reason, /完整验收|validation/);
+  });
+});
+
+describe('parsePlanTasksFromMarkdown structured task section filtering', () => {
+  it('parses only real top-level task lines in the exact task section', () => {
+    const markdown = [
+      '# Parser guard',
+      '',
+      '- [ ] P000: outside before section <!-- scope: src/outside.js -->',
+      '',
+      '## 任务拆解',
+      '',
+      '- [ ] P001: implement feature <!-- scope: src/feature.js -->',
+      '  - [ ] P099: nested checkbox <!-- scope: src/nested.js -->',
+      '> - [ ] P098: quoted checkbox <!-- scope: src/quote.js -->',
+      '| - [ ] P097: table checkbox <!-- scope: src/table.js --> |',
+      '```markdown',
+      '- [ ] P096: fenced checkbox <!-- scope: src/fenced.js -->',
+      '```',
+      '- [ ] P002: 完整验收 <!-- scope: validation -->',
+      '',
+      '## 进度区',
+      '- [ ] P003: outside after section <!-- scope: src/after.js -->',
+    ].join('\n');
+
+    const tasks = parsePlanTasksFromMarkdown(markdown);
+
+    assert.deepEqual(tasks.map((task) => task.key), ['P001', 'P002']);
+    assert.deepEqual(tasks.map((task) => task.scope), ['src/feature.js', 'validation']);
   });
 });
 
@@ -403,7 +509,7 @@ describe('generatePlanForIntake 格式校验失败兜底（P005）', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-p5-ok-'));
     try {
       const planFilePath = path.join(dir, 'docs', 'plan', 'plan_requirement_2_20260629-120000.md');
-      const valid = '## 任务拆解\n\n- [ ] P001: 任务一 <!-- scope: src/foo.js -->\n';
+      const valid = ['## 任务拆解', '', '- [ ] P001: 任务一 <!-- scope: src/foo.js -->', '- [ ] P002: 完整验收 <!-- scope: validation -->', ''].join('\n');
       const { svc, isInserted } = fullFlowService(planFilePath, valid);
 
       const intake = { __type: 'requirement', id: 2, body: '这是一段足够长的需求描述超过二十个字符。' };
@@ -904,6 +1010,7 @@ describe('generatePlanForIntake 计划生成耗时（P006）', () => {
     }
   });
 });
+
 describe('generatePlanForIntake 生成策略路由（P011）', () => {
   it('external-cli-markdown keeps the compatibility path and stores generation/execution snapshots', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-p11-markdown-'));
@@ -1046,6 +1153,58 @@ describe('generatePlanForIntake 生成策略路由（P011）', () => {
     }
   });
 
+  it('external-cli-structured records markdown stdout diagnostics without inserting a plan', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-p11-structured-markdown-'));
+    try {
+      const { svc } = strategyFlowService({
+        status: {
+          plan_generation_strategy: 'external-cli-structured',
+          plan_generation_provider: 'opencode',
+          plan_execution_strategy: 'external-cli',
+          plan_execution_provider: 'codex',
+        },
+        async runCodex(_workspace, _prompt, _label, operation) {
+          return {
+            exitCode: 0,
+            output: ['# Wrong artifact', '', '## 任务拆解', '- [ ] P001: markdown only <!-- scope: src/a.js -->'].join('\n'),
+            logFile: '/tmp/opencode-markdown-only.log',
+            agentCliProvider: operation.agentCliProvider,
+            agentCliCommand: operation.agentCliCommand,
+            opencodeAgent: operation.opencodeAgent,
+            opencodePlanMode: operation.opencodePlanMode,
+          };
+        },
+      });
+
+      const result = await generatePlanForIntake(
+        svc,
+        strategyHelpers(dir),
+        'p1',
+        dir,
+        strategyIntake(106, '这是一段足够长的需求描述，用来触发 OpenCode 结构化 PlanSpec 缺失诊断。'),
+      );
+
+      assert.equal(result, null);
+      assert.equal(svc.insertPlanCalls.length, 0, 'markdown stdout must not insert a plan');
+      assert.equal(svc.syncPlanTasksCalls.length, 0, 'markdown stdout must not sync plan_tasks');
+      const failure = svc.events.find((event) => event.type === 'plan.spec.missing');
+      assert.ok(failure, 'missing PlanSpec should emit plan.spec.missing');
+      assert.equal(failure.meta.agentCliProvider, 'opencode');
+      assert.equal(failure.meta.planGenerationProvider, 'opencode');
+      assert.equal(failure.meta.logFile, '/tmp/opencode-markdown-only.log');
+      assert.equal(failure.meta.planSpecFileExists, false);
+      assert.match(failure.meta.planSpecTargetPath, /docs\/plan\/plan_spec_requirement_106_/);
+      assert.equal(failure.meta.stdoutPlanSpecClassification, 'markdown');
+      assert.equal(failure.meta.stdoutPlanSpecRecoveryAttempted, true);
+      assert.equal(failure.meta.stdoutPlanSpecRecoveryReason, 'stdout_markdown_not_json');
+      assert.equal(failure.meta.planSpecRecoveredFromStdout, false);
+      assert.match(failure.meta.stdoutPreview, /Wrong artifact/);
+      assert.ok(svc.hooks.some((hook) => hook.hook === 'on:fail'), 'failure should still use the failure hook path');
+      assert.ok(svc.dbRuns.some((entry) => entry.sql.includes('last_generate_error = ?')), 'intake failure state should be persisted');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
   it('builtin-llm-structured uses the built-in PlanSpec generator and stores AI provider/model snapshot', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-p11-builtin-ok-'));
     try {
@@ -1147,6 +1306,262 @@ describe('generatePlanForIntake 生成策略路由（P011）', () => {
   });
 });
 
+
+
+describe('generatePlanForIntake @ mention prompt context (P004)', () => {
+  function mentionRows(sql, params) {
+    const id = Number(params[1]);
+    if (sql.includes('FROM requirements') && id === 12) {
+      return {
+        id: 12,
+        project_id: 'p1',
+        title: '\u767b\u5f55\u6539\u9020',
+        body: '\u9700\u8981\u652f\u6301\u90ae\u7bb1\u767b\u5f55\uff0c\u5e76\u4fdd\u7559\u5df2\u6709\u624b\u673a\u53f7\u767b\u5f55\u5165\u53e3\u3002',
+        status: 'open',
+        updated_at: '2026-07-01 10:00:00',
+      };
+    }
+    if (sql.includes('FROM requirements') && id === 22) {
+      return {
+        id: 22,
+        project_id: 'p1',
+        title: '\u5bfc\u51fa PlanSpec',
+        body: '\u7ed3\u6784\u5316\u8ba1\u5212\u751f\u6210\u9700\u8981\u5f15\u7528\u9700\u6c42\u4e0a\u4e0b\u6587\u3002',
+        status: 'accepted',
+        updated_at: '2026-07-02 10:00:00',
+      };
+    }
+    if (sql.includes('FROM requirements') && id === 32) {
+      return {
+        id: 32,
+        project_id: 'p1',
+        title: '\u5185\u7f6e\u7ed3\u6784\u5316\u751f\u6210',
+        body: '\u5185\u7f6e LLM prompt \u4e5f\u8981\u5305\u542b\u5f15\u7528\u6458\u8981\u3002',
+        status: 'open',
+        updated_at: '2026-07-03 10:00:00',
+      };
+    }
+    if (sql.includes('FROM feedback') && id === 7) {
+      return {
+        id: 7,
+        project_id: 'p1',
+        title: '\u7528\u6237\u53cd\u9988\u767b\u5f55\u6162',
+        body: '\u7528\u6237\u53cd\u9988\u767b\u5f55\u9875\u9996\u5c4f\u54cd\u5e94\u504f\u6162\uff0c\u9700\u8981\u6392\u67e5\u63a5\u53e3\u548c\u8d44\u6e90\u52a0\u8f7d\u3002',
+        status: 'triaged',
+        updated_at: '2026-07-04 10:00:00',
+      };
+    }
+    return null;
+  }
+
+  it('external-cli-markdown prompt includes de-duplicated requirement and feedback mention summaries', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-p004-mentions-markdown-'));
+    try {
+      const { svc } = strategyFlowService({
+        status: {
+          plan_generation_strategy: 'external-cli-markdown',
+          plan_generation_provider: 'claude',
+        },
+        dbGet: mentionRows,
+        async runCodex(workspace, prompt) {
+          const planFile = prompt.match(/\u8f93\u51fa\u6587\u4ef6\uff1a(.+)/)?.[1]?.trim();
+          fs.mkdirSync(path.dirname(planFile), { recursive: true });
+          fs.writeFileSync(planFile, validStrategyPlanMarkdown('Mention Context Markdown', 'src/login.js'), 'utf8');
+          return { exitCode: 0, output: '', logFile: path.join(workspace, 'mentions-markdown.log') };
+        },
+      });
+
+      await generatePlanForIntake(
+        svc,
+        strategyHelpers(dir),
+        'p1',
+        dir,
+        strategyIntake(301, '\u8bf7\u7ed3\u5408 @\u9700\u6c42#12 \u548c @\u53cd\u9988#7 \u63a8\u8fdb\u767b\u5f55\u4f18\u5316\uff0c\u5e76\u518d\u6b21\u53c2\u8003 @\u9700\u6c42#12\uff0c\u751f\u6210\u53ef\u6267\u884c\u8ba1\u5212\u3002'),
+      );
+
+      const prompt = svc.runCodexCalls[0].prompt;
+      assert.match(prompt, /@ \u5f15\u7528\u4e0a\u4e0b\u6587/);
+      assert.match(prompt, /@\u9700\u6c42#12/);
+      assert.match(prompt, /\u767b\u5f55\u6539\u9020/);
+      assert.match(prompt, /\u9700\u8981\u652f\u6301\u90ae\u7bb1\u767b\u5f55/);
+      assert.match(prompt, /@\u53cd\u9988#7/);
+      assert.match(prompt, /\u7528\u6237\u53cd\u9988\u767b\u5f55\u6162/);
+      const context = prompt.slice(prompt.indexOf('@ \u5f15\u7528\u4e0a\u4e0b\u6587'));
+      assert.equal((context.match(/@\u9700\u6c42#12/g) || []).length, 1, 'duplicate @requirement mention is summarized once');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('external-cli-structured prompt keeps PlanSpec contract and includes mention context', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-p004-mentions-structured-'));
+    try {
+      const { svc } = strategyFlowService({
+        status: {
+          plan_generation_strategy: 'external-cli-structured',
+          plan_generation_provider: 'codex',
+        },
+        dbGet: mentionRows,
+        async runCodex(_workspace, prompt) {
+          const planSpecFile = prompt.match(/PlanSpec JSON \u8f93\u51fa\u6587\u4ef6\uff1a(.+)/)?.[1]?.trim();
+          fs.mkdirSync(path.dirname(planSpecFile), { recursive: true });
+          fs.writeFileSync(planSpecFile, JSON.stringify(strategyPlanSpec('Mention Context PlanSpec'), null, 2), 'utf8');
+          return { exitCode: 0, output: '', logFile: '/tmp/mentions-structured.log' };
+        },
+      });
+
+      await generatePlanForIntake(
+        svc,
+        strategyHelpers(dir),
+        'p1',
+        dir,
+        strategyIntake(302, '\u8bf7\u57fa\u4e8e @\u9700\u6c42#22 \u751f\u6210\u7ed3\u6784\u5316\u8ba1\u5212\uff0c\u5e76\u4fdd\u6301 PlanSpec \u5951\u7ea6\u3002'),
+      );
+
+      const prompt = svc.runCodexCalls[0].prompt;
+      assert.match(prompt, /PlanSpec \u5951\u7ea6\uff1a/);
+      assert.match(prompt, /@ \u5f15\u7528\u4e0a\u4e0b\u6587/);
+      assert.match(prompt, /@\u9700\u6c42#22/);
+      assert.match(prompt, /\u7ed3\u6784\u5316\u8ba1\u5212\u751f\u6210\u9700\u8981\u5f15\u7528\u9700\u6c42\u4e0a\u4e0b\u6587/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('builtin-llm-structured prompt includes mention context and submit_plan_spec constraints', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-p004-mentions-builtin-'));
+    try {
+      const { svc } = strategyFlowService({
+        status: {
+          plan_generation_strategy: 'builtin-llm-structured',
+          plan_generation_provider: 'openai',
+          plan_generation_model: 'gpt-4o',
+        },
+        dbGet: mentionRows,
+        async generateBuiltinPlanSpec(input) {
+          svc.builtinInputs.push(input);
+          return { planSpec: strategyPlanSpec('Mention Context Builtin PlanSpec'), aiConfig: { provider: 'openai', model: 'gpt-4o', hasApiKey: true }, output: '' };
+        },
+      });
+
+      await generatePlanForIntake(
+        svc,
+        strategyHelpers(dir),
+        'p1',
+        dir,
+        strategyIntake(303, '\u8bf7\u7ed3\u5408 @\u9700\u6c42#32 \u751f\u6210\u5185\u7f6e\u7ed3\u6784\u5316\u8ba1\u5212\u3002'),
+      );
+
+      const prompt = svc.builtinInputs[0].prompt;
+      assert.match(prompt, /submit_plan_spec/);
+      assert.match(prompt, /Markdown/);
+      assert.match(prompt, /@ \u5f15\u7528\u4e0a\u4e0b\u6587/);
+      assert.match(prompt, /\u5185\u7f6e LLM prompt \u4e5f\u8981\u5305\u542b\u5f15\u7528\u6458\u8981/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('mentions to self or missing current-project records produce readable prompt hints', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-p004-mentions-missing-'));
+    try {
+      const { svc } = strategyFlowService({
+        status: {
+          plan_generation_strategy: 'external-cli-markdown',
+          plan_generation_provider: 'claude',
+        },
+        dbGet: () => null,
+        async runCodex(workspace, prompt) {
+          const planFile = prompt.match(/\u8f93\u51fa\u6587\u4ef6\uff1a(.+)/)?.[1]?.trim();
+          fs.mkdirSync(path.dirname(planFile), { recursive: true });
+          fs.writeFileSync(planFile, validStrategyPlanMarkdown('Mention Missing Hints', 'src/missing.js'), 'utf8');
+          return { exitCode: 0, output: '', logFile: path.join(workspace, 'mentions-missing.log') };
+        },
+      });
+
+      await generatePlanForIntake(
+        svc,
+        strategyHelpers(dir),
+        'p1',
+        dir,
+        strategyIntake(1, '\u56f4\u7ed5 @\u9700\u6c42#1 \u548c @\u53cd\u9988#404 \u7ee7\u7eed\u63a8\u8fdb\uff0c\u8fd9\u662f\u4e00\u6bb5\u8db3\u591f\u957f\u7684\u9700\u6c42\u63cf\u8ff0\u3002'),
+      );
+
+      const prompt = svc.runCodexCalls[0].prompt;
+      assert.match(prompt, /@\u9700\u6c42#1\uff1a\u5f15\u7528\u81ea\u8eab\uff0c\u5df2\u8df3\u8fc7\u6b63\u6587\u6ce8\u5165\u4ee5\u907f\u514d\u91cd\u590d\u3002/);
+      assert.match(prompt, /@\u53cd\u9988#404\uff1a\u672a\u627e\u5230\u5f53\u524d\u9879\u76ee\u5185\u5bf9\u5e94\u8bb0\u5f55\uff0c\u6309\u666e\u901a\u6587\u672c\u5f15\u7528\u5904\u7406\u3002/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('generatePlanForIntake @ mention prompt regression coverage (P005)', () => {
+  it('external-cli-markdown keeps mention summaries, project prompt, and Markdown task constraints together', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-p005-mentions-project-prompt-'));
+    try {
+      const { svc } = strategyFlowService({
+        status: {
+          project_prompt: 'P005 project prompt: keep intake mention context with local planning rules.',
+          plan_generation_strategy: 'external-cli-markdown',
+          plan_generation_provider: 'codex',
+        },
+        dbGet(sql, params) {
+          if (sql.includes('FROM requirements') && Number(params[1]) === 44) {
+            return {
+              id: 44,
+              project_id: 'p1',
+              title: '\u88ab\u5f15\u7528\u9700\u6c42',
+              body: '\u8fd9\u662f\u4e00\u6bb5\u88ab @ \u5f15\u7528\u6ce8\u5165\u5230 prompt \u7684\u9700\u6c42\u6458\u8981\u3002',
+              status: 'open',
+              updated_at: '2026-07-05 10:00:00',
+            };
+          }
+          if (sql.includes('FROM feedback') && Number(params[1]) === 45) {
+            return {
+              id: 45,
+              project_id: 'p1',
+              title: '\u88ab\u5f15\u7528\u53cd\u9988',
+              body: '\u53cd\u9988\u6458\u8981\u4e5f\u5e94\u8be5\u51fa\u73b0\u5728 prompt \u4e2d\u3002',
+              status: 'triaged',
+              updated_at: '2026-07-06 10:00:00',
+            };
+          }
+          return null;
+        },
+        async runCodex(workspace, prompt) {
+          const planFile = prompt.match(/\u8f93\u51fa\u6587\u4ef6\uff1a(.+)/)?.[1]?.trim();
+          fs.mkdirSync(path.dirname(planFile), { recursive: true });
+          fs.writeFileSync(planFile, validStrategyPlanMarkdown('P005 mention project prompt', 'src/p005.js'), 'utf8');
+          return { exitCode: 0, output: '', logFile: path.join(workspace, 'p005-mentions.log') };
+        },
+      });
+
+      await generatePlanForIntake(
+        svc,
+        strategyHelpers(dir),
+        'p1',
+        dir,
+        strategyIntake(305, '\u8bf7\u7ed3\u5408 @\u9700\u6c42#44 \u548c @\u53cd\u9988#45 \u751f\u6210\u8ba1\u5212\uff0c\u5e76\u4fdd\u6301\u9879\u76ee prompt \u4e0e Markdown \u683c\u5f0f\u7ea6\u675f\u3002'),
+      );
+
+      const prompt = svc.runCodexCalls[0].prompt;
+      assert.match(prompt, /@ \u5f15\u7528\u4e0a\u4e0b\u6587/);
+      assert.match(prompt, /@\u9700\u6c42#44/);
+      assert.match(prompt, /@\u53cd\u9988#45/);
+      assert.match(prompt, /\u88ab\u5f15\u7528\u9700\u6c42/);
+      assert.match(prompt, /\u88ab\u5f15\u7528\u53cd\u9988/);
+      assert.match(prompt, /P005 project prompt: keep intake mention context with local planning rules\./);
+      assert.match(prompt, /\u56fa\u5b9a\u683c\u5f0f\uff1a`- \[ \] P001:/);
+      assert.match(prompt, /scope \u5fc5\u586b/);
+      assert.match(prompt, /\u5b8c\u6574\u9a8c\u6536/);
+      assert.match(prompt, /\u53ea\u5199 plan \u6587\u4ef6\uff0c\u4e0d\u8981\u6539\u4e1a\u52a1\u4ee3\u7801/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 async function withDateNowSequence(values, fn) {
   const originalDateNow = Date.now;
   let index = 0;
@@ -1194,7 +1609,12 @@ function strategyFlowService(options = {}) {
       svc.syncPlanTasksCalls.push({ planId, planFile });
     },
     db: {
-      all() {
+      get(sql, params = []) {
+        if (typeof options.dbGet === 'function') return options.dbGet(sql, params);
+        return null;
+      },
+      all(sql, params = []) {
+        if (typeof options.dbAll === 'function') return options.dbAll(sql, params);
         return [];
       },
       run(sql, params = []) {
@@ -1266,6 +1686,155 @@ function validStrategyPlanMarkdown(title, scope) {
     '',
   ].join('\n');
 }
+
+function assertSkillTransferPromptConstraint(prompt) {
+  assert.ok(prompt.includes('用户指定 skill 传递约束：'), 'prompt 应包含用户指定 skill 传递约束标题');
+  assert.ok(
+    prompt.includes('禁止把“使用某 skill/调用某工具”拆成独立任务项'),
+    'prompt 应禁止把 skill 使用拆成独立任务',
+  );
+  assert.ok(
+    prompt.includes('真正需要执行的具体开发任务标题、验收要点或任务说明'),
+    'prompt 应要求把 skill 传递到具体任务信息中',
+  );
+}
+
+function assertMarkdownPlanPromptHardConstraints(prompt) {
+  assert.match(prompt, /必须包含精确二级标题 `## 任务拆解`/);
+  assert.match(prompt, /固定格式：`- \[ \] P001:/);
+  assert.match(prompt, /scope 必填/);
+  assert.match(prompt, /完整验收/);
+  assert.match(prompt, /只写 (?:plan 文件|manifest 和阶段 plan 文件)，不要改业务代码/);
+}
+
+function assertStructuredPlanPromptHardConstraints(prompt, { builtin = false } = {}) {
+  if (builtin) {
+    assert.match(prompt, /必须通过 submit_plan_spec 结构化工具提交 PlanSpec JSON/);
+  } else {
+    assert.match(prompt, /只写 PlanSpec JSON 文件，不要写最终 Markdown plan 文件，不要改业务代码/);
+  }
+  assert.match(prompt, /PlanSpec 契约：/);
+  assert.match(prompt, /tasks 是开发任务数组/);
+  assert.match(prompt, /scope 必须是字符串数组/);
+  assert.match(prompt, /finalValidation/);
+  assert.match(prompt, /最终 Markdown 渲染约束/);
+  assert.match(prompt, /AutoPlan 渲染出的最终 Markdown 必须包含精确二级标题 `## 任务拆解`/);
+  assert.match(prompt, /最终 Markdown 任务行必须由 AutoPlan 连续编号/);
+}
+
+describe('plan generation prompt skill transfer constraints', () => {
+  it('external-cli-markdown requirement and feedback prompts include skill transfer and Markdown hard constraints', async () => {
+    const cases = [
+      { type: 'requirement', id: 301 },
+      { type: 'feedback', id: 302 },
+    ];
+
+    for (const item of cases) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), `autoplan-skill-markdown-${item.type}-`));
+      try {
+        const { svc } = strategyFlowService({
+          status: {
+            plan_generation_strategy: 'external-cli-markdown',
+            plan_generation_provider: 'codex',
+          },
+          async runCodex(_workspace, prompt) {
+            const planFile = prompt.match(/输出文件：(.+)/)?.[1]?.trim();
+            fs.mkdirSync(path.dirname(planFile), { recursive: true });
+            fs.writeFileSync(planFile, validStrategyPlanMarkdown(`skill ${item.type}`, 'src/skill.js'), 'utf8');
+            return { exitCode: 0, output: '', logFile: '/tmp/skill-markdown.log', agentCliProvider: 'codex' };
+          },
+        });
+
+        await generatePlanForIntake(svc, strategyHelpers(dir), 'p1', dir, {
+          __type: item.type,
+          id: item.id,
+          title: `skill ${item.type}`,
+          body: '请使用 $SkillName 处理这段足够长的需求描述，并生成可执行计划。',
+        });
+
+        const prompt = svc.runCodexCalls[0].prompt;
+        assertSkillTransferPromptConstraint(prompt);
+        assertMarkdownPlanPromptHardConstraints(prompt);
+        assert.match(prompt, new RegExp(`${item.type === 'feedback' ? '反馈' : '需求'} #${item.id} 内容：`));
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('external-cli-structured prompt includes skill transfer and PlanSpec hard constraints', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-skill-structured-'));
+    try {
+      const { svc } = strategyFlowService({
+        status: {
+          plan_generation_strategy: 'external-cli-structured',
+          plan_generation_provider: 'claude',
+        },
+        async runCodex(_workspace, prompt, _label, operation) {
+          const planSpecFile = prompt.match(/PlanSpec JSON 输出文件：(.+)/)?.[1]?.trim();
+          fs.mkdirSync(path.dirname(planSpecFile), { recursive: true });
+          fs.writeFileSync(planSpecFile, JSON.stringify(strategyPlanSpec('skill structured'), null, 2), 'utf8');
+          return { exitCode: 0, output: '', logFile: '/tmp/skill-structured.log', agentCliProvider: operation.agentCliProvider };
+        },
+      });
+
+      await generatePlanForIntake(svc, strategyHelpers(dir), 'p1', dir, strategyIntake(303, '请使用 $SkillName 处理这段足够长的结构化需求描述。'));
+
+      const prompt = svc.runCodexCalls[0].prompt;
+      assertSkillTransferPromptConstraint(prompt);
+      assertStructuredPlanPromptHardConstraints(prompt);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('builtin-llm-structured prompt includes skill transfer and submit_plan_spec contract', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-skill-builtin-'));
+    try {
+      const { svc } = strategyFlowService({
+        status: {
+          plan_generation_strategy: 'builtin-llm-structured',
+          plan_generation_provider: 'openai',
+          plan_generation_model: 'gpt-4o',
+        },
+        async generateBuiltinPlanSpec(input) {
+          svc.builtinInputs.push(input);
+          return { planSpec: strategyPlanSpec('skill builtin'), aiConfig: { provider: 'openai', model: 'gpt-4o', hasApiKey: true }, output: '' };
+        },
+      });
+
+      await generatePlanForIntake(svc, strategyHelpers(dir), 'p1', dir, strategyIntake(304, '请使用 $SkillName 处理这段足够长的内置结构化需求描述。'));
+
+      const prompt = svc.builtinInputs[0].prompt;
+      assertSkillTransferPromptConstraint(prompt);
+      assertStructuredPlanPromptHardConstraints(prompt, { builtin: true });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('phased plan prompt includes skill transfer and per-phase Markdown hard constraints', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-skill-phased-'));
+    try {
+      const helpers = helpersForPhased(dir);
+      const { svc, captured } = phasedFlowService(dir);
+      await generatePlanForIntake(svc, helpers, 'p1', dir, {
+        __type: 'requirement',
+        id: 77,
+        title: 'skill phased',
+        body: '请使用 $SkillName 分阶段推进：第一阶段建立模型，第二阶段完成界面和验收。',
+      });
+
+      const prompt = captured.prompt;
+      assertSkillTransferPromptConstraint(prompt);
+      assert.match(prompt, /每个阶段 plan 的格式要求：/);
+      assertMarkdownPlanPromptHardConstraints(prompt);
+      assert.match(prompt, /只写 manifest 和阶段 plan 文件，不要改业务代码/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe('normalizePlanMarkdown 规范化（反馈 #95）', () => {
   it('数字编号前缀 ## 2. 任务拆解 → ## 任务拆解', () => {
@@ -1384,7 +1953,7 @@ describe('normalizePlanMarkdown 规范化（反馈 #95）', () => {
   });
 
   it('规范化后漂移 plan 通过 isPlanContentValid 校验', () => {
-    const drifted = ['## 2. 任务拆解', '', '- [ ] 实现规范化 <!-- scope: src/a.js -->'].join('\n');
+    const drifted = ['## 2. 任务拆解', '', '- [ ] 实现规范化 <!-- scope: src/a.js -->', '- [ ] 完整验收 <!-- scope: validation -->'].join('\n');
     assert.equal(isPlanContentValid(drifted), false, '规范化前应判为不合规');
     assert.equal(isPlanContentValid(normalizePlanMarkdown(drifted)), true, '规范化后应通过校验');
   });
@@ -1393,7 +1962,7 @@ describe('normalizePlanMarkdown 规范化（反馈 #95）', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-norm-idem-'));
     try {
       const file = path.join(dir, 'plan.md');
-      const standard = ['## 任务拆解', '', '- [ ] P001: 任务一 <!-- scope: src/a.js -->'].join('\n');
+      const standard = ['## 任务拆解', '', '- [ ] P001: 任务一 <!-- scope: src/a.js -->', '- [ ] P002: 完整验收 <!-- scope: validation -->'].join('\n');
       fs.writeFileSync(file, standard, 'utf8');
       assert.equal(normalizePlanMarkdownFile(file), false, '规范内容不应触发写盘');
       assert.equal(fs.readFileSync(file, 'utf8'), standard, '内容应不变');
@@ -1484,6 +2053,7 @@ describe('generatePlanForIntake 标题漂移经规范化后成功落库（反馈
         '',
         '- [ ] 实现规范化函数 <!-- scope: src/loop/planParser.js -->',
         '- [ ] 接入校验流程 <!-- scope: src/loop/planGeneration.js -->',
+        '- [ ] 完整验收 <!-- scope: validation -->',
         '',
         '## 3. 总体验收标准',
         '',
@@ -1511,6 +2081,100 @@ describe('generatePlanForIntake 标题漂移经规范化后成功落库（反馈
       );
       assert.ok(onDisk.includes('## 总体验收标准'), '总体验收标准应规范化');
       assert.ok(onDisk.includes('## 进度区'), '进度区应规范化');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('project prompt injection for plan generation', () => {
+  const projectPrompt = '项目级计划规范：优先小步拆分，并遵守 src/ 目录边界。';
+
+  it('injects project prompt into external-cli-markdown without removing Markdown hard constraints', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-project-prompt-markdown-'));
+    try {
+      const { svc } = strategyFlowService({
+        status: {
+          project_prompt: projectPrompt,
+          plan_generation_strategy: 'external-cli-markdown',
+          plan_generation_provider: 'codex',
+        },
+        async runCodex(workspace, prompt) {
+          const planFile = prompt.match(/输出文件：(.+)/)?.[1]?.trim();
+          fs.mkdirSync(path.dirname(planFile), { recursive: true });
+          fs.writeFileSync(planFile, validStrategyPlanMarkdown('项目 Prompt Markdown', 'src/prompt.js'), 'utf8');
+          return { exitCode: 0, output: '', logFile: path.join(workspace, 'markdown.log'), agentCliProvider: 'codex' };
+        },
+      });
+
+      await generatePlanForIntake(svc, strategyHelpers(dir), 'p1', dir, strategyIntake(201, '这是一段足够长的需求描述，用于捕获 markdown prompt。'));
+
+      const prompt = svc.runCodexCalls[0].prompt;
+      assert.match(prompt, /项目级 Prompt/);
+      assert.match(prompt, /项目级计划规范：优先小步拆分/);
+      assert.match(prompt, /不能覆盖 AutoPlan 系统级格式/);
+      assert.match(prompt, /固定格式：`- \[ \] P001:/);
+      assert.match(prompt, /只写 (?:plan 文件|manifest 和阶段 plan 文件)，不要改业务代码/);
+      assert.ok(prompt.indexOf(projectPrompt) < prompt.indexOf('需求 #201 内容：'), '项目 Prompt 应位于需求正文之外');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('injects project prompt into external-cli-structured without weakening PlanSpec contract', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-project-prompt-structured-'));
+    try {
+      const { svc } = strategyFlowService({
+        status: {
+          project_prompt: projectPrompt,
+          plan_generation_strategy: 'external-cli-structured',
+          plan_generation_provider: 'claude',
+        },
+        async runCodex(_workspace, prompt, _label, operation) {
+          const planSpecFile = prompt.match(/PlanSpec JSON 输出文件：(.+)/)?.[1]?.trim();
+          fs.mkdirSync(path.dirname(planSpecFile), { recursive: true });
+          fs.writeFileSync(planSpecFile, JSON.stringify(strategyPlanSpec('项目 Prompt PlanSpec'), null, 2), 'utf8');
+          return { exitCode: 0, output: '', logFile: '/tmp/structured-project-prompt.log', agentCliProvider: operation.agentCliProvider };
+        },
+      });
+
+      await generatePlanForIntake(svc, strategyHelpers(dir), 'p1', dir, strategyIntake(202, '这是一段足够长的需求描述，用于捕获 structured prompt。'));
+
+      const prompt = svc.runCodexCalls[0].prompt;
+      assert.match(prompt, /项目级 Prompt/);
+      assert.match(prompt, /项目级计划规范：优先小步拆分/);
+      assert.match(prompt, /PlanSpec 契约：/);
+      assert.match(prompt, /只写 PlanSpec JSON 文件，不要写最终 Markdown plan 文件，不要改业务代码/);
+      assert.ok(prompt.indexOf(projectPrompt) < prompt.indexOf('需求 #202 内容：'), '项目 Prompt 应位于需求正文之外');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('injects project prompt into builtin-llm-structured prompt while keeping structured contract', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-project-prompt-builtin-'));
+    try {
+      const { svc } = strategyFlowService({
+        status: {
+          project_prompt: projectPrompt,
+          plan_generation_strategy: 'builtin-llm-structured',
+          plan_generation_provider: 'openai',
+          plan_generation_model: 'gpt-4o',
+        },
+        async generateBuiltinPlanSpec(input) {
+          svc.builtinInputs.push(input);
+          return { planSpec: strategyPlanSpec('项目 Prompt 内置 PlanSpec'), aiConfig: { provider: 'openai', model: 'gpt-4o', hasApiKey: true }, output: '' };
+        },
+      });
+
+      await generatePlanForIntake(svc, strategyHelpers(dir), 'p1', dir, strategyIntake(203, '这是一段足够长的需求描述，用于捕获 builtin prompt。'));
+
+      const prompt = svc.builtinInputs[0].prompt;
+      assert.match(prompt, /项目级 Prompt/);
+      assert.match(prompt, /项目级计划规范：优先小步拆分/);
+      assert.match(prompt, /必须通过 submit_plan_spec 结构化工具提交 PlanSpec JSON/);
+      assert.match(prompt, /最终 Markdown 渲染约束/);
+      assert.ok(prompt.indexOf(projectPrompt) < prompt.indexOf('需求 #203 内容：'), '项目 Prompt 应位于需求正文之外');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

@@ -170,3 +170,45 @@ describe('Composer plan generation override contract', () => {
     expectNotIncludes(selectionContext, 'useProjectDefault', 'Workspace controller 的 Composer 状态不应再写入项目默认开关');
   });
 });
+
+describe('Composer intake mention source contracts', () => {
+  it('wires mention candidates through query detection, filtering, keyboard selection, and canonical insertion', () => {
+    const composer = source('src', 'renderer', 'components', 'Composer.tsx');
+
+    expectIncludes(composer, 'mentionCandidates?: IntakeMentionCandidate[];', 'Composer props should accept intake mention candidates');
+    expectIncludes(composer, 'filterIntakeMentionCandidates(mentionCandidates, mentionQuery.query).slice(0, 8)', 'Composer should filter and cap mention candidates for the active query');
+    expectIncludes(composer, 'findActiveIntakeMentionQuery(text, cursorIndex)', 'Composer should derive mention queries from textarea cursor position');
+    expectIncludes(composer, 'const nextValue = `${prefix}${candidate.canonicalText}${trailingSpace}${suffix}`;', 'Composer should insert canonical mention text and preserve suffix text');
+    expectIncludes(composer, 'textarea.setSelectionRange(nextCursor, nextCursor);', 'Composer should restore the cursor after inserting a mention');
+    expectIncludes(composer, "if ((event.key === 'Enter' || event.key === 'Tab') && filteredMentionCandidates.length)", 'Composer should support keyboard insertion with Enter and Tab');
+    expectIncludes(composer, "if (event.key === 'ArrowDown' && filteredMentionCandidates.length)", 'Composer should support keyboard navigation down through mention candidates');
+    expectIncludes(composer, "if (event.key === 'ArrowUp' && filteredMentionCandidates.length)", 'Composer should support keyboard navigation up through mention candidates');
+    expectIncludes(composer, "if (event.key === 'Escape')", 'Composer should close the mention popover on Escape');
+    expectIncludes(composer, 'className="composer-mention-popover"', 'Composer should render a mention popover');
+    expectIncludes(composer, 'role="listbox"', 'Composer mention popover should expose listbox semantics');
+    expectIncludes(composer, 'role="option"', 'Composer mention options should expose option semantics');
+    expectIncludes(composer, 'aria-selected={index === mentionSelectedIndex}', 'Composer mention options should expose selected state');
+    expectIncludes(composer, 'onMouseDown={(event) => event.preventDefault()}', 'Clicking a mention option should not blur the textarea before insertion');
+    expectIncludes(composer, '<span style={mentionReferenceStyle}>{candidate.canonicalText}</span>', 'Mention option should show canonical reference text');
+  });
+
+  it('keeps draft, attachment, CLI selection, and submit payload plumbing intact with mention support', () => {
+    const composer = source('src', 'renderer', 'components', 'Composer.tsx');
+    const submitBlock = sliceBetween(
+      composer,
+      'const submit = async (event: FormEvent<HTMLFormElement>) => {',
+      'const addFiles =',
+      'should locate Composer submit logic',
+    );
+
+    expectIncludes(submitBlock, 'if (!value.trim() && !pendingAttachments.length) return;', 'Composer should still allow attachment-only submissions and block empty submissions');
+    expectIncludes(submitBlock, 'body: value,', 'Composer submit payload should keep the draft body exactly as edited');
+    expectIncludes(submitBlock, 'createAsDraft,', 'Composer submit payload should preserve draft mode');
+    expectIncludes(submitBlock, '...planGenerationInputFromComposerSelection(selectedGeneration),', 'Composer submit payload should preserve CLI generation selection');
+    expectIncludes(submitBlock, 'setMentionQuery(null);', 'Successful submit should clear stale mention query state');
+    expectIncludes(submitBlock, 'setMentionSelectedIndex(0);', 'Successful submit should reset mention keyboard selection');
+    expectIncludes(composer, 'const addFiles = (files: FileList | File[] | null) => onAddFiles(type, files);', 'Composer attachment path should remain type-scoped');
+    expectIncludes(composer, 'onPaste={handleTextareaPaste}', 'Composer should keep paste attachment handling on the textarea');
+    expectIncludes(composer, 'pendingAttachments.length ? (', 'Composer should keep pending attachment rendering');
+  });
+});

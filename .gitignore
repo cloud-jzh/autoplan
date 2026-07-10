@@ -13,3 +13,4 @@ graphify-out/
 .claude-sessions/
 autoplan.log
 CLAUDE.md
+.claude/

@@ -18,7 +18,7 @@ func TestStartDatabaseMigratesEmptyTemporaryDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root := t.TempDir()
+	root := canonicalTemporaryDirectory(t)
 	for range 2 {
 		runtime, err := StartDatabase(context.Background(), DatabaseStartupOptions{
 			Target: filepath.Join(root, "autoplan.sqlite"), DriverName: "sqlite", AllowCreate: true,
@@ -35,8 +35,8 @@ func TestStartDatabaseMigratesEmptyTemporaryDatabase(t *testing.T) {
 
 func TestStartDatabaseRepairsV2OperationsAndRestartsWithStoredWorkspace(t *testing.T) {
 	ctx := context.Background()
-	root := t.TempDir()
-	workspace := t.TempDir()
+	root := canonicalTemporaryDirectory(t)
+	workspace := canonicalTemporaryDirectory(t)
 	target := filepath.Join(root, "autoplan.sqlite")
 	seedVersionTwoRestartFixture(t, target, workspace)
 
@@ -119,6 +119,15 @@ func TestStartDatabaseRepairsV2OperationsAndRestartsWithStoredWorkspace(t *testi
 	if err := second.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func canonicalTemporaryDirectory(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Clean(root)
 }
 
 func seedVersionTwoRestartFixture(t *testing.T, target, workspace string) {

@@ -81,9 +81,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify migration startup
+      - name: Verify migration registry and database lock
         working-directory: backend
-        run: go test ./migrations ./internal/bootstrap -run 'TestCanonicalMigrationSQL|TestRegistryUsesHistoricalChecksums|TestStartDatabaseMigratesEmptyTemporaryDatabase' -count=1
+        run: go test ./migrations ./internal/platform/instance ./internal/bootstrap -run 'TestCanonicalMigrationSQL|TestRegistryUsesHistoricalChecksums|TestDatabaseOwnerHost|TestDatabaseLock|TestStartDatabaseMigratesEmptyTemporaryDatabase' -count=1
 
       - name: Verify packaging guards
         run: node --test scripts/smoke-go-sidecar.test.js scripts/verify-release-artifacts.test.js

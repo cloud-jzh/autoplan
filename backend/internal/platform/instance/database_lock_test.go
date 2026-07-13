@@ -3,6 +3,7 @@ package instance
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,16 @@ import (
 )
 
 var helperHeldDatabaseLock *DatabaseLock
+
+func TestDatabaseOwnerHostUsesPortableDarwinLoopback(t *testing.T) {
+	digest := sha256.Sum256([]byte("database-owner-host"))
+	if got := databaseOwnerHost(digest, "darwin"); got != "127.0.0.1" {
+		t.Fatalf("darwin database owner host = %q", got)
+	}
+	if got := databaseOwnerHost(digest, "linux"); got == "127.0.0.1" {
+		t.Fatalf("non-darwin database owner host lost its path-derived address: %q", got)
+	}
+}
 
 func TestDatabaseLockRejectsAliasesAndAllowsIndependentCopies(t *testing.T) {
 	directory := t.TempDir()

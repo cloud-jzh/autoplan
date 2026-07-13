@@ -200,9 +200,19 @@ func resolveDatabaseIdentity(target string, allowCreate bool) (databaseIdentity,
 	return databaseIdentity{
 		canonicalPath: canonical,
 		databaseID:    hex.EncodeToString(digest[:8]),
-		host:          net.IPv4(127, 1+digest[2]%254, digest[3], digest[4]).String(),
+		host:          databaseOwnerHost(digest, runtime.GOOS),
 		ports:         databaseOwnerPorts(digest),
 	}, nil
+}
+
+func databaseOwnerHost(digest [sha256.Size]byte, goos string) string {
+	if goos == "darwin" {
+		// Some Darwin environments expose only 127.0.0.1 as a bindable
+		// loopback address. The path-derived port still provides the database
+		// identity while remaining compatible with macOS hosted runners.
+		return "127.0.0.1"
+	}
+	return net.IPv4(127, 1+digest[2]%254, digest[3], digest[4]).String()
 }
 
 func normalizeDatabaseIdentityPath(value string) string {

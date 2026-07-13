@@ -9,6 +9,8 @@ const { spawnSync } = require('node:child_process');
 const ROOT = path.resolve(__dirname, '..');
 const RELEASE_ROOT = path.join(ROOT, 'release');
 const PLATFORM = Object.freeze({ windows: 'win32', macos: 'darwin', linux: 'linux' });
+const LINUX_APP_IMAGE = /-linux-(?:x64|x86_64)\.AppImage$/;
+const LINUX_DEB = /-linux-(?:x64|amd64)\.deb$/;
 
 class ReleaseArtifactError extends Error {
   constructor(code) {
@@ -148,8 +150,8 @@ function verifyWindows(options) {
 
 function verifyLinux(options) {
   const files = listFiles(options.releaseDir);
-  requireArtifact(files, /-linux-x64\.AppImage$/);
-  requireArtifact(files, /-linux-x64\.deb$/);
+  requireArtifact(files, LINUX_APP_IMAGE);
+  requireArtifact(files, LINUX_DEB);
   inspectSidecar(path.join(options.releaseDir, 'linux-unpacked'), 'linux', 'x64');
 }
 
@@ -182,4 +184,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { PLATFORM, RELEASE_ROOT, ReleaseArtifactError, expectedBinary, findAppBundles, inspectSidecar, parseArgs, verificationResult, verifyReleaseArtifacts };
+module.exports = { LINUX_APP_IMAGE, LINUX_DEB, PLATFORM, RELEASE_ROOT, ReleaseArtifactError, expectedBinary, findAppBundles, inspectSidecar, parseArgs, verificationResult, verifyReleaseArtifacts };

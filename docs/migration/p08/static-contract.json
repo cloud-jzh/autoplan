@@ -1,0 +1,1427 @@
+{
+  "database": {
+    "ai_configs": {
+      "columns": [
+        {
+          "default": null,
+          "name": "id",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "integer"
+        },
+        {
+          "default": null,
+          "name": "project_id",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable-integer"
+        },
+        {
+          "default": null,
+          "name": "name",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "string"
+        },
+        {
+          "default": "openai",
+          "name": "provider",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "enum:openai|deepseek|anthropic|codex"
+        },
+        {
+          "default": "",
+          "name": "base_url",
+          "nullable": false,
+          "sensitivity": "endpoint",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "api_key",
+          "nullable": false,
+          "sensitivity": "secret",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "model",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "string"
+        },
+        {
+          "default": "0.3",
+          "name": "temperature",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "string"
+        },
+        {
+          "default": null,
+          "name": "thinking_depth",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable enum:low|medium|high|xhigh"
+        },
+        {
+          "default": null,
+          "name": "thinking_budget_tokens",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable-integer"
+        },
+        {
+          "default": null,
+          "name": "created_at",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "utc-string"
+        },
+        {
+          "default": null,
+          "name": "updated_at",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "utc-string"
+        }
+      ],
+      "order": [
+        "id ASC"
+      ],
+      "scope": "global rows use project_id IS NULL after migration"
+    },
+    "chat_messages": {
+      "columns": [
+        {
+          "default": null,
+          "name": "id",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "integer"
+        },
+        {
+          "default": null,
+          "name": "project_id",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "integer"
+        },
+        {
+          "default": null,
+          "name": "role",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "enum:user|assistant|tool|system"
+        },
+        {
+          "default": null,
+          "name": "content",
+          "nullable": false,
+          "sensitivity": "user-content",
+          "type": "string"
+        },
+        {
+          "default": null,
+          "name": "tool_calls",
+          "nullable": true,
+          "sensitivity": "tool-data",
+          "type": "nullable-json-array-string"
+        },
+        {
+          "default": null,
+          "name": "tool_result",
+          "nullable": true,
+          "sensitivity": "tool-data",
+          "type": "nullable-json-object-string"
+        },
+        {
+          "default": null,
+          "name": "status",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable enum:streaming|done|aborted|error|queued"
+        },
+        {
+          "default": null,
+          "name": "created_at",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "utc-string"
+        },
+        {
+          "default": null,
+          "name": "conversation_id",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable-integer"
+        }
+      ],
+      "order": [
+        "created_at ASC",
+        "id ASC"
+      ],
+      "projectScoped": true
+    },
+    "claude_cli_configs": {
+      "columns": [
+        {
+          "default": null,
+          "name": "id",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "integer"
+        },
+        {
+          "default": null,
+          "name": "project_id",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable-integer"
+        },
+        {
+          "default": null,
+          "name": "name",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "base_url",
+          "nullable": false,
+          "sensitivity": "endpoint",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "auth_token",
+          "nullable": false,
+          "sensitivity": "secret",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "model",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "string"
+        },
+        {
+          "default": 0,
+          "name": "is_default",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "integer-boolean"
+        },
+        {
+          "default": null,
+          "name": "created_at",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "utc-string"
+        },
+        {
+          "default": null,
+          "name": "updated_at",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "utc-string"
+        }
+      ],
+      "order": [
+        "id ASC"
+      ],
+      "scope": "global rows use project_id IS NULL"
+    },
+    "conversations": {
+      "columns": [
+        {
+          "default": null,
+          "name": "id",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "integer"
+        },
+        {
+          "default": null,
+          "name": "project_id",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable-integer"
+        },
+        {
+          "default": "",
+          "name": "title",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "string"
+        },
+        {
+          "default": null,
+          "name": "ai_config_id",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable-integer"
+        },
+        {
+          "default": null,
+          "name": "pinned_at",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable-utc-string"
+        },
+        {
+          "default": null,
+          "name": "created_at",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "utc-string"
+        },
+        {
+          "default": null,
+          "name": "updated_at",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "utc-string"
+        },
+        {
+          "default": null,
+          "name": "codex_session_id",
+          "nullable": true,
+          "sensitivity": "runtime-session",
+          "type": "nullable-string"
+        }
+      ],
+      "order": [
+        "pinned first",
+        "updated_at DESC",
+        "id DESC"
+      ],
+      "projectScoped": true
+    },
+    "executors": {
+      "columns": [
+        {
+          "default": null,
+          "name": "id",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "integer"
+        },
+        {
+          "default": null,
+          "name": "project_id",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "integer"
+        },
+        {
+          "default": "",
+          "name": "label",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "string"
+        },
+        {
+          "default": "shell",
+          "name": "type",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "enum:shell|process|plugin"
+        },
+        {
+          "default": "",
+          "name": "command",
+          "nullable": false,
+          "sensitivity": "secret-capable-command",
+          "type": "string"
+        },
+        {
+          "default": "[]",
+          "name": "args_json",
+          "nullable": false,
+          "sensitivity": "secret-capable-command",
+          "type": "json-array-string"
+        },
+        {
+          "default": null,
+          "name": "actions_json",
+          "nullable": true,
+          "sensitivity": "secret-capable-command",
+          "type": "nullable-json-object-string"
+        },
+        {
+          "default": "{}",
+          "name": "options_json",
+          "nullable": false,
+          "sensitivity": "secret-capable-env",
+          "type": "json-object-string"
+        },
+        {
+          "default": null,
+          "name": "group_kind",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable-string"
+        },
+        {
+          "default": 0,
+          "name": "group_is_default",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "integer-boolean"
+        },
+        {
+          "default": "{}",
+          "name": "presentation_json",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "json-object-string"
+        },
+        {
+          "default": null,
+          "name": "problem_matcher_json",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable-json"
+        },
+        {
+          "default": "[]",
+          "name": "depends_on_json",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "json-array-string"
+        },
+        {
+          "default": "parallel",
+          "name": "depends_order",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "enum:parallel|sequence"
+        },
+        {
+          "default": 1,
+          "name": "enabled",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "integer-boolean"
+        },
+        {
+          "default": 0,
+          "name": "sort_order",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "integer"
+        },
+        {
+          "default": null,
+          "name": "last_status",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable-string"
+        },
+        {
+          "default": null,
+          "name": "last_exit_code",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable-integer"
+        },
+        {
+          "default": null,
+          "name": "last_duration_ms",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable-integer"
+        },
+        {
+          "default": null,
+          "name": "last_log",
+          "nullable": true,
+          "sensitivity": "process-output",
+          "type": "nullable-string"
+        },
+        {
+          "default": null,
+          "name": "last_run_at",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable-utc-string"
+        },
+        {
+          "default": null,
+          "name": "plugin_state_json",
+          "nullable": true,
+          "sensitivity": "runtime-session",
+          "type": "nullable-json-object-string"
+        },
+        {
+          "default": null,
+          "name": "created_at",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "utc-string"
+        },
+        {
+          "default": null,
+          "name": "updated_at",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "utc-string"
+        }
+      ],
+      "order": [
+        "sort_order ASC",
+        "id ASC"
+      ],
+      "projectScoped": true,
+      "validation": {
+        "dependsOrder": [
+          "parallel",
+          "sequence"
+        ],
+        "duplicateLabel": "create/update reject a duplicate label in the same project; import may dedupe unless explicitly disabled",
+        "lastLogMaxChars": 24000,
+        "types": [
+          "shell",
+          "process",
+          "plugin"
+        ]
+      }
+    },
+    "mcp_settings": {
+      "envOverrides": [
+        "AUTOPLAN_MCP_ENABLED",
+        "AUTOPLAN_MCP_TRANSPORT",
+        "AUTOPLAN_MCP_HOST",
+        "AUTOPLAN_MCP_PORT",
+        "AUTOPLAN_MCP_PATH",
+        "AUTOPLAN_MCP_AUTH_TOKEN"
+      ],
+      "keys": [
+        {
+          "default": "true",
+          "name": "mcp.enabled",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "string-boolean"
+        },
+        {
+          "default": "http",
+          "name": "mcp.transport",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "enum-string:http|stdio"
+        },
+        {
+          "default": "127.0.0.1",
+          "name": "mcp.host",
+          "nullable": false,
+          "sensitivity": "endpoint",
+          "type": "string"
+        },
+        {
+          "default": "43847",
+          "name": "mcp.port",
+          "nullable": false,
+          "sensitivity": "endpoint",
+          "type": "string-integer"
+        },
+        {
+          "default": "/mcp",
+          "name": "mcp.path",
+          "nullable": false,
+          "sensitivity": "endpoint",
+          "type": "string-path-prefix"
+        },
+        {
+          "default": "generated",
+          "name": "mcp.authToken",
+          "nullable": false,
+          "sensitivity": "secret",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "mcp.portExplicit",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "string-boolean"
+        }
+      ],
+      "storage": "settings table rows with mcp.* keys"
+    },
+    "scripts": {
+      "columns": [
+        {
+          "default": null,
+          "name": "id",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "integer"
+        },
+        {
+          "default": null,
+          "name": "project_id",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "integer"
+        },
+        {
+          "default": null,
+          "name": "name",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "path",
+          "nullable": false,
+          "sensitivity": "path-sensitive",
+          "type": "string"
+        },
+        {
+          "default": "node",
+          "name": "runtime",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "enum:node|bash|ps|cmd"
+        },
+        {
+          "default": "",
+          "name": "body",
+          "nullable": false,
+          "sensitivity": "secret-capable-command",
+          "type": "string"
+        },
+        {
+          "default": "",
+          "name": "description",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "string"
+        },
+        {
+          "default": "manual",
+          "name": "trigger_mode",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "enum:hook|manual|schedule"
+        },
+        {
+          "default": null,
+          "name": "hook_stage",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable enum:plan:after|task:after|validation:before|loop:end|on:fail"
+        },
+        {
+          "default": null,
+          "name": "schedule_cron",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable-string"
+        },
+        {
+          "default": 1,
+          "name": "enabled",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "integer-boolean"
+        },
+        {
+          "default": "",
+          "name": "work_dir",
+          "nullable": false,
+          "sensitivity": "path-sensitive",
+          "type": "string"
+        },
+        {
+          "default": 60,
+          "name": "timeout_seconds",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "integer"
+        },
+        {
+          "default": 0,
+          "name": "fail_aborts",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "integer-boolean"
+        },
+        {
+          "default": "none",
+          "name": "context_inject",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "enum:env|stdin|none"
+        },
+        {
+          "default": 0,
+          "name": "sort_order",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "integer"
+        },
+        {
+          "default": null,
+          "name": "last_status",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable-string"
+        },
+        {
+          "default": null,
+          "name": "last_exit_code",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable-integer"
+        },
+        {
+          "default": null,
+          "name": "last_duration_ms",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable-integer"
+        },
+        {
+          "default": null,
+          "name": "last_log",
+          "nullable": true,
+          "sensitivity": "process-output",
+          "type": "nullable-string"
+        },
+        {
+          "default": null,
+          "name": "last_run_at",
+          "nullable": true,
+          "sensitivity": "public",
+          "type": "nullable-utc-string"
+        },
+        {
+          "default": null,
+          "name": "created_at",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "utc-string"
+        },
+        {
+          "default": null,
+          "name": "updated_at",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "utc-string"
+        },
+        {
+          "default": "inline",
+          "name": "source_type",
+          "nullable": false,
+          "sensitivity": "public",
+          "type": "enum:inline|file"
+        }
+      ],
+      "order": [
+        "sort_order ASC",
+        "id ASC"
+      ],
+      "projectScoped": true
+    }
+  },
+  "dto": {
+    "aiConfig": {
+      "forbiddenFields": [
+        "api_key",
+        "apiKey",
+        "secret_ref"
+      ],
+      "mask": "empty string when missing; otherwise hasApiKey=true and maskedKey contains only mask prefix plus at most legacy last four characters.",
+      "sanitizedFields": [
+        "id",
+        "projectId",
+        "name",
+        "provider",
+        "baseUrl",
+        "hasApiKey",
+        "maskedKey",
+        "model",
+        "temperature",
+        "thinkingDepth",
+        "thinkingBudgetTokens",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "appSnapshotStaticBoundary": {
+      "compatibilityRule": "P08 may add static Go query surfaces for Chat/config, but current Node AppSnapshot parity must preserve the observed top-level keys and must not inject chat content or secret-bearing config rows into snapshot.",
+      "excludedNow": [
+        "conversations",
+        "chat_messages",
+        "aiConfigs",
+        "claudeCliConfigs"
+      ],
+      "includedNow": [
+        "mcp",
+        "scripts",
+        "executors"
+      ]
+    },
+    "chatHistory": {
+      "ordering": [
+        "created_at ASC",
+        "id ASC"
+      ],
+      "rawFields": [
+        "id",
+        "project_id",
+        "conversation_id",
+        "role",
+        "content",
+        "tool_calls",
+        "tool_result",
+        "status",
+        "created_at"
+      ],
+      "redactionRule": "Only role/status/field-presence/counts enter golden summaries. Content, tool_calls and tool_result do not."
+    },
+    "claudeCliConfig": {
+      "defaultRule": "set-default clears all global rows then marks one default; deleting the default promotes the first remaining row by id.",
+      "forbiddenFields": [
+        "auth_token",
+        "authToken",
+        "secret_ref"
+      ],
+      "sanitizedFields": [
+        "id",
+        "projectId",
+        "name",
+        "baseUrl",
+        "hasAuthToken",
+        "maskedKey",
+        "model",
+        "isDefault",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "conversation": {
+      "fields": [
+        "id",
+        "project_id",
+        "projectId",
+        "title",
+        "ai_config_id",
+        "aiConfigId",
+        "pinned_at",
+        "pinnedAt",
+        "pinned",
+        "created_at",
+        "createdAt",
+        "updated_at",
+        "updatedAt"
+      ],
+      "omitted": [
+        "codex_session_id"
+      ],
+      "ordering": [
+        "pinned=true first",
+        "updated_at DESC",
+        "id DESC"
+      ]
+    },
+    "executorSnapshot": {
+      "redactionRule": "command, args, options.env, options.cwd, actions, pluginState and logs are secret-capable and never copied verbatim into P08 public summaries.",
+      "requiredCamelFields": [
+        "id",
+        "projectId",
+        "label",
+        "type",
+        "command",
+        "args",
+        "options",
+        "group",
+        "presentation",
+        "problemMatcher",
+        "dependsOn",
+        "dependsOrder",
+        "enabled",
+        "sortOrder",
+        "lastStatus",
+        "lastExitCode",
+        "lastDurationMs",
+        "lastLog",
+        "lastRunAt",
+        "createdAt",
+        "updatedAt",
+        "running",
+        "runStatus",
+        "activeOperation"
+      ],
+      "requiredSnakeAliases": [
+        "project_id",
+        "sort_order",
+        "group_kind",
+        "group_is_default",
+        "depends_order",
+        "last_status",
+        "last_exit_code",
+        "last_duration_ms",
+        "last_log",
+        "last_run_at",
+        "created_at",
+        "updated_at"
+      ],
+      "source": "executorFromRow(row) plus selected snake_case aliases and runtime overlay"
+    },
+    "mcpSnapshot": {
+      "fields": [
+        "enabled",
+        "running",
+        "status",
+        "transport",
+        "host",
+        "port",
+        "path",
+        "url",
+        "hasAuthToken",
+        "authTokenMasked",
+        "authHeader",
+        "localOnly",
+        "tools",
+        "toolDocs",
+        "connectionExample",
+        "note",
+        "lastEvent",
+        "lastError",
+        "startedAt"
+      ],
+      "forbiddenFields": [
+        "authToken",
+        "secret_ref"
+      ],
+      "staticRule": "When Go owns only static config it must not infer running from old events; report disabled/unavailable unless a live runtime provider proves otherwise."
+    },
+    "scriptSnapshot": {
+      "fields": "all scripts database columns in snake_case only; renderer types tolerate camelCase aliases but Node snapshot does not synthesize them",
+      "redactionRule": "P08 golden records field presence and safe scalar metadata only; path, body, work_dir and last_log values are placeholders.",
+      "source": "SELECT * raw row"
+    }
+  },
+  "evidence": [
+    {
+      "markers": [
+        {
+          "line": 306,
+          "marker": "CREATE TABLE IF NOT EXISTS scripts"
+        },
+        {
+          "line": 338,
+          "marker": "CREATE TABLE IF NOT EXISTS executors"
+        },
+        {
+          "line": 371,
+          "marker": "CREATE TABLE IF NOT EXISTS chat_messages"
+        },
+        {
+          "line": 385,
+          "marker": "CREATE TABLE IF NOT EXISTS ai_configs"
+        },
+        {
+          "line": 403,
+          "marker": "CREATE TABLE IF NOT EXISTS claude_cli_configs"
+        },
+        {
+          "line": 418,
+          "marker": "CREATE TABLE IF NOT EXISTS conversations"
+        },
+        {
+          "line": 587,
+          "marker": "this.ensureColumn('conversations', 'codex_session_id'"
+        },
+        {
+          "line": 578,
+          "marker": "this.ensureColumn('project_states', 'env_vars'"
+        },
+        {
+          "line": 755,
+          "marker": "this.db.run('UPDATE ai_configs SET project_id = NULL WHERE project_id IS NOT NULL')"
+        },
+        {
+          "line": 606,
+          "marker": "migrateChatMessagesToConversation(defaultProjectId)"
+        }
+      ],
+      "path": "src/database.js",
+      "sha256": "57553f76ccb27d606270df70dedd5bb46b1240f9cc22f43e63261734a97b994f"
+    },
+    {
+      "markers": [
+        {
+          "line": 734,
+          "marker": "const SCRIPT_COLUMN_LIST ="
+        },
+        {
+          "line": 739,
+          "marker": "ipcMain.handle('scripts:create'"
+        },
+        {
+          "line": 842,
+          "marker": "ipcMain.handle('executors:importTasksJson'"
+        },
+        {
+          "line": 894,
+          "marker": "ipcMain.handle('chat:history'"
+        },
+        {
+          "line": 997,
+          "marker": "ipcMain.handle('ai-config:create'"
+        },
+        {
+          "line": 1048,
+          "marker": "ipcMain.handle('claude-cli-config:set-default'"
+        },
+        {
+          "line": 1057,
+          "marker": "ipcMain.handle('conversation:list'"
+        },
+        {
+          "line": 457,
+          "marker": "ipcMain.handle('mcp:saveConfig'"
+        },
+        {
+          "line": 1296,
+          "marker": "function readSavedMcpAuthToken()"
+        }
+      ],
+      "path": "src/main.js",
+      "sha256": "432751231d009808fcb2c03bc3ba922a13f304e6116b91ab2dc55820ae861f31"
+    },
+    {
+      "markers": [
+        {
+          "line": 169,
+          "marker": "'SELECT * FROM scripts WHERE project_id = ? ORDER BY sort_order ASC, id ASC'"
+        },
+        {
+          "line": 173,
+          "marker": "'SELECT * FROM executors WHERE project_id = ? ORDER BY sort_order ASC, id ASC'"
+        },
+        {
+          "line": 718,
+          "marker": "function executorSnapshotRow(row = {}, runtime = null, projectId = null)"
+        },
+        {
+          "line": 448,
+          "marker": "function mcpStatusSnapshot(db, liveStatus = null)"
+        },
+        {
+          "line": 815,
+          "marker": "function planBackendSnapshotFields(row = {})"
+        },
+        {
+          "line": 496,
+          "marker": "authTokenMasked"
+        }
+      ],
+      "path": "src/loop/snapshots.js",
+      "sha256": "0988bb1364affd3da03a6aa237a770925e4a08096d5577820720968e25b380ac"
+    },
+    {
+      "markers": [
+        {
+          "line": 1,
+          "marker": "const EXECUTOR_TYPES = new Set(['shell', 'process', 'plugin'])"
+        },
+        {
+          "line": 3,
+          "marker": "const PLUGIN_ACTION_TYPES = new Set(['command', 'input'])"
+        },
+        {
+          "line": 6,
+          "marker": "const DEPENDS_ORDERS = new Set(['parallel', 'sequence'])"
+        },
+        {
+          "line": 53,
+          "marker": "function validateExecutorConfig(input = {}, options = {})"
+        },
+        {
+          "line": 194,
+          "marker": "function normalizeTasksJson(input = {}, options = {})"
+        },
+        {
+          "line": 444,
+          "marker": "options.env 必须是键值对象"
+        }
+      ],
+      "path": "src/executors/executorConfig.js",
+      "sha256": "409a60505306695b38bcfe8841726b22c59164129c814652d87853191f6afb3c"
+    },
+    {
+      "markers": [
+        {
+          "line": 7,
+          "marker": "const EXECUTOR_CONFIG_COLUMNS = ["
+        },
+        {
+          "line": 24,
+          "marker": "const LAST_LOG_MAX_CHARS = 24000"
+        },
+        {
+          "line": 71,
+          "marker": "SELECT * FROM executors WHERE project_id = ? ORDER BY sort_order ASC, id ASC"
+        },
+        {
+          "line": 171,
+          "marker": "function updateExecutorRunState(db, projectId, executorId, patch = {})"
+        },
+        {
+          "line": 237,
+          "marker": "function executorFromRow(row = {})"
+        }
+      ],
+      "path": "src/executors/executorStore.js",
+      "sha256": "68d44f0e045eb12831688a464693aa164c31338048f070502cbe9083f8f90dde"
+    },
+    {
+      "markers": [
+        {
+          "line": 567,
+          "marker": "INSERT INTO chat_messages (project_id, conversation_id, role, content, tool_calls, tool_result, status, created_at)"
+        },
+        {
+          "line": 118,
+          "marker": "ORDER BY created_at ASC, id ASC"
+        },
+        {
+          "line": 781,
+          "marker": "CASE WHEN pinned_at IS NULL OR pinned_at = '' THEN 1 ELSE 0 END ASC"
+        },
+        {
+          "line": 782,
+          "marker": "updated_at DESC,"
+        },
+        {
+          "line": 591,
+          "marker": "id DESC"
+        },
+        {
+          "line": 926,
+          "marker": "function serializeConversation(row)"
+        },
+        {
+          "line": 846,
+          "marker": "function ensureDefaultConversation(db, projectId)"
+        }
+      ],
+      "path": "src/chat/chatController.js",
+      "sha256": "6d33796949a5b07e710fc63a11e2f89336f1ad31916eea47cd102037dd00e586"
+    },
+    {
+      "markers": [
+        {
+          "line": 39,
+          "marker": "function createAiConfig(db, input = {})"
+        },
+        {
+          "line": 106,
+          "marker": "UPDATE conversations SET ai_config_id = NULL, updated_at = ? WHERE ai_config_id = ?"
+        },
+        {
+          "line": 118,
+          "marker": "SELECT * FROM ai_configs WHERE project_id IS NULL ORDER BY id ASC"
+        },
+        {
+          "line": 285,
+          "marker": "function sanitizeAiConfig(row)"
+        },
+        {
+          "line": 311,
+          "marker": "function maskApiKey(value)"
+        }
+      ],
+      "path": "src/chat/aiConfigService.js",
+      "sha256": "c88c4a54253567caac8dc29084832731edbb4be90885dd1757a05aae9cf955ff"
+    },
+    {
+      "markers": [
+        {
+          "line": 20,
+          "marker": "const GLOBAL_WHERE = 'project_id IS NULL'"
+        },
+        {
+          "line": 105,
+          "marker": "function setDefaultClaudeCliConfig(db, id)"
+        },
+        {
+          "line": 128,
+          "marker": "function resolveDefaultClaudeCliConfig(db)"
+        },
+        {
+          "line": 185,
+          "marker": "function sanitizeClaudeCliConfig(row)"
+        },
+        {
+          "line": 205,
+          "marker": "function maskAuthToken(value)"
+        }
+      ],
+      "path": "src/chat/claudeCliConfigService.js",
+      "sha256": "95b7e0334c09f4a3c1feb8adcdfac62b93c6c472e06c387ad734e90e23fe632b"
+    },
+    {
+      "markers": [
+        {
+          "line": 1,
+          "marker": "const MCP_DEFAULT_CONFIG = Object.freeze"
+        },
+        {
+          "line": 10,
+          "marker": "const MCP_AUTH_TOKEN_INPUT_KEYS = Object.freeze(['mcpAuthToken', 'mcp_auth_token', 'authToken'])"
+        },
+        {
+          "line": 23,
+          "marker": "const MCP_SAVE_FIELDS = Object.freeze"
+        },
+        {
+          "line": 34,
+          "marker": "function mcpServerConfig(db, env = process.env)"
+        },
+        {
+          "line": 50,
+          "marker": "function saveMcpSettings(db, input = {})"
+        },
+        {
+          "line": 97,
+          "marker": "function normalizeMcpAuthToken(value)"
+        }
+      ],
+      "path": "src/mcpConfig.js",
+      "sha256": "5cedc498b8afae4ee1acac07956af4d910bc7bda519dcca3aff57548e512c704"
+    },
+    {
+      "markers": [
+        {
+          "line": 708,
+          "marker": "export interface Script {"
+        },
+        {
+          "line": 870,
+          "marker": "export interface Executor {"
+        },
+        {
+          "line": 1000,
+          "marker": "export interface AppSnapshot {"
+        },
+        {
+          "line": 1204,
+          "marker": "export interface McpConfigInput"
+        },
+        {
+          "line": 1475,
+          "marker": "export interface AiConfig {"
+        },
+        {
+          "line": 1492,
+          "marker": "export interface ClaudeCliConfig {"
+        },
+        {
+          "line": 1509,
+          "marker": "export interface Conversation {"
+        },
+        {
+          "line": 1543,
+          "marker": "export interface ChatMessage {"
+        }
+      ],
+      "path": "src/renderer/types.ts",
+      "sha256": "d037ecd5b3022742b244719576f730c8cfa1cf04151dd3d59f9782af863287ea"
+    }
+  ],
+  "golden": {
+    "artifact": "fixtures/migration/p08/node-static.golden.json",
+    "comparison": "Strict deep comparison of field presence, scalar types, null-vs-empty, ordering, redacted summaries and hashes; no loose subset matching.",
+    "generator": "scripts/migration-p08/generate-node-golden.js",
+    "manifest": "fixtures/migration/p08/manifest.json",
+    "safety": [
+      "Use only a generator-owned OS temporary database and workspace.",
+      "Reject unapproved output paths unless explicitly allowed by a caller test harness.",
+      "Record input recipe hash, schema summary hash, row counts, physical database before/after hashes and sql.js handoff state.",
+      "Close sql.js before artifacts are committed.",
+      "Fail closed on real user profile paths, Electron userData paths, credential-shaped strings or raw fixture secret values."
+    ],
+    "scenarios": [
+      "automation-static",
+      "chat-static",
+      "config-static",
+      "mcp-static",
+      "snapshot-static",
+      "secret-redaction"
+    ]
+  },
+  "namingAndPresence": {
+    "ordering": "All frozen lists include deterministic secondary keys; golden comparison must reject unknown or omitted fields.",
+    "snapshot": "scripts are returned as raw snake_case rows; executors add camelCase DTO fields plus selected snake_case aliases; AppSnapshot collections are always present.",
+    "storage": "SQLite table and config keys are snake_case except settings keys such as mcp.authToken.",
+    "time": "created_at, updated_at, last_run_at and pinned_at are UTC ISO strings when present; null and empty string are distinct."
+  },
+  "operations": {
+    "chat": {
+      "conversations": "create/update/delete/list are static persistence; delete also deletes same-project chat_messages",
+      "history": "history is read-only by conversation_id plus project_id, ordered oldest first",
+      "runtimeDisabled": [
+        "chat:send",
+        "chat:stop",
+        "queue pump",
+        "SSE chunk/done/queue/config streams",
+        "title generation",
+        "LLM/tool execution"
+      ]
+    },
+    "config": {
+      "aiConfigs": "global project_id NULL configs; delete unlinks conversations.ai_config_id in one logical operation",
+      "claudeCliConfigs": "global project_id NULL configs; default switch uses runBatch",
+      "mcpSettings": "saveMcpSettings persists only explicitly supplied aliases; saving config currently schedules restart in Node, but Go static save must not start/stop listeners."
+    },
+    "executors": {
+      "createUpdateDeleteToggle": "project scoped; returns AppSnapshot through main IPC after ExecutorStore mutation",
+      "importTasksJson": "legacy Node imports valid tasks serially; new Go static import must prevalidate and commit atomically",
+      "runtimeDisabled": [
+        "executors:run",
+        "executors:stop",
+        "executors:runAction",
+        "plugin process actions"
+      ]
+    },
+    "scripts": {
+      "createUpdateDeleteToggle": "project scoped; create/update normalize names/enums/booleans/timeouts and return AppSnapshot(projectId)",
+      "runtimeDisabled": [
+        "scripts:run",
+        "scripts:stop",
+        "hook execution",
+        "schedule execution"
+      ],
+      "schedule": "schedule_cron is persisted only for trigger_mode=schedule and must parse successfully"
+    }
+  },
+  "prerequisites": {
+    "databaseCopies": "Node/sql.js may open only a generator-owned sanitized temporary database or caller-explicit sanitized copy. Go may open a separately reset copy only after Node closes.",
+    "p06": "P06 intake contract and golden artifacts are prerequisites for AppSnapshot compatibility.",
+    "p07": "P07 static/project/plan transport evidence must remain intact before P08 writers are enabled.",
+    "runtimeDisabledForMigration": "Scripts/executors run/stop/action, Chat send/stream/queue pump and MCP start/stop/listener are runtime capabilities and remain disabled for new Go static services."
+  },
+  "purpose": "Freeze Node/sql.js static Automation, Chat, AI/Claude config, MCP settings and secret redaction behavior for P08 Go migration parity.",
+  "risks": [
+    {
+      "id": "legacy-script-snapshot-raw-row",
+      "severity": "retained",
+      "statement": "scripts snapshot still exposes body, path, work_dir and last_log to the authorized renderer; P08 public summaries must redact them."
+    },
+    {
+      "id": "executor-options-env",
+      "severity": "blocking",
+      "statement": "executors.options.env and actions/command/args are secret-capable process inputs and must not appear in golden summaries, errors or logs."
+    },
+    {
+      "id": "chat-content-sensitive",
+      "severity": "blocking",
+      "statement": "chat_messages.content, tool_calls, tool_result and conversations.codex_session_id must not enter public P08 snapshot/golden summaries."
+    },
+    {
+      "id": "mcp-event-runtime-inference",
+      "severity": "retained",
+      "statement": "legacy snapshot can infer MCP running from latest events without live status; Go static snapshots must report unavailable/disabled rather than fabricate runtime."
+    }
+  ],
+  "schemaVersion": 1,
+  "secrets": {
+    "emptyValues": "Empty string, null and omitted input are distinct: empty clears where the legacy API does so; omitted preserves existing values on update.",
+    "fixturePolicy": "Fixture inputs may use inert placeholders, but golden artifacts store only redacted placeholders, booleans, counts and hashes.",
+    "kinds": [
+      {
+        "kind": "ai_config_api_key",
+        "legacySources": [
+          "ai_configs.api_key",
+          "settings:chat.apiKey"
+        ],
+        "ownerScope": "global-config",
+        "publicIndicators": [
+          "hasApiKey",
+          "maskedKey"
+        ],
+        "rawReadBackAllowed": false
+      },
+      {
+        "kind": "claude_cli_auth_token",
+        "legacySources": [
+          "claude_cli_configs.auth_token"
+        ],
+        "ownerScope": "global-config",
+        "publicIndicators": [
+          "hasAuthToken",
+          "maskedKey"
+        ],
+        "rawReadBackAllowed": false
+      },
+      {
+        "kind": "mcp_auth_token",
+        "legacySources": [
+          "settings:mcp.authToken",
+          "AUTOPLAN_MCP_AUTH_TOKEN"
+        ],
+        "ownerScope": "install-settings",
+        "publicIndicators": [
+          "hasAuthToken",
+          "authTokenMasked"
+        ],
+        "rawReadBackAllowed": false
+      },
+      {
+        "kind": "plan_generation_claude_auth_token",
+        "legacySources": [
+          "project_states.plan_generation_claude_auth_token",
+          "requirements.plan_generation_claude_auth_token",
+          "feedback.plan_generation_claude_auth_token",
+          "plans.plan_generation_claude_auth_token"
+        ],
+        "ownerScope": "project/intake/plan snapshot",
+        "publicIndicators": [
+          "plan_generation_has_claude_auth_token",
+          "plan_generation_claude_auth_token masked"
+        ],
+        "rawReadBackAllowed": false
+      },
+      {
+        "kind": "plan_execution_claude_auth_token",
+        "legacySources": [
+          "project_states.plan_execution_claude_auth_token",
+          "plans.plan_execution_claude_auth_token"
+        ],
+        "ownerScope": "project/plan snapshot",
+        "publicIndicators": [
+          "plan_execution_has_claude_auth_token",
+          "plan_execution_claude_auth_token masked"
+        ],
+        "rawReadBackAllowed": false
+      },
+      {
+        "kind": "env_vars",
+        "legacySources": [
+          "project_states.env_vars",
+          "executors.options_json.env"
+        ],
+        "ownerScope": "project/executor process input",
+        "publicIndicators": [
+          "presence/count only"
+        ],
+        "rawReadBackAllowed": false
+      }
+    ],
+    "publicShape": "Business DTOs and snapshots expose has_xxx/hasXxx plus masked_xxx/maskedKey only. They never return raw secret, secret ref, provider locator or storage path.",
+    "replacement": "Replacing a secret creates or updates the secret first, then commits the business row to reference/presence metadata. Clearing deletes only after the business row no longer points at it."
+  },
+  "status": "frozen-node-static-contract",
+  "version": "p08-node-static-contract-v1"
+}

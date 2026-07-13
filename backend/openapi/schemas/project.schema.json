@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autoplan.local/schemas/project.schema.json",
+  "title": "Project",
+  "description": "Project metadata shared with the renderer. workspace_path is a compatibility capability field emitted only after the loopback session, exact Origin, and Host are authorized; environment variables and raw credentials are excluded.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "description", "created_at", "updated_at"],
+  "properties": {
+    "id": { "type": "integer", "minimum": 1 },
+    "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "description": { "type": "string", "maxLength": 10000 },
+    "created_at": { "$ref": "#/$defs/utc_timestamp" },
+    "updated_at": { "$ref": "#/$defs/utc_timestamp" },
+    "running": { "type": "integer", "enum": [0, 1] },
+    "phase": { "type": "string" },
+    "interval_seconds": { "type": "integer", "minimum": 1 },
+    "validation_command": { "type": "string" },
+    "project_prompt": { "type": "string" },
+    "agent_cli_provider": { "type": "string" },
+    "agent_cli_command": { "type": "string" },
+    "codex_reasoning_effort": { "type": ["string", "null"] },
+    "plan_generation_strategy": {
+      "enum": ["external-cli-markdown", "external-cli-structured", "builtin-llm-structured", null]
+    },
+    "plan_generation_provider": { "type": ["string", "null"] },
+    "plan_generation_command": { "type": ["string", "null"] },
+    "plan_generation_model": { "type": ["string", "null"] },
+    "plan_generation_codex_reasoning_effort": { "type": ["string", "null"] },
+    "plan_generation_claude_base_url": { "type": ["string", "null"] },
+    "plan_generation_claude_model": { "type": ["string", "null"] },
+    "plan_generation_has_claude_auth_token": { "type": ["boolean", "null"] },
+    "plan_generation_claude_config_id": { "type": ["integer", "null"], "minimum": 0 },
+    "plan_execution_strategy": {
+      "enum": ["external-cli", "builtin-llm", null]
+    },
+    "plan_execution_provider": { "type": ["string", "null"] },
+    "plan_execution_command": { "type": ["string", "null"] },
+    "plan_execution_model": { "type": ["string", "null"] },
+    "plan_execution_codex_reasoning_effort": { "type": ["string", "null"] },
+    "plan_execution_claude_base_url": { "type": ["string", "null"] },
+    "plan_execution_claude_model": { "type": ["string", "null"] },
+    "plan_execution_has_claude_auth_token": { "type": ["boolean", "null"] },
+    "plan_execution_claude_config_id": { "type": ["integer", "null"], "minimum": 0 }
+  },
+  "patternProperties": {
+    "^workspace_path$": {
+      "type": "string",
+      "maxLength": 4096,
+      "description": "Authorized project workspace path. It is never populated for an unauthenticated transport context."
+    }
+  },
+  "$defs": {
+    "create_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "maxLength": 200, "default": "" },
+        "workspace_path": { "type": "string", "maxLength": 4096, "default": "" },
+        "description": { "type": "string", "maxLength": 10000, "default": "" }
+      }
+    },
+    "update_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "name": { "type": "string", "maxLength": 200 },
+        "workspace_path": { "type": "string", "maxLength": 4096 },
+        "description": { "type": "string", "maxLength": 10000 }
+      }
+    },
+    "utc_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    }
+  }
+}

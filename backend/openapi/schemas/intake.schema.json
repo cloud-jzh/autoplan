@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autoplan.local/schemas/intake.schema.json",
+  "title": "Intake resource",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "project_id", "intake_type", "title", "body", "status", "linked_plans", "created_at", "updated_at"],
+  "properties": {
+    "id": {"type": "integer", "format": "int64", "minimum": 1},
+    "project_id": {"type": "integer", "format": "int64", "minimum": 1},
+    "intake_type": {"type": "string", "enum": ["requirement", "feedback"]},
+    "requirement_id": {"oneOf": [{"type": "integer", "format": "int64", "minimum": 1}, {"type": "null"}]},
+    "title": {"type": "string", "maxLength": 200},
+    "body": {"type": "string", "maxLength": 100000},
+    "status": {"type": "string", "enum": ["draft", "open", "completed", "closed"]},
+    "accepted_at": {"oneOf": [{"type": "string", "format": "date-time"}, {"type": "null"}]},
+    "linked_plan_id": {"oneOf": [{"type": "integer", "format": "int64", "minimum": 1}, {"type": "null"}]},
+    "linked_plans": {"type": "array", "items": {"$ref": "#/$defs/plan_link"}},
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "agent_cli_provider": {"oneOf": [{"type": "string", "maxLength": 64}, {"type": "null"}]},
+    "agent_cli_command": {"type": "string", "maxLength": 1000},
+    "codex_reasoning_effort": {"oneOf": [{"type": "string", "maxLength": 32}, {"type": "null"}]},
+    "plan_generation_strategy": {"oneOf": [{"type": "string", "maxLength": 64}, {"type": "null"}]},
+    "plan_generation_provider": {"oneOf": [{"type": "string", "maxLength": 64}, {"type": "null"}]},
+    "plan_generation_command": {"type": "string", "maxLength": 1000},
+    "plan_generation_model": {"type": "string", "maxLength": 200},
+    "plan_generation_codex_reasoning_effort": {"oneOf": [{"type": "string", "maxLength": 32}, {"type": "null"}]},
+    "plan_generation_claude_base_url": {"type": "string", "maxLength": 4096},
+    "plan_generation_claude_model": {"type": "string", "maxLength": 200},
+    "plan_generation_claude_config_id": {"type": "integer", "format": "int64", "minimum": 0},
+    "plan_generation_has_claude_auth_token": {"type": "boolean"},
+    "generate_fail_count": {"type": "integer", "format": "int64", "minimum": 0},
+    "last_generate_fail_at": {"oneOf": [{"type": "string", "format": "date-time"}, {"type": "null"}]},
+    "last_generate_error": {"oneOf": [{"type": "string", "const": "<redacted_error>"}, {"type": "null"}]},
+    "last_generate_agent_cli_provider": {"oneOf": [{"type": "string", "maxLength": 64}, {"type": "null"}]},
+    "last_generate_codex_reasoning_effort": {"oneOf": [{"type": "string", "maxLength": 32}, {"type": "null"}]}
+  },
+  "$defs": {
+    "agent_cli_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {"type": ["string", "null"], "maxLength": 64},
+        "command": {"type": "string", "maxLength": 1000},
+        "codex_reasoning_effort": {"type": ["string", "null"], "maxLength": 32}
+      }
+    },
+    "plan_generation_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "strategy": {"type": ["string", "null"], "maxLength": 64},
+        "provider": {"type": ["string", "null"], "maxLength": 64},
+        "command": {"type": "string", "maxLength": 1000},
+        "model": {"type": "string", "maxLength": 200},
+        "codex_reasoning_effort": {"type": ["string", "null"], "maxLength": 32},
+        "claude_base_url": {"type": "string", "maxLength": 4096},
+        "claude_auth_token": {"type": "string", "writeOnly": true, "maxLength": 16384},
+        "claude_model": {"type": "string", "maxLength": 200},
+        "claude_config_id": {"type": "integer", "format": "int64", "minimum": 0}
+      }
+    },
+    "create_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["body"],
+      "properties": {
+        "requirement_id": {"type": ["integer", "null"], "format": "int64", "minimum": 1},
+        "title": {"type": "string", "maxLength": 200},
+        "body": {"type": "string", "maxLength": 100000},
+        "status": {"type": "string", "enum": ["draft", "open", "completed", "closed"]},
+        "agent_cli": {"$ref": "#/$defs/agent_cli_input"},
+        "plan_generation": {"$ref": "#/$defs/plan_generation_input"}
+      }
+    },
+    "update_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "expected_updated_at": {"type": "string", "format": "date-time"},
+        "requirement_id": {"type": ["integer", "null"], "format": "int64", "minimum": 1},
+        "title": {"type": "string", "maxLength": 200},
+        "body": {"type": "string", "maxLength": 100000},
+        "status": {"type": "string", "enum": ["draft", "open", "completed", "closed"]},
+        "agent_cli": {"$ref": "#/$defs/agent_cli_input"},
+        "plan_generation": {"$ref": "#/$defs/plan_generation_input"}
+      }
+    },
+    "plan_link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan_id", "phase_index", "phase_title"],
+      "properties": {
+        "link_id": {"oneOf": [{"type": "integer", "format": "int64", "minimum": 1}, {"type": "null"}]},
+        "plan_id": {"type": "integer", "format": "int64", "minimum": 1},
+        "phase_index": {"type": "integer", "format": "int64", "minimum": 1},
+        "phase_title": {"type": "string", "maxLength": 500}
+      }
+    },
+    "plan_link_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan_id", "phase_index", "phase_title"],
+      "properties": {
+        "plan_id": {"type": "integer", "format": "int64", "minimum": 1},
+        "phase_index": {"type": "integer", "format": "int64", "minimum": 1},
+        "phase_title": {"type": "string", "maxLength": 500}
+      }
+    },
+    "replace_links_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["links"],
+      "properties": {"links": {"type": "array", "items": {"$ref": "#/$defs/plan_link_input"}}}
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "kind": "p11-runtime-state-machine-matrix",
+  "source": "sanitized-node-runtime-golden",
+  "safety": {
+    "workspace": "<fixture-workspace>",
+    "real_agent_cli_started": false,
+    "electron_userdata_read": false,
+    "credentials_recorded": false
+  },
+  "required_families": [
+    "loop", "plan", "task", "acceptance", "retry_recovery"
+  ],
+  "cases": [
+    {"id":"loop_start_idle","family":"loop","operation":"loop.start","initial":"idle","target":"running","legal":true,"idempotent":false,"events":["operation.queued","operation.running","operation.succeeded","project.patch"]},
+    {"id":"loop_start_running_replay","family":"loop","operation":"loop.start","initial":"running","target":"running","legal":true,"idempotent":true,"events":["operation.queued","operation.succeeded"]},
+    {"id":"loop_stop_running","family":"loop","operation":"loop.stop","initial":"running","target":"stopped","legal":true,"idempotent":false,"events":["operation.queued","operation.running","operation.succeeded","project.patch"]},
+    {"id":"loop_stop_stopped_replay","family":"loop","operation":"loop.stop","initial":"stopped","target":"stopped","legal":true,"idempotent":true,"events":["operation.queued","operation.succeeded"]},
+    {"id":"loop_run_once_busy","family":"loop","operation":"loop.run_once","initial":"running","target":"running","legal":false,"error":"precondition_failed","events":[]},
+    {"id":"plan_stop_running","family":"plan","operation":"plan.stop","initial":"running","target":"interrupted","legal":true,"events":["operation.queued","operation.succeeded","project.patch"]},
+    {"id":"plan_resume_interrupted","family":"plan","operation":"plan.resume","initial":"interrupted","target":"pending","legal":true,"events":["operation.queued","operation.succeeded","project.patch"]},
+    {"id":"plan_reexecute_completed","family":"plan","operation":"plan.re_execute","initial":"completed","target":"pending","legal":true,"events":["operation.queued","operation.succeeded","project.patch"]},
+    {"id":"plan_recreate_unlinked","family":"plan","operation":"plan.recreate","initial":"completed","target":"completed","legal":false,"error":"precondition_failed","events":[]},
+    {"id":"task_run_pending","family":"task","operation":"task.run","initial":"pending","target":"running","legal":true,"events":["operation.queued","operation.running","project.patch"]},
+    {"id":"task_stop_running","family":"task","operation":"task.stop","initial":"running","target":"cancelled","legal":true,"events":["operation.queued","operation.running","operation.cancelled","project.patch"]},
+    {"id":"task_batch_duplicate","family":"task","operation":"task.run_batches","initial":"pending","target":"pending","legal":false,"error":"invalid_task","events":[]},
+    {"id":"task_batch_conflict","family":"task","operation":"task.run_batches","initial":"pending","target":"pending","legal":false,"error":"precondition_failed","events":[]},
+    {"id":"task_retry_backoff_schedule","family":"retry_recovery","operation":"task.run","initial":"failed","target":"pending","legal":true,"backoff_seconds":[5,10,20,30],"events":["task.retry","project.patch"]},
+    {"id":"acceptance_accept_replay","family":"acceptance","operation":"acceptance.accept","initial":"completed","target":"completed","legal":true,"idempotent":true,"events":["operation.queued","operation.succeeded","project.patch"]},
+    {"id":"acceptance_unaccept_replay","family":"acceptance","operation":"acceptance.unaccept","initial":"completed","target":"completed","legal":true,"idempotent":true,"events":["operation.queued","operation.succeeded","project.patch"]},
+    {"id":"acceptance_redo_active","family":"acceptance","operation":"acceptance.redo","initial":"running","target":"running","legal":false,"error":"precondition_failed","events":[]},
+    {"id":"acceptance_accept_batch","family":"acceptance","operation":"acceptance.accept_batch","initial":"completed","target":"completed","legal":true,"events":["operation.queued","operation.succeeded","project.patch"]},
+    {"id":"acceptance_unaccept_batch","family":"acceptance","operation":"acceptance.unaccept_batch","initial":"completed","target":"completed","legal":true,"events":["operation.queued","operation.succeeded","project.patch"]},
+    {"id":"intake_retry_failed","family":"retry_recovery","operation":"intake.retry_plan_generation","initial":"failed","target":"pending","legal":true,"events":["operation.queued","operation.succeeded","project.patch"]},
+    {"id":"intake_retry_linked","family":"retry_recovery","operation":"intake.retry_plan_generation","initial":"linked","target":"linked","legal":false,"error":"precondition_failed","events":[]},
+    {"id":"operation_cancel_completion_race","family":"retry_recovery","operation":"task.run","initial":"running","target":"cancelled","legal":true,"idempotent":true,"events":["operation.running","operation.cancelled"]},
+    {"id":"operation_recovery_running","family":"retry_recovery","operation":"loop.run_once","initial":"running","target":"interrupted","legal":true,"events":["operation.interrupted"]},
+    {"id":"operation_recovery_queued","family":"retry_recovery","operation":"loop.run_once","initial":"queued","target":"running","legal":true,"events":["operation.running"]},
+    {"id":"operation_recovery_expired","family":"retry_recovery","operation":"loop.run_once","initial":"queued_expired","target":"interrupted","legal":true,"events":["operation.interrupted"]}
+  ]
+}

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useDesktopBridge } from '../lib/api/provider';
 import type { UpdateCheckResult, UpdateInstallerOpenResult, UpdateStatus } from '../types';
 
 const EMPTY_STATUS: UpdateStatus = {
@@ -38,14 +39,17 @@ const EMPTY_STATUS: UpdateStatus = {
  * 取初值/推送失败时保持默认空状态，绝不抛出到 UI 打扰用户。
  */
 export function useUpdateStatus() {
+  const desktopBridge = useDesktopBridge();
   const [status, setStatus] = useState<UpdateStatus>(EMPTY_STATUS);
   const [checking, setChecking] = useState(false);
   const [openingInstaller, setOpeningInstaller] = useState(false);
   const [installerOpenError, setInstallerOpenError] = useState<string | null>(null);
+  const mountedRef = useRef(false);
 
   useEffect(() => {
     let active = true;
-    window.autoplan
+    mountedRef.current = true;
+    desktopBridge
       .updateStatus()
       .then((next) => {
         if (active && next) setStatus(next);
@@ -53,44 +57,45 @@ export function useUpdateStatus() {
       .catch(() => {
         /* 取初值失败保持默认，不打扰用户 */
       });
-    const unsubscribe = window.autoplan.onUpdateStatus((next) => {
+    const unsubscribe = desktopBridge.onUpdateStatus((next) => {
       if (active && next) setStatus(next);
     });
     return () => {
       active = false;
+      mountedRef.current = false;
       unsubscribe();
     };
-  }, []);
+  }, [desktopBridge]);
 
   const check = useCallback(async () => {
     setChecking(true);
     try {
-      const result: UpdateCheckResult = await window.autoplan.checkForUpdates();
+      const result: UpdateCheckResult = await desktopBridge.checkForUpdates();
       // check() 结果在 UpdateStatus 字段之外附带 ok/error/release，可直接作为最新状态。
-      if (result) setStatus(result);
+      if (mountedRef.current && result) setStatus(result);
       return result;
     } catch {
       /* 手动检查失败不抛出到 UI，仅恢复 checking 态 */
       return null;
     } finally {
-      setChecking(false);
+      if (mountedRef.current) setChecking(false);
     }
-  }, []);
+  }, [desktopBridge]);
 
   const openInstaller = useCallback(async (): Promise<UpdateInstallerOpenResult | null> => {
     setOpeningInstaller(true);
     setInstallerOpenError(null);
     try {
-      const result = await window.autoplan.openUpdateInstaller();
-      if (!result?.ok) setInstallerOpenError(result?.error || '打开安装包失败');
+      const result = await desktopBridge.openUpdateInstaller();
+      if (mountedRef.current && !result?.ok) setInstallerOpenError(result?.error || '打开安装包失败');
       return result || null;
     } catch {
-      setInstallerOpenError('打开安装包失败');
+      if (mountedRef.current) setInstallerOpenError('打开安装包失败');
       return null;
     } finally {
-      setOpeningInstaller(false);
+      if (mountedRef.current) setOpeningInstaller(false);
     }
-  }, []);
+  }, [desktopBridge]);
 
   return { status, check, checking, openInstaller, openingInstaller, installerOpenError };
 }

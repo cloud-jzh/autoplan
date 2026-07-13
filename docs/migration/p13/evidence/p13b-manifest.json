@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "kind": "p13b-mcp-evidence-policy",
+  "run_root": "docs/migration/p13/evidence/runs",
+  "immutable_run_directory": true,
+  "default_status": "blocked_until_verified",
+  "required_artifacts": [
+    "summary.json",
+    "evidence-manifest.json",
+    "sanitized command stdout/stderr logs"
+  ],
+  "required_summary_fields": [
+    "run_id",
+    "status",
+    "fixture",
+    "prerequisite_evidence",
+    "source_hashes_start",
+    "source_hashes_end",
+    "command_results",
+    "rollback",
+    "remaining_risks"
+  ],
+  "forbidden_content": [
+    "credential values",
+    "environment values",
+    "real Electron user data locations",
+    "external workspace locations",
+    "raw tool arguments or results",
+    "real process identifiers"
+  ]
+}

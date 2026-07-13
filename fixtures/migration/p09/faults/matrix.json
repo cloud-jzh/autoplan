@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "kind": "p09-cutover-fault-matrix",
+  "failures": [
+    { "id": "freeze_failure", "expected_code": "freeze_failed" },
+    { "id": "process_stop_timeout", "expected_code": "drain_failed" },
+    { "id": "final_node_persist_failure", "expected_code": "node_release_failed" },
+    { "id": "backup_interruption", "expected_code": "backup_failed" },
+    { "id": "backup_hash_damage", "expected_code": "backup_failed" },
+    { "id": "preflight_failure", "expected_code": "preflight_failed" },
+    { "id": "audit_failure", "expected_code": "audit_before_failed" },
+    { "id": "migration_write_interruption", "expected_code": "migration_failed" },
+    { "id": "owner_lock_conflict", "expected_code": "owner_lock_failed" },
+    { "id": "readiness_failure", "expected_code": "smoke_failed" },
+    { "id": "readyz_failure", "expected_code": "smoke_failed" },
+    { "id": "read_write_smoke_failure", "expected_code": "smoke_failed" },
+    { "id": "ui_reopen_failure", "expected_code": "reopen_failed" },
+    { "id": "process_tree_cleanup_failure", "expected_code": "drain_failed" }
+  ],
+  "required_invariants": [
+    "maintenance_remains_closed",
+    "writers_terminated_or_blocked",
+    "immutable_backup_preserved",
+    "fault_scene_preserved",
+    "no_node_fallback"
+  ]
+}

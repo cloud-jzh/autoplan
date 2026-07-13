@@ -1,0 +1,614 @@
+{
+  "schemaVersion": 1,
+  "description": "P00 compatibility contract for DTOs, snapshots, state machines, errors, ordering, and side effects. It records current behavior; it is not a redesign.",
+  "dtoContracts": [
+    {
+      "id": "dto.app-snapshot",
+      "source": "src/renderer/types.ts",
+      "declaration": "AppSnapshot",
+      "header": "export interface AppSnapshot",
+      "fields": [
+        "activeProjectId:number|null", "activeProject:Project|null", "projects:Project[]", "mcp:McpStatus", "state:ProjectState|null",
+        "requirements:Requirement[]", "feedback:Feedback[]", "attachments:Attachment[]", "plans:Plan[]", "tasks:PlanTask[]",
+        "events:AppEvent<AppEventMeta|null>[]", "scans:ScanFile[]", "scanSummary?:ScanSummary", "scripts:Script[]", "executors:Executor[]",
+        "terminals:TerminalSession[]", "activeOperation:ActiveOperation|null", "activeOperations:ActiveOperation[]", "lastOperation:ActiveOperation|null"
+      ]
+    },
+    {
+      "id": "dto.workspace-patch",
+      "source": "src/renderer/types.ts",
+      "declaration": "WorkspaceSnapshotPatch",
+      "header": "export interface WorkspaceSnapshotPatch",
+      "fields": [
+        "projectId:number|null", "activeProjectId?:number|null", "state?:ProjectState|null", "tasks?:PlanTask[]",
+        "events?:AppEvent<AppEventMeta|null>[]", "activeOperation?:ActiveOperation|null", "activeOperations?:ActiveOperation[]", "lastOperation?:ActiveOperation|null"
+      ]
+    },
+    {
+      "id": "dto.project-state",
+      "source": "src/renderer/types.ts",
+      "declaration": "ProjectState",
+      "header": "export interface ProjectState extends PlanGenerationSnapshotFields, PlanExecutionSnapshotFields",
+      "fields": [
+        "project_id:number", "running:number", "phase:string", "interval_seconds:number", "validation_command:string", "project_prompt?:string",
+        "last_issue_hash?:string|null", "last_error?:string|null", "agent_cli_provider?:AgentCliProvider", "agent_cli_command?:string",
+        "codex_reasoning_effort?:CodexReasoningEffort|null", "env_vars?:string", "updated_at:string", "workspace_path?:string"
+      ]
+    },
+    {
+      "id": "dto.read-plan-result",
+      "source": "src/renderer/types.ts",
+      "declaration": "ReadPlanResult",
+      "header": "export interface ReadPlanResult",
+      "fields": [
+        "ok:boolean", "id:number|null", "project_id:number|null", "file_path:string", "markdown:string", "tasks:ReadPlanTask[]",
+        "task_total:number", "task_completed:number", "task_parse_status:ReadPlanTaskParseStatus", "task_parse_message:string",
+        "task_parse_has_task_section:boolean", "hash:string", "updated_at:string", "error:string|null"
+      ]
+    },
+    {
+      "id": "dto.script-run-result",
+      "source": "src/renderer/types.ts",
+      "declaration": "ScriptRunResult",
+      "header": "export interface ScriptRunResult",
+      "fields": [
+        "snapshot:AppSnapshot", "status:ScriptLastStatus|null", "exitCode:number|null", "durationMs:number|null", "log:string|null",
+        "timedOut?:boolean", "error?:string|null"
+      ]
+    },
+    {
+      "id": "dto.executor-run-result",
+      "source": "src/renderer/types.ts",
+      "declaration": "ExecutorRunResult",
+      "header": "export interface ExecutorRunResult",
+      "fields": [
+        "snapshot:AppSnapshot", "executorId:number", "label:string", "status:ExecutorLastStatus|string", "exitCode:number|null",
+        "durationMs:number|null", "log:string|null", "logFile?:string|null", "timedOut?:boolean", "error?:string|null",
+        "dependencyResults?:ExecutorDependencyRunResult[]"
+      ]
+    },
+    {
+      "id": "dto.active-operation",
+      "source": "src/renderer/types.ts",
+      "declaration": "ActiveOperation",
+      "header": "export interface ActiveOperation extends AgentCliSessionInfo, CodexSessionInfo",
+      "fields": [
+        "label:string", "projectId:number|null", "planId:number|null", "taskId:number|null", "operationType?:'executor'|string|null",
+        "executorId?:number|null", "executorLabel?:string|null", "rootExecutorId?:number|null", "rootExecutorLabel?:string|null",
+        "parentExecutorId?:number|null", "executorRunId?:string|null", "agentCliProvider?:string", "agentCliCommand?:string",
+        "codexReasoningEffort?:CodexReasoningEffort|null", "startedAt:string|null", "finishedAt?:string|null", "exitCode?:number|null",
+        "cancelled?:boolean|null", "cancelledAt?:string|null", "logTail:string", "activity:ActivityLine[]"
+      ]
+    },
+    {
+      "id": "dto.mcp-status",
+      "source": "src/renderer/types.ts",
+      "declaration": "McpStatus",
+      "header": "export interface McpStatus",
+      "fields": [
+        "enabled:boolean", "running:boolean", "status:McpStatusKind", "transport:McpTransport", "host:string|null", "port:number|null",
+        "path:string|null", "url:string|null", "hasAuthToken:boolean", "authTokenMasked:string", "authHeader:string", "localOnly:boolean",
+        "tools:McpToolName[]", "toolDocs:McpToolDoc[]", "connectionExample:string", "note:string",
+        "lastEvent?:{type:string;message:string;createdAt:string;}|null", "lastError?:string|null", "startedAt?:string|null"
+      ]
+    },
+    {
+      "id": "dto.mcp-auth-token-read-result",
+      "source": "src/renderer/types.ts",
+      "declaration": "McpAuthTokenReadResult",
+      "header": "export interface McpAuthTokenReadResult",
+      "fields": ["hasAuthToken:boolean", "authToken:string"]
+    },
+    {
+      "id": "dto.ai-config",
+      "source": "src/renderer/types.ts",
+      "declaration": "AiConfig",
+      "header": "export interface AiConfig",
+      "fields": [
+        "id:number", "projectId:number|null", "name:string", "provider:'openai'|'deepseek'|'anthropic'|'codex'|string", "baseUrl:string",
+        "hasApiKey:boolean", "maskedKey:string", "model:string", "temperature:string", "thinkingDepth:AiThinkingDepth|null",
+        "thinkingBudgetTokens:number|null", "createdAt:string", "updatedAt:string"
+      ]
+    },
+    {
+      "id": "dto.claude-cli-config",
+      "source": "src/renderer/types.ts",
+      "declaration": "ClaudeCliConfig",
+      "header": "export interface ClaudeCliConfig",
+      "fields": [
+        "id:number", "projectId:number|null", "name:string", "baseUrl:string", "hasAuthToken:boolean", "maskedKey:string", "model:string",
+        "isDefault:boolean", "createdAt:string", "updatedAt:string"
+      ]
+    },
+    {
+      "id": "dto.conversation",
+      "source": "src/renderer/types.ts",
+      "declaration": "Conversation",
+      "header": "export interface Conversation",
+      "fields": [
+        "id:number", "project_id:number", "projectId:number", "title:string", "ai_config_id:number|null", "aiConfigId:number|null",
+        "pinned_at:string|null", "pinnedAt:string|null", "pinned:boolean", "created_at:string", "createdAt:string", "updated_at:string", "updatedAt:string"
+      ]
+    },
+    {
+      "id": "dto.chat-message",
+      "source": "src/renderer/types.ts",
+      "declaration": "ChatMessage",
+      "header": "export interface ChatMessage",
+      "fields": [
+        "id:number", "project_id?:number", "projectId:number", "role:ChatRole", "content:string", "tool_calls?:string|null",
+        "toolCalls:ChatToolCall[]|null", "tool_result?:string|null", "toolResult:Record<string,unknown>|null",
+        "status:'streaming'|'done'|'aborted'|'error'|'queued'", "created_at?:string", "createdAt:string"
+      ]
+    },
+    {
+      "id": "dto.chat-done",
+      "source": "src/renderer/types.ts",
+      "declaration": "ChatDoneEvent",
+      "header": "export interface ChatDoneEvent",
+      "fields": ["status:ChatDoneStatus", "error?:string", "conversationId?:number", "title?:string"]
+    },
+    {
+      "id": "dto.chat-queue-snapshot",
+      "source": "src/renderer/types.ts",
+      "declaration": "ChatQueueSnapshot",
+      "header": "export interface ChatQueueSnapshot",
+      "fields": ["conversationId:number", "items:ChatQueueItem[]", "count:number"]
+    },
+    {
+      "id": "dto.terminal-session",
+      "source": "src/renderer/types.ts",
+      "declaration": "TerminalSession",
+      "header": "export interface TerminalSession",
+      "fields": [
+        "id:string", "projectId:number|string", "title:string", "cwd:string", "shell:string", "status:TerminalStatus", "createdAt:string",
+        "endedAt:string|null", "exitCode:number|null", "cols:number|null", "rows:number|null", "profile:TerminalProfile", "closed?:boolean"
+      ]
+    },
+    {
+      "id": "dto.terminal-error",
+      "source": "src/renderer/types.ts",
+      "declaration": "TerminalErrorResult",
+      "header": "export interface TerminalErrorResult",
+      "fields": ["ok:false", "code:string", "message:string", "details?:string"]
+    },
+    {
+      "id": "dto.terminal-event",
+      "source": "src/renderer/types.ts",
+      "declaration": "TerminalEvent",
+      "header": "export interface TerminalEvent",
+      "fields": [
+        "sessionId:string", "projectId:number|string", "session:TerminalSession", "data?:string", "exitCode?:number|null", "signal?:string|null", "closed?:boolean"
+      ]
+    },
+    {
+      "id": "dto.file-access-settings",
+      "source": "src/renderer/types.ts",
+      "declaration": "FileAccessSettings",
+      "header": "export interface FileAccessSettings",
+      "fields": ["scope:FileAccessScope", "allowCrossProject:boolean", "allowedRoots:string[]"]
+    },
+    {
+      "id": "dto.create-intake-input",
+      "source": "src/renderer/types.ts",
+      "declaration": "CreateIntakeInput",
+      "header": "export interface CreateIntakeInput extends PlanGenerationInputFields",
+      "fields": [
+        "projectId:number", "body:string", "attachments:PendingAttachment[]", "title?:string", "status?:string", "autoRun?:boolean",
+        "requirementId?:number|null", "agentCliProvider?:AgentCliProvider", "agentCliCommand?:string", "codexReasoningEffort?:CodexReasoningEffort"
+      ]
+    },
+    {
+      "id": "dto.create-project-input",
+      "source": "src/renderer/types.ts",
+      "declaration": "CreateProjectInput",
+      "header": "export interface CreateProjectInput extends PlanGenerationInputFields, PlanExecutionInputFields",
+      "fields": [
+        "name:string", "workspacePath:string", "description?:string", "agentCliProvider?:AgentCliProvider", "agentCliCommand?:string",
+        "codexReasoningEffort?:CodexReasoningEffort"
+      ]
+    },
+    {
+      "id": "dto.loop-config-input",
+      "source": "src/renderer/types.ts",
+      "declaration": "LoopConfigInput",
+      "header": "export interface LoopConfigInput extends PlanGenerationInputFields, PlanExecutionInputFields",
+      "fields": [
+        "projectId:number", "workspacePath?:string", "intervalSeconds?:number", "validationCommand?:string", "validation_command?:string",
+        "projectPrompt?:string", "project_prompt?:string", "agentCliProvider?:AgentCliProvider", "agentCliCommand?:string",
+        "codexReasoningEffort?:CodexReasoningEffort", "mcpAuthToken?:string", "envVars?:EnvVarEntry[]"
+      ]
+    },
+    {
+      "id": "dto.mcp-config-input",
+      "source": "src/renderer/types.ts",
+      "declaration": "McpConfigInput",
+      "header": "export interface McpConfigInput",
+      "fields": [
+        "projectId?:number|null", "enabled?:boolean", "transport?:McpTransport", "host?:string", "port?:number|string", "path?:string", "authToken?:string"
+      ]
+    }
+  ],
+  "snapshotContracts": [
+    {
+      "id": "snapshot.type-field-order",
+      "source": "src/renderer/types.ts",
+      "interface": "AppSnapshot",
+      "keys": [
+        "activeProjectId", "activeProject", "projects", "mcp", "state", "requirements", "feedback", "attachments", "plans", "tasks",
+        "events", "scans", "scanSummary?", "scripts", "executors", "terminals", "activeOperation", "activeOperations", "lastOperation"
+      ]
+    },
+    {
+      "id": "snapshot.full-shape",
+      "source": "src/loop/snapshots.js",
+      "function": "snapshot",
+      "keys": [
+        "activeProjectId", "activeProject", "projects", "mcp", "state", "requirements", "feedback", "attachments", "plans", "tasks",
+        "events", "scans", "scanSummary", "scripts", "executors", "terminals", "activeOperation", "activeOperations", "lastOperation"
+      ]
+    },
+    {
+      "id": "snapshot.empty-defaults",
+      "source": "src/loop/snapshots.js",
+      "function": "emptySnapshot",
+      "keys": [
+        "activeProjectId", "activeProject", "projects", "mcp", "state", "requirements", "feedback", "attachments", "plans", "tasks",
+        "events", "scans", "scanSummary", "scripts", "executors", "terminals", "activeOperation", "activeOperations", "lastOperation"
+      ]
+    },
+    {
+      "id": "snapshot.patch-shape",
+      "source": "src/loopService.js",
+      "function": "snapshotPatch",
+      "keys": ["projectId", "activeProjectId", "state", "tasks", "events"]
+    },
+    {
+      "id": "snapshot.patch-empty-defaults",
+      "source": "src/loopService.js",
+      "function": "runtimePatchEmpty",
+      "keys": ["projectId", "activeProjectId", "state", "tasks", "events", "activeOperation", "activeOperations", "lastOperation"]
+    },
+    {
+      "id": "snapshot.renderer-project-list-fallback",
+      "source": "src/renderer/hooks/useSnapshot.ts",
+      "function": "createProjectListSnapshot",
+      "keys": [
+        "activeProjectId", "activeProject", "projects", "state", "requirements", "feedback", "attachments", "plans", "tasks", "events",
+        "scans", "scanSummary", "scripts", "executors", "terminals", "activeOperation", "activeOperations", "lastOperation"
+      ]
+    }
+  ],
+  "stateMachines": [
+    {
+      "id": "state.plan",
+      "source": "src/renderer/types.ts",
+      "const": "PLAN_STATUS",
+      "states": ["pending", "running", "ready_for_validation", "validation_failed", "completed", "interrupted", "draft"],
+      "transitions": "draft->running; pending->running->ready_for_validation->completed|validation_failed; active->interrupted; interrupted|validation_failed->pending"
+    },
+    {
+      "id": "state.task-event",
+      "source": "src/loop/taskEvents.js",
+      "const": "TASK_EVENT_STATUS",
+      "states": ["pending", "running", "completed", "failed", "stopping", "stopped", "interrupted"],
+      "transitions": "pending|blocked|failed->running; running->completed|pending(retry after failed event)|stopped|blocked(interrupted)"
+    },
+    {
+      "id": "state.terminal",
+      "source": "src/terminal/terminalTypes.js",
+      "const": "TERMINAL_STATUS",
+      "states": ["starting", "running", "exited", "killed", "error"],
+      "transitions": "starting->running|error; running->exited|killed|error; terminal session may then be closed"
+    },
+    {
+      "id": "state.terminal-errors",
+      "source": "src/terminal/terminalTypes.js",
+      "const": "TERMINAL_ERROR_CODES",
+      "states": [
+        "PTY_UNAVAILABLE", "INVALID_PROJECT", "INVALID_SESSION", "INVALID_PAYLOAD", "CWD_OUTSIDE_WORKSPACE",
+        "SESSION_NOT_FOUND", "WRITE_FAILED", "RESIZE_FAILED", "KILL_FAILED"
+      ],
+      "transitions": "errors are returned as TerminalErrorResult and do not throw across IPC"
+    },
+    {
+      "id": "state.loop-phase",
+      "source": "src/loopService.js",
+      "states": ["idle", "running", "scan", "generate-plan", "execute-task", "validate", "waiting", "stopped", "error"],
+      "markers": [
+        "VALUES (?, 0, 'idle', 5, '', ?)", "['running', nowIso(), projectId]", "this.setPhase(projectId, 'scan')",
+        "this.setPhase(projectId, 'waiting')", "this.setPhase(projectId, 'idle')"
+      ],
+      "transitions": "start->running->scan->generate-plan|execute-task|validate->waiting|idle; stop->stopped; recordRuntimeError->error"
+    },
+    {
+      "id": "state.chat-generation",
+      "source": "src/chat/chatController.js",
+      "states": ["idle", "active", "done", "aborted", "error", "max_rounds"],
+      "markers": [
+        "active = true;", "finishGeneration({ status: 'done'", "finishGeneration({ status: 'aborted'", "finishGeneration({ status: 'error'",
+        "finishGeneration({ status: 'max_rounds' })"
+      ],
+      "transitions": "idle->active->done|aborted|error|max_rounds; terminal transition releases processing and pumps next queued item"
+    },
+    {
+      "id": "state.chat-queue",
+      "source": "src/chat/chatQueue.js",
+      "states": ["queued", "processing", "removed"],
+      "markers": [
+        "const item = { id, content, state: 'queued' };", "item.state = 'processing';", "items = items.filter((it) => it.state !== 'processing');",
+        "WHERE conversation_id = ? AND project_id = ? AND status = 'queued'", "ORDER BY id ASC"
+      ],
+      "transitions": "enqueue queued->markProcessing processing->release removed; cancel/clear affect queued only; persisted queued rows recover FIFO"
+    }
+  ],
+  "errorContracts": [
+    {
+      "id": "error.invalid-project",
+      "domain": "project/all project-scoped commands",
+      "codeCandidate": "PROJECT_NOT_FOUND",
+      "currentBehavior": "Most IPC handlers throw Error('项目不存在'); Chat and Terminal return structured negative results in selected paths.",
+      "retryable": false,
+      "currentTextBoundary": ["项目不存在", "对话不存在或不属于当前项目"]
+    },
+    {
+      "id": "error.busy-workspace",
+      "domain": "Loop/Task/Executor",
+      "codeCandidate": "WORKSPACE_BUSY",
+      "currentBehavior": "Throws when a workspace is already owned or a project runtime is busy; no write should occur before the guard.",
+      "retryable": true,
+      "currentTextBoundary": ["工作区正在被项目", "该项目已有任务在运行"]
+    },
+    {
+      "id": "error.invalid-state",
+      "domain": "Plan/Task/Acceptance",
+      "codeCandidate": "INVALID_STATE_TRANSITION",
+      "currentBehavior": "Throws current Chinese boundary text for non-running stop, non-completed redo/re-execute, or acceptance before completion.",
+      "retryable": false,
+      "currentTextBoundary": ["计划未在运行中", "仅可重新执行已完成的计划", "仅可验收已完成的计划/任务"]
+    },
+    {
+      "id": "error.chat-command",
+      "domain": "Chat",
+      "codeCandidate": "CHAT_INVALID_REQUEST",
+      "currentBehavior": "send/stop/clear return accepted|stopped|cleared=false plus error; history returns [] for missing or cross-project conversation.",
+      "retryable": false,
+      "currentTextBoundary": ["消息不能为空", "conversationId 不能为空", "对话不存在或不属于当前项目"]
+    },
+    {
+      "id": "error.terminal-structured",
+      "domain": "Terminal",
+      "codeCandidate": "existing TERMINAL_ERROR_CODES",
+      "currentBehavior": "All terminal handlers normalize failures to {ok:false,code,message,details?}; withTerminalError converts thrown errors to INVALID_PAYLOAD.",
+      "retryable": true,
+      "currentTextBoundary": ["终端请求无效", "终端会话不存在", "终端能力不可用"]
+    },
+    {
+      "id": "error.file-policy",
+      "domain": "File/Workspace",
+      "codeCandidate": "PATH_NOT_ALLOWED",
+      "currentBehavior": "Path policy/open failures return {ok:false,error} where defined or throw at validation boundaries; unauthorized paths must not be opened.",
+      "retryable": false,
+      "currentTextBoundary": ["invalid url", "非法的文件访问范围"]
+    }
+  ],
+  "eventOrdering": [
+    {
+      "id": "order.snapshot-patch",
+      "source": "src/renderer/hooks/useSnapshot.ts",
+      "producer": "loop:update and loop:patch",
+      "consumer": "useSnapshot",
+      "payload": "AppSnapshot / WorkspaceSnapshotPatch",
+      "ordering": "A scheduled full snapshot clears queued patches; at flush the full snapshot is applied before later per-project patches. Patches are coalesced by project key in an animation frame.",
+      "ordered": [["queuedSnapshot = next;", "queuedPatches.clear();", "scheduleFrame();"], ["if (latestSnapshot) next = applySnapshotForProject", "for (const latestPatch of latestPatches)"]]
+    },
+    {
+      "id": "order.task-lifecycle",
+      "source": "src/loopService.js",
+      "producer": "task execution/runtime",
+      "consumer": "snapshot events and task rows",
+      "payload": "task row plus task.* AppEvent meta",
+      "ordering": "Task row persistence happens before addTaskLifecycleEvent; failure records a failed event while resetting the persisted task to pending for retry.",
+      "ordered": [["const failedTask = this.finishTaskRun(task.id, TASK_EVENT_STATUS.PENDING", "this.addTaskLifecycleEvent(projectId, TASK_EVENT_TYPES.FAILED"]]
+    },
+    {
+      "id": "order.chat-terminal",
+      "source": "src/chat/chatController.js",
+      "producer": "ChatController.finishGeneration",
+      "consumer": "chat:queue and chat:done subscribers",
+      "payload": "queue snapshot then ChatDoneEvent",
+      "ordering": "Current compatibility order is active=false, clear abort handle, release processing (queue snapshot), pump next queued item, then emit done for the completed run.",
+      "ordered": [["active = false;", "abortController = null;", "queue.releaseProcessing();", "pump();", "emitDone(payload);"]]
+    },
+    {
+      "id": "order.terminal-lifecycle",
+      "source": "src/terminal/terminalService.js",
+      "producer": "PTY callbacks",
+      "consumer": "terminal:data/status/exit/closed",
+      "payload": "safe terminal events",
+      "ordering": "Data is emitted as received; on exit the session status and endedAt are set before EXIT and STATUS. Explicit close emits CLOSED after session removal.",
+      "ordered": [["session.status = session.killRequested ? TERMINAL_STATUS.KILLED : TERMINAL_STATUS.EXITED;", "session.endedAt = nowIso();", "this.emit(TERMINAL_CHANNELS.EXIT", "this.emit(TERMINAL_CHANNELS.STATUS"]]
+    }
+  ],
+  "sideEffectContracts": [
+    {
+      "id": "effects.project-intake",
+      "domain": "Project/Intake/Attachment",
+      "success": "Database rows and attachment files are persisted, then an AppSnapshot is returned/emitted.",
+      "failure": "Validation errors throw before mutation where guarded; multi-step legacy paths are not universally transactional and current partial-write risk remains frozen.",
+      "idempotency": "Reads are idempotent; create is not idempotent; update is last-write-wins; delete requires existing scoped records and repeated deletion errors or returns no record by path.",
+      "cancellation": "Intake plan generation can be interrupted through linked plan/task runtime operations.",
+      "recovery": "Snapshot reloads database truth; retryIntakePlanGeneration creates a new attempt while retaining failure counters/log metadata."
+    },
+    {
+      "id": "effects.plan-task-loop",
+      "domain": "Loop/Plan/Task/Acceptance",
+      "success": "State rows, plan/task files and events are updated around child-process execution; compatible mutations return AppSnapshot.",
+      "failure": "Runtime error stores phase=error/last_error and emits loop.error; task failure event may coexist with persisted pending retry state.",
+      "idempotency": "start on an already running runtime and runOnce while busy are no-ops; stop tolerates absent runtime work; acceptance timestamps are stateful writes.",
+      "cancellation": "stopTask/stopPlan/stopLoop terminate child processes, archive operations and persist stopped/blocked/interrupted state before update emission.",
+      "recovery": "Interrupted or validation-failed plans resume to pending; completed plans may re-execute; timed-out task retry may clear session context and reopen a new session."
+    },
+    {
+      "id": "effects.script-executor",
+      "domain": "Script/Executor",
+      "success": "Definitions persist in the database; run actions spawn processes and store status, exit code, duration and bounded logs.",
+      "failure": "Configuration/path/spawn errors are returned in run results or thrown at handler boundaries; last_status becomes bad where execution completed unsuccessfully.",
+      "idempotency": "Definition updates are last-write-wins; plugin start rejects already-running; stop of an inactive process is tolerated by the runner path where supported.",
+      "cancellation": "stop terminates one-shot or persistent plugin processes and archives the operation.",
+      "recovery": "Persisted plugin_state is normalized after process exit; snapshots reconcile running state from the live runtime registry."
+    },
+    {
+      "id": "effects.chat-config",
+      "domain": "Chat/Conversation/AI/Claude config",
+      "success": "Messages/queue/config/conversation rows persist before their corresponding complete snapshot or changed event.",
+      "failure": "Chat generation produces done(error|aborted|max_rounds); command validation returns structured false results; config CRUD throws for missing records.",
+      "idempotency": "History/list/get are idempotent; queue cancel/edit only affect queued items; clear is safe when no controller but reports current compatibility result.",
+      "cancellation": "chatStop aborts the active backend and marks the latest assistant message aborted; queued items remain for sequential continuation.",
+      "recovery": "queued database rows reload ordered by id; controllers resume queued work; secrets remain masked in config DTOs and change events."
+    },
+    {
+      "id": "effects.terminal",
+      "domain": "Terminal",
+      "success": "Create spawns a PTY; write/resize/kill mutate the live session; replay returns bounded scrollback; close removes the retained session.",
+      "failure": "Every command returns TerminalErrorResult without leaking process handles; invalid cwd/session/payload fails before PTY mutation.",
+      "idempotency": "list/replay are reads; resize to the same dimensions is harmless; kill on a terminal session is normalized by current TerminalService behavior.",
+      "cancellation": "kill requests PTY termination; process exit decides killed versus exited; close is a distinct final lifecycle action.",
+      "recovery": "Terminal sessions are in-memory only; renderer refreshes list/replay while process lifetime remains owned by the desktop runtime."
+    },
+    {
+      "id": "effects.desktop",
+      "domain": "DesktopBridge files/external/update",
+      "success": "Native dialog/open/install actions return serializable result objects; update state is persisted and pushed as a complete status.",
+      "failure": "Invalid URL/path/installer state returns ok=false/error and must not execute the native action.",
+      "idempotency": "Status checks and reads are idempotent; repeated open is an external OS side effect; dismiss/auto-check are last-write-wins settings.",
+      "cancellation": "No generic cancellation contract exists for native open actions; update checker owns its download lifecycle.",
+      "recovery": "Downloaded installer state is reconstructed from controlled update metadata; missing files return a failed open result."
+    }
+  ],
+  "sourceAssertions": [
+    {
+      "id": "source.snapshot-sorting-defaults",
+      "source": "src/loop/snapshots.js",
+      "contains": [
+        "ORDER BY sort_order ASC, created_at ASC, id ASC",
+        "ORDER BY plans.sort_order ASC, plans.created_at ASC, plans.id ASC, plan_tasks.sort_order ASC, plan_tasks.id ASC",
+        "ORDER BY requirements.updated_at DESC",
+        "ORDER BY feedback.updated_at DESC",
+        "ORDER BY created_at DESC, id DESC",
+        "ORDER BY id DESC LIMIT 80",
+        "ORDER BY sort_order ASC, id ASC",
+        "count: 0,",
+        "latest_scanned_at: null,",
+        "meta: parseEventMeta(event.meta)",
+        "plan_generation_duration_ms: normalizeNonNegativeInteger(plan.plan_generation_duration_ms)",
+        "is_draft: status === 'draft'"
+      ]
+    },
+    {
+      "id": "source.time-id-format",
+      "source": "src/database.js",
+      "contains": ["SELECT last_insert_rowid() AS id", "return new Date().toISOString();"]
+    },
+    {
+      "id": "source.snapshot-secret-masking",
+      "source": "src/loop/snapshots.js",
+      "contains": [
+        "PLAN_BACKEND_CLAUDE_AUTH_TOKEN_COLUMNS.includes(column)",
+        "fields[column] = maskAuthToken(rawToken);",
+        "Boolean(rawToken)",
+        "authTokenMasked",
+        "hasAuthToken"
+      ]
+    },
+    {
+      "id": "source.renderer-patch-merge",
+      "source": "src/renderer/hooks/useSnapshot.ts",
+      "contains": [
+        "queuedPatches.set(patchQueueKey(next), next);",
+        "isSnapshotForProject(current, projectId)",
+        "mergeProjectStateIntoProjects",
+        "...(hasOwn(patch, 'tasks') ? { tasks: patch.tasks || [] } : {})"
+      ]
+    },
+    {
+      "id": "source.patch-operation-composition",
+      "source": "src/loopService.js",
+      "contains": [
+        "...this.runtimeOperationSnapshots(id, runtime)",
+        "activeOperation:",
+        "activeOperations:",
+        "lastOperation:"
+      ]
+    },
+    {
+      "id": "source.chat-history-order-recovery",
+      "source": "src/chat/chatQueue.js",
+      "contains": [
+        "ORDER BY id ASC",
+        "items = [...preserved, ...loaded].sort((a, b) => a.id - b.id);",
+        "DELETE FROM chat_messages WHERE id = ? AND status = 'queued'",
+        "UPDATE chat_messages SET status = ? WHERE id = ?"
+      ]
+    },
+    {
+      "id": "source.operation-bounds",
+      "source": "src/loop/runtime.js",
+      "contains": [
+        ".slice(-8000)",
+        "finishedAt: nowIso()",
+        "cancelled: Boolean(op.cancelled)",
+        "exitCode: typeof op.exitCode === 'number' ? op.exitCode : null"
+      ]
+    },
+    {
+      "id": "source.runtime-error-contract",
+      "source": "src/loop/runtime.js",
+      "contains": [
+        "['error', message, nowIso(), projectId, 'error', message]",
+        "addEvent(projectId, 'loop.error', message);",
+        "emitUpdate(projectId);"
+      ],
+      "ordered": [["db.run(", "addEvent(projectId, 'loop.error', message);", "emitUpdate(projectId);"]]
+    },
+    {
+      "id": "source.plan-error-boundaries",
+      "source": "src/loop/planLifecycle.js",
+      "contains": [
+        "throw new Error('项目不存在')",
+        "throw new Error('计划不存在')",
+        "throw new Error('计划未在运行中')",
+        "throw new Error('仅可重新执行已完成的计划')"
+      ]
+    },
+    {
+      "id": "source.chat-error-boundaries",
+      "source": "src/main.js",
+      "contains": [
+        "return { accepted: false, error: '消息不能为空' }",
+        "return { stopped: false, error: 'conversationId 不能为空' }",
+        "return { cleared: false, error: 'conversationId 不能为空' }",
+        "return { accepted: false, error: '对话不存在或不属于当前项目' }"
+      ]
+    },
+    {
+      "id": "source.terminal-error-boundaries",
+      "source": "src/terminal/terminalTypes.js",
+      "contains": [
+        "PTY_UNAVAILABLE: 'PTY_UNAVAILABLE'",
+        "INVALID_PAYLOAD: 'INVALID_PAYLOAD'",
+        "SESSION_NOT_FOUND: 'SESSION_NOT_FOUND'",
+        "message: String(message || '终端请求无效')"
+      ]
+    }
+  ],
+  "security": {
+    "forbiddenInContractSamples": ["real api_key value", "real auth_token value", "env var values", "real userData path", "unauthorized absolute path"],
+    "redactionRules": [
+      "AI/Claude/MCP credentials are represented only by presence booleans and masked suffixes in snapshots/events; the legacy explicit readMcpAuthToken response is the sole frozen raw-token exception and must never be logged or broadcast.",
+      "Terminal env values and project env_vars never enter logs, error details, fixtures, or public events.",
+      "Absolute paths are returned only where the existing desktop contract requires them and only after file policy validation; this baseline contains no machine-local sample path."
+    ],
+    "defaultPolicy": "deny and fail closed when path authorization, localhost session, or credential redaction cannot be established"
+  }
+}

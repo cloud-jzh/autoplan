@@ -1,0 +1,47 @@
+[
+  {
+    "agent_cli_command": "",
+    "agent_cli_provider": "codex",
+    "created_at": "2026-01-02T03:04:05.000Z",
+    "description": "Synthetic sort tie-break project.",
+    "id": 3,
+    "interval_seconds": 5,
+    "name": "Synthetic Gamma",
+    "phase": "idle",
+    "project_prompt": "",
+    "running": 0,
+    "updated_at": "2026-01-02T03:04:08.000Z",
+    "validation_command": "",
+    "workspace_path": "<fixture-workspace>/p03/gamma"
+  },
+  {
+    "agent_cli_command": "",
+    "agent_cli_provider": "codex",
+    "created_at": "2026-01-02T03:04:05.000Z",
+    "description": "Synthetic nullable/default coverage project.",
+    "id": 2,
+    "interval_seconds": 5,
+    "name": "Synthetic Beta",
+    "phase": "stopped",
+    "project_prompt": "",
+    "running": 0,
+    "updated_at": "2026-01-02T03:04:08.000Z",
+    "validation_command": "npm test",
+    "workspace_path": "<fixture-workspace>/p03/beta"
+  },
+  {
+    "agent_cli_command": "",
+    "agent_cli_provider": "claude",
+    "created_at": "2026-01-02T03:04:05.000Z",
+    "description": "",
+    "id": 1,
+    "interval_seconds": 9,
+    "name": "Synthetic Alpha",
+    "phase": "idle",
+    "project_prompt": "Synthetic project prompt.",
+    "running": 0,
+    "updated_at": "2026-01-02T03:04:07.000Z",
+    "validation_command": "",
+    "workspace_path": "<fixture-workspace>/p03/alpha"
+  }
+]

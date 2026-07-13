@@ -1,0 +1,327 @@
+{
+  "schemaVersion": 1,
+  "version": "p06-node-intake-golden-v1",
+  "normalization": {
+    "version": "p06-node-intake-normalization-v1",
+    "placeholders": {
+      "fixtureRoot": "<fixture-root>",
+      "utc": "<utc>",
+      "redacted": "<redacted>"
+    }
+  },
+  "snapshotContract": {
+    "topLevelFields": [
+      "activeOperation", "activeOperations", "activeProject", "activeProjectId", "attachments",
+      "events", "executors", "feedback", "lastOperation", "mcp", "plans", "projects",
+      "requirements", "scanSummary", "scans", "scripts", "state", "tasks", "terminals"
+    ],
+    "collectionOrder": {
+      "requirements": "updated_at DESC",
+      "feedback": "updated_at DESC",
+      "attachments": "created_at DESC, id DESC",
+      "linked_plans": "phase_index ASC, plan_id ASC",
+      "events": "id DESC LIMIT 80"
+    },
+    "postMutationReread": true
+  },
+  "scenarios": [
+    {
+      "id": "default-title-and-attachment",
+      "response": {
+        "ok": true,
+        "snapshot": {
+          "activeProjectId": 1,
+          "requirementIds": [2, 1],
+          "feedbackIds": [],
+          "attachmentIds": [1],
+          "planIds": []
+        }
+      },
+      "observations": {
+        "closedHistoricalId": 1,
+        "createdOpenId": 2,
+        "title": "Synthetic requirement",
+        "body": "  Synthetic requirement  \r\nBody   with   spaces  ",
+        "status": "open",
+        "accepted_at": null,
+        "generate_fail_count": 0,
+        "linked_plans": [],
+        "attachment": {
+          "legacyPublicMetadataFields": [
+            "created_at", "id", "mime_type", "original_name", "owner_id",
+            "owner_type", "project_id", "size"
+          ],
+          "privateStoragePathFieldPresent": true,
+          "privateIntegrityFieldPresent": true,
+          "id": 1,
+          "project_id": 1,
+          "owner_type": "requirement",
+          "owner_id": 2,
+          "original_name": "synthetic-diagram.png",
+          "mime_type": "image/png",
+          "size": 25,
+          "privateStoragePathRisk": {
+            "absolute": true,
+            "within_fixture_attachment_root": true
+          },
+          "hash_recorded": true,
+          "proposed_public_dto": {
+            "id": 1,
+            "display_name": "synthetic-diagram.png",
+            "size": 25,
+            "mime_type": "image/png",
+            "download_url": "/api/v1/attachments/1/content"
+          }
+        }
+      }
+    },
+    {
+      "id": "normalized-duplicate",
+      "response": {
+        "ok": false,
+        "error": {
+          "name": "DuplicateIntakeError",
+          "code": "DUPLICATE_INTAKE",
+          "message": "需求已存在：#2",
+          "intakeType": "requirement",
+          "existingId": 2,
+          "existing": {
+            "id": 2,
+            "project_id": 1,
+            "requirement_id": null,
+            "title": "Synthetic requirement",
+            "body": "  Synthetic requirement  \r\nBody   with   spaces  ",
+            "status": "open",
+            "linked_plan_id": null,
+            "accepted_at": null,
+            "created_at": "<utc>",
+            "updated_at": "<utc>"
+          }
+        }
+      },
+      "sideEffects": {
+        "intakeInserted": false,
+        "attachmentWritten": false,
+        "eventAdded": false,
+        "autoRunStarted": false
+      }
+    },
+    {
+      "id": "closed-duplicate",
+      "response": {"ok": true},
+      "observations": {
+        "historicalClosedId": 1,
+        "sameNormalizedOpenId": 2,
+        "closedDidNotBlock": true,
+        "differentSecondRequirementId": 3
+      }
+    },
+    {
+      "id": "feedback-association",
+      "response": {"ok": true},
+      "observations": {
+        "feedback": {
+          "id": 1,
+          "project_id": 1,
+          "requirement_id": 2,
+          "title": "Feedback first line",
+          "body": "Feedback first line\nFeedback body",
+          "status": "open",
+          "linked_plan_id": null,
+          "accepted_at": null,
+          "created_at": "<utc>",
+          "updated_at": "<utc>"
+        },
+        "duplicateSameGroup": {
+          "ok": false,
+          "error": {
+            "name": "DuplicateIntakeError",
+            "code": "DUPLICATE_INTAKE",
+            "message": "反馈已存在：#1",
+            "intakeType": "feedback",
+            "existingId": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "feedback-duplicate-groups",
+      "response": {"ok": true},
+      "observations": {
+        "sameTitleAndBody": true,
+        "firstRequirementId": 2,
+        "secondRequirementId": 3,
+        "differentRequirementAllowed": true,
+        "nullRequirementIsIndependentGroup": true
+      }
+    },
+    {
+      "id": "cross-project-feedback",
+      "response": {
+        "ok": false,
+        "error": {
+          "name": "Error",
+          "code": "LEGACY_NODE_ERROR",
+          "message": "关联需求不属于当前项目"
+        }
+      },
+      "sideEffects": {"feedbackInserted": false}
+    },
+    {
+      "id": "update-null-and-empty",
+      "response": {
+        "ok": true,
+        "snapshot": {
+          "activeProjectId": 1,
+          "requirementIds": [2, 3, 1],
+          "feedbackIds": [1, 2],
+          "attachmentIds": [1],
+          "planIds": []
+        }
+      },
+      "observations": {
+        "requirement": {
+          "id": 2,
+          "project_id": 1,
+          "requirement_id": null,
+          "title": "",
+          "body": "",
+          "status": "open",
+          "linked_plan_id": null,
+          "accepted_at": null,
+          "created_at": "<utc>",
+          "updated_at": "<utc>"
+        },
+        "feedback": {
+          "id": 1,
+          "project_id": 1,
+          "requirement_id": null,
+          "title": "Re-derived title",
+          "body": "Re-derived title\nUpdated feedback body",
+          "status": "open",
+          "linked_plan_id": null,
+          "accepted_at": null,
+          "created_at": "<utc>",
+          "updated_at": "<utc>"
+        },
+        "legacyUpdateDuplicateCheck": false,
+        "legacyFeedbackRequirementOwnershipCheck": false
+      }
+    },
+    {
+      "id": "accept-unaccept",
+      "response": {"ok": true},
+      "observations": {
+        "acceptedOnce": {
+          "targetType": "feedback",
+          "intakeType": "feedback",
+          "id": 1,
+          "accepted_at": "<utc>"
+        },
+        "acceptedTwice": {
+          "targetType": "feedback",
+          "intakeType": "feedback",
+          "id": 1,
+          "accepted_at": "<utc>"
+        },
+        "unaccepted": {
+          "targetType": "feedback",
+          "intakeType": "feedback",
+          "id": 1,
+          "accepted_at": null
+        },
+        "statusUnchanged": true,
+        "eventTypes": ["feedback.accepted", "feedback.accepted", "feedback.unaccepted"],
+        "secondAcceptedEventHasPreviousAcceptedAt": true
+      }
+    },
+    {
+      "id": "multi-phase-links",
+      "response": {"ok": true},
+      "observations": {
+        "links": [
+          {
+            "project_id": 1,
+            "intake_type": "requirement",
+            "intake_id": 2,
+            "plan_id": 1,
+            "phase_index": 1,
+            "phase_title": "Discover",
+            "created_at": "<utc>",
+            "updated_at": "<utc>"
+          },
+          {
+            "project_id": 1,
+            "intake_type": "requirement",
+            "intake_id": 2,
+            "plan_id": 2,
+            "phase_index": 2,
+            "phase_title": "Implement",
+            "created_at": "<utc>",
+            "updated_at": "<utc>"
+          }
+        ],
+        "legacyLinkedPlanId": 1,
+        "snapshotLinkedPlanIds": [1, 2],
+        "snapshotCurrentPlanId": 2,
+        "snapshotPhaseTitles": ["Discover", "Implement"]
+      }
+    },
+    {
+      "id": "delete-plan-keep-intake",
+      "response": {"ok": true},
+      "observations": {
+        "intakeStillExists": true,
+        "deletedPlanExists": false,
+        "remainingPlanIds": [2],
+        "legacyLinkedPlanId": 2,
+        "intakeDeleted": false,
+        "keepIntakesEventFlag": true
+      }
+    },
+    {
+      "id": "delete-requirement-cascade",
+      "response": {
+        "ok": true,
+        "snapshot": {
+          "activeProjectId": 1,
+          "requirementIds": [3, 1],
+          "feedbackIds": [3, 1, 2],
+          "attachmentIds": [],
+          "planIds": []
+        }
+      },
+      "observations": {
+        "requirementExists": false,
+        "linkedPlanExists": false,
+        "linkCount": 0,
+        "attachmentMetadataExists": false,
+        "attachmentBytesExist": false,
+        "relatedFeedbackRequirementId": null,
+        "databaseBatchAtomic": true,
+        "runtimeStopBeforeBatch": true,
+        "fileCleanupAfterCommit": true,
+        "deleteEvent": {
+          "type": "intake.deleted",
+          "meta": {
+            "intakeType": "requirement",
+            "intakeId": 2,
+            "planId": 2,
+            "planIds": [2],
+            "attachments": {"total": 1, "deleted": 1, "skipped": 0, "failed": 0}
+          }
+        }
+      }
+    }
+  ],
+  "attachmentPublicContract": {
+    "allowedFieldsOnly": ["id", "display_name", "size", "mime_type", "download_url"],
+    "forbiddenClasses": ["private storage path", "private integrity digest", "local file URL", "server absolute path"]
+  },
+  "handoff": {
+    "sqlJsClosed": true,
+    "databaseOwnerReleased": true,
+    "sameCopyConcurrentWritersAllowed": false,
+    "goCopyMustBeIndependentlyReset": true
+  }
+}

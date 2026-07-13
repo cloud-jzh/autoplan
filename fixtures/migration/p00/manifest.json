@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "version": "p00-fixtures-v1",
+  "generator": "scripts/migration-baseline/fixtures.js",
+  "defaultSeed": 20260711,
+  "fixedTime": "2026-01-02T03:04:05.000Z",
+  "defaultLargeCount": 250,
+  "outputPolicy": {
+    "default": "new directory under the real system temporary directory",
+    "authorizedOverride": "--output must be inside --allow-root; the authorized root must already exist",
+    "overwrite": "never",
+    "userData": "always denied",
+    "concurrency": "exclusive per-target lock plus staging-directory rename",
+    "cleanup": "only a generator-created .autoplan-p00-staging-* sibling is removed after failure"
+  },
+  "artifacts": [
+    "empty.sqlite",
+    "legacy-normal.sqlite",
+    "orphan-cross-project.sqlite",
+    "invalid-paths.sqlite",
+    "large.sqlite",
+    "invalid-path-cases.json",
+    "generated-manifest.json"
+  ],
+  "fixtures": [
+    {
+      "name": "empty",
+      "file": "empty.sqlite",
+      "category": "current empty database",
+      "schemaOutline": "effective current schema extracted from src/database.js, including ensureColumn additions and intake_plan_links",
+      "rowCounts": {"loop_state": 1, "settings": 1, "allBusinessTables": 0},
+      "expectedAudit": [
+        "schema matches the effective P003 inventory",
+        "no project or business rows",
+        "migration remains idempotent",
+        "no settings secret is generated"
+      ]
+    },
+    {
+      "name": "legacy-normal",
+      "file": "legacy-normal.sqlite",
+      "category": "ordinary early single-project database",
+      "schemaOutline": "loop_state plus pre-project requirements/feedback/attachments/plans/tasks/events/scan/chat/settings shapes",
+      "rowCounts": {"loop_state": 1, "requirements": 1, "feedback": 1, "attachments": 1, "plans": 1, "plan_tasks": 1, "events": 1, "scan_files": 1, "chat_messages": 1, "settings": 6},
+      "expectedAudit": [
+        "ensureColumn adds project, link, session, duration and backend fields",
+        "default project and project_state are created from loop_state",
+        "legacy rows receive the default project id",
+        "scan_files is rebuilt with project_id in its primary key",
+        "legacy chat settings create a global AI config with a fake non-working key value",
+        "unscoped chat message is attached to a default conversation"
+      ]
+    },
+    {
+      "name": "orphan-cross-project",
+      "file": "orphan-cross-project.sqlite",
+      "category": "orphan and cross-project data",
+      "schemaOutline": "current schema with deliberately inconsistent application-level relations and no foreign keys",
+      "rowCounts": {"settings": 1, "projects": 2, "project_states": 2, "requirements": 1, "plans": 1, "plan_tasks": 1, "attachments": 1, "intake_plan_links": 1, "conversations": 1, "chat_messages": 1},
+      "expectedAudit": [
+        "task references missing plan 999",
+        "attachment references missing owner 999",
+        "project 1 intake link references a project 2 plan",
+        "conversation references missing AI config 777",
+        "project 2 message references a project 1 conversation",
+        "audit reports orphan/cross-project risks without silently deleting rows"
+      ]
+    },
+    {
+      "name": "invalid-paths",
+      "file": "invalid-paths.sqlite",
+      "category": "invalid, traversal, missing and expired paths",
+      "schemaOutline": "current schema with synthetic relative traversal and reserved fake absolute Windows/POSIX paths",
+      "rowCounts": {"projects": 1, "project_states": 1, "requirements": 1, "attachments": 1, "scripts": 1, "scan_files": 1, "settings": 2},
+      "expectedAudit": [
+        "../../ traversal is rejected by realpath/allowed-root policy",
+        "reserved /__autoplan_fixture__ and Z:\\__autoplan_fixture__ paths never resolve to user data",
+        "missing script cwd and expired installer fail closed",
+        "no native open or process spawn occurs while auditing"
+      ]
+    },
+    {
+      "name": "large",
+      "file": "large.sqlite",
+      "category": "configurable deterministic volume",
+      "schemaOutline": "current schema with one project/state and N requirements plus N events",
+      "rowCounts": {"settings": 1, "projects": 1, "project_states": 1, "requirements": "largeCount", "events": "largeCount"},
+      "expectedAudit": [
+        "same seed and largeCount produce identical database bytes and hashes",
+        "different seed changes deterministic synthetic content",
+        "snapshot event limit and requirement ordering can be exercised",
+        "generation uses one in-memory transaction for bulk rows"
+      ]
+    }
+  ],
+  "pathCases": [
+    {"id":"relative-traversal","value":"../../outside/fixture.txt","expected":"reject outside allowed root"},
+    {"id":"missing-posix","value":"/__autoplan_fixture__/missing/file.txt","expected":"not found and never created"},
+    {"id":"missing-windows","value":"Z:\\__autoplan_fixture__\\missing.cmd","expected":"not found and never executed"},
+    {"id":"expired-installer","value":"Z:\\__autoplan_fixture__\\expired-installer.exe","expected":"installer open returns failure"},
+    {"id":"cross-project-path","value":"/__autoplan_fixture__/beta/private.txt","expected":"project alpha policy rejects project beta path"},
+    {"id":"symlink-policy","value":"workspace/link-to-outside","expected":"if a platform test creates this synthetic symlink, realpath containment rejects it; generator itself does not require symlink privileges"}
+  ],
+  "sanitization": {
+    "syntheticMarkers": ["Synthetic", "fixture-only", "__autoplan_fixture__", "example.invalid", "fake-hash"],
+    "forbidden": ["real api key", "real token", "real env value", "real userData path", "source database content", "machine-local username"],
+    "credentialPolicy": "fixture-not-a-key is intentionally non-working and must never match a provider credential format",
+    "pathPolicy": "only reserved impossible roots, traversal strings and generator-owned temporary output paths are allowed"
+  },
+  "cleanup": {
+    "automaticOnFailure": "remove only the newly created staging directory and lock",
+    "manualAfterSuccess": "remove the generated target directory under temp/authorized root after validation",
+    "databaseSafety": "no generated database is opened by AppDatabase or Electron and no existing database is overwritten"
+  }
+}

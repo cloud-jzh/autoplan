@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "fixture_kind": "p13b-mcp-cross-transport",
+  "synthetic": true,
+  "cases": [
+    {
+      "id": "frozen-catalog",
+      "transports": ["http", "stdio"],
+      "expected": {"all_frozen_tools_share_catalog": true, "operation_and_audit_post_state": "normalized"}
+    },
+    {
+      "id": "reused-idempotency-key",
+      "transports": ["http", "stdio"],
+      "expected": {"stable_error": "idempotency_key_reused", "mutation_count": 0}
+    },
+    {
+      "id": "unavailable-dependency",
+      "transports": ["http", "stdio"],
+      "expected": {"stable_error": "mcp_tool_unavailable", "mutation_count": 0}
+    },
+    {
+      "id": "authorization-and-project-boundary",
+      "transports": ["http", "stdio"],
+      "expected": {"stable_error": "mcp_tool_forbidden", "mutation_count": 0}
+    }
+  ]
+}

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useAutoplanClient, useHttpChatOperations } from '../lib/api/provider';
 import type {
   AiConfig,
   ChatConfig,
+  ChatDoneEvent,
   ChatKnownToolResult,
   ChatMessage,
   ChatStreamPhase,
@@ -11,8 +13,6 @@ import type {
 } from '../types';
 import { isChatConfigAvailableForSend } from '../utils/workspaceForms';
 import { useChatQueue } from './useChatQueue';
-
-/* ------------------------------------------------------------------ 辅助 ------------------------------------------------------------------ */
 
 function makeTempId(counter: { value: number }) {
   return -(counter.value += 1);
@@ -158,26 +158,15 @@ function formatRelativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString('zh-CN');
 }
 
-/* ------------------------------------------------------------------ Hook ------------------------------------------------------------------ */
-
-/**
- * Chat 对话模块状态管理（需求 #26 / #28）。
- *
- * 职责：
- * - 管理消息列表、流式状态、当前工具调用
- * - 管理多对话列表（conversations）与活跃对话切换
- * - mount 时加载全局 AI 配置与项目对话列表
- * - projectId / activeConversationId 变更时重新加载历史消息
- * - 订阅 onChatChunk / onChatDone 事件，实时拼装消息
- * - 切换对话时正确清理上一个对话的流式状态
- */
+/** Chat 对话、多会话、配置和流式事件状态管理（需求 #26 / #28）。 */
 export function useChat(projectId: number): WorkspaceChatState {
+  const client = useAutoplanClient();
+  const chatHttp = useHttpChatOperations();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [streamingToolCall, setStreamingToolCall] = useState<ChatToolCall | null>(null);
 
-  // 多对话状态（需求 #28）
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [aiConfigs, setAiConfigs] = useState<AiConfig[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
@@ -186,16 +175,15 @@ export function useChat(projectId: number): WorkspaceChatState {
     [activeConversationId, aiConfigs, conversations],
   );
 
-  // 思考状态（需求 #28）
   const [isThinking, setIsThinking] = useState(false);
   const [thinkingContent, setThinkingContent] = useState('');
   const [streamPhase, setStreamPhase] = useState<ChatStreamPhase>('idle');
 
-  // Refs 避免事件回调中的闭包过期问题
   const tempIdRef = useRef({ value: 0 });
   const projectIdRef = useRef(projectId);
   projectIdRef.current = projectId;
   const conversationsRequestRef = useRef(0);
+  const mountedRef = useRef(false);
   const stateRef = useRef({
     isStreaming: false,
     streamingContent: '',
@@ -208,6 +196,14 @@ export function useChat(projectId: number): WorkspaceChatState {
     streamPhase: 'idle' as ChatStreamPhase,
     projectId,
   });
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      conversationsRequestRef.current += 1;
+    };
+  }, []);
 
   const resetTransientState = useCallback(() => {
     stateRef.current.isStreaming = false;
@@ -240,20 +236,16 @@ export function useChat(projectId: number): WorkspaceChatState {
     [resetMessages, resetTransientState],
   );
 
-  /* ---- 加载对话列表与 AI 配置列表 ---- */
-
   const loadConversations = useCallback(async () => {
     if (!projectId) return;
     const requestId = (conversationsRequestRef.current += 1);
     const loadingProjectId = projectId;
     try {
       const [convs, cfgs] = await Promise.all([
-        window.autoplan.conversationList({ projectId }),
-        window.autoplan.aiConfigList().catch(() => [] as AiConfig[]),
+        client.conversationList({ projectId }),
+        client.aiConfigList().catch(() => [] as AiConfig[]),
       ]);
-      if (requestId !== conversationsRequestRef.current || loadingProjectId !== projectIdRef.current) {
-        return;
-      }
+      if (!mountedRef.current || requestId !== conversationsRequestRef.current || loadingProjectId !== projectIdRef.current) return;
       const normalizedConversations = normalizeConversationAiConfigBindings(convs, cfgs);
       setConversations(normalizedConversations);
       setAiConfigs(cfgs);
@@ -268,9 +260,10 @@ export function useChat(projectId: number): WorkspaceChatState {
     } catch {
       /* 加载失败忽略 */
     }
-  }, [projectId, resetActiveConversation]);
+  }, [client, projectId, resetActiveConversation]);
 
   const refreshAiConfigState = useCallback(async (eventConfigs?: AiConfig[]) => {
+    if (!mountedRef.current) return;
     if (eventConfigs) {
       setAiConfigs(eventConfigs);
       setConversations((current) => normalizeConversationAiConfigBindings(current, eventConfigs));
@@ -280,11 +273,12 @@ export function useChat(projectId: number): WorkspaceChatState {
       return;
     }
     if (!eventConfigs) {
-      const cfgs = await window.autoplan.aiConfigList().catch(() => [] as AiConfig[]);
+      const cfgs = await client.aiConfigList().catch(() => [] as AiConfig[]);
+      if (!mountedRef.current) return;
       setAiConfigs(cfgs);
       setConversations((current) => normalizeConversationAiConfigBindings(current, cfgs));
     }
-  }, [loadConversations]);
+  }, [client, loadConversations]);
 
   useEffect(() => {
     const previousProjectId = stateRef.current.projectId;
@@ -297,7 +291,7 @@ export function useChat(projectId: number): WorkspaceChatState {
       previousConversationId &&
       previousProjectId
     ) {
-      window.autoplan
+      client
         .chatStop({ projectId: previousProjectId, conversationId: previousConversationId })
         .catch(() => {});
     }
@@ -309,30 +303,34 @@ export function useChat(projectId: number): WorkspaceChatState {
     } else {
       void refreshAiConfigState();
     }
-  }, [projectId, loadConversations, refreshAiConfigState, resetActiveConversation]);
+  }, [client, projectId, loadConversations, refreshAiConfigState, resetActiveConversation]);
 
   useEffect(() => {
-    return window.autoplan.onAiConfigChanged((event) => {
+    let active = true;
+    const unsubscribe = client.onAiConfigChanged((event) => {
+      if (!active) return;
       void refreshAiConfigState(Array.isArray(event.configs) ? event.configs : undefined);
     });
-  }, [refreshAiConfigState]);
-
-  /* ---- activeConversationId 变更：重新加载历史 ---- */
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [client, refreshAiConfigState]);
 
   const loadHistory = useCallback(async (cid: number) => {
     if (!projectId) return;
     const loadingProjectId = projectId;
     try {
-      const history = await window.autoplan.chatHistory({ projectId: loadingProjectId, conversationId: cid });
-      if (stateRef.current.activeConversationId !== cid || projectIdRef.current !== loadingProjectId) return;
+      const history = await client.chatHistory({ projectId: loadingProjectId, conversationId: cid });
+      if (!mountedRef.current || stateRef.current.activeConversationId !== cid || projectIdRef.current !== loadingProjectId) return;
       setMessages(history);
       stateRef.current.messages = history;
     } catch {
-      if (stateRef.current.activeConversationId !== cid || projectIdRef.current !== loadingProjectId) return;
+      if (!mountedRef.current || stateRef.current.activeConversationId !== cid || projectIdRef.current !== loadingProjectId) return;
       setMessages([]);
       stateRef.current.messages = [];
     }
-  }, [projectId]);
+  }, [client, projectId]);
 
   const syncDoneConversationTitle = useCallback((conversationId: number | null, title: string | null | undefined) => {
     const nextTitle = String(title || '').trim();
@@ -358,12 +356,12 @@ export function useChat(projectId: number): WorkspaceChatState {
     }
   }, [activeConversationId, loadHistory, resetMessages]);
 
-  /* ---- 订阅流式事件 ---- */
-
   useEffect(() => {
     const s = stateRef;
+    let active = true;
 
-    const unsubChunk = window.autoplan.onChatChunk((event) => {
+    const onChunk = (event: { type: string; data: Record<string, unknown> }) => {
+      if (!active) return;
       const cur = s.current;
       if (!cur.activeConversationId && event.type !== 'status') return;
       if (
@@ -492,9 +490,10 @@ export function useChat(projectId: number): WorkspaceChatState {
         default:
           break;
       }
-    });
+    };
 
-    const unsubDone = window.autoplan.onChatDone((event) => {
+    const onDone = (event: ChatDoneEvent) => {
+      if (!active) return;
       const cur = s.current;
       const doneConversationId = normalizeDoneConversationId(event.conversationId);
       const cid = cur.activeConversationId;
@@ -532,25 +531,43 @@ export function useChat(projectId: number): WorkspaceChatState {
 
       // 重新加载历史以获取服务端真实 ID
       const historyProjectId = cur.projectId;
-      window.autoplan
+      client
         .chatHistory({ projectId: historyProjectId, conversationId: cid })
         .then((history) => {
-          if (stateRef.current.activeConversationId !== cid || stateRef.current.projectId !== historyProjectId) return;
+          if (!active || !mountedRef.current || stateRef.current.activeConversationId !== cid || stateRef.current.projectId !== historyProjectId) return;
           cur.messages = history;
           setMessages(history);
         })
         .catch(() => {
           /* 刷新失败保留本地消息 */
         });
-    });
+    };
+
+    if (chatHttp && projectId && activeConversationId) {
+      let stream: ReturnType<typeof chatHttp.connectChatEvents> | null = null;
+      stream = chatHttp.connectChatEvents(projectId, activeConversationId, {
+        onChunk,
+        onDone,
+        onResync: () => {
+          const conversationId = activeConversationId;
+          void loadHistory(conversationId).finally(() => stream?.completeResync());
+        },
+      });
+      return () => {
+        active = false;
+        stream?.();
+      };
+    }
+
+    const unsubChunk = client.onChatChunk(onChunk);
+    const unsubDone = client.onChatDone(onDone);
 
     return () => {
+      active = false;
       unsubChunk();
       unsubDone();
     };
-  }, [projectId, resetTransientState, syncDoneConversationTitle]);
-
-  /* ---- 组件卸载时停止未完成的生成 ---- */
+  }, [activeConversationId, chatHttp, client, loadHistory, projectId, resetTransientState, syncDoneConversationTitle]);
 
   useEffect(() => {
     return () => {
@@ -560,7 +577,7 @@ export function useChat(projectId: number): WorkspaceChatState {
           stateRef.current.streamPhase !== 'idle') &&
         stateRef.current.activeConversationId
       ) {
-        window.autoplan
+        client
           .chatStop({
             projectId: stateRef.current.projectId,
             conversationId: stateRef.current.activeConversationId,
@@ -568,9 +585,7 @@ export function useChat(projectId: number): WorkspaceChatState {
           .catch(() => {});
       }
     };
-  }, []);
-
-  /* ---- 操作 ---- */
+  }, [client]);
 
   const sendMessage = useCallback(
     async (message: string) => {
@@ -597,17 +612,17 @@ export function useChat(projectId: number): WorkspaceChatState {
       }
 
       try {
-        await window.autoplan.chatSend({
+        await client.chatSend({
           projectId,
           conversationId: cid,
           message: text,
         });
       } catch {
-        resetTransientState();
+        if (stateRef.current.projectId === projectId && stateRef.current.activeConversationId === cid) resetTransientState();
         /* 错误经 onChatDone 推送处理 */
       }
     },
-    [projectId, resetTransientState],
+    [client, projectId, resetTransientState],
   );
 
   const stopGeneration = useCallback(async () => {
@@ -615,24 +630,25 @@ export function useChat(projectId: number): WorkspaceChatState {
     const pid = stateRef.current.projectId || projectId;
     if (!cid || !pid) return;
     try {
-      await window.autoplan.chatStop({ projectId: pid, conversationId: cid });
+      await client.chatStop({ projectId: pid, conversationId: cid });
     } catch {
       /* 中止失败忽略 */
     }
-  }, [projectId]);
+  }, [client, projectId]);
 
   const clearSession = useCallback(async () => {
     const cid = stateRef.current.activeConversationId;
     const pid = stateRef.current.projectId || projectId;
     if (!cid || !pid) return;
     try {
-      await window.autoplan.chatClear({ projectId: pid, conversationId: cid });
+      await client.chatClear({ projectId: pid, conversationId: cid });
     } catch {
       /* 清空失败忽略 */
     }
+    if (stateRef.current.projectId !== pid || stateRef.current.activeConversationId !== cid) return;
     resetMessages();
     resetTransientState();
-  }, [projectId, resetMessages, resetTransientState]);
+  }, [client, projectId, resetMessages, resetTransientState]);
 
   /** 切换到指定对话 */
   const switchConversation = useCallback(
@@ -647,7 +663,7 @@ export function useChat(projectId: number): WorkspaceChatState {
         stateRef.current.activeConversationId
       ) {
         try {
-          await window.autoplan.chatStop({
+          await client.chatStop({
             projectId,
             conversationId: stateRef.current.activeConversationId,
           });
@@ -658,20 +674,20 @@ export function useChat(projectId: number): WorkspaceChatState {
 
       resetActiveConversation(cid);
     },
-    [projectId, resetActiveConversation],
+    [client, projectId, resetActiveConversation],
   );
 
   /** 创建新对话 */
   const createConversation = useCallback(async (options: CreateConversationOptions = {}) => {
     if (!projectId) return;
     try {
-      const cfgs = await window.autoplan.aiConfigList().catch(() => aiConfigs);
+      const cfgs = await client.aiConfigList().catch(() => aiConfigs);
       const selectedConfig = selectPreferredAiConfig(cfgs);
-      const conv = await window.autoplan.conversationCreate({
+      const conv = await client.conversationCreate({
         projectId,
         aiConfigId: selectedConfig?.id ?? null,
       });
-      if (projectIdRef.current !== projectId) return;
+      if (!mountedRef.current || projectIdRef.current !== projectId) return;
       setAiConfigs(cfgs);
       setConversations((prev) => [conv, ...prev]);
       if (options.activate !== false) {
@@ -680,7 +696,7 @@ export function useChat(projectId: number): WorkspaceChatState {
     } catch {
       /* 创建失败忽略 */
     }
-  }, [aiConfigs, projectId, resetActiveConversation]);
+  }, [aiConfigs, client, projectId, resetActiveConversation]);
 
   /** 删除对话 */
   const deleteConversation = useCallback(
@@ -692,23 +708,23 @@ export function useChat(projectId: number): WorkspaceChatState {
             stateRef.current.awaitingResponse ||
             stateRef.current.streamPhase !== 'idle')
         ) {
-          await window.autoplan.chatStop({ projectId, conversationId: cid }).catch(() => {});
+          await client.chatStop({ projectId, conversationId: cid }).catch(() => {});
         }
-        await window.autoplan.conversationDelete({ projectId, conversationId: cid });
+        await client.conversationDelete({ projectId, conversationId: cid });
         await loadConversations();
       } catch {
         /* 删除失败忽略 */
       }
     },
-    [loadConversations, projectId],
+    [client, loadConversations, projectId],
   );
 
   /** 重命名对话 */
   const renameConversation = useCallback(
     async (cid: number, title: string) => {
       try {
-        await window.autoplan.conversationUpdate({ projectId, conversationId: cid, title });
-        if (projectIdRef.current !== projectId) return;
+        await client.conversationUpdate({ projectId, conversationId: cid, title });
+        if (!mountedRef.current || projectIdRef.current !== projectId) return;
         setConversations((prev) =>
           prev.map((c) => (c.id === cid ? { ...c, title } : c)),
         );
@@ -716,23 +732,23 @@ export function useChat(projectId: number): WorkspaceChatState {
         /* 重命名失败忽略 */
       }
     },
-    [projectId],
+    [client, projectId],
   );
 
   /** 切换当前对话绑定的 AI 配置 */
   const updateConversationAiConfig = useCallback(async (configId: number | null) => {
     const cid = stateRef.current.activeConversationId;
     if (!cid || !projectId) return;
-    const updated = await window.autoplan.conversationUpdate({
+    const updated = await client.conversationUpdate({
       projectId,
       conversationId: cid,
       aiConfigId: configId,
     });
-    if (stateRef.current.activeConversationId !== cid || projectIdRef.current !== projectId) return;
+    if (!mountedRef.current || stateRef.current.activeConversationId !== cid || projectIdRef.current !== projectId) return;
     setConversations((prev) =>
       prev.map((conversation) => (conversation.id === cid ? updated : conversation)),
     );
-  }, [projectId]);
+  }, [client, projectId]);
 
   /** 更新当前会话所绑定 AI 配置的思考深度 */
   const updateActiveAiConfigThinkingDepth = useCallback(
@@ -743,15 +759,16 @@ export function useChat(projectId: number): WorkspaceChatState {
         stateRef.current.activeConversationId,
       );
       if (!targetConfig) return;
-      const updated = await window.autoplan.aiConfigUpdate({
+      const updated = await client.aiConfigUpdate({
         configId: targetConfig.id,
         thinkingDepth,
       });
+      if (!mountedRef.current) return;
       setAiConfigs((prev) =>
         prev.map((item) => (item.id === updated.id ? updated : item)),
       );
     },
-    [aiConfigs, conversations],
+    [aiConfigs, client, conversations],
   );
 
   // 队列发送（需求 #37）：组合队列状态 hook（会话隔离快照 + 管理动作）

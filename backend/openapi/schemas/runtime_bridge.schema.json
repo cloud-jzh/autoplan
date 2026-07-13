@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autoplan.local/schemas/runtime-bridge.schema.json",
+  "title": "AutoPlan Runtime Bridge",
+  "$defs": {
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "command", "project_id"],
+      "properties": {
+        "version": { "const": "v1" },
+        "command": {
+          "type": "string",
+          "enum": [
+            "loop.start", "loop.stop", "loop.run_once",
+            "plan.generate", "plan.parse", "plan.run", "plan.stop", "plan.resume", "plan.reexecute", "plan.recreate", "plan.validate",
+            "task.run", "task.run_batches", "task.stop",
+            "chat.send", "chat.stop", "chat.pump", "chat.generate_title", "chat.clear",
+            "script.run", "script.stop", "executor.run", "executor.stop", "executor.action",
+            "mcp.start", "mcp.stop", "terminal.configure", "update.configure"
+          ]
+        },
+        "project_id": { "type": "integer", "format": "int64", "minimum": 0 },
+        "plan_id": { "type": "integer", "format": "int64", "minimum": 1 },
+        "task_id": { "type": "integer", "format": "int64", "minimum": 1 },
+        "intake_id": { "type": "integer", "format": "int64", "minimum": 1 },
+        "conversation_id": { "type": "integer", "format": "int64", "minimum": 1 },
+        "script_id": { "type": "integer", "format": "int64", "minimum": 1 },
+        "executor_id": { "type": "integer", "format": "int64", "minimum": 1 },
+        "expected_version": { "type": "integer", "format": "int64", "minimum": 1 },
+        "expected_updated_at": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "action": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$" },
+        "chat": { "$ref": "#/$defs/chat_input" },
+        "batches": { "type": "array", "minItems": 1, "maxItems": 64, "items": { "$ref": "#/$defs/task_batch" } },
+        "terminal": { "$ref": "#/$defs/terminal_input" },
+        "updates": { "$ref": "#/$defs/update_input" }
+      }
+    },
+    "chat_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content"],
+      "properties": {
+        "content": { "type": "string", "minLength": 1, "maxLength": 131072, "writeOnly": true }
+      }
+    },
+    "task_batch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_ids"],
+      "properties": {
+        "task_ids": { "type": "array", "minItems": 1, "maxItems": 100, "uniqueItems": true, "items": { "type": "integer", "format": "int64", "minimum": 1 } }
+      }
+    },
+    "terminal_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default_profile": { "type": "string", "maxLength": 128 },
+        "initial_cwd": { "type": "string", "maxLength": 4096, "writeOnly": true },
+        "font_size": { "type": "integer", "minimum": 6, "maximum": 48 },
+        "scrollback_limit": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "retain_on_exit": { "type": "boolean" },
+        "confirm_before_kill": { "type": "boolean" }
+      }
+    },
+    "update_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "auto_check": { "type": "boolean" },
+        "interval_minutes": { "type": "integer", "minimum": 5, "maximum": 10080 }
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation_id", "type", "status", "request_id", "accepted_at"],
+      "properties": {
+        "operation_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "type": { "type": "string", "maxLength": 64 },
+        "status": { "type": "string", "enum": ["accepted", "queued", "running", "completed", "cancelled"] },
+        "request_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$" },
+        "accepted_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation"],
+      "properties": {
+        "operation": { "$ref": "#/$defs/operation" },
+        "snapshot": { "$ref": "./snapshot.schema.json" }
+      }
+    }
+  }
+}

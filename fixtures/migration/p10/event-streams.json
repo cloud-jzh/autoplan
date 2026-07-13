@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "fixture_kind": "p10-event-stream-fault-matrix",
+  "streams": [
+    {
+      "id": "initial_replay_then_live",
+      "project_id": 7,
+      "last_event_id": null,
+      "entries": [
+        {"sse_id": "1", "event": "operation.queued", "data": {"schema_version": 1, "event_class": "operation", "event_id": "1", "project_id": 7, "project_revision": 1, "type": "operation.queued", "operation_id": "operation-7", "request_id": "request-queued", "occurred_at": "2026-07-12T09:00:00Z", "payload": {"status": "queued"}}},
+        {"sse_id": "2", "event": "operation.running", "data": {"schema_version": 1, "event_class": "operation", "event_id": "2", "project_id": 7, "project_revision": 2, "type": "operation.running", "operation_id": "operation-7", "request_id": "request-running", "occurred_at": "2026-07-12T09:00:01Z", "payload": {"status": "running"}}}
+      ],
+      "expected": {"action": "apply", "event_id": "2", "project_revision": 2}
+    },
+    {
+      "id": "reconnect_drops_duplicate",
+      "project_id": 7,
+      "last_event_id": "2",
+      "entries": [
+        {"sse_id": "2", "event": "operation.running", "data": {"schema_version": 1, "event_class": "operation", "event_id": "2", "project_id": 7, "project_revision": 2, "type": "operation.running", "operation_id": "operation-7", "request_id": "request-running", "occurred_at": "2026-07-12T09:00:01Z", "payload": {"status": "running"}}},
+        {"sse_id": "3", "event": "operation.succeeded", "data": {"schema_version": 1, "event_class": "operation", "event_id": "3", "project_id": 7, "project_revision": 3, "type": "operation.succeeded", "operation_id": "operation-7", "request_id": "request-finished", "occurred_at": "2026-07-12T09:00:02Z", "payload": {"status": "succeeded"}}}
+      ],
+      "expected": {"action": "apply", "event_id": "3", "project_revision": 3, "terminal": true}
+    },
+    {
+      "id": "revision_gap_requires_snapshot_resync",
+      "project_id": 7,
+      "last_event_id": "3",
+      "entries": [
+        {"sse_id": "5", "event": "operation.failed", "data": {"schema_version": 1, "event_class": "operation", "event_id": "5", "project_id": 7, "project_revision": 5, "type": "operation.failed", "operation_id": "operation-8", "request_id": "request-failed", "occurred_at": "2026-07-12T09:00:03Z", "payload": {"status": "failed"}}}
+      ],
+      "expected": {"action": "resync", "reason": "revision_gap"}
+    },
+    {
+      "id": "retention_control_requires_snapshot_resync",
+      "project_id": 7,
+      "last_event_id": "1",
+      "entries": [
+        {"sse_id": null, "event": "resync_required", "data": {"schema_version": 1, "event_class": "control", "event_id": null, "project_id": 7, "project_revision": null, "type": "resync_required", "operation_id": null, "request_id": null, "occurred_at": "2026-07-12T09:00:04Z", "payload": {"reason": "history_expired"}}}
+      ],
+      "expected": {"action": "resync", "reason": "history_expired"}
+    },
+    {
+      "id": "cross_project_event_requires_snapshot_resync",
+      "project_id": 7,
+      "last_event_id": "3",
+      "entries": [
+        {"sse_id": "4", "event": "operation.running", "data": {"schema_version": 1, "event_class": "operation", "event_id": "4", "project_id": 8, "project_revision": 4, "type": "operation.running", "operation_id": "operation-8", "request_id": "request-other", "occurred_at": "2026-07-12T09:00:05Z", "payload": {"status": "running"}}}
+      ],
+      "expected": {"action": "resync", "reason": "project_mismatch"}
+    },
+    {
+      "id": "heartbeat_does_not_advance_cursor",
+      "project_id": 7,
+      "last_event_id": "3",
+      "entries": [
+        {"sse_id": null, "event": "heartbeat", "data": {"schema_version": 1, "event_class": "control", "event_id": null, "project_id": 7, "project_revision": null, "type": "heartbeat", "operation_id": null, "request_id": null, "occurred_at": "2026-07-12T09:00:06Z", "payload": {}}}
+      ],
+      "expected": {"action": "ignore", "event_id": "3", "project_revision": 3}
+    },
+    {
+      "id": "invalid_cursor_control_requires_snapshot_resync",
+      "project_id": 7,
+      "last_event_id": "1",
+      "entries": [
+        {"sse_id": null, "event": "resync_required", "data": {"schema_version": 1, "event_class": "control", "event_id": null, "project_id": 7, "project_revision": null, "type": "resync_required", "operation_id": null, "request_id": null, "occurred_at": "2026-07-12T09:00:07Z", "payload": {"reason": "last_event_id_invalid"}}}
+      ],
+      "expected": {"action": "resync", "reason": "last_event_id_invalid"}
+    },
+    {
+      "id": "future_cursor_control_requires_snapshot_resync",
+      "project_id": 7,
+      "last_event_id": "999",
+      "entries": [
+        {"sse_id": null, "event": "resync_required", "data": {"schema_version": 1, "event_class": "control", "event_id": null, "project_id": 7, "project_revision": null, "type": "resync_required", "operation_id": null, "request_id": null, "occurred_at": "2026-07-12T09:00:08Z", "payload": {"reason": "last_event_id_future"}}}
+      ],
+      "expected": {"action": "resync", "reason": "last_event_id_future"}
+    },
+    {
+      "id": "slow_consumer_control_requires_snapshot_resync",
+      "project_id": 7,
+      "last_event_id": "3",
+      "entries": [
+        {"sse_id": null, "event": "resync_required", "data": {"schema_version": 1, "event_class": "control", "event_id": null, "project_id": 7, "project_revision": null, "type": "resync_required", "operation_id": null, "request_id": null, "occurred_at": "2026-07-12T09:00:09Z", "payload": {"reason": "slow_consumer"}}}
+      ],
+      "expected": {"action": "resync", "reason": "slow_consumer"}
+    },
+    {
+      "id": "replay_live_boundary_keeps_terminal_event",
+      "project_id": 7,
+      "last_event_id": "3",
+      "entries": [
+        {"sse_id": "4", "event": "operation.running", "data": {"schema_version": 1, "event_class": "operation", "event_id": "4", "project_id": 7, "project_revision": 4, "type": "operation.running", "operation_id": "operation-9", "request_id": "request-live-running", "occurred_at": "2026-07-12T09:00:10Z", "payload": {"status": "running"}}},
+        {"sse_id": "5", "event": "operation.interrupted", "data": {"schema_version": 1, "event_class": "operation", "event_id": "5", "project_id": 7, "project_revision": 5, "type": "operation.interrupted", "operation_id": "operation-9", "request_id": "request-live-terminal", "occurred_at": "2026-07-12T09:00:11Z", "payload": {"status": "interrupted"}}}
+      ],
+      "expected": {"action": "apply", "event_id": "5", "project_revision": 5, "terminal": true}
+    },
+    {
+      "id": "operation_filter_allows_project_revision_gap",
+      "scope": "operation",
+      "project_id": 7,
+      "last_event_id": "3",
+      "entries": [
+        {"sse_id": "5", "event": "operation.succeeded", "data": {"schema_version": 1, "event_class": "operation", "event_id": "5", "project_id": 7, "project_revision": 5, "type": "operation.succeeded", "operation_id": "operation-7", "request_id": "request-filtered-terminal", "occurred_at": "2026-07-12T09:00:12Z", "payload": {"status": "succeeded"}}}
+      ],
+      "expected": {"action": "apply", "event_id": "5", "project_revision": 5, "terminal": true}
+    },
+    {
+      "id": "service_shutdown_retries_without_false_snapshot",
+      "project_id": 7,
+      "last_event_id": "3",
+      "entries": [],
+      "expected": {"action": "retry", "event_id": "3", "project_revision": 3, "retry_limit_ms": 10000}
+    },
+    {
+      "id": "unknown_event_requires_snapshot_resync",
+      "project_id": 7,
+      "last_event_id": "3",
+      "entries": [
+        {"sse_id": "4", "event": "operation.unknown", "data": {"schema_version": 1, "event_class": "operation", "event_id": "4", "project_id": 7, "project_revision": 4, "type": "operation.unknown", "operation_id": "operation-unknown", "request_id": "request-unknown", "occurred_at": "2026-07-12T09:00:13Z", "payload": {"status": "unknown"}}}
+      ],
+      "expected": {"action": "resync", "reason": "invalid_event"}
+    }
+  ]
+}

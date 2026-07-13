@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "kind": "p13b-authorized-mcp-fixture",
+  "authorized_copy": true,
+  "contains_real_userdata": false,
+  "fixture_data": "synthetic MCP cross-transport contract cases only"
+}

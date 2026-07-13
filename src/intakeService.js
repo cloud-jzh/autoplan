@@ -1,9 +1,11 @@
 const { saveAttachments } = require('./attachments');
 const { nowIso } = require('./database');
+const { assertNodeMutationAllowed } = require('./data/databaseOwnerGuard');
 const { nextIntakeAgentCliConfig, nextIntakePlanGenerationConfig } = require('./loopService');
 
 class IntakeService {
   constructor(options = {}) {
+    assertNodeMutationAllowed();
     this.db = options.db;
     this.loop = options.loop;
     this.attachmentsRoot = options.attachmentsRoot;

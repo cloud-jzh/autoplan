@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "version": "p07-plan-expected-errors-v1",
+  "normalization": {
+    "request_id": "<request-id>",
+    "message": "catalog-only",
+    "details": "transport-safe-only"
+  },
+  "scenarios": {
+    "accept-pending-plan-rejected": { "node": "INVALID_PLAN", "go": "invalid_plan", "http": "invalid_plan", "retryable": false },
+    "accept-running-task-rejected": { "node": "INVALID_TASK", "go": "invalid_task", "http": "invalid_task", "retryable": false },
+    "cross-project-target-rejected": { "node": "PROJECT_MISMATCH", "go": "project_mismatch", "http": "not_found", "retryable": false },
+    "missing-target-rejected": { "node": "NOT_FOUND", "go": "not_found", "http": "not_found", "retryable": false },
+    "stale-reorder-rejected": { "node": "VERSION_CONFLICT", "go": "version_conflict", "http": "precondition_failed", "retryable": false },
+    "delete-running-plan-protected": { "node": "RELATION_CONFLICT", "go": "relation_conflict", "http": "relation_conflict", "retryable": false },
+    "delete-plan-with-running-task-protected": { "node": "RELATION_CONFLICT", "go": "relation_conflict", "http": "relation_conflict", "retryable": false },
+    "long-action-disabled": { "node": "NOT_IMPLEMENTED", "go": "not_implemented", "http": "not_implemented", "retryable": false }
+  }
+}

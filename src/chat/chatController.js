@@ -13,6 +13,7 @@
  */
 
 const { nowIso } = require('../database');
+const { assertNodeMutationAllowed } = require('../data/databaseOwnerGuard');
 const { resolveAiConfigForConversation } = require('./aiConfigService');
 const { createChatQueue } = require('./chatQueue');
 const { runCodexChat: _defaultRunCodexChat } = require('./codexChatBackend');
@@ -34,7 +35,13 @@ const MAX_MESSAGES = 20;
  * @param {object} [deps.codexChatBackend] - 可注入 { runCodexChat }，测试用；缺省使用 ./codexChatBackend
  * @returns {{send:Function, stop:Function, getHistory:Function, clearHistory:Function, getConfig:Function, invalidateConfig:Function, isActive:Function}}
  */
-function createChatController({ db, llmClient, chatTools, conversationId, projectId, workspacePath, onEvent, onDone, onQueue, codexBackendConfig, codexChatBackend }) {
+function createChatController({ db, llmClient, chatTools, conversationId, projectId, workspacePath, onEvent, onDone, onQueue, codexBackendConfig, codexChatBackend, legacyAdapterDisabled = false }) {
+  if (legacyAdapterDisabled) {
+    const error = new Error('legacy_adapter_disabled');
+    error.code = 'legacy_adapter_disabled';
+    throw error;
+  }
+  assertNodeMutationAllowed();
   conversationId = normalizeRequiredId(conversationId, 'conversationId');
   projectId = normalizeRequiredId(projectId, 'projectId');
   requireConversationForProject(db, conversationId, projectId);
@@ -45,7 +52,7 @@ function createChatController({ db, llmClient, chatTools, conversationId, projec
 
   // 会话级消息队列（需求 #37）：快照优先走主进程专用通道（onQueue → chat:queue），否则回退 queue_update 事件
   const emitQueue = (snap) => (typeof onQueue === 'function' ? onQueue(snap) : emitEvent({ type: 'queue_update', data: snap }));
-  const queue = createChatQueue({ db, conversationId, projectId, emit: emitQueue });
+  const queue = createChatQueue({ db, conversationId, projectId, emit: emitQueue, legacyAdapterDisabled });
 
   let abortController = null;
   let active = false;

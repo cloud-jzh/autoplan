@@ -1,0 +1,127 @@
+{
+  "title": "P00：Go sidecar 迁移可验证基线与边界冻结",
+  "summary": "依据 D:\\docs\\autoplan-go-backend-separation-plan.md v1.0（2026-07-11）及持久化附件 C:\\Users\\98000\\AppData\\Roaming\\autoplan\\data\\attachments\\requirement\\7\\1783710392772-387701ce3b10-c12198aaf47c-autoplan-go-backend-separation-plan.md（SHA256 c12198aaf47cd3bef0a1b79b8d3e73363a52da45a01b2b7a4c1597f11e5a93ef），在不改变业务行为、不改写 UI/状态管理且不接触真实 Electron userData 的前提下，把当前 Electron/Node/sql.js 单体盘点为可机器校验、可复现、可审计的 P00 迁移基线。交付范围包括全部 renderer→preload→IPC→handler→业务模块链路及事件的唯一归属矩阵，数据库/文件/CLI/进程依赖和敏感字段清单，兼容 DTO、snapshot、状态机与副作用契约，五类脱敏 fixture 生成方式，check/test/build/smoke 原始结果与既有红灯冻结，本机 Go sidecar、单 writer、REST/SSE/WebSocket、共享 application service、文件安全边界、功能开关和回滚不可逆点 ADR，以及 P00→P15 依赖与三项高风险门禁。",
+  "tasks": [
+    {
+      "title": "建立 IPC、renderer 调用与事件能力的唯一归属矩阵及漂移检查",
+      "scope": [
+        "scripts/migration-baseline/inventory-ipc.js",
+        "scripts/migration-baseline/inventory-ipc.test.js",
+        "docs/migration/p00/capability-matrix.json",
+        "docs/migration/p00/capability-matrix.md"
+      ],
+      "acceptance": [
+        "盘点 src/renderer/types.ts 的 AutoplanApi/DTO、src/preload.js 的全部暴露方法和订阅、src/main.js 与 src/terminal/terminalIpc.js 的全部 handler、src/renderer/hooks/useSnapshot.ts 以及 renderer 内所有直接 window.autoplan 调用，矩阵逐项给出“前端方法/事件 → IPC channel → handler → 业务模块 → DTO/副作用 → 目标 Go API、DesktopBridge、临时 IPC 或废弃 → 迁移阶段/feature flag/回退”。",
+        "loop:update、loop:patch、Chat、AI/Claude 配置变更、Terminal 等所有主进程到 renderer 的事件均有生产者、消费者、载荷和顺序语义；preload 暴露项、main/terminal handler、renderer 调用和 IPC 事件不存在重复归属或未分类能力。",
+        "归属明确区分业务 API 与目录/文件选择、打开文件/目录/外链、更新安装、应用版本和 sidecar 生命周期等 DesktopBridge 能力，并保持未迁移业务走临时 IPC 的可回退路径。",
+        "漂移检查从源码重新提取能力集合并与受控清单比对；新增、删除、改名、无 handler、无 preload 映射或无 renderer 归属均明确失败，且工具本身不修改 src 业务代码。"
+      ]
+    },
+    {
+      "title": "冻结 DTO、snapshot、状态机、错误、事件顺序与业务副作用契约",
+      "scope": [
+        "scripts/migration-baseline/contract-baseline.js",
+        "scripts/migration-baseline/contract-baseline.test.js",
+        "docs/migration/p00/contract-baseline.json",
+        "docs/migration/p00/contract-baseline.md"
+      ],
+      "acceptance": [
+        "从现有类型、snapshot 组装、IPC 归一化和状态转换中冻结 snake_case 字段、nullability、枚举、默认值、排序、UTC 时间格式、ID 类型/生成规则和兼容 mutation 返回 AppSnapshot 的行为，不引入 DTO 重命名或前端状态模型重构。",
+        "记录项目、Intake、Plan/Task/Acceptance、Loop/Operation、脚本/执行器、Chat/MCP、Terminal 的成功与失败语义，包括稳定错误码候选、当前错误文本边界、幂等行为、取消/重试/恢复状态以及持久化、文件写入、进程启动/终止和事件发送等副作用。",
+        "冻结全量 snapshot 与增量 patch 的项目过滤、合并、批处理、revision/重同步目标语义，以及 loop、任务、Chat 和 Terminal 事件的先后顺序、终态和断线恢复约束。",
+        "机器可读契约与可读说明能够被漂移测试复核；缺字段、默认值变化、排序变化、事件乱序或敏感值出现在契约样本中均明确失败。"
+      ]
+    },
+    {
+      "title": "审计数据库 Schema、回填、敏感列及模块外部依赖",
+      "scope": [
+        "scripts/migration-baseline/inventory-dependencies.js",
+        "scripts/migration-baseline/inventory-dependencies.test.js",
+        "docs/migration/p00/database-and-dependencies.json",
+        "docs/migration/p00/database-and-dependencies.md"
+      ],
+      "acceptance": [
+        "完整提取 src/database.js 中所有 CREATE TABLE、ensureColumn、表重建/ALTER、初始化、兼容迁移和 backfill，给出最终有效列、默认值、空值、索引/关系、孤儿风险、写入路径和无法从初始 CREATE TABLE 单独还原的结构。",
+        "逐域盘点 Database、Loop、Intake、Chat、MCP、脚本、执行器和 Terminal 对表、文件系统、工作目录、附件/计划文件、CLI、shell、child process、PTY、网络监听与 Electron 原生能力的直接依赖，并标注读取、写入、删除、启动、停止和事务边界。",
+        "清单标出 api_key、auth_token、Claude/MCP token、env_vars、命令参数、日志、stored_path、workspace_path 等敏感列或路径，规定 API、日志、事件与 fixture 的脱敏/禁止回传策略以及安全默认关闭失败规则。",
+        "审计工具以源码集合和受控注解双向校验；新增表、列、backfill、直接数据库访问、文件/进程依赖或敏感字段未分类时失败。"
+      ]
+    },
+    {
+      "title": "提供五类脱敏数据库与异常路径 fixture 生成器",
+      "scope": [
+        "scripts/migration-baseline/fixtures.js",
+        "scripts/migration-baseline/fixtures.test.js",
+        "fixtures/migration/p00/manifest.json",
+        "fixtures/migration/p00/README.md"
+      ],
+      "acceptance": [
+        "可确定性生成空库、普通旧库、含跨项目/缺失父记录等孤儿数据的库、异常/越界/失效路径样本和可配置大数据量样本，并记录 seed、schema 轮廓、表行数、预期审计结果与清理方式。",
+        "普通旧库覆盖 CREATE TABLE 早期形态、ensureColumn 和 backfill 所需输入；孤儿与异常样本覆盖缺少外键约束、无效附件/计划路径、路径穿越、符号链接或 Windows 路径边界，且不使用真实工作区或真实 Electron userData。",
+        "夹具中的名称、正文、密钥、token、env_vars 和路径全部为显式假值；测试扫描生成物，禁止出现本机用户名、真实 userData 路径、来源数据库内容或可用凭据。",
+        "生成器默认只写系统临时目录并拒绝已知 Electron userData、仓库外未授权绝对路径和正在被 Node/sql.js 或其他进程使用的目标；不提交真实数据库副本，生成失败时安全关闭且不覆盖现有文件。"
+      ]
+    },
+    {
+      "title": "落地可复现的 P00 命令基线、既有红灯签名与证据产物",
+      "scope": [
+        "package.json",
+        "scripts/migration-baseline/run-baseline.js",
+        "scripts/migration-baseline/run-baseline.test.js",
+        "docs/migration/p00/baseline-expectations.json",
+        "docs/migration/p00/baseline-results.md",
+        "docs/migration/p00/evidence/manifest.json"
+      ],
+      "acceptance": [
+        "在开始和结束时记录 git status，实际依次运行 npm.cmd run check、npm.cmd test、npm.cmd run build 及经确认使用临时目录/临时库的 npm.cmd run smoke，为每条命令保存完整命令、起止时间、退出码、stdout/stderr 日志、运行环境摘要、受影响文件和证据哈希。",
+        "npm.cmd run check 与 npm.cmd test 的当前非零项按源码/类型、测试断言、环境或依赖等原因精确分类并冻结稳定失败签名；验证器只接受同一既有失败集合且本阶段专项测试全绿，任何新增、消失但未处置或内容漂移的红灯都失败，不使用 skip、only、放宽断言或吞掉退出码。",
+        "运行 npm.cmd run build 前明确记录其会写入被 .gitignore 忽略的 dist，并在前后证据中列出 dist 与工作树变化；基线驱动器不得自动 reset、checkout、删除或覆盖用户改动。",
+        "smoke 明确使用 scripts/smoke-test.js 的系统临时目录与临时 autoplan.sqlite，不启动真实 Electron userData，不并发打开同一数据库 writer，不调用真实 CLI/密钥；不满足安全前置条件时输出 blocked 证据并停止后续高风险步骤。",
+        "提供 migration:p00:verify 命令，复核来源哈希、清单漂移、契约、fixture 安全、专项测试、四条基线命令及证据完整性；汇总报告同时保留每个子命令的真实退出码，不能用总命令成功掩盖既有失败。"
+      ]
+    },
+    {
+      "title": "记录 sidecar、单 writer、传输、安全边界、功能开关与回滚 ADR",
+      "scope": [
+        "docs/migration/p00/adr/0001-local-go-sidecar.md",
+        "docs/migration/p00/adr/0002-single-database-writer.md",
+        "docs/migration/p00/adr/0003-rest-sse-websocket-and-application-service.md",
+        "docs/migration/p00/adr/0004-contract-files-flags-and-rollback.md"
+      ],
+      "acceptance": [
+        "ADR 固定本机仅监听 127.0.0.1 的 Go sidecar、Electron 薄壳和 Go 模块化单体方向，明确 Electron 仅负责窗口/应用生命周期、sidecar 启停、原生选择/打开、更新与安装。",
+        "单 writer ADR 明确开发只使用脱敏 fixture、临时库或显式副本，禁止 Node/sql.js 与 Go 同写同一数据库；写所有权切换前停止 Node writer、备份/审计/校验，切换后 Go 是唯一 owner，旧 Node 不得热打开新库。",
+        "传输 ADR 固定 REST/JSON 负责查询/CRUD/命令提交、SSE 负责 snapshot/patch/Operation/Chat/配置事件、WebSocket 负责 Terminal，且 HTTP、MCP、UI 必须复用同一 application service 和授权/文件策略。",
+        "兼容与安全 ADR 固定现有 DTO、snake_case、snapshot、状态机和副作用，定义工作区 realpath/白名单边界、localhost 会话与 Origin 校验、密钥/token/env_vars/未授权绝对路径不进入 API/日志/事件/夹具，并采用默认拒绝。",
+        "ADR 给出按域 feature flag、观测窗口、回退触发条件、回退步骤和不可逆点；明确首笔 Go 正式写入后不能直接切回 Node writer，以及删除旧 Node writer 前必须满足的证据和恢复条件。"
+      ]
+    },
+    {
+      "title": "形成 P00→P15 依赖路线图、阶段门禁与基线索引",
+      "scope": [
+        "docs/migration/p00/README.md",
+        "docs/migration/p00/p00-p15-roadmap.md",
+        "docs/migration/p00/evidence/README.md"
+      ],
+      "acceptance": [
+        "将来源规划稿的适配层、Go 骨架/契约、持久化、原子切换、Loop/Operation、Chat/MCP/Terminal、Electron 收缩与旧实现清理细化为 P00→P15 单向依赖图，每阶段列出前置、交付物、feature flag、退出条件、回退点和禁止跨越的边界。",
+        "明确三个高风险门禁：真实 Electron userData 切换、首笔 Go 正式写入、删除旧 Node writer；每个门禁都有负责人确认项、备份/完整性/单实例证据、失败回滚步骤和不可逆点说明。",
+        "规定每阶段必须提供代码/文档、自动化测试、实际命令与退出码、证据产物、受影响文件和剩余风险；前置门禁不满足时状态只能为 blocked，不能进入后续阶段。",
+        "P00 索引链接能力矩阵、契约、依赖审计、fixture、基线结果、ADR、路线图和证据 manifest，并保留来源文档及持久化附件路径和 SHA256，所有结果均可从干净临时环境复现且不含用户数据或秘密。",
+        "路线图把 P15 设为遗留红灯的最终处置门槛：npm.cmd run check 与 npm.cmd test 的冻结失败必须清零，或逐项获得有负责人、理由、风险和期限的明确处置，不允许静默继承。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm.cmd run migration:p00:verify",
+    "criteria": [
+      "验证命令在临时目录/临时数据库下完成能力矩阵漂移、契约冻结、数据库与外部依赖审计、五类 fixture 安全和专项测试校验，不读取或修改真实 Electron userData，也不存在 Node/sql.js 与 Go 同库写入。",
+      "能力矩阵覆盖 AutoplanApi、preload 暴露项、main/terminal handler、renderer 全部 window.autoplan 调用和所有 IPC 事件，每项只有一个 Go API、DesktopBridge、临时 IPC 或废弃归属，并包含阶段、feature flag 与回退。",
+      "兼容基线完整冻结 snake_case DTO、snapshot/patch、nullability、枚举、默认值、排序、时间、ID、错误、状态机、事件顺序和副作用，且样本、API、日志、事件和证据不含密钥、token、env_vars、真实用户数据或未授权绝对路径。",
+      "npm.cmd run check、npm.cmd test、npm.cmd run build、npm.cmd run smoke 均有可复现的原始日志、实际退出码和证据哈希；check/test 只允许精确冻结的既有失败且无新增失败，本阶段相关测试、build 和安全 smoke 通过，任何未满足前置条件均明确报告 blocked。",
+      "数据库清单覆盖全部 CREATE TABLE、ensureColumn、backfill、敏感列、孤儿风险和各业务域对表/文件/CLI/进程/PTY 的直接依赖；空库、普通旧库、孤儿数据、异常路径和大数据量 fixture 可确定性重建。",
+      "ADR 与 P00→P15 路线图符合本机 Go sidecar、Electron 薄壳、REST/JSON + SSE + WebSocket、模块化单体、共享 application service 和单 writer 原则，并明确真实 userData 切换、首笔 Go 正式写入、删除旧 Node writer 三个门禁及 P15 红灯清零/明确处置要求。",
+      "最终 git 状态仅包含本阶段预期的脚本、测试、fixture 配方、文档与证据变更，现有未跟踪 .claude/ 和所有无关用户改动保持原样，dist 写入影响已说明且未作为业务代码提交。"
+    ]
+  }
+}

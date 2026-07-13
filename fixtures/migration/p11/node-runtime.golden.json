@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "kind": "p11-node-runtime-golden",
+  "generator": "scripts/migration-p11/generate-node-golden.js",
+  "source": "sanitized-fixture-and-fake-process-only",
+  "safety": {
+    "real_agent_cli_started": false,
+    "electron_userdata_read": false,
+    "real_configuration_read": false,
+    "process_launcher": "fake",
+    "workspace": "<fixture-workspace>",
+    "secrets_or_environment_values_recorded": false
+  },
+  "runtime_actions": [
+    {"id": "loop.start", "legacy_ipc": "loop:start", "legacy_return": "snapshot", "go_return": "202_operation_accepted", "feature_flag": "go_loop_actions"},
+    {"id": "loop.stop", "legacy_ipc": "loop:stop", "legacy_return": "snapshot", "go_return": "202_operation_accepted", "feature_flag": "go_loop_actions"},
+    {"id": "loop.run_once", "legacy_ipc": "loop:runOnce", "legacy_return": "snapshot", "go_return": "202_operation_accepted", "feature_flag": "go_loop_actions"},
+    {"id": "plan.stop", "legacy_ipc": "plans:stop", "legacy_return": "snapshot", "go_return": "202_operation_accepted", "feature_flag": "go_plan_actions"},
+    {"id": "plan.resume", "legacy_ipc": "plans:resume", "legacy_return": "snapshot", "go_return": "202_operation_accepted", "feature_flag": "go_plan_actions"},
+    {"id": "plan.re_execute", "legacy_ipc": "plans:reExecute", "legacy_return": "snapshot", "go_return": "202_operation_accepted", "feature_flag": "go_plan_actions"},
+    {"id": "plan.recreate", "legacy_ipc": "plans:recreate", "legacy_return": "plan_id_or_null", "go_return": "202_operation_accepted", "feature_flag": "go_plan_actions"},
+    {"id": "task.run", "legacy_ipc": "tasks:run", "legacy_return": "snapshot", "go_return": "202_operation_accepted", "feature_flag": "go_task_actions"},
+    {"id": "task.run_batches", "legacy_ipc": "tasks:runParallel", "legacy_return": "snapshot", "go_return": "202_operation_accepted", "feature_flag": "go_task_actions"},
+    {"id": "task.stop", "legacy_ipc": "tasks:stop", "legacy_return": "snapshot", "go_return": "202_operation_accepted", "feature_flag": "go_task_actions"},
+    {"id": "acceptance.accept", "legacy_ipc": "acceptance:accept", "legacy_return": "snapshot", "go_return": "202_operation_accepted", "feature_flag": "go_acceptance_retry_actions"},
+    {"id": "acceptance.unaccept", "legacy_ipc": "acceptance:unaccept", "legacy_return": "snapshot", "go_return": "202_operation_accepted", "feature_flag": "go_acceptance_retry_actions"},
+    {"id": "acceptance.redo", "legacy_ipc": "acceptance:redo", "legacy_return": "snapshot", "go_return": "202_operation_accepted", "feature_flag": "go_acceptance_retry_actions"},
+    {"id": "acceptance.accept_batch", "legacy_ipc": "acceptance:acceptBatch", "legacy_return": "snapshot", "go_return": "202_operation_accepted", "feature_flag": "go_acceptance_retry_actions"},
+    {"id": "acceptance.unaccept_batch", "legacy_ipc": "acceptance:unacceptBatch", "legacy_return": "snapshot", "go_return": "202_operation_accepted", "feature_flag": "go_acceptance_retry_actions"},
+    {"id": "intake.retry_plan_generation", "legacy_ipc": "intake:retryGeneratePlan", "legacy_return": "snapshot", "go_return": "202_operation_accepted", "feature_flag": "go_acceptance_retry_actions"}
+  ],
+  "agent_cli": {
+    "default_commands": {
+      "codex": "codex",
+      "claude": "claude",
+      "opencode": "opencode",
+      "oh-my-pi": "omp"
+    },
+    "custom_commands": [
+      {"provider": "codex", "configured_command": "fixture-agent", "resolved_command": "fixture-agent"},
+      {"provider": "claude", "configured_command": "fixture-agent", "resolved_command": "fixture-agent"},
+      {"provider": "opencode", "configured_command": "fixture-agent", "resolved_command": "fixture-agent"},
+      {"provider": "oh-my-pi", "configured_command": "fixture-agent", "resolved_command": "fixture-agent"}
+    ],
+    "claude_environment_override_names": [
+      "ANTHROPIC_BASE_URL",
+      "ANTHROPIC_AUTH_TOKEN",
+      "ANTHROPIC_MODEL"
+    ],
+    "fake_process_records": [
+      {
+        "label": "codex.new",
+        "provider": "codex",
+        "command": "codex",
+        "args": ["exec", "-c", "model_reasoning_effort=\"high\"", "--color", "never", "-o", "<last-file>", "--sandbox", "danger-full-access", "--skip-git-repo-check", "-"],
+        "prompt_source": "stdin",
+        "last_file_source": "cli",
+        "node_windows_shell_compatibility": true,
+        "environment_override_names": [],
+        "cwd": "<fixture-workspace>",
+        "fake_exit_code": 0
+      },
+      {
+        "label": "codex.resume",
+        "provider": "codex",
+        "command": "codex",
+        "args": ["exec", "resume", "-c", "model_reasoning_effort=\"high\"", "-o", "<last-file>", "--skip-git-repo-check", "<session-id>", "-"],
+        "prompt_source": "stdin",
+        "last_file_source": "cli",
+        "node_windows_shell_compatibility": true,
+        "environment_override_names": [],
+        "cwd": "<fixture-workspace>",
+        "fake_exit_code": 0
+      },
+      {
+        "label": "claude.new",
+        "provider": "claude",
+        "command": "claude",
+        "args": ["--print", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"],
+        "prompt_source": "stdin",
+        "last_file_source": "claude-stream-json",
+        "node_windows_shell_compatibility": false,
+        "environment_override_names": [],
+        "cwd": "<fixture-workspace>",
+        "fake_exit_code": 0
+      },
+      {
+        "label": "claude.resume",
+        "provider": "claude",
+        "command": "claude",
+        "args": ["--print", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--resume", "<session-id>"],
+        "prompt_source": "stdin",
+        "last_file_source": "claude-stream-json",
+        "node_windows_shell_compatibility": false,
+        "environment_override_names": [],
+        "cwd": "<fixture-workspace>",
+        "fake_exit_code": 0
+      },
+      {
+        "label": "opencode.new",
+        "provider": "opencode",
+        "command": "opencode",
+        "args": ["run", "--format", "default", "--auto", "--title", "AutoPlan project 7 plan 11", "--agent", "autoplan-plan"],
+        "prompt_source": "argument",
+        "last_file_source": "stdout",
+        "node_windows_shell_compatibility": false,
+        "environment_override_names": [],
+        "cwd": "<fixture-workspace>",
+        "fake_exit_code": 0
+      },
+      {
+        "label": "opencode.resume",
+        "provider": "opencode",
+        "command": "opencode",
+        "args": ["run", "--format", "default", "--auto", "--session", "<session-id>", "--title", "AutoPlan project 7 plan 11"],
+        "prompt_source": "argument",
+        "last_file_source": "stdout",
+        "node_windows_shell_compatibility": false,
+        "environment_override_names": [],
+        "cwd": "<fixture-workspace>",
+        "fake_exit_code": 0
+      },
+      {
+        "label": "oh-my-pi.new",
+        "provider": "oh-my-pi",
+        "command": "omp",
+        "args": ["--print"],
+        "prompt_source": "stdin",
+        "last_file_source": "stdout",
+        "node_windows_shell_compatibility": false,
+        "environment_override_names": [],
+        "cwd": "<fixture-workspace>",
+        "fake_exit_code": 0
+      }
+    ],
+    "session_semantics": {
+      "codex": "new_or_resume_then_fallback_new_when_resume_error_matches",
+      "claude": "new_continue_session_id_or_resume_then_fallback_new_when_session_missing",
+      "opencode": "plan_session_title_lookup_and_resume_then_fallback_new_when_session_missing",
+      "oh-my-pi": "stateless_new_only"
+    }
+  },
+  "retry_and_recovery": {
+    "task_retry_backoff_seconds": [5, 10, 20, 30],
+    "task_timeout_opens_new_session": true,
+    "environment_blocked_does_not_retry": true,
+    "startup_recovery": "active_loop_stopped_and_running_tasks_reset_pending_without_relaunching_child"
+  }
+}

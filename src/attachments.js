@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { nowIso } = require('./database');
+const { assertNodeMutationAllowed } = require('./data/databaseOwnerGuard');
 
 const PENDING_ATTACHMENT_SOURCES = {
   PATH: 'path',
@@ -21,6 +22,9 @@ const MIME_EXTENSIONS = {
 
 function saveAttachments(db, attachmentsRoot, ownerType, ownerId, files = [], projectId = null) {
   if (!Array.isArray(files) || files.length === 0) return [];
+  // The guard is intentionally before mkdir/copy/write. A Go-owned process
+  // must not leave attachment files behind when a legacy mutation is tried.
+  assertNodeMutationAllowed();
 
   const saved = [];
   const targetDir = path.join(attachmentsRoot, ownerType, String(ownerId));

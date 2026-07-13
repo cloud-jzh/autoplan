@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autoplan.local/schemas/capability.schema.json",
+  "title": "Capability discovery",
+  "$ref": "#/$defs/capability_response",
+  "$defs": {
+    "capability_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(?:[.][a-z][a-z0-9_]*)+$"
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "enabled"],
+      "properties": {
+        "id": { "$ref": "#/$defs/capability_id" },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "capability_response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "capabilities"],
+      "properties": {
+        "version": { "const": "v1" },
+        "capabilities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/capability" },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

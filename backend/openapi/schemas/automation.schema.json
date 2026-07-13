@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autoplan.local/schemas/automation.schema.json",
+  "title": "Static automation contracts",
+  "$ref": "#/$defs/script",
+  "$defs": {
+    "id": { "type": "integer", "format": "int64", "minimum": 1 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "script": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "project_id", "name", "runtime", "description", "trigger_mode", "enabled", "timeout_seconds", "fail_aborts", "context_inject", "sort_order", "source_type", "has_path", "has_body", "has_work_dir", "has_last_log", "created_at", "updated_at", "version"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }, "project_id": { "$ref": "#/$defs/id" }, "name": { "type": "string", "maxLength": 500 }, "runtime": { "enum": ["node", "bash", "ps", "cmd"] }, "description": { "type": "string", "maxLength": 10000 }, "trigger_mode": { "enum": ["hook", "manual", "schedule"] }, "hook_stage": { "type": ["string", "null"] }, "schedule_cron": { "type": ["string", "null"] }, "enabled": { "type": "boolean" }, "timeout_seconds": { "type": "integer", "minimum": 1 }, "fail_aborts": { "type": "boolean" }, "context_inject": { "enum": ["env", "stdin", "none"] }, "sort_order": { "type": "integer" }, "last_status": { "type": ["string", "null"] }, "last_exit_code": { "type": ["integer", "null"] }, "last_duration_ms": { "type": ["integer", "null"], "minimum": 0 }, "last_run_at": { "oneOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }] }, "source_type": { "enum": ["inline", "file"] }, "has_path": { "type": "boolean" }, "has_body": { "type": "boolean" }, "has_work_dir": { "type": "boolean" }, "has_last_log": { "type": "boolean" }, "created_at": { "$ref": "#/$defs/timestamp" }, "updated_at": { "$ref": "#/$defs/timestamp" }, "version": { "$ref": "#/$defs/id" }
+      }
+    },
+    "executor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "project_id", "label", "type", "group_kind", "group_is_default", "depends_on", "depends_order", "enabled", "sort_order", "last_status", "last_exit_code", "last_duration_ms", "last_run_at", "has_command", "argument_count", "has_actions", "has_options_cwd", "options_env_key_count", "has_problem_matcher", "has_plugin_state", "has_last_log", "created_at", "updated_at", "version"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }, "project_id": { "$ref": "#/$defs/id" }, "label": { "type": "string", "maxLength": 500 }, "type": { "enum": ["shell", "process", "plugin"] }, "group_kind": { "type": ["string", "null"] }, "group_is_default": { "type": "boolean" }, "depends_on": { "type": "array", "items": { "type": "string" } }, "depends_order": { "enum": ["parallel", "sequence"] }, "enabled": { "type": "boolean" }, "sort_order": { "type": "integer" }, "last_status": { "type": ["string", "null"] }, "last_exit_code": { "type": ["integer", "null"] }, "last_duration_ms": { "type": ["integer", "null"], "minimum": 0 }, "last_run_at": { "oneOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }] }, "has_command": { "type": "boolean" }, "argument_count": { "type": "integer", "minimum": 0 }, "has_actions": { "type": "boolean" }, "has_options_cwd": { "type": "boolean" }, "options_env_key_count": { "type": "integer", "minimum": 0 }, "has_problem_matcher": { "type": "boolean" }, "has_plugin_state": { "type": "boolean" }, "has_last_log": { "type": "boolean" }, "created_at": { "$ref": "#/$defs/timestamp" }, "updated_at": { "$ref": "#/$defs/timestamp" }, "version": { "$ref": "#/$defs/id" }
+      }
+    },
+    "reorder_request": { "type": "object", "additionalProperties": false, "required": ["ids", "versions"], "properties": { "ids": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/id" }, "uniqueItems": true }, "versions": { "type": "object", "additionalProperties": { "$ref": "#/$defs/id" } } } }
+  }
+}

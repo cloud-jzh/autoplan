@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "fixture_kind": "p10-operation-fault-matrix",
+  "cases": [
+    {
+      "id": "idempotency_same_intent",
+      "project_id": 7,
+      "operation_type": "task.run",
+      "idempotency_key": "fixture-intent-7",
+      "request_digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "commands": ["create", "create"],
+      "expected": {"operation_count": 1, "outbox_events": ["operation.queued"], "final_status": "queued"}
+    },
+    {
+      "id": "idempotency_conflict",
+      "project_id": 7,
+      "operation_type": "task.run",
+      "idempotency_key": "fixture-intent-7",
+      "request_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "commands": ["create_conflict"],
+      "expected": {"error_code": "IDEMPOTENCY_CONFLICT", "operation_count": 1, "outbox_events": []}
+    },
+    {
+      "id": "queued_cancel_is_terminal",
+      "project_id": 7,
+      "operation_type": "task.run",
+      "idempotency_key": "fixture-cancel-queued",
+      "request_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+      "commands": ["create", "cancel", "cancel"],
+      "expected": {"final_status": "cancelled", "outbox_events": ["operation.queued", "operation.cancelled"], "terminal_events": 1}
+    },
+    {
+      "id": "running_cancel_then_success",
+      "project_id": 7,
+      "operation_type": "task.run",
+      "idempotency_key": "fixture-success-race",
+      "request_digest": "2222222222222222222222222222222222222222222222222222222222222222",
+      "commands": ["create", "claim", "request_cancel", "succeed", "confirm_cancel"],
+      "expected": {"final_status": "succeeded", "outbox_events": ["operation.queued", "operation.running", "operation.running", "operation.succeeded"], "terminal_events": 1}
+    },
+    {
+      "id": "running_failure_is_terminal",
+      "project_id": 7,
+      "operation_type": "task.run",
+      "idempotency_key": "fixture-failure",
+      "request_digest": "3333333333333333333333333333333333333333333333333333333333333333",
+      "commands": ["create", "claim", "fail", "succeed"],
+      "expected": {"final_status": "failed", "outbox_events": ["operation.queued", "operation.running", "operation.failed"], "terminal_events": 1}
+    },
+    {
+      "id": "startup_interrupts_without_execution",
+      "project_id": 7,
+      "operation_type": "task.run",
+      "idempotency_key": "fixture-recovery",
+      "request_digest": "4444444444444444444444444444444444444444444444444444444444444444",
+      "commands": ["recover_running", "recover_unclaimed_queued"],
+      "expected": {"final_status": "interrupted", "outbox_events": ["operation.interrupted"], "runner_starts": 0}
+    },
+    {
+      "id": "parallel_same_intent_reuses_one_operation",
+      "project_id": 7,
+      "operation_type": "task.run",
+      "idempotency_key": "fixture-parallel",
+      "request_digest": "5555555555555555555555555555555555555555555555555555555555555555",
+      "commands": ["create_parallel", "disconnect_retry"],
+      "expected": {"operation_count": 1, "runner_starts": 1, "outbox_events": ["operation.queued"]}
+    },
+    {
+      "id": "running_cancel_then_confirm_cancelled",
+      "project_id": 7,
+      "operation_type": "task.run",
+      "idempotency_key": "fixture-cancel-running",
+      "request_digest": "6666666666666666666666666666666666666666666666666666666666666666",
+      "commands": ["create", "claim", "request_cancel", "confirm_cancel", "confirm_cancel"],
+      "expected": {"final_status": "cancelled", "outbox_events": ["operation.queued", "operation.running", "operation.running", "operation.cancelled"], "terminal_events": 1}
+    },
+    {
+      "id": "late_completion_after_cancelled_is_rejected",
+      "project_id": 7,
+      "operation_type": "task.run",
+      "idempotency_key": "fixture-late-completion",
+      "request_digest": "7777777777777777777777777777777777777777777777777777777777777777",
+      "commands": ["create", "cancel", "succeed_late", "fail_late"],
+      "expected": {"final_status": "cancelled", "error_code": "INVALID_OPERATION_STATE", "outbox_events": ["operation.queued", "operation.cancelled"], "terminal_events": 1}
+    },
+    {
+      "id": "queued_recovery_claim_requires_digest",
+      "project_id": 7,
+      "operation_type": "task.run",
+      "idempotency_key": "fixture-recovery-claim",
+      "request_digest": "8888888888888888888888888888888888888888888888888888888888888888",
+      "commands": ["create", "recover_claim_wrong_digest", "recover_claim_matching_digest"],
+      "expected": {"final_status": "running", "error_code": "RECOVERY_NOT_CLAIMABLE", "outbox_events": ["operation.queued", "operation.running"]}
+    },
+    {
+      "id": "queued_recovery_expiry_interrupts",
+      "project_id": 7,
+      "operation_type": "task.run",
+      "idempotency_key": "fixture-recovery-expired",
+      "request_digest": "9999999999999999999999999999999999999999999999999999999999999999",
+      "commands": ["recover_expired_queued"],
+      "expected": {"final_status": "interrupted", "error_code": "RECOVERY_EXPIRED", "outbox_events": ["operation.interrupted"], "runner_starts": 0}
+    },
+    {
+      "id": "illegal_transition_preserves_hash",
+      "project_id": 7,
+      "operation_type": "task.run",
+      "idempotency_key": "fixture-illegal-transition",
+      "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "commands": ["create", "succeed_before_claim"],
+      "expected": {"final_status": "queued", "error_code": "INVALID_OPERATION_STATE", "outbox_events": ["operation.queued"], "operation_outbox_revision_hash_unchanged": true}
+    },
+    {
+      "id": "transaction_fault_rolls_back_operation_and_outbox",
+      "project_id": 7,
+      "operation_type": "task.run",
+      "idempotency_key": "fixture-transaction-fault",
+      "request_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "commands": ["inject_failure_after_operation_write", "inject_failure_after_outbox_write", "inject_failure_before_commit"],
+      "expected": {"operation_count": 0, "outbox_events": [], "project_revision": 0, "operation_outbox_revision_hash_unchanged": true}
+    },
+    {
+      "id": "bounded_output_never_persists_raw_runtime_data",
+      "project_id": 7,
+      "operation_type": "task.run",
+      "idempotency_key": "fixture-output-bound",
+      "request_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "commands": ["create", "claim", "complete_oversized_output"],
+      "expected": {"final_status": "failed", "error_code": "OUTPUT_TRUNCATED", "outbox_events": ["operation.queued", "operation.running", "operation.failed"], "payload_is_bounded": true}
+    }
+  ]
+}

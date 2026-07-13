@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "kind": "p10-evidence-definition",
+  "status": "capture-pending-unified-validation",
+  "run_directory": "docs/migration/p10/evidence/runs/<run-id>",
+  "immutable_run_directory": true,
+  "required_artifacts": [
+    "summary.json",
+    "evidence-manifest.json",
+    "per-command sanitized stdout/stderr logs",
+    "source and input SHA-256 records",
+    "fixture authorization, owner safety, cleanup, and remaining-risk records"
+  ],
+  "required_coverage": [
+    "P00 frozen baseline signature and P09 immutable completion evidence",
+    "explicit authorized fixture and real userData rejection",
+    "Operation/outbox transaction, idempotency, cancellation, and recovery matrix",
+    "eventbus replay, retention, cursor, slow-consumer, and resync matrix",
+    "authenticated project and Operation SSE contract matrix",
+    "renderer reconnect, dedupe, batch, snapshot resync, and cleanup matrix",
+    "P10 fixture contract and sensitive-output scan",
+    "frozen npm check and test result"
+  ],
+  "forbidden_content": [
+    "secrets, tokens, credentials, cookies, sessions, or Authorization values",
+    "raw stdout/stderr, command environments, terminal data, or request bodies",
+    "real Electron userData, production database, workspace, or unauthorized absolute paths",
+    "file URLs, symlinks, and unbounded evidence files"
+  ],
+  "remaining_stage_risk": "A blocked gate intentionally leaves P10 business writes, event service startup, and transport switching unexecuted; no verifier may treat missing evidence as success."
+}

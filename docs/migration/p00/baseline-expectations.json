@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "description": "P00 可复现命令基线。失败只按稳定签名精确放行；退出码、原始日志和证据哈希始终保留。",
+  "commandOrder": [
+    "specialized",
+    "check",
+    "test",
+    "build",
+    "smoke"
+  ],
+  "sourceFiles": [
+    "package.json",
+    "scripts/check-file-lengths.js",
+    "scripts/smoke-test.js",
+    "scripts/smoke-helpers.js",
+    "scripts/migration-baseline/inventory-ipc.js",
+    "scripts/migration-baseline/inventory-ipc.test.js",
+    "scripts/migration-baseline/contract-baseline.js",
+    "scripts/migration-baseline/contract-baseline.test.js",
+    "scripts/migration-baseline/inventory-dependencies.js",
+    "scripts/migration-baseline/inventory-dependencies.test.js",
+    "scripts/migration-baseline/fixtures.js",
+    "scripts/migration-baseline/fixtures.test.js",
+    "scripts/migration-baseline/run-baseline.js",
+    "scripts/migration-baseline/run-baseline.test.js",
+    "docs/migration/p00/baseline-results.md",
+    "docs/migration/p00/evidence/manifest.json",
+    "docs/migration/p00/capability-matrix.json",
+    "docs/migration/p00/contract-baseline.json",
+    "docs/migration/p00/database-and-dependencies.json",
+    "fixtures/migration/p00/manifest.json"
+  ],
+  "commands": {
+    "specialized": {
+      "description": "运行 scripts/migration-baseline 下全部专项测试，覆盖清单漂移、契约、依赖、fixture 安全和本驱动器。",
+      "outcome": "success",
+      "allowedFailureSignatures": []
+    },
+    "check": {
+      "description": "现有 check 红灯：smoke 集中回归文件超过仓库显式的 3800 行临时上限。",
+      "outcome": "exact-known-failure",
+      "classification": "source-policy",
+      "owner": "P15 legacy-red-light-disposition",
+      "allowedExitCodes": [
+        1
+      ],
+      "allowedFailureSignatures": [
+        "file-length|scripts/smoke-test.js|limit=3800"
+      ],
+      "disposition": "P00 仅冻结；P15 前拆分该集中 smoke 或以有负责人、理由、风险和期限的决定处置。"
+    },
+    "test": {
+      "description": "现有 src Node 测试不得出现失败、skip 或 only；任何非零退出均为新增红灯。",
+      "outcome": "success",
+      "allowedFailureSignatures": []
+    },
+    "build": {
+      "description": "TypeScript 检查后由 Vite 写入 .gitignore 中的 dist；必须成功且记录 dist 前后哈希。",
+      "outcome": "success",
+      "allowedFailureSignatures": []
+    },
+    "smoke": {
+      "description": "仅在临时根、临时 autoplan.sqlite、stub Agent CLI 和剔除凭据环境变量的条件下运行。",
+      "outcome": "success",
+      "allowedFailureSignatures": []
+    }
+  },
+  "failurePolicy": {
+    "comparison": "exact-set",
+    "newFailure": "fail",
+    "changedFailure": "fail",
+    "unclassifiedFailure": "fail-with-normalized-output-sha256",
+    "resolvedWithoutDisposition": "fail",
+    "skipOrOnly": "forbidden",
+    "exitCodeSuppression": "forbidden"
+  },
+  "evidencePolicy": {
+    "directory": "docs/migration/p00/evidence/runs/<UTC>-pid-<pid>",
+    "overwrite": "never",
+    "capture": [
+      "git status at start and end",
+      "source hashes at start and end",
+      "full command and timestamps",
+      "actual exit code and signal",
+      "stdout and stderr logs",
+      "environment summary without values",
+      "working tree and dist deltas",
+      "artifact byte counts and sha256"
+    ]
+  },
+  "smokeSafetyPolicy": {
+    "electronUserData": "forbidden",
+    "database": "unique system-temporary data/autoplan.sqlite",
+    "writer": "single smoke process only",
+    "agentCli": "spawn override/fake child only",
+    "credentials": "synthetic literal only; credential-shaped environment variables removed",
+    "unsafePrecondition": "record blocked and do not spawn smoke"
+  }
+}

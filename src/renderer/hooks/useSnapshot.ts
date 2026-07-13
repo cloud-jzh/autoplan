@@ -1,4 +1,15 @@
+<<<<<<< Updated upstream
 import { startTransition, useCallback, useEffect, useRef, useState, type SetStateAction } from 'react';
+=======
+import { useCallback, useEffect, useRef, useState, type SetStateAction } from 'react';
+import { useAutoplanClient } from '../lib/api/provider';
+import type { HttpReadonlyOperations } from '../lib/api/client';
+import {
+  isTerminalOperationEvent,
+  type ProjectEventDelivery,
+  type ResumableEventSubscription,
+} from '../lib/api/events';
+>>>>>>> Stashed changes
 import type { AppSnapshot, WorkspaceSnapshotPatch } from '../types';
 
 const EMPTY_SCAN_SUMMARY = {
@@ -7,12 +18,16 @@ const EMPTY_SCAN_SUMMARY = {
   latest_scanned_at: null,
   latest_modified_at: null,
 } as const;
+const EVENT_BATCH_WINDOW_MS = 50;
+const INITIAL_RESYNC_RETRY_MS = 250;
+const MAXIMUM_RESYNC_RETRY_MS = 10_000;
 
 /**
  * Subscribe to main-process snapshots.
  * Project pages ignore updates for other projects while keeping the project list fresh.
  */
 export function useSnapshot(projectId: number | null) {
+  const client = useAutoplanClient();
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const projectIdRef = useRef(projectId);
@@ -33,6 +48,15 @@ export function useSnapshot(projectId: number | null) {
   useEffect(() => {
     let disposed = false;
     let frameId = 0;
+    let eventRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+    let eventRefreshController: AbortController | null = null;
+    let eventRefreshInFlight = false;
+    let eventRefreshPending = false;
+    let resyncRequired = false;
+    let resyncFailures = 0;
+    let snapshotRequestSequence = 0;
+    let snapshotAppliedSequence = 0;
+    let eventSubscription: ResumableEventSubscription | null = null;
     let queuedSnapshot: AppSnapshot | null = null;
     const queuedPatches = new Map<string, WorkspaceSnapshotPatch>();
     setSnapshot((current) => {
@@ -40,8 +64,14 @@ export function useSnapshot(projectId: number | null) {
       return createProjectListSnapshot(current);
     });
     const showError = (e: unknown) => {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (!disposed) setError(msg);
+      const failure = e as { code?: unknown; message?: unknown } | null;
+      if (failure?.code === 'request_cancelled') return;
+      if (import.meta.env.DEV) {
+        const reason = typeof failure?.code === 'string' ? failure.code :
+          typeof failure?.message === 'string' ? failure.message : 'unknown_error';
+        console.error(`[autoplan] snapshot refresh failed: ${reason}`);
+      }
+      if (!disposed) setError('snapshot_refresh_failed');
     };
     const flushQueuedUpdate = () => {
       frameId = 0;
@@ -82,33 +112,117 @@ export function useSnapshot(projectId: number | null) {
       scheduleFrame();
     };
 
-    const unsubscribe = window.autoplan.onLoopUpdate((next) => {
+    const eventClient = projectId === null ? null : asEventClient(client);
+    const scheduleEventRefresh = (forceResync: boolean, immediate = false) => {
+      if (disposed || !eventClient || projectId === null) return;
+      eventRefreshPending = true;
+      resyncRequired ||= forceResync;
+      if (immediate && eventRefreshTimer !== undefined) {
+        clearTimeout(eventRefreshTimer);
+        eventRefreshTimer = undefined;
+      }
+      if (eventRefreshInFlight || eventRefreshTimer !== undefined) return;
+      const delay = immediate ? 0 : EVENT_BATCH_WINDOW_MS;
+      eventRefreshTimer = setTimeout(() => {
+        eventRefreshTimer = undefined;
+        void refreshAuthoritativeSnapshot();
+      }, delay);
+    };
+    const refreshAuthoritativeSnapshot = async () => {
+      if (disposed || !eventClient || projectId === null || eventRefreshInFlight || !eventRefreshPending) return;
+      eventRefreshPending = false;
+      const completingResync = resyncRequired;
+      resyncRequired = false;
+      eventRefreshInFlight = true;
+      const controller = new AbortController();
+      const requestSequence = ++snapshotRequestSequence;
+      eventRefreshController = controller;
+      try {
+        const next = await eventClient.getProjectSnapshot(projectId, { signal: controller.signal });
+        if (disposed || controller.signal.aborted) return;
+        if (requestSequence >= snapshotAppliedSequence) {
+          snapshotAppliedSequence = requestSequence;
+          setSnapshot((current) => applySnapshotForProject(next, projectId, current));
+        }
+        resyncFailures = 0;
+        if (completingResync) eventSubscription?.completeResync();
+      } catch (error) {
+        if (disposed || controller.signal.aborted) return;
+        showError(error);
+        resyncRequired ||= completingResync;
+        resyncFailures += 1;
+        const delay = Math.min(
+          MAXIMUM_RESYNC_RETRY_MS,
+          INITIAL_RESYNC_RETRY_MS * (2 ** Math.min(resyncFailures - 1, 5)),
+        );
+        eventRefreshPending = true;
+        if (eventRefreshTimer === undefined) {
+          eventRefreshTimer = setTimeout(() => {
+            eventRefreshTimer = undefined;
+            void refreshAuthoritativeSnapshot();
+          }, delay);
+        }
+      } finally {
+        if (eventRefreshController === controller) eventRefreshController = null;
+        eventRefreshInFlight = false;
+        if (!disposed && eventRefreshPending && eventRefreshTimer === undefined) {
+          scheduleEventRefresh(resyncRequired, false);
+        }
+      }
+    };
+    const onProjectEvent = (delivery: ProjectEventDelivery) => {
+      if (disposed || delivery.projectId !== projectId) return;
+      if (delivery.kind === 'resync') {
+        scheduleEventRefresh(true, true);
+        return;
+      }
+      scheduleEventRefresh(false, isTerminalOperationEvent(delivery.event));
+    };
+
+    const unsubscribe = client.onLoopUpdate((next) => {
       if (disposed) return;
       scheduleSnapshot(next);
     });
-    const unsubscribePatch = typeof window.autoplan.onLoopPatch === 'function'
-      ? window.autoplan.onLoopPatch((next) => {
-          if (disposed) return;
-          schedulePatch(next);
-        })
-      : () => {};
+    const unsubscribePatch = client.onLoopPatch((next) => {
+      if (disposed) return;
+      schedulePatch(next);
+    });
+    if (eventClient && projectId !== null) {
+      eventSubscription = eventClient.connectProjectEvents(projectId, undefined, onProjectEvent);
+    }
 
-    window.autoplan
+    const initialSnapshotSequence = ++snapshotRequestSequence;
+    client
       .snapshot(projectId)
       .then((next) => {
-        if (!disposed) setSnapshot((current) => applySnapshotForProject(next, projectId, current));
+        if (!disposed && initialSnapshotSequence >= snapshotAppliedSequence) {
+          snapshotAppliedSequence = initialSnapshotSequence;
+          setSnapshot((current) => applySnapshotForProject(next, projectId, current));
+        }
       })
       .catch(showError);
 
     return () => {
       disposed = true;
       if (frameId) window.cancelAnimationFrame(frameId);
+      if (eventRefreshTimer !== undefined) clearTimeout(eventRefreshTimer);
+      eventRefreshController?.abort();
+      eventSubscription?.();
       unsubscribe();
       unsubscribePatch();
     };
-  }, [projectId]);
+  }, [client, projectId]);
 
   return { snapshot, setSnapshot: commitSnapshot, error, setError };
+}
+
+function asEventClient(client: unknown): HttpReadonlyOperations | null {
+  if (!client || typeof client !== 'object') return null;
+  const candidate = client as Partial<HttpReadonlyOperations>;
+  return typeof candidate.getProjectSnapshot === 'function' &&
+    typeof candidate.connectProjectEvents === 'function'
+    ? candidate as HttpReadonlyOperations
+    : null;
 }
 
 function applySnapshotPatchForProject(

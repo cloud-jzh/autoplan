@@ -93,7 +93,7 @@ describe('Workspace task page structure', () => {
 
     expectIncludes(types, 'openWorkspaceFile: (input: OpenWorkspaceFileInput) => Promise<OpenWorkspaceFileResult>;', 'renderer API should expose openWorkspaceFile with typed input and result');
     expectIncludes(controller, 'const openScopeFile = useCallback', 'controller should expose a scope file opener');
-    expectIncludes(controller, 'const result = await window.autoplan.openWorkspaceFile({', 'scope opener should call the preload openWorkspaceFile API');
+    expectIncludes(controller, 'const result = await desktopBridge.openWorkspaceFile({', 'scope opener should call DesktopBridge openWorkspaceFile');
     expectIncludes(controller, 'projectId,\n          filePath,\n          mode: scopeFileOpenSettings.mode,\n          command: scopeFileOpenSettings.command,', 'scope opener should pass current project, file path, mode, and command');
     expectIncludes(controller, "throw new Error(result.error || '打开 scope 文件失败');", 'scope opener should surface backend open errors');
     expectIncludes(controller, 'showError(e);', 'scope opener failures should use the workspace error display path');
@@ -152,8 +152,8 @@ describe('Workspace task page structure', () => {
     expectIncludes(wrappedPlanList, 'onDeletePlan={onDeletePlan}', 'Wrapped PlanList should pass the delete callback through');
     expectIncludes(page, 'onStopPlan={stopPlan}', 'WorkspacePage should pass the stopPlan action into PlanList');
     expectIncludes(page, 'onDeletePlan={deletePlan}', 'WorkspacePage should pass the deletePlan action into PlanList');
-    expectIncludes(controller, 'await runLoopAction(() => window.autoplan.stopPlan({ projectId: targetProjectId, planId }))', 'Controller stopPlan should call the plan-level preload API');
-    expectIncludes(controller, 'const next = await window.autoplan.deletePlan({ projectId: targetProjectId, planId });', 'Controller deletePlan should call the plan-level preload API');
+    expectIncludes(controller, 'await runLoopAction(() => client.stopPlan({ projectId: targetProjectId, planId }))', 'Controller stopPlan should call the plan-level client API');
+    expectIncludes(controller, 'const next = await client.deletePlan({ projectId: targetProjectId, planId });', 'Controller deletePlan should call the plan-level client API');
     expectIncludes(controller, 'clearDeletedPlanReader(next);', 'Controller deletePlan should clear deleted Plan reader state after the returned snapshot');
   });
 
@@ -165,7 +165,7 @@ describe('Workspace task page structure', () => {
     expectIncludes(wrappedPlanList, 'await onRunDraft(plan, task);', 'draft single-task execution should delegate to the parent callback');
     expect(!wrappedPlanList.includes('window.autoplan.runTask'), 'Plan list should not call tasks:run directly and drop the returned snapshot');
     expectIncludes(page, 'onRunDraft={(plan, task) =>', 'WorkspacePage should wire the draft-run callback');
-    expectIncludes(page, 'runLoopAction(() => window.autoplan.runTask', 'draft execution should reuse runLoopAction');
+    expectIncludes(page, 'runLoopAction(() => client.runTask', 'draft execution should reuse runLoopAction');
     expectIncludes(page, 'taskId: task.id', 'draft execution should target the selected pending task');
   });
 
@@ -265,7 +265,7 @@ describe('Workspace intake plan generation failure retry UI', () => {
     const intakePanel = source('src', 'renderer', 'components', 'IntakePanel.tsx');
 
     expectIncludes(controller, 'const retryIntakePlanGeneration = useCallback', 'controller 应暴露手动重试生成计划回调');
-    expectIncludes(controller, 'window.autoplan.retryIntakePlanGeneration({ projectId, type, id, ...options })', 'controller 应调用 preload 重试入口并传递 options');
+    expectIncludes(controller, 'client.retryIntakePlanGeneration({ projectId, type, id, ...options })', 'controller 应调用客户端重试入口并传递 options');
     expectIncludes(page, 'retryIntakePlanGeneration,', 'WorkspacePage 应从 controller 解构重试回调');
     expectIncludes(page, 'onRetryGeneratePlan={retryIntakePlanGeneration}', '需求/反馈面板应接收重试回调');
     expectCountAtLeast(page, 'onRetryGeneratePlan={retryIntakePlanGeneration}', 2, '需求和反馈两个 IntakePanel 都应接收重试回调');
@@ -466,7 +466,7 @@ describe('Workspace chat AI config state regression', () => {
   it('derives useChat config availability from global aiConfigList and config change events', () => {
     const hook = source('src', 'renderer', 'hooks', 'useChat.ts');
 
-    expectIncludes(hook, 'window.autoplan.aiConfigList().catch(() => [] as AiConfig[])', 'useChat should load global AI configs without a projectId payload');
+    expectIncludes(hook, 'client.aiConfigList().catch(() => [] as AiConfig[])', 'useChat should load global AI configs without a projectId payload');
     expectIncludes(
       hook,
       'resolveCurrentAiConfig(aiConfigs, conversations, activeConversationId)',
@@ -476,7 +476,7 @@ describe('Workspace chat AI config state regression', () => {
     expectIncludes(hook, 'configs.find((config) => config.hasApiKey)', 'HTTP configs with API keys should remain the first preference');
     expectIncludes(hook, 'configs.find((config) => isChatConfigAvailableForSend(config))', 'Codex configs without API keys should remain selectable');
     expectIncludes(hook, 'const selectedConfig = selectPreferredAiConfig(cfgs);', 'new conversations should bind the preferred sendable config');
-    expectIncludes(hook, 'return window.autoplan.onAiConfigChanged((event) => {', 'useChat should subscribe to global AI config change events');
+    expectIncludes(hook, 'const unsubscribe = client.onAiConfigChanged((event) => {', 'useChat should subscribe to global AI config change events');
     expectIncludes(hook, 'void refreshAiConfigState(Array.isArray(event.configs) ? event.configs : undefined);', 'AI config changes should refresh chat config state');
     expect(!hook.includes('aiConfigList({ projectId })'), 'useChat should not request project-scoped AI configs');
     expect(!hook.includes('.chatGetConfig('), 'useChat should not read legacy chatGetConfig as chat availability state');
@@ -486,16 +486,16 @@ describe('Workspace chat AI config state regression', () => {
     const hook = source('src', 'renderer', 'hooks', 'useChat.ts');
     const sidebar = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSidebar.tsx');
 
-    expectIncludes(hook, 'window.autoplan.conversationList({ projectId })', 'conversation list should load by project');
-    expectIncludes(hook, 'window.autoplan.aiConfigList().catch(() => [] as AiConfig[])', 'conversation load should read global AI configs without projectId');
-    expectIncludes(hook, 'const history = await window.autoplan.chatHistory({ projectId: loadingProjectId, conversationId: cid });', 'history load should include the active projectId');
+    expectIncludes(hook, 'client.conversationList({ projectId })', 'conversation list should load by project');
+    expectIncludes(hook, 'client.aiConfigList().catch(() => [] as AiConfig[])', 'conversation load should read global AI configs without projectId');
+    expectIncludes(hook, 'const history = await client.chatHistory({ projectId: loadingProjectId, conversationId: cid });', 'history load should include the active projectId');
     expectIncludes(hook, '.chatHistory({ projectId: historyProjectId, conversationId: cid })', 'chat:done history refresh should retain the originating projectId');
-    expectIncludes(hook, 'await window.autoplan.chatSend({\n          projectId,\n          conversationId: cid,', 'chat send should include projectId and conversationId');
-    expectIncludes(hook, 'await window.autoplan.chatStop({ projectId: pid, conversationId: cid });', 'manual stop should include projectId');
-    expectIncludes(hook, 'await window.autoplan.chatClear({ projectId: pid, conversationId: cid });', 'clear should include projectId');
-    expectIncludes(hook, 'await window.autoplan.conversationDelete({ projectId, conversationId: cid });', 'delete should include projectId');
-    expectIncludes(hook, 'await window.autoplan.conversationUpdate({ projectId, conversationId: cid, title });', 'rename should include projectId');
-    expectIncludes(hook, 'const updated = await window.autoplan.conversationUpdate({\n      projectId,\n      conversationId: cid,\n      aiConfigId: configId,', 'AI config binding should update the project-scoped conversation');
+    expectIncludes(hook, 'await client.chatSend({\n          projectId,\n          conversationId: cid,', 'chat send should include projectId and conversationId');
+    expectIncludes(hook, 'await client.chatStop({ projectId: pid, conversationId: cid });', 'manual stop should include projectId');
+    expectIncludes(hook, 'await client.chatClear({ projectId: pid, conversationId: cid });', 'clear should include projectId');
+    expectIncludes(hook, 'await client.conversationDelete({ projectId, conversationId: cid });', 'delete should include projectId');
+    expectIncludes(hook, 'await client.conversationUpdate({ projectId, conversationId: cid, title });', 'rename should include projectId');
+    expectIncludes(hook, 'const updated = await client.conversationUpdate({\n      projectId,\n      conversationId: cid,\n      aiConfigId: configId,', 'AI config binding should update the project-scoped conversation');
     expectIncludes(sidebar, 'await window.autoplan.conversationUpdate({\n        projectId,\n        conversationId: conversation.id,\n        pinned: nextPinned,', 'sidebar pinning should update the project-scoped conversation');
     expectIncludes(sidebar, 'readConversationProjectId(conversation) === projectId', 'sidebar should filter conversation rows by current project');
     expect(!hook.includes('aiConfigList({ projectId'), 'useChat should not pass projectId to global AI config list');
@@ -882,7 +882,7 @@ describe('Feedback #27 source-level regression', () => {
     expectIncludes(projectsPage, 'disabled={!project.workspace_path}', '未设置工作区路径时首页路径控件应保持禁用');
     expectIncludes(projectsPage, 'event.stopPropagation();', '首页路径点击应阻止冒泡到项目卡片导航');
     expectIncludes(projectsPage, 'if (project.workspace_path) void openFolder(project);', '首页路径点击仍应通过 openFolder 打开系统文件夹');
-    expectIncludes(projectsPage, 'window.autoplan.openProjectFolder({ projectId: project.id })', '首页 openFolder 应调用打开项目文件夹 IPC');
+    expectIncludes(projectsPage, 'desktopBridge.openProjectFolder({ projectId: project.id })', '首页 openFolder 应调用 DesktopBridge');
     expect(!projectsPage.includes('pathLinkStyle'), '首页路径按钮不应再依赖 pathLinkStyle 内联样式');
     expectIncludes(layoutCss, '.project-path-link { display: block;', '共享样式表应提供首页和 workspace 可复用的路径链接规则');
   });
@@ -1276,13 +1276,13 @@ describe('Workspace terminal page regression', () => {
     const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
 
     expectIncludes(page, 'const refreshTerminalSessions = useCallback(async () => {', 'WorkspacePage 应提供终端列表刷新函数');
-    expectIncludes(page, 'const result = await window.autoplan.listTerminals({ projectId });', '终端列表刷新应调用 preload listTerminals');
+    expectIncludes(page, 'const result = await client.listTerminals({ projectId });', '终端列表刷新应调用客户端 listTerminals');
     expectIncludes(page, 'rememberClosedTerminalSessions(result.sessions, requestProjectId, closedTerminalSessionKeysRef.current);', '读取终端列表应先记录关闭态 session');
     expectIncludes(page, 'setTerminalSessions(normalizeTerminalSessions(', '读取终端列表应按项目和关闭态归一化');
     expectIncludes(page, 'closedTerminalSessionKeysRef.current,', '终端列表归一化应接入 closed tombstone');
-    expectIncludes(page, 'const unsubscribeStatus = window.autoplan.onTerminalStatus(applyTerminalEvent);', 'WorkspacePage 应订阅终端 status 事件');
-    expectIncludes(page, 'const unsubscribeExit = window.autoplan.onTerminalExit(applyTerminalEvent);', 'WorkspacePage 应订阅终端 exit 事件');
-    expectIncludes(page, 'const unsubscribeClosed = window.autoplan.onTerminalClosed(applyTerminalEvent);', 'WorkspacePage 应订阅终端 closed 事件');
+    expectIncludes(page, 'const unsubscribeStatus = client.onTerminalStatus(applyTerminalEvent);', 'WorkspacePage 应订阅终端 status 事件');
+    expectIncludes(page, 'const unsubscribeExit = client.onTerminalExit(applyTerminalEvent);', 'WorkspacePage 应订阅终端 exit 事件');
+    expectIncludes(page, 'const unsubscribeClosed = client.onTerminalClosed(applyTerminalEvent);', 'WorkspacePage 应订阅终端 closed 事件');
     expectIncludes(page, 'if (!terminalEventBelongsToProject(event, projectId)) return;', '终端事件应过滤其它项目');
     expectIncludes(page, 'setTerminalSessions((current) => upsertTerminalSession(', '普通终端事件应按 session id upsert');
     expectIncludes(page, 'unsubscribeStatus();', '卸载时应清理 status 监听');
@@ -1331,7 +1331,7 @@ describe('Workspace terminal page regression', () => {
 
     expect(terminalSectionStart >= 0 && terminalSectionEnd > terminalSectionStart, '应能定位终端页 section');
     expect(!page.includes('function WorkspaceTerminalMetadataSection'), 'WorkspacePage 不应继续定义元数据伪终端页');
-    expect(!page.includes('window.autoplan.createTerminal({ projectId })'), 'WorkspacePage 不应在页面层直接创建终端');
+    expect(!page.includes('client.createTerminal({ projectId })'), 'WorkspacePage 不应在页面层直接创建终端');
     expect(!page.includes('function terminalStatusTone'), 'WorkspacePage 不应保留 metadata-only 状态色辅助函数');
     expect(!page.includes('function terminalStatusLabel'), 'WorkspacePage 不应保留 metadata-only 状态文案辅助函数');
     expect(!page.includes('function terminalSessionMeta'), 'WorkspacePage 不应保留 metadata-only 会话摘要辅助函数');

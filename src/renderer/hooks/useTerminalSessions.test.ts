@@ -64,15 +64,19 @@ describe('useTerminalSessions regression', () => {
   it('subscribes to terminal event streams and cleans up every listener on unmount', () => {
     const hook = source('src', 'renderer', 'hooks', 'useTerminalSessions.ts');
 
-    expectIncludes(hook, 'const unsubscribeData = window.autoplan.onTerminalData((event) => {', 'hook 应订阅终端 data 事件');
-    expectIncludes(hook, 'const unsubscribeExit = window.autoplan.onTerminalExit(applyTerminalEvent);', 'hook 应订阅终端 exit 事件');
-    expectIncludes(hook, 'const unsubscribeStatus = window.autoplan.onTerminalStatus(applyTerminalEvent);', 'hook 应订阅终端 status 事件');
-    expectIncludes(hook, 'const unsubscribeClosed = window.autoplan.onTerminalClosed(applyTerminalEvent);', 'hook 应订阅终端 closed 事件');
+    expectIncludes(hook, 'const client = useAutoplanClient();', 'hook 应读取注入的业务客户端');
+    expectIncludes(hook, 'const unsubscribeData = client.onTerminalData((event) => {', 'hook 应订阅终端 data 事件');
+    expectIncludes(hook, 'const unsubscribeExit = client.onTerminalExit((event) => {', 'hook 应订阅终端 exit 事件');
+    expectIncludes(hook, 'const unsubscribeStatus = client.onTerminalStatus((event) => {', 'hook 应订阅终端 status 事件');
+    expectIncludes(hook, 'const unsubscribeClosed = client.onTerminalClosed((event) => {', 'hook 应订阅终端 closed 事件');
+    expectIncludes(hook, 'active = false;', '卸载后迟到事件应失效');
     expectIncludes(hook, 'if (!eventBelongsToProject(event, projectIdRef.current)) return;', 'data 事件应过滤其它项目');
     expectIncludes(hook, 'if (terminalEventClosed(event, projectIdRef.current, closedSessionKeysRef.current)) {', 'data 事件遇到关闭态应执行删除语义');
     expectIncludes(hook, 'const data = String(event.data ?? \'\');', 'data 事件应归一化输出文本');
     expectIncludes(hook, 'if (!data) return;', '空 data 不应触发订阅回调');
-    expectIncludes(hook, 'handlers.forEach((handler) => handler(data, event.session));', 'data 事件应分发给当前 session 的订阅者');
+    expectIncludes(hook, 'handlers.forEach((_owners, handler) => handler(data, event.session));', 'data 事件应分发给当前 session 的订阅者');
+    expectIncludes(hook, 'handlers.set(handler, (handlers.get(handler) || 0) + 1);', '重复数据订阅应按 owner 引用计数去重');
+    expectIncludes(hook, 'if (!active) return;', '数据订阅释放应幂等');
     expectIncludes(hook, 'unsubscribeData();', '卸载时应清理 data 监听');
     expectIncludes(hook, 'unsubscribeExit();', '卸载时应清理 exit 监听');
     expectIncludes(hook, 'unsubscribeStatus();', '卸载时应清理 status 监听');
@@ -97,17 +101,41 @@ describe('useTerminalSessions regression', () => {
   it('routes actions through preload terminal APIs without executor or script side effects', () => {
     const hook = source('src', 'renderer', 'hooks', 'useTerminalSessions.ts');
 
-    expectIncludes(hook, 'window.autoplan.listTerminals({ projectId: requestProjectId })', 'refresh 应调用 listTerminals');
-    expectIncludes(hook, 'window.autoplan.createTerminal(payload)', 'createSession 应调用 createTerminal');
-    expectIncludes(hook, 'window.autoplan.writeTerminal({ sessionId, data })', 'write 应调用 writeTerminal');
-    expectIncludes(hook, 'window.autoplan.resizeTerminal({ sessionId, cols, rows })', 'resize 应调用 resizeTerminal');
-    expectIncludes(hook, 'window.autoplan.killTerminal({ sessionId })', 'kill 应调用 killTerminal');
-    expectIncludes(hook, 'window.autoplan.closeTerminal({ sessionId })', 'close 应调用 closeTerminal');
-    expectIncludes(hook, 'window.autoplan.renameTerminal({ sessionId, title })', 'rename 应调用 renameTerminal');
-    expectIncludes(hook, 'window.autoplan.clearTerminal({ sessionId })', 'clear 应调用 clearTerminal');
-    expectIncludes(hook, 'window.autoplan.replayTerminal({ sessionId })', 'replay 应调用 replayTerminal');
+    expectIncludes(hook, 'client.listTerminals({ projectId: requestProjectId })', 'refresh 应调用 listTerminals');
+    expectIncludes(hook, 'client.createTerminal(payload)', 'createSession 应调用 createTerminal');
+    expectIncludes(hook, 'client.writeTerminal({ sessionId, data })', 'write 应调用 writeTerminal');
+    expectIncludes(hook, 'client.resizeTerminal({ sessionId, cols, rows })', 'resize 应调用 resizeTerminal');
+    expectIncludes(hook, 'client.killTerminal({ sessionId })', 'kill 应调用 killTerminal');
+    expectIncludes(hook, 'client.closeTerminal({ sessionId })', 'close 应调用 closeTerminal');
+    expectIncludes(hook, 'client.renameTerminal({ sessionId, title })', 'rename 应调用 renameTerminal');
+    expectIncludes(hook, 'client.clearTerminal({ sessionId })', 'clear 应调用 clearTerminal');
+    expectIncludes(hook, 'client.replayTerminal({ sessionId })', 'replay 应调用 replayTerminal');
     expectNotIncludes(hook, 'runExecutor', '终端 hook 不应直接运行执行器');
     expectNotIncludes(hook, 'runScript', '终端 hook 不应直接运行脚本');
     expectNotIncludes(hook, 'lastStatus', '终端 hook 不应修改执行器最近状态');
+  });
+
+  it('opens only the injected private terminal connection and deduplicates Go output by sequence', () => {
+    const hook = source('src', 'renderer', 'hooks', 'useTerminalSessions.ts');
+
+    expectIncludes(hook, "import { useAutoplanClient, useTerminalConnectionOperations } from '../lib/api/provider';", 'hook 应通过 provider 获取 terminal connection');
+    expectIncludes(hook, 'const terminalConnectionsRef = useRef(new Map<string, () => void>());', 'hook 应保存受限 terminal connection');
+    expectIncludes(hook, 'const terminalSequencesRef = useRef(new Map<string, number>());', 'hook 应保存每会话最后已应用 seq');
+    expectIncludes(hook, 'if (sequence <= previous) return;', '重复或乱序 terminal output 不应重复应用');
+    expectIncludes(hook, 'if (previous !== 0 && sequence !== previous + 1)', 'seq 缺口应进入可恢复错误状态');
+    expectIncludes(hook, 'terminalConnectionOperations?.connectTerminal?.(', 'hook 应经注入 client 打开私有 terminal socket');
+    expectIncludes(hook, 'terminalConnectionsRef.current.get(sessionId)?.();', '最后一个订阅释放时应关闭对应 socket');
+    expectNotIncludes(hook, 'new WebSocket(', 'hook 不应直接创建 WebSocket');
+    expectNotIncludes(hook, 'window.autoplan', 'hook 不应直接访问 preload 对象');
+  });
+
+  it('orders REST replay before live attachment and releases socket state on teardown', () => {
+    const hook = source('src', 'renderer', 'hooks', 'useTerminalSessions.ts');
+
+    expectIncludes(hook, 'setTimeout(() => openTerminalConnection(sessionId), 0);', 'live socket attach must follow replay delivery');
+    expectIncludes(hook, 'terminalConnectionsRef.current.forEach((unsubscribe) => unsubscribe());', 'unmount and project changes must close every private socket');
+    expectIncludes(hook, 'terminalSequencesRef.current.clear();', 'project changes must not carry a cursor across projects');
+    expectIncludes(hook, 'terminalSequencesRef.current.delete(sessionId);', 'xterm remount must replay rather than race an old cursor');
+    expectIncludes(hook, 'if (!mountedRef.current || !sessionId || terminalConnectionsRef.current.has(sessionId)', 'strict-mode cleanup must prevent duplicate attachment');
   });
 });

@@ -1,0 +1,159 @@
+{
+  "title": "P03：只读项目与 Snapshot 的 Go/HTTP 双传输兼容闭环",
+  "summary": "在 P00 脱敏 fixture、失败基线以及 P01、P02 全部门禁真实通过的前提下，依据 D:\\docs\\autoplan-go-backend-separation-plan.md v1.0（2026-07-11），完成持久化领域迁移的首个只读闭环：从同一临时测试数据库串行生成 Node projects/完整 AppSnapshot 规范化黄金输出；在本机 Go 模块化单体中以严格只读方式查询 projects、settings、project_states，并由共享 application service 向 REST 和未来 MCP/UI transport 提供兼容项目与 snapshot DTO；实现受统一鉴权、分页和错误模型保护的 GET /api/v1/projects、GET /api/v1/projects/{project_id}、GET /api/v1/projects/{project_id}/snapshot；扩展 HttpAutoplanClient 的 health、项目、snapshot 与项目 SSE 占位连接，通过 P01 的单一 transport feature flag 在不改 React 组件、DTO 或状态管理的情况下切换。HTTP 模式下未迁移写能力仍经既有 IPC 适配器交给 Node，Go 不提供写 SQL，默认生产继续使用 IPC，任何测试均只操作 P00 生成的脱敏临时库或显式副本且 Node/sql.js 与 Go 串行访问；密钥、token、env_vars 和未授权绝对路径不得进入 API、日志、事件、黄金文件或证据。若 P00、P01、P02 任一门禁、只读数据库证明或安全前置不满足，阶段必须报告 blocked 并停止，不得跨阶段实现或伪造通过。",
+  "tasks": [
+    {
+      "title": "从 P00 脱敏测试库生成可复现的 Node projects 与 snapshot 黄金输出",
+      "scope": [
+        "scripts/migration-p03/generate-node-golden.js",
+        "scripts/migration-p03/normalize-contract.js",
+        "scripts/migration-p03/generate-node-golden.test.js",
+        "fixtures/migration/p03/manifest.json",
+        "fixtures/migration/p03/projects.golden.json",
+        "fixtures/migration/p03/snapshot-empty.golden.json",
+        "fixtures/migration/p03/snapshot-project.golden.json",
+        "fixtures/migration/p03/README.md"
+      ],
+      "acceptance": [
+        "生成器先验证 P00、P01、P02 完成标记与冻结签名；任一门禁缺失、漂移或非零失败时输出明确 blocked，且不创建黄金文件、不启动 Go、不继续后续阶段步骤。",
+        "数据库输入只能由 P00 fixture 生成器写入系统临时目录，或来自调用方显式标记的脱敏副本；拒绝 Electron userData、现有生产 autoplan.sqlite、仓库外未授权路径和疑似正在使用的数据库，生成结束后清理临时库。",
+        "Node 规范路径复用当前 LoopService/src/loop/snapshots.js 的 projects、空 snapshot 和指定项目 snapshot 语义，不复制一套业务规则；Node 完成并关闭 sql.js 数据库后 Go 才能读取同一临时文件，两个进程从不并发打开写路径。",
+        "规范化规则显式处理临时根路径、非确定时间、自动递增 ID、运行时 operation/terminal/MCP 状态等已批准字段，并以稳定占位值或映射表固定；不得删除 null、枚举、布尔/数字差异、默认字段、数组排序或其他业务语义来制造相等。",
+        "黄金输出覆盖项目列表按 updated_at DESC、id DESC 排序、项目状态摘要合并、无 project_id 的完整空 AppSnapshot、有效/不存在项目 snapshot、UTC RFC3339、nullable/default 值与敏感配置掩码；manifest 记录来源 fixture 配方、规范化版本和内容哈希。",
+        "黄金 JSON、manifest、错误和生成日志不得包含真实用户名、真实工作区/userData 路径、api_key、auth_token、MCP/session token、env_vars 值或可用凭据；脱敏扫描发现命中时安全失败并删除本次产物。"
+      ]
+    },
+    {
+      "title": "实现仅允许 fixture 或显式副本的 Go 只读 SQLite repository",
+      "scope": [
+        "backend/internal/repository/repository.go",
+        "backend/internal/repository/sqlite/readonly.go",
+        "backend/internal/repository/sqlite/projects.go",
+        "backend/internal/repository/sqlite/settings.go",
+        "backend/internal/repository/sqlite/project_states.go",
+        "backend/internal/repository/sqlite/readonly_test.go",
+        "backend/internal/repository/sqlite/projects_test.go"
+      ],
+      "acceptance": [
+        "repository 只实现 projects、settings、project_states 的查询接口，连接采用 SQLite read-only/immutable 等价模式并启用 query_only 防护；代码和依赖中不存在 INSERT、UPDATE、DELETE、REPLACE、DDL、migration、VACUUM、ATTACH 写目标或隐式建库路径。",
+        "打开数据库前要求 P02 安全配置提供显式 fixture/副本声明、规范化绝对路径和允许根；空路径、缺失文件、Electron userData、生产 autoplan.sqlite、符号链接逃逸、不可验证副本或写模式参数均关闭失败。",
+        "连接不执行 src/database.js 的初始化、ensureColumn、默认项目创建、状态重置或任何回填；只接受 P00 冻结 schema，缺表、缺列、类型不兼容和 schema 漂移返回稳定非敏感错误而非修改数据库。",
+        "项目列表、单项目、settings 前缀和 project state 查询保持 sql.js 的类型/null/default 与排序语义，能够区分不存在项目、缺失 state 和合法空值，不把数据库驱动差异泄漏到 application service。",
+        "查询通过 context 传播取消和超时，结果关闭 rows/statement/connection，错误仅记录 request_id、稳定代码与脱敏数据库标识；数据库路径、SQL 参数、settings 密钥值、env_vars 和认证材料不进入日志或事件。",
+        "只读防护场景覆盖 URI 参数注入、只读文件、写 SQL 尝试、缺失/损坏/漂移数据库、并发只读查询和路径逃逸；每个拒绝场景保持 fixture 字节哈希不变。"
+      ]
+    },
+    {
+      "title": "构建兼容 Project 与 AppSnapshot 的共享只读 application service",
+      "scope": [
+        "backend/internal/application/projects",
+        "backend/internal/domain/project",
+        "backend/internal/domain/contracts",
+        "backend/internal/bootstrap/dependencies.go",
+        "backend/internal/application/projects/service_test.go"
+      ],
+      "acceptance": [
+        "项目查询和 snapshot 组装集中在同一 application service；REST、未来 MCP 与 UI transport 只能调用该服务，http handler、repository 和客户端不得各自复制排序、默认值、脱敏或 project state 合并规则。",
+        "Project DTO 与 P00/P02 契约一致：保留 snake_case、数字 ID、workspace_path/description 空串、created_at/updated_at、可选运行摘要和计划生成/执行配置字段的 nullability、枚举与默认值，并按 Node projects() 的 updated_at DESC、id DESC 规则稳定排序。",
+        "有效项目 snapshot 保留 AppSnapshot 全部顶层字段、activeProjectId/activeProject/projects/state 语义、workspace_path 合并、MCP 安全状态和 scanSummary 默认值；本阶段尚未迁移的 requirements、feedback、attachments、plans、tasks、events、scans、scripts、executors、terminals 与运行时 operation 字段按 P00 空值契约返回，不伪造数据或跨阶段实现其他 repository。",
+        "无 project_id 返回包含项目列表的空 snapshot；不存在项目与无参数空 snapshot 按冻结契约分别处理，HTTP 的明确单项目路由仍把不存在项目映射为 PROJECT_NOT_FOUND，避免用空对象掩盖错误。",
+        "settings 和 project_states 中的 Claude/MCP token、env_vars、命令环境及未授权路径在服务边界统一过滤；兼容 UI 必需的授权项目路径只对通过 P02 本机会话与 Origin 鉴权的请求可见，原始秘密永不进入 DTO、事件或日志。",
+        "服务对同一 repository 快照产生确定性结果，输入行顺序、缺失可选列、旧库默认来源、UTC RFC3339 与整数/布尔表示均按黄金规范化规则处理，且不修改现有状态机或 Node 业务语义。"
+      ]
+    },
+    {
+      "title": "实现统一分页、错误与鉴权的只读 Projects 和 Snapshot REST API",
+      "scope": [
+        "backend/internal/httpapi/router.go",
+        "backend/internal/httpapi/projects.go",
+        "backend/internal/httpapi/middleware.go",
+        "backend/internal/httpapi/errors.go",
+        "backend/internal/httpapi/projects_test.go",
+        "backend/openapi/openapi.yaml",
+        "backend/openapi/schemas/project.schema.json",
+        "backend/openapi/schemas/snapshot.schema.json"
+      ],
+      "acceptance": [
+        "注册 GET /api/v1/projects、GET /api/v1/projects/{project_id} 和 GET /api/v1/projects/{project_id}/snapshot，handler 只校验/转换 HTTP 输入并调用共享 application service；不注册本阶段之外的 POST、PATCH、DELETE 或数据库写路由。",
+        "项目列表采用 P02 统一分页信封与确定性排序，明确 page/page_size 或 cursor 的默认值、上限、总数/下一页语义；重复项、遗漏项、越界页、零/负数、非整数、未知排序字段和多余参数均有稳定结果或稳定错误。",
+        "三个路由复用 P02 REST/SSE/WS 的随机会话、精确 Origin、Host、request_id、超时、body 上限与结构化日志中间件；无凭据、错误凭据、非法 Origin/Host 和未 ready 状态在 application service 前被拒绝。",
+        "成功响应保持 P02 OpenAPI 的 snake_case、UTC RFC3339 与 request_id 约定；无效 project_id、项目不存在、非法分页、schema 漂移、数据库只读失败和内部错误分别映射稳定状态码与错误码，不要求客户端解析错误文本。",
+        "GET 与 HEAD/条件请求策略明确，其他方法返回统一 METHOD_NOT_ALLOWED；错误 details、响应头、日志和 panic recovery 不泄漏数据库路径、workspace 之外的绝对路径、SQL、token、settings 秘密、env_vars 或内部堆栈。",
+        "OpenAPI 与 JSON Schema 精确描述列表分页、单项目、完整兼容 snapshot、nullability/default、认证和错误响应，并记录 P00 历史 snapshot IPC 目标到本阶段 /api/v1/projects/{project_id}/snapshot 的受控映射。"
+      ]
+    },
+    {
+      "title": "扩展 HttpAutoplanClient 的 health、项目、snapshot 与项目 SSE 占位传输",
+      "scope": [
+        "src/renderer/lib/api/client.ts",
+        "src/renderer/lib/api/httpClient.ts",
+        "src/renderer/lib/api/events.ts",
+        "src/renderer/lib/api/provider.tsx",
+        "src/renderer/lib/api/transport.ts",
+        "src/renderer/lib/api/httpClient.test.js",
+        "src/renderer/lib/api/transport.test.js"
+      ],
+      "acceptance": [
+        "HttpAutoplanClient 复用 P01 AutoplanClient 的 Project/AppSnapshot 类型与异常边界，实现 health/ready 探测、分页项目列表、单项目和 snapshot 调用；只在传输边界解包 P02 HTTP 信封，不重命名 DTO、不改变 null/default/枚举或在组件内增加 HTTP 分支。",
+        "P01 的唯一 transport feature flag 选择 HTTP 读路径或完整 IPC 客户端，默认、缺失、非法和生产配置均选择 IPC；显式 HTTP 模式配置不完整、鉴权失败或 Go 未 ready 时安全报错，不静默放宽鉴权或把失败伪装成空 snapshot。",
+        "迁移期未实现的 mutation 与其他领域能力继续通过已批准的 IpcAutoplanClient 兼容委托交给 Node，renderer 仍不直接访问 window.autoplan；Go 不接收写请求，因此默认生产及 HTTP 试验模式都只有 Node/sql.js writer。",
+        "HTTP 请求只指向 P02 readiness 交付的 127.0.0.1 随机端口，凭据通过受控 Cookie/头交付且不进入 URL、localStorage、错误或日志；请求具备 AbortSignal、超时、严格 JSON/content-type 校验和统一错误码映射。",
+        "项目 SSE 占位连接复用 P02 项目事件路由、安全握手和版本化信封，提供幂等 unsubscribe、连接取消和有限重连边界；本阶段不伪造 snapshot/patch 事件、不改变 useSnapshot 的全量优先与项目隔离语义，真实事件迁移仍留给后续阶段。",
+        "相同 Provider 下 React 项目列表与工作区读取无需修改组件即可在 IPC/HTTP 间切换；StrictMode 重挂载、快速项目切换、迟到响应、取消和 SSE 断开不会产生重复连接、监听器泄漏或跨项目状态污染。"
+      ]
+    },
+    {
+      "title": "建立 Node/Go 黄金 JSON 对比与 React IPC/HTTP 双传输契约覆盖",
+      "scope": [
+        "scripts/migration-p03/compare-golden.js",
+        "scripts/migration-p03/compare-golden.test.js",
+        "backend/internal/application/projects/golden_test.go",
+        "backend/internal/httpapi/projects_contract_test.go",
+        "src/renderer/lib/api/projectTransport.contract.test.js",
+        "src/renderer/hooks/useSnapshot.transport.test.js",
+        "src/renderer/pages/ProjectsPage.transport.test.js"
+      ],
+      "acceptance": [
+        "对比器从同一 P00 临时数据库依次运行 Node 规范生成和 Go 只读查询，在两侧应用同一带版本的规范化规则后执行结构化深比较；禁止用字符串替换、忽略未知字段、宽松数字比较或更新黄金文件来掩盖差异。",
+        "黄金对比逐项覆盖字段存在性、snake_case、null/缺失区别、数字与布尔表示、枚举、默认值、项目/state 合并、项目与数组排序、UTC RFC3339、空/有效/不存在项目 snapshot 及完整顶层 shape，并在差异中给出脱敏 JSON Pointer。",
+        "非确定时间和 ID 通过来源明确的映射表稳定化，跨字段引用使用同一映射且保持相对顺序与相等关系；无法安全规范化的字段导致失败，而不是从比较中删除。",
+        "Go HTTP 契约场景覆盖分页首/中/末/空页、单项目、snapshot、400/401/403/404/405/500、request_id、content-type、超时/取消、只读失败和敏感字段扫描，并证明所有 handler 调用同一 application service。",
+        "React 双传输场景向同一未修改组件树注入 IpcAutoplanClient 与 HttpAutoplanClient，断言项目列表、项目切换、加载/错误边界和 snapshot 渲染结果一致；HTTP 请求参数、分页解包、取消、迟到响应和默认 IPC 回退均可观察。",
+        "测试生命周期串行关闭 Node/sql.js 后再打开 Go 只读连接，比较前后 fixture 哈希不变；fixture、失败 diff、HTTP capture 和前端 mock 不含真实 Electron userData、凭据、env_vars 或未授权绝对路径。"
+      ]
+    },
+    {
+      "title": "落地 P03 只读守卫、阶段验证入口与证据说明",
+      "scope": [
+        "scripts/migration-p03/check-readonly.js",
+        "scripts/migration-p03/check-readonly.test.js",
+        "scripts/migration-p03/verify.js",
+        "package.json",
+        "docs/migration/p03/README.md",
+        "docs/migration/p03/evidence/README.md"
+      ],
+      "acceptance": [
+        "静态与运行时只读守卫扫描 P03 Go repository、OpenAPI 和路由，拒绝写 SQL、写方法、自动 migration/建库、真实 userData 发现逻辑、非 loopback 目标和本阶段未授权业务表；同时以 fixture 前后哈希证明验证过程零写入。",
+        "migration:p03:verify 首先运行 P00、P01、P02 的真实门禁并校验完成证据，再在系统临时目录生成脱敏数据库、串行生成 Node 黄金、运行 Go/HTTP 契约与黄金对比、React IPC/HTTP 双传输覆盖、只读/秘密扫描以及项目 check/test 基线比较；前置失败时报告 blocked 并停止。",
+        "验证入口保留每个子命令的实际命令、起止时间、stdout/stderr 和原始退出码，不吞错、不使用 --force/skip/only、不把既有红灯当成功；P03 专项 go test、Node 契约和前端传输场景必须为零退出码。",
+        "npm.cmd run check 与 npm.cmd test 按 P00 冻结签名比较，只允许完全相同的既有失败，任何新增失败、消失但未说明的签名、本阶段相关失败或基线文件漂移均失败；P15 清零或逐项明确处置的义务继续保留。",
+        "证据生成器输出脱敏命令清单、退出码、fixture/黄金/日志哈希、数据库前后哈希、受影响文件、接口覆盖、Node/Go diff 摘要和剩余风险；凭据、env_vars、真实路径、数据库内容和可复用会话不得写入证据。",
+        "阶段说明记录单一 transport 开关、默认 IPC 与回退、未迁移能力的 IPC 委托、SSE 占位边界、只读数据库授权方式、禁止双写、blocked 判定和清理步骤，并明确本阶段没有生产 Go writer、真实事件流或 UI/状态管理重写。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm.cmd run migration:p03:verify",
+    "criteria": [
+      "P00、P01、P02 的实际门禁和完成证据全部通过；任一前置不满足时最终结果明确为 blocked，未生成虚假黄金、未启动跨阶段实现、未打开真实 Electron userData 或生产数据库。",
+      "P00 脱敏数据库在系统临时目录可确定性生成，Node/sql.js 完全关闭后 Go 才以只读模式打开；验证前后数据库字节哈希一致，代码与运行轨迹均无写 SQL、migration、建库或 Node/Go 同库并发写入。",
+      "GET /api/v1/projects、GET /api/v1/projects/{project_id}、GET /api/v1/projects/{project_id}/snapshot 通过统一 application service 返回契约一致结果，分页、排序、鉴权、Origin/Host、request_id、超时和稳定错误码覆盖成功及拒绝场景。",
+      "同一 fixture 下 Node 与 Go projects/空 snapshot/有效项目 snapshot 的字段、snake_case、nullability、类型、枚举、默认值、排序、UTC 时间、ID 引用和完整 AppSnapshot 语义在显式规范化后深度一致；任何未批准字段忽略或宽松比较均使验收失败。",
+      "HttpAutoplanClient 的 health/ready、项目、snapshot 和项目 SSE 占位连接符合 P01/P02 边界；同一 React 组件在 IPC 与 HTTP 注入下无需业务改动即可得到一致只读 UI，取消、迟到响应、StrictMode 和订阅释放无重复连接或跨项目污染。",
+      "默认及非法 transport 配置仍使用 IPC，显式 HTTP 模式不绕过鉴权且未迁移写能力仍由 IpcAutoplanClient 交给 Node；Go API 不暴露写路由，生产与试验路径都保持 Node/sql.js 为唯一 writer。",
+      "相关 backend go test、Node 黄金/HTTP 契约测试、renderer 双传输测试和只读/脱敏守卫全部零退出码；npm.cmd run check 与 npm.cmd test 相对 P00 冻结基线无新增失败且所有 P03 相关测试通过，既有红灯与 P15 处置要求未被隐藏或篡改。",
+      "API、日志、SSE 占位信封、黄金 JSON、fixture、失败 diff 和证据均未发现 api_key、auth_token、token、env_vars、真实用户数据或未授权绝对路径；授权 workspace_path 仅在受保护本机会话的兼容 DTO 中按冻结策略出现。",
+      "证据产物包含每条实际命令、真实退出码、脱敏 stdout/stderr、fixture 与数据库前后哈希、Node/Go 对比摘要、受影响文件和剩余风险；最终 git status 仅包含 P03 预期 backend、renderer transport、fixture 黄金、脚本、测试、package 与迁移文档变更，现有未跟踪 .claude/、docs/migration/、前序计划、scripts/migration-baseline/ 及所有无关用户改动保持原样。"
+    ]
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "kind": "p12-process-security-cases",
+  "fixture_only": true,
+  "cases": [
+    {
+      "id": "rest-rejects-command-shaped-body",
+      "transport": "rest",
+      "input_fields": ["command", "args", "shell", "cwd", "env", "pid"],
+      "expected": "invalid_json_or_runtime_command",
+      "process_started": false
+    },
+    {
+      "id": "mcp-rejects-control-character-label",
+      "transport": "mcp",
+      "input": "<invalid-control-character-label>",
+      "expected": "invalid_request",
+      "process_started": false
+    },
+    {
+      "id": "executor-rejects-shell-metacharacter-command",
+      "transport": "application-service",
+      "input": "<shell-metacharacter-command>",
+      "expected": "invalid_command",
+      "process_started": false
+    },
+    {
+      "id": "output-redacts-split-value-and-path",
+      "transport": "process-output",
+      "input": "<split-sensitive-output>",
+      "expected": ["<redacted>", "<path>"],
+      "raw_output_persisted": false
+    },
+    {
+      "id": "restart-does-not-adopt-process",
+      "transport": "recovery",
+      "expected": "interrupted_without_relaunch_or_pid_adoption",
+      "process_started": false
+    }
+  ]
+}

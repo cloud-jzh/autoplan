@@ -155,4 +155,21 @@ describe('IntakePanel intake acceptance source contracts', () => {
     assert.match(panel, /function intakeAcceptanceKey\(type: IntakeType, id: number, action: 'accept' \| 'unaccept'\)/);
     assert.match(panel, /return `\$\{type\}:\$\{id\}:\$\{action\}`;/);
   });
+
+  it('keeps P005 pages behind the injected client and desktop boundaries', () => {
+    const rendererRoot = join(process.cwd(), 'src', 'renderer');
+    const projectsPage = readFileSync(join(rendererRoot, 'pages', 'ProjectsPage.tsx'), 'utf8');
+    const workspacePage = readFileSync(join(rendererRoot, 'pages', 'WorkspacePage.tsx'), 'utf8');
+    const controller = readFileSync(join(rendererRoot, 'hooks', 'useWorkspaceController.ts'), 'utf8');
+    const acceptance = readFileSync(join(rendererRoot, 'components', 'workspace', 'AcceptanceView.tsx'), 'utf8');
+
+    for (const sourceText of [projectsPage, workspacePage, controller, acceptance]) {
+      assert.doesNotMatch(sourceText, /window\.autoplan/);
+    }
+    assert.match(projectsPage, /const client = useAutoplanClient\(\)/);
+    assert.match(projectsPage, /const desktopBridge = useDesktopBridge\(\)/);
+    assert.match(workspacePage, /client\.runTaskBatches\(\{ projectId, planId: plan\.id, batches, manual: true \}\)/);
+    assert.match(controller, /desktopBridge\.openWorkspaceFile\(\{/);
+    assert.match(controller, /client\.retryIntakePlanGeneration\(\{ projectId, type, id, \.\.\.options \}\)/);
+  });
 });

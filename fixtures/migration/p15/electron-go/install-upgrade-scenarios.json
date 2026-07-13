@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "kind": "p15-install-upgrade-scenarios",
+  "required_scenarios": [
+    "fresh_install",
+    "legacy_database_copy_upgrade",
+    "migration_interrupt_recovery",
+    "backup_restore",
+    "normal_exit",
+    "crash_exit",
+    "update_restart"
+  ],
+  "required_observations": [
+    "temporary_database_only",
+    "pragma_integrity_check_ok",
+    "sidecar_resource_verified",
+    "no_second_writer",
+    "process_tree_cleaned"
+  ],
+  "forbidden": [
+    "real_userdata",
+    "live_installation",
+    "publish",
+    "credential",
+    "absolute_path"
+  ]
+}

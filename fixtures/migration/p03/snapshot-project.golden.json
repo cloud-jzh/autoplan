@@ -1,0 +1,241 @@
+{
+  "activeOperation": null,
+  "activeOperations": [],
+  "activeProject": {
+    "created_at": "2026-01-02T03:04:05.000Z",
+    "description": "",
+    "id": 1,
+    "name": "Synthetic Alpha",
+    "updated_at": "2026-01-02T03:04:07.000Z",
+    "workspace_path": "<fixture-workspace>/p03/alpha"
+  },
+  "activeProjectId": 1,
+  "attachments": [],
+  "events": [],
+  "executors": [],
+  "feedback": [],
+  "lastOperation": null,
+  "mcp": {
+    "authHeader": "Authorization: Bearer <token>",
+    "authTokenMasked": "",
+    "connectionExample": "http://127.0.0.1:43847/mcp",
+    "enabled": false,
+    "hasAuthToken": false,
+    "host": "127.0.0.1",
+    "lastError": null,
+    "lastEvent": null,
+    "localOnly": true,
+    "note": "默认仅监听本机地址，供本机 MCP 客户端连接。",
+    "path": "/mcp",
+    "port": 43847,
+    "running": false,
+    "startedAt": null,
+    "status": "disabled",
+    "toolDocs": [
+      {
+        "description": "List projects with runtime state summaries.",
+        "markdown": "## list_projects\n**功能**：List projects with runtime state summaries.\n**参数**\n\n| 参数 | 类型 | 必填 | 说明 |\n| --- | --- | --- | --- |\n| `query` | `string` | 否 | 最长 200 |\n| `limit` | `integer` | 否 | 最小 1；最大 200 |",
+        "name": "list_projects",
+        "title": "List AutoPlan projects"
+      },
+      {
+        "description": "Get one project and its snapshot summary.",
+        "markdown": "## get_project\n**功能**：Get one project and its snapshot summary.\n**参数**\n\n| 参数 | 类型 | 必填 | 说明 |\n| --- | --- | --- | --- |\n| `projectId` | `integer` | 是 | 最小 1 |",
+        "name": "get_project",
+        "title": "Get AutoPlan project"
+      },
+      {
+        "description": "Create a project and return its id plus a snapshot summary.",
+        "markdown": "## create_project\n**功能**：Create a project and return its id plus a snapshot summary.\n**参数**\n\n| 参数 | 类型 | 必填 | 说明 |\n| --- | --- | --- | --- |\n| `name` | `string` | 是 | 最短 1；最长 120 |\n| `workspacePath` | `string` | 是 | 最短 1；最长 1000 |\n| `description` | `string` | 否 | 最长 5000 |\n| `agentCliProvider` | `string` | 否 | Legacy external CLI provider. Project-level input maps to generation and execution defaults when new fields are omitted; intake-level input maps to plan generation only.；可选：`codex`, `claude`, `opencode`, `oh-my-pi` |\n| `agentCliCommand` | `string` | 否 | Legacy external CLI command override.；最长 1000 |\n| `codexReasoningEffort` | `string` | 否 | Legacy Codex reasoning effort. Only applies when the effective provider is codex.；可选：`low`, `medium`, `high`, `xhigh` |\n| `planGenerationStrategy` | `string` | 否 | Plan generation strategy: legacy external Markdown, external structured PlanSpec, or builtin LLM structured PlanSpec.；可选：`external-cli-markdown`, `external-cli-structured`, `builtin-llm-structured` |\n| `planGenerationProvider` | `string` | 否 | Provider for plan generation. External strategies use CLI providers; builtin LLM uses AI providers.；可选：`codex`, `claude`, `opencode`, `oh-my-pi`, `openai`, `deepseek`, `anthropic` |\n| `planGenerationCommand` | `string` | 否 | Command for external CLI plan generation strategies.；最长 1000 |\n| `planGenerationModel` | `string` | 否 | Model name for builtin LLM plan generation.；最长 200 |\n| `planGenerationCodexReasoningEffort` | `string` | 否 | Codex reasoning effort for plan generation when the effective provider is codex.；可选：`low`, `medium`, `high`, `xhigh` |\n| `planExecutionStrategy` | `string` | 否 | Plan execution strategy. external-cli is supported; builtin-llm is accepted but task execution currently returns a clear unsupported error.；可选：`external-cli`, `builtin-llm` |\n| `planExecutionProvider` | `string` | 否 | Provider for plan execution. external-cli uses CLI providers.；可选：`codex`, `claude`, `opencode`, `oh-my-pi`, `openai`, `deepseek`, `anthropic` |\n| `planExecutionCommand` | `string` | 否 | Command for external CLI plan execution.；最长 1000 |\n| `planExecutionModel` | `string` | 否 | Reserved model name for builtin LLM plan execution.；最长 200 |\n| `planExecutionCodexReasoningEffort` | `string` | 否 | Codex reasoning effort for plan execution when the effective provider is codex.；可选：`low`, `medium`, `high`, `xhigh` |",
+        "name": "create_project",
+        "title": "Create AutoPlan project"
+      },
+      {
+        "description": "List requirements for a project.",
+        "markdown": "## list_requirements\n**功能**：List requirements for a project.\n**参数**\n\n| 参数 | 类型 | 必填 | 说明 |\n| --- | --- | --- | --- |\n| `projectId` | `integer` | 是 | 最小 1 |\n| `status` | `string` | 否 | 可选：`open`, `completed`, `closed` |\n| `limit` | `integer` | 否 | 最小 1；最大 200 |",
+        "name": "list_requirements",
+        "title": "List AutoPlan requirements"
+      },
+      {
+        "description": "Create a requirement, optionally save attachments and start the project loop. Duplicate non-closed requirements with the same normalized title and body in the project are rejected with code DUPLICATE_INTAKE and existingRequirementId.",
+        "markdown": "## create_requirement\n**功能**：Create a requirement, optionally save attachments and start the project loop. Duplicate non-closed requirements with the same normalized title and body in the project are rejected with code DUPLICATE_INTAKE and existingRequirementId.\n**重复提交**：同项目内 normalized title/body 相同且未 closed 的需求会被拒绝，错误返回 `code=DUPLICATE_INTAKE` 和 `existingRequirementId`。\n**参数**\n\n| 参数 | 类型 | 必填 | 说明 |\n| --- | --- | --- | --- |\n| `projectId` | `integer` | 是 | 最小 1 |\n| `title` | `string` | 是 | 最短 1；最长 200 |\n| `body` | `string` | 是 | 最短 1；最长 100000 |\n| `attachments` | `array<object>` | 否 | 最多 20 项 |\n| `  name` | `string` | 否 | 最短 1；最长 255 |\n| `  size` | `integer` | 否 | 最小 0 |\n| `  source` | `string` | 否 | 可选：`path`, `clipboard-image` |\n| `  path` | `string` | 否 | 最短 1；最长 2000 |\n| `  type` | `string` | 否 | MIME type；最短 1；最长 200 |\n| `  dataUrl` | `string` | 否 | 最短 1；最长 10485760 |\n| `  base64` | `string` | 否 | 最短 1；最长 10485760 |\n| `  dataBase64` | `string` | 否 | 最短 1；最长 10485760 |\n| `  bytes` | `array<integer>` | 否 | 最多 10485760 项 |\n| `autoRun` | `boolean` | 否 | - |\n| `status` | `string` | 否 | 可选：`open`, `completed`, `closed` |\n| `agentCliProvider` | `string` | 否 | Legacy external CLI provider. Project-level input maps to generation and execution defaults when new fields are omitted; intake-level input maps to plan generation only.；可选：`codex`, `claude`, `opencode`, `oh-my-pi` |\n| `agentCliCommand` | `string` | 否 | Legacy external CLI command override.；最长 1000 |\n| `codexReasoningEffort` | `string` | 否 | Legacy Codex reasoning effort. Only applies when the effective provider is codex.；可选：`low`, `medium`, `high`, `xhigh` |\n| `planGenerationStrategy` | `string` | 否 | Plan generation strategy: legacy external Markdown, external structured PlanSpec, or builtin LLM structured PlanSpec.；可选：`external-cli-markdown`, `external-cli-structured`, `builtin-llm-structured` |\n| `planGenerationProvider` | `string` | 否 | Provider for plan generation. External strategies use CLI providers; builtin LLM uses AI providers.；可选：`codex`, `claude`, `opencode`, `oh-my-pi`, `openai`, `deepseek`, `anthropic` |\n| `planGenerationCommand` | `string` | 否 | Command for external CLI plan generation strategies.；最长 1000 |\n| `planGenerationModel` | `string` | 否 | Model name for builtin LLM plan generation.；最长 200 |\n| `planGenerationCodexReasoningEffort` | `string` | 否 | Codex reasoning effort for plan generation when the effective provider is codex.；可选：`low`, `medium`, `high`, `xhigh` |",
+        "name": "create_requirement",
+        "title": "Create AutoPlan requirement"
+      },
+      {
+        "description": "List feedback for a project.",
+        "markdown": "## list_feedback\n**功能**：List feedback for a project.\n**参数**\n\n| 参数 | 类型 | 必填 | 说明 |\n| --- | --- | --- | --- |\n| `projectId` | `integer` | 是 | 最小 1 |\n| `status` | `string` | 否 | 可选：`open`, `completed`, `closed` |\n| `limit` | `integer` | 否 | 最小 1；最大 200 |",
+        "name": "list_feedback",
+        "title": "List AutoPlan feedback"
+      },
+      {
+        "description": "Create feedback, optionally associate it with a requirement and start the project loop. Duplicate non-closed feedback with the same normalized title and body in the same project and requirement association is rejected with code DUPLICATE_INTAKE and existingFeedbackId.",
+        "markdown": "## create_feedback\n**功能**：Create feedback, optionally associate it with a requirement and start the project loop. Duplicate non-closed feedback with the same normalized title and body in the same project and requirement association is rejected with code DUPLICATE_INTAKE and existingFeedbackId.\n**重复提交**：同项目、同 requirement 关联下 normalized title/body 相同且未 closed 的反馈会被拒绝，错误返回 `code=DUPLICATE_INTAKE` 和 `existingFeedbackId`。\n**参数**\n\n| 参数 | 类型 | 必填 | 说明 |\n| --- | --- | --- | --- |\n| `projectId` | `integer` | 是 | 最小 1 |\n| `requirementId` | `integer \\| null` | 否 | 最小 1 |\n| `title` | `string` | 是 | 最短 1；最长 200 |\n| `body` | `string` | 是 | 最短 1；最长 100000 |\n| `attachments` | `array<object>` | 否 | 最多 20 项 |\n| `  name` | `string` | 否 | 最短 1；最长 255 |\n| `  size` | `integer` | 否 | 最小 0 |\n| `  source` | `string` | 否 | 可选：`path`, `clipboard-image` |\n| `  path` | `string` | 否 | 最短 1；最长 2000 |\n| `  type` | `string` | 否 | MIME type；最短 1；最长 200 |\n| `  dataUrl` | `string` | 否 | 最短 1；最长 10485760 |\n| `  base64` | `string` | 否 | 最短 1；最长 10485760 |\n| `  dataBase64` | `string` | 否 | 最短 1；最长 10485760 |\n| `  bytes` | `array<integer>` | 否 | 最多 10485760 项 |\n| `autoRun` | `boolean` | 否 | - |\n| `status` | `string` | 否 | 可选：`open`, `completed`, `closed` |\n| `agentCliProvider` | `string` | 否 | Legacy external CLI provider. Project-level input maps to generation and execution defaults when new fields are omitted; intake-level input maps to plan generation only.；可选：`codex`, `claude`, `opencode`, `oh-my-pi` |\n| `agentCliCommand` | `string` | 否 | Legacy external CLI command override.；最长 1000 |\n| `codexReasoningEffort` | `string` | 否 | Legacy Codex reasoning effort. Only applies when the effective provider is codex.；可选：`low`, `medium`, `high`, `xhigh` |\n| `planGenerationStrategy` | `string` | 否 | Plan generation strategy: legacy external Markdown, external structured PlanSpec, or builtin LLM structured PlanSpec.；可选：`external-cli-markdown`, `external-cli-structured`, `builtin-llm-structured` |\n| `planGenerationProvider` | `string` | 否 | Provider for plan generation. External strategies use CLI providers; builtin LLM uses AI providers.；可选：`codex`, `claude`, `opencode`, `oh-my-pi`, `openai`, `deepseek`, `anthropic` |\n| `planGenerationCommand` | `string` | 否 | Command for external CLI plan generation strategies.；最长 1000 |\n| `planGenerationModel` | `string` | 否 | Model name for builtin LLM plan generation.；最长 200 |\n| `planGenerationCodexReasoningEffort` | `string` | 否 | Codex reasoning effort for plan generation when the effective provider is codex.；可选：`low`, `medium`, `high`, `xhigh` |",
+        "name": "create_feedback",
+        "title": "Create AutoPlan feedback"
+      },
+      {
+        "description": "List plans for a project.",
+        "markdown": "## list_plans\n**功能**：List plans for a project.\n**参数**\n\n| 参数 | 类型 | 必填 | 说明 |\n| --- | --- | --- | --- |\n| `projectId` | `integer` | 是 | 最小 1 |\n| `status` | `string` | 否 | 可选：`pending`, `running`, `ready_for_validation`, `completed`, `interrupted`, `draft` |\n| `limit` | `integer` | 否 | 最小 1；最大 200 |",
+        "name": "list_plans",
+        "title": "List AutoPlan plans"
+      },
+      {
+        "description": "Get one plan and its tasks.",
+        "markdown": "## get_plan\n**功能**：Get one plan and its tasks.\n**参数**\n\n| 参数 | 类型 | 必填 | 说明 |\n| --- | --- | --- | --- |\n| `projectId` | `integer` | 是 | 最小 1 |\n| `planId` | `integer` | 是 | 最小 1 |",
+        "name": "get_plan",
+        "title": "Get AutoPlan plan"
+      },
+      {
+        "description": "List tasks for a project, optionally filtered by plan or status.",
+        "markdown": "## list_tasks\n**功能**：List tasks for a project, optionally filtered by plan or status.\n**参数**\n\n| 参数 | 类型 | 必填 | 说明 |\n| --- | --- | --- | --- |\n| `projectId` | `integer` | 是 | 最小 1 |\n| `planId` | `integer` | 否 | 最小 1 |\n| `status` | `string` | 否 | 可选：`pending`, `running`, `completed`, `blocked`, `failed`, `stopping`, `stopped`, `interrupted` |\n| `limit` | `integer` | 否 | 最小 1；最大 200 |",
+        "name": "list_tasks",
+        "title": "List AutoPlan tasks"
+      },
+      {
+        "description": "List configured workspace executors for a project, including recent status and log tails. Executors run only saved commands in the project workspace; debug launch/configuration is not supported.",
+        "markdown": "## list_executors\n**功能**：List configured workspace executors for a project, including recent status and log tails. Executors run only saved commands in the project workspace; debug launch/configuration is not supported.\n**执行器约束**：仅操作当前项目内已保存的执行器；run/stop 不接受临时 command、launch 或 debug 参数；运行结果只返回状态、退出码、耗时和日志尾部。\n**参数**\n\n| 参数 | 类型 | 必填 | 说明 |\n| --- | --- | --- | --- |\n| `projectId` | `integer` | 是 | 最小 1 |\n| `label` | `string` | 否 | Optional label substring filter.；最长 200 |\n| `group` | `string` | 否 | Optional exact group kind filter, for example build or test.；最长 120 |\n| `status` | `string` | 否 | Optional current or recent run status filter.；可选：`idle`, `running`, `ok`, `bad`, `stopped` |\n| `enabled` | `boolean` | 否 | Optional enabled-state filter. |\n| `limit` | `integer` | 否 | 最小 1；最大 200 |",
+        "name": "list_executors",
+        "title": "List AutoPlan executors"
+      },
+      {
+        "description": "Run an existing executor by executorId or exact label. This tool does not accept arbitrary command strings, returns status with a log tail, and has no debug support.",
+        "markdown": "## run_executor\n**功能**：Run an existing executor by executorId or exact label. This tool does not accept arbitrary command strings, returns status with a log tail, and has no debug support.\n**执行器约束**：仅操作当前项目内已保存的执行器；run/stop 不接受临时 command、launch 或 debug 参数；运行结果只返回状态、退出码、耗时和日志尾部。\n**参数**\n\n| 参数 | 类型 | 必填 | 说明 |\n| --- | --- | --- | --- |\n| `projectId` | `integer` | 是 | 最小 1 |\n| `executorId` | `integer` | 否 | Existing executor id in the project. Provide executorId or label.；最小 1 |\n| `label` | `string` | 否 | Exact existing executor label in the project. Provide executorId or label. Command/debug/launch fields are not accepted.；最短 1；最长 200 |",
+        "name": "run_executor",
+        "title": "Run AutoPlan executor"
+      },
+      {
+        "description": "Stop a running executor by executorId or exact label. This only targets existing executor operations and has no debug support.",
+        "markdown": "## stop_executor\n**功能**：Stop a running executor by executorId or exact label. This only targets existing executor operations and has no debug support.\n**执行器约束**：仅操作当前项目内已保存的执行器；run/stop 不接受临时 command、launch 或 debug 参数；运行结果只返回状态、退出码、耗时和日志尾部。\n**参数**\n\n| 参数 | 类型 | 必填 | 说明 |\n| --- | --- | --- | --- |\n| `projectId` | `integer` | 是 | 最小 1 |\n| `executorId` | `integer` | 否 | Existing executor id in the project. Provide executorId or label.；最小 1 |\n| `label` | `string` | 否 | Exact existing executor label in the project. Provide executorId or label. Command/debug/launch fields are not accepted.；最短 1；最长 200 |",
+        "name": "stop_executor",
+        "title": "Stop AutoPlan executor"
+      },
+      {
+        "description": "Start the project loop.",
+        "markdown": "## start_loop\n**功能**：Start the project loop.\n**参数**\n\n| 参数 | 类型 | 必填 | 说明 |\n| --- | --- | --- | --- |\n| `projectId` | `integer` | 是 | 最小 1 |",
+        "name": "start_loop",
+        "title": "Start AutoPlan loop"
+      },
+      {
+        "description": "Stop the project loop.",
+        "markdown": "## stop_loop\n**功能**：Stop the project loop.\n**参数**\n\n| 参数 | 类型 | 必填 | 说明 |\n| --- | --- | --- | --- |\n| `projectId` | `integer` | 是 | 最小 1 |",
+        "name": "stop_loop",
+        "title": "Stop AutoPlan loop"
+      }
+    ],
+    "tools": [
+      "list_projects",
+      "get_project",
+      "create_project",
+      "list_requirements",
+      "create_requirement",
+      "list_feedback",
+      "create_feedback",
+      "list_plans",
+      "get_plan",
+      "list_tasks",
+      "list_executors",
+      "run_executor",
+      "stop_executor",
+      "start_loop",
+      "stop_loop"
+    ],
+    "transport": "http",
+    "url": "http://127.0.0.1:43847/mcp"
+  },
+  "plans": [],
+  "projects": [
+    {
+      "agent_cli_command": "",
+      "agent_cli_provider": "codex",
+      "created_at": "2026-01-02T03:04:05.000Z",
+      "description": "Synthetic sort tie-break project.",
+      "id": 3,
+      "interval_seconds": 5,
+      "name": "Synthetic Gamma",
+      "phase": "idle",
+      "project_prompt": "",
+      "running": 0,
+      "updated_at": "2026-01-02T03:04:08.000Z",
+      "validation_command": "",
+      "workspace_path": "<fixture-workspace>/p03/gamma"
+    },
+    {
+      "agent_cli_command": "",
+      "agent_cli_provider": "codex",
+      "created_at": "2026-01-02T03:04:05.000Z",
+      "description": "Synthetic nullable/default coverage project.",
+      "id": 2,
+      "interval_seconds": 5,
+      "name": "Synthetic Beta",
+      "phase": "stopped",
+      "project_prompt": "",
+      "running": 0,
+      "updated_at": "2026-01-02T03:04:08.000Z",
+      "validation_command": "npm test",
+      "workspace_path": "<fixture-workspace>/p03/beta"
+    },
+    {
+      "agent_cli_command": "",
+      "agent_cli_provider": "claude",
+      "created_at": "2026-01-02T03:04:05.000Z",
+      "description": "",
+      "id": 1,
+      "interval_seconds": 9,
+      "name": "Synthetic Alpha",
+      "phase": "idle",
+      "project_prompt": "Synthetic project prompt.",
+      "running": 0,
+      "updated_at": "2026-01-02T03:04:07.000Z",
+      "validation_command": "",
+      "workspace_path": "<fixture-workspace>/p03/alpha"
+    }
+  ],
+  "requirements": [],
+  "scanSummary": {
+    "count": 0,
+    "latest_modified_at": null,
+    "latest_scanned_at": null,
+    "total_size": 0
+  },
+  "scans": [],
+  "scripts": [],
+  "state": {
+    "agent_cli_command": "",
+    "agent_cli_provider": "claude",
+    "codex_reasoning_effort": null,
+    "env_vars": "<redacted-env-vars>",
+    "interval_seconds": 9,
+    "last_error": null,
+    "last_issue_hash": null,
+    "phase": "idle",
+    "plan_execution_claude_auth_token": "",
+    "plan_execution_claude_base_url": "",
+    "plan_execution_claude_config_id": 0,
+    "plan_execution_claude_model": "",
+    "plan_execution_codex_reasoning_effort": "medium",
+    "plan_execution_command": "",
+    "plan_execution_has_claude_auth_token": false,
+    "plan_execution_model": "",
+    "plan_execution_provider": "codex",
+    "plan_execution_strategy": "external-cli",
+    "plan_generation_claude_auth_token": "····mask",
+    "plan_generation_claude_base_url": "https://example.invalid/claude",
+    "plan_generation_claude_config_id": 0,
+    "plan_generation_claude_model": "synthetic-model",
+    "plan_generation_codex_reasoning_effort": null,
+    "plan_generation_command": "",
+    "plan_generation_has_claude_auth_token": true,
+    "plan_generation_model": "",
+    "plan_generation_provider": "claude",
+    "plan_generation_strategy": "external-cli-structured",
+    "project_id": 1,
+    "project_prompt": "Synthetic project prompt.",
+    "running": 0,
+    "updated_at": "2026-01-02T03:04:07.000Z",
+    "validation_command": "",
+    "workspace_path": "<fixture-workspace>/p03/alpha"
+  },
+  "tasks": [],
+  "terminals": []
+}

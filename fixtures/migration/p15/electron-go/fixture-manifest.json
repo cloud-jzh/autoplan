@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "kind": "p15-authorized-electron-go-fixture",
+  "authorized_copy": true,
+  "real_userdata": false,
+  "database_contents": "none",
+  "data_policy": "Synthetic scenario metadata only. Each runtime attempt must allocate a fresh temporary data directory and must never read, copy, or mutate real Electron userData.",
+  "contents": [
+    "e2e-scenarios.json",
+    "install-upgrade-scenarios.json"
+  ]
+}

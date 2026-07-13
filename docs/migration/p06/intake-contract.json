@@ -1,0 +1,252 @@
+{
+  "schemaVersion": 1,
+  "version": "p06-node-intake-contract-v1",
+  "status": "frozen-with-recorded-legacy-gaps",
+  "purpose": "Freeze the current Node requirements, feedback, attachments, intake_plan_links, deletion and post-mutation AppSnapshot behavior for P06.",
+  "evidence": [
+    "src/intakeService.js",
+    "src/attachments.js",
+    "src/main.js",
+    "src/loop/intakeAttachments.js",
+    "src/loop/intakeDeletion.js",
+    "src/loop/intakePlanLinks.js",
+    "src/loop/snapshots.js",
+    "src/mcpTools.js"
+  ],
+  "prerequisites": {
+    "gate": "P05 completion evidence, schema/checksum, Files policy and database owner lock must pass before a P06 writer opens a fixture copy.",
+    "copies": "Node/sql.js accesses only a generator-owned sanitized OS-temporary database or caller-explicit sanitized copy. Go may open only a separately reset copy after Node closes.",
+    "failClosed": "Never discover or open Electron userData, production autoplan.sqlite, a home-profile database, a real attachment root or an unapproved path."
+  },
+  "representation": {
+    "storageAndSnapshotNaming": "snake_case intake rows inside the historical camelCase AppSnapshot envelope",
+    "mcpNaming": "camelCase summary/detail objects",
+    "time": "UTC new Date().toISOString() values with Z suffix",
+    "presence": "null, empty string and missing are distinct; empty collections remain present; unknown fields fail strict golden comparison"
+  },
+  "statusContract": {
+    "persistedDefault": "open",
+    "knownLifecycleValues": ["draft", "open", "completed", "closed"],
+    "mcpEnum": ["open", "completed", "closed"],
+    "draftInput": "createAsDraft or draft truthy forces draft",
+    "ipcCreate": "supplied truthy status is persisted verbatim, otherwise open",
+    "ipcUpdate": "input.status ?? current.status ?? open; legacy IPC has no enum validation",
+    "duplicateCandidate": "every status except exactly closed blocks equivalent create",
+    "linkedCompletion": "all linked plans completed moves a non-terminal intake to completed; completed and closed remain terminal",
+    "migrationRule": "Preserve historical values on reads; new public mutations accept the frozen API enum and reject other values with a stable validation code."
+  },
+  "defaultsAndNullability": {
+    "requirementTitle": "trim explicit title; otherwise first trimmed non-empty body line truncated to 80 UTF-16 code units; otherwise 未命名需求",
+    "feedbackTitle": "trim explicit title; otherwise first trimmed non-empty body line truncated to 80 UTF-16 code units; otherwise 未命名反馈",
+    "createBody": "input.body || empty string",
+    "createRequirementId": "falsy becomes null",
+    "updateBody": "input.body ?? current.body ?? empty string",
+    "updateTitle": "input.title ?? titleFromBody(next body, fallback); omitted title is rederived, while explicit empty remains empty",
+    "acceptedAt": "explicit UTC string or null in intake snapshot",
+    "failureFields": "generate_fail_count is a finite number defaulting to 0; other generation failure fields are explicit value or null"
+  },
+  "intakeFields": {
+    "common": [
+      "id", "project_id", "title", "body", "status", "agent_cli_provider", "agent_cli_command",
+      "codex_reasoning_effort", "plan_generation_strategy", "plan_generation_provider",
+      "plan_generation_command", "plan_generation_model", "plan_generation_codex_reasoning_effort",
+      "plan_generation_claude_base_url", "plan_generation_claude_auth_token",
+      "plan_generation_claude_model", "plan_generation_claude_config_id", "generate_fail_count",
+      "last_generate_fail_at", "last_generate_error", "last_generate_log_file",
+      "last_generate_agent_cli_provider", "last_generate_codex_reasoning_effort", "linked_plan_id",
+      "created_at", "updated_at", "accepted_at"
+    ],
+    "requirementOnly": ["source_path", "source_hash"],
+    "feedbackOnly": ["requirement_id", "agent_cli_session_id"],
+    "neverPublicRaw": [
+      "plan_generation_claude_auth_token", "source_path", "source_hash", "last_generate_log_file"
+    ]
+  },
+  "mutations": {
+    "requirements:create": {
+      "order": [
+        "validate project", "derive values and frozen generation config", "reject duplicate", "insert intake",
+        "persist attachments serially", "add requirement.created", "optional strict autoRun=true", "reread AppSnapshot"
+      ],
+      "event": "requirement.created: 需求 #<id> 已创建，等待循环扫描生成计划"
+    },
+    "feedback:create": {
+      "order": [
+        "validate project", "validate nullable same-project requirement", "derive values and config",
+        "reject duplicate in requirement group", "insert intake", "persist attachments serially",
+        "add feedback.created", "optional strict autoRun=true", "reread AppSnapshot"
+      ],
+      "event": "feedback.created: 反馈 #<id> 已创建，等待循环扫描生成计划"
+    },
+    "requirements:update": {
+      "missing": "需求不存在",
+      "duplicateCheck": false,
+      "order": ["validate same-project row", "update intake", "append new attachments", "reread AppSnapshot"]
+    },
+    "feedback:update": {
+      "missing": "反馈不存在",
+      "requirementId": "undefined preserves current nonzero id or null; any other falsy value clears; legacy truthy update is not ownership-validated",
+      "duplicateCheck": false,
+      "order": ["validate same-project feedback row", "update intake", "append new attachments", "reread AppSnapshot"]
+    },
+    "intake:accept": {
+      "validation": "strict requirement|feedback type, positive id and same-project row",
+      "effect": "set accepted_at=updated_at to one new UTC value, do not change status, add <type>.accepted; repeated accept refreshes and records previousAcceptedAt",
+      "response": "{targetType, intakeType, id, accepted_at}, followed by IPC AppSnapshot reread"
+    },
+    "intake:unaccept": {
+      "effect": "set accepted_at null and updated_at to a new UTC value, do not change status, add <type>.unaccepted; repeated unaccept succeeds",
+      "response": "{targetType, intakeType, id, accepted_at:null}, followed by IPC AppSnapshot reread"
+    }
+  },
+  "duplicateRule": {
+    "requirementScope": "same project_id",
+    "feedbackScope": "same project_id and same nullable requirement_id group",
+    "candidateQuery": "COALESCE(status, 'open') <> 'closed', ordered id ASC",
+    "normalization": [
+      "String(value ?? empty)",
+      "CRLF and lone CR become LF",
+      "each line collapses non-newline whitespace runs to one ASCII space and is trimmed",
+      "lines are joined with LF and the whole value is trimmed",
+      "line boundaries remain significant"
+    ],
+    "equality": "both normalized title and normalized body equal",
+    "error": {
+      "name": "DuplicateIntakeError",
+      "code": "DUPLICATE_INTAKE",
+      "message": "<需求|反馈>已存在：#<existing id>",
+      "properties": ["intakeType", "existingId", "existing"],
+      "sideEffects": "none: rejection precedes intake insert, attachments, event and autoRun",
+      "mcpFields": [
+        "error", "code", "errorCode", "intakeType", "existingId",
+        "existingRequirementId|existingFeedbackId", "duplicate", "detail"
+      ]
+    },
+    "legacyUpdateGap": "requirements:update and feedback:update do not perform duplicate detection"
+  },
+  "requirementAssociation": {
+    "create": "falsy requirementId becomes null; otherwise the requirement must exist and have the same project_id",
+    "errors": [
+      {"code": "REQUIREMENT_NOT_FOUND", "message": "关联需求不存在"},
+      {"code": "REQUIREMENT_PROJECT_MISMATCH", "message": "关联需求不属于当前项目"}
+    ],
+    "deleteRequirement": "retain same-project feedback and set matching requirement_id to null with the deletion updated_at",
+    "legacyUpdateGap": "feedback:update can write an unvalidated truthy requirement id. P06 must close this integrity/IDOR gap rather than reproduce it."
+  },
+  "planLinks": {
+    "intakeTypes": ["requirement", "feedback"],
+    "uniqueKeys": [
+      ["project_id", "intake_type", "intake_id", "plan_id"],
+      ["project_id", "intake_type", "intake_id", "phase_index"]
+    ],
+    "input": "positive plan id; phase_index defaults to input position starting at 1; phase_title is trimmed; sort by phase_index then plan_id; deduplicate by plan_id retaining first",
+    "readOrder": "phase_index ASC, plan_id ASC; project grouping first orders intake_type and intake_id",
+    "legacySync": "non-empty write stores the first normalized plan in linked_plan_id; deleting all links clears it; deleting one plan selects the first remaining phase only when legacy id referenced that plan",
+    "fallback": "when no link rows exist, a positive linked_plan_id appears as phase 1 with empty title and null link id/timestamps",
+    "current": "first non-empty status outside completed/interrupted/draft, else first non-completed, else first link",
+    "legacyIntegrityGap": "writeIntakePlanLinks does not prevalidate intake/plan existence or same-project ownership. P06 writes must reject missing or cross-project resources."
+  },
+  "deletion": {
+    "intake": {
+      "beforeTransaction": "load attachments/links and stop every linked existing plan operation; a later database rollback does not undo runtime stop",
+      "databaseBatch": [
+        "requirement only: clear feedback requirement_id", "delete intake links", "delete each linked plan's tasks and plan row",
+        "delete matching plan scan_files", "delete attachment metadata", "delete intake row"
+      ],
+      "databaseAtomicity": "one AppDatabase.runBatch BEGIN/COMMIT with rollback on any statement failure",
+      "afterCommit": [
+        "best-effort safe plan-file deletion", "best-effort attachment-file deletion within configured root",
+        "intake.deleted event with plan and cleanup summaries", "immediate update", "snapshot reread"
+      ],
+      "fileFailure": "does not roll back committed rows; cleanup counts deleted/skipped/failed and plan failures become events"
+    },
+    "plan": {
+      "behavior": "stop operations; transactionally delete links, sync legacy ids to remaining first phase, delete tasks/plan/scan cache; retain all intakes; then best-effort file delete",
+      "event": "plan.deleted includes stopped/task counts, linked intake ids, plan-file result and keepIntakes=true"
+    },
+    "p06RecoveryBoundary": "P06 persists post-commit file work. A committed database delete with pending or failed bytes cleanup must be reported as recoverable, never as complete success."
+  },
+  "attachments": {
+    "storageFields": [
+      "id", "project_id", "owner_type", "owner_id", "original_name", "stored_path",
+      "mime_type", "size", "hash", "created_at"
+    ],
+    "ownerTypes": {
+      "requirementWrite": ["requirement"],
+      "requirementReadDelete": ["requirement", "requirements"],
+      "feedback": ["feedback"]
+    },
+    "legacyInputSources": ["path", "clipboard-image", "dataUrl", "base64", "dataBase64", "bytes", "buffer", "data"],
+    "persistence": "serial exclusive file copy/write, stat, SHA-256, then metadata INSERT",
+    "displayName": "basename after slash normalization; empty/dot/dot-dot falls back",
+    "mime": "declared type lowercased without parameters, otherwise small extension map, otherwise application/octet-stream",
+    "order": "snapshot created_at DESC/id DESC; deletion inventory id ASC",
+    "legacyRisks": [
+      "arbitrary existing path input", "no saveAttachments count/byte/content limit", "orphan if DB insert fails after file write",
+      "SELECT * snapshot exposes stored_path and hash", "local path appears in prompt/protocol surfaces",
+      "best-effort delete has no operation journal or quarantine"
+    ],
+    "newPublicRepresentation": {
+      "allowedFieldsOnly": ["id", "display_name", "size", "mime_type", "download_url"],
+      "displayNameSource": "original_name",
+      "downloadUrl": "authenticated loopback HTTP content endpoint",
+      "forbidden": [
+        "project_id", "owner_type", "owner_id", "original_name", "stored_path", "hash",
+        "file://", "autoplan-file://", "server absolute path"
+      ]
+    }
+  },
+  "snapshot": {
+    "mutationReturn": "successful create/update/delete/accept/unaccept rereads LoopService.snapshot(projectId); failures publish no success snapshot",
+    "order": {
+      "requirements": "updated_at DESC",
+      "feedback": "updated_at DESC",
+      "attachments": "created_at DESC, id DESC",
+      "linked_plans": "phase_index ASC, plan_id ASC",
+      "events": "id DESC LIMIT 80"
+    },
+    "intake": "SELECT intake.* plus legacy joined plan aliases, then normalize agent CLI, accepted_at, backend and generation failure fields",
+    "linkedPlans": "always an array of snake_case DTOs with explicit nulls",
+    "noLink": "linked_plans is empty and plan summary aliases are absent",
+    "linkAliases": [
+      "plan_title", "plan_file_path", "plan_status", "plan_completed", "plan_total",
+      "linked_plan_title", "linked_plan_file_path", "linked_plan_status",
+      "linked_plan_completed_tasks", "linked_plan_total_tasks"
+    ],
+    "attachmentLegacyRisk": "current Node snapshot SELECT * includes stored_path/hash; evidence only, not the P06 public DTO"
+  },
+  "mcp": {
+    "tools": ["list_requirements", "create_requirement", "list_feedback", "create_feedback"],
+    "list": "same-project, optional open|completed|closed status, default limit 100/max 200, updated_at DESC/id DESC",
+    "create": "requires non-empty trimmed title and body; default-title behavior is therefore IPC-only; attachments max 20 at this transport",
+    "response": "camelCase detail/summary plus linkedPlans; create includes latest project intake, openable deep link and reduced snapshot counts",
+    "pathRisk": "legacy MCP accepts path input; P06 allows it only for an explicitly local, project-bound caller after P05 Files policy authorization"
+  },
+  "errors": [
+    {"code": "PROJECT_NOT_FOUND", "message": "项目不存在"},
+    {"code": "RECORD_NOT_FOUND", "message": "记录不存在"},
+    {"code": "REQUIREMENT_NOT_FOUND", "message": "需求不存在"},
+    {"code": "FEEDBACK_NOT_FOUND", "message": "反馈不存在"},
+    {"code": "REQUIREMENT_ASSOCIATION_NOT_FOUND", "message": "关联需求不存在"},
+    {"code": "REQUIREMENT_PROJECT_MISMATCH", "message": "关联需求不属于当前项目"},
+    {"code": "INTAKE_TYPE_INVALID", "message": "需求/反馈类型无效"},
+    {"code": "INTAKE_ID_INVALID", "message": "需求/反馈 ID 无效"},
+    {"code": "INTAKE_PROJECT_MISMATCH_OR_NOT_FOUND", "message": "<需求|反馈>不存在或不属于当前项目"},
+    {"code": "DUPLICATE_INTAKE", "message": "<需求|反馈>已存在：#<id>"},
+    {"code": "ATTACHMENT_UNIQUE_NAME_EXHAUSTED", "message": "附件保存失败：无法生成唯一文件名"}
+  ],
+  "golden": {
+    "generator": "scripts/migration-p06/generate-node-golden.js",
+    "artifact": "fixtures/migration/p06/node-intake.golden.json",
+    "manifest": "fixtures/migration/p06/manifest.json",
+    "scenarios": [
+      "default-title-and-attachment", "normalized-duplicate", "closed-duplicate",
+      "feedback-association", "feedback-duplicate-groups", "cross-project-feedback",
+      "update-null-and-empty", "accept-unaccept", "multi-phase-links",
+      "delete-plan-keep-intake", "delete-requirement-cascade"
+    ],
+    "comparison": "strict deep compare of projected keys, types, null/missing, values and order; no unknown-field allowance",
+    "safety": "serial Node-only execution on a fresh sanitized OS-temporary database; sql.js closes before artifact commit; manifest records schema/fixture/database/attachment hashes",
+    "handoff": "Go may later open a separately reset copy only after Node closes and releases ownership"
+  }
+}

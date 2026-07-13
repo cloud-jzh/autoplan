@@ -17,3 +17,7 @@ CLAUDE.md
 /release-v023beta5
 /.zcode-deps-install
 /.idea/
+
+# Go sidecar build artifacts (compiled binaries; CI builds from source)
+artifacts/
+resources/sidecar/

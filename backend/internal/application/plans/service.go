@@ -1,0 +1,511 @@
+package plans
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/lyming99/autoplan/backend/internal/domain/contracts"
+	domainevent "github.com/lyming99/autoplan/backend/internal/domain/event"
+	domainplan "github.com/lyming99/autoplan/backend/internal/domain/plan"
+	domainproject "github.com/lyming99/autoplan/backend/internal/domain/project"
+	"github.com/lyming99/autoplan/backend/internal/repository"
+)
+
+var (
+	ErrUnavailable    = errors.New("plan application service unavailable")
+	ErrInvalidCommand = errors.New("plan command is invalid")
+	ErrStateConflict  = errors.New("plan state conflicts")
+	ErrProtected      = errors.New("plan deletion is protected")
+)
+
+type Clock interface{ Now() time.Time }
+
+type systemClock struct{}
+
+func (systemClock) Now() time.Time { return time.Now().UTC() }
+
+// SnapshotAssembler is intentionally narrow: plans do not depend on the
+// snapshot implementation, only on the post-commit projection it provides.
+type SnapshotAssembler interface {
+	Assemble(context.Context, *int64, domainproject.Visibility) (contracts.AppSnapshot, error)
+}
+
+type Dependencies struct {
+	Assembler SnapshotAssembler
+	Writer    repository.PlanTransactional
+	Clock     Clock
+}
+
+type Service struct {
+	assembler SnapshotAssembler
+	writer    repository.PlanTransactional
+	clock     Clock
+}
+
+func NewService(dependencies Dependencies) *Service {
+	clock := dependencies.Clock
+	if clock == nil {
+		clock = systemClock{}
+	}
+	return &Service{assembler: dependencies.Assembler, writer: dependencies.Writer, clock: clock}
+}
+
+func (service *Service) ready(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if service == nil || service.assembler == nil || service.writer == nil || service.clock == nil {
+		return ErrUnavailable
+	}
+	return service.writer.Check(ctx)
+}
+
+func (service *Service) snapshot(ctx context.Context, projectID int64, visibility domainproject.Visibility) (contracts.AppSnapshot, error) {
+	if projectID <= 0 {
+		return contracts.AppSnapshot{}, ErrInvalidCommand
+	}
+	return service.assembler.Assemble(ctx, &projectID, visibility)
+}
+
+const (
+	RouteAccept   = "plans:accept"
+	RouteUnaccept = "plans:unaccept"
+	RouteRedo     = "plans:redo"
+)
+
+type AcceptanceCommand struct {
+	ProjectID int64
+	Target    AcceptanceTarget
+	Accept    bool
+	RequestID string
+}
+
+type BatchAcceptanceCommand struct {
+	ProjectID int64
+	Targets   []AcceptanceTarget
+	Accept    bool
+	RequestID string
+}
+
+type RedoCommand struct {
+	ProjectID             int64
+	Target                AcceptanceTarget
+	ExpectedTaskUpdatedAt map[int64]string
+	Supplement            string
+	RequestID             string
+}
+
+func (service *Service) SetAcceptance(
+	ctx context.Context,
+	command AcceptanceCommand,
+	visibility domainproject.Visibility,
+) (MutationResult, error) {
+	return service.SetAcceptances(ctx, BatchAcceptanceCommand{
+		ProjectID: command.ProjectID, Targets: []AcceptanceTarget{command.Target},
+		Accept: command.Accept, RequestID: command.RequestID,
+	}, visibility)
+}
+
+// SetAcceptances preloads and validates every target before issuing the first
+// write. All target updates and their audit events are then committed or
+// rolled back by one Plan transaction.
+func (service *Service) SetAcceptances(
+	ctx context.Context,
+	command BatchAcceptanceCommand,
+	visibility domainproject.Visibility,
+) (MutationResult, error) {
+	if err := service.ready(ctx); err != nil {
+		return MutationResult{}, err
+	}
+	targets, err := normalizeAcceptanceTargets(command.Targets)
+	if err != nil || command.ProjectID <= 0 {
+		return MutationResult{}, ErrInvalidCommand
+	}
+	route := RouteUnaccept
+	if command.Accept {
+		route = RouteAccept
+	}
+	items := make([]AcceptanceResult, 0, len(targets))
+	err = service.writer.TransactPlans(ctx, func(transaction repository.PlanWriteTransaction) error {
+		graph, graphErr := loadPlanGraph(ctx, transaction, command.ProjectID)
+		if graphErr != nil {
+			return graphErr
+		}
+		resolved := make([]resolvedTarget, 0, len(targets))
+		clockInputs := make([]string, 0, len(targets))
+		for _, target := range targets {
+			item, resolveErr := graph.resolve(target)
+			if resolveErr != nil {
+				return resolveErr
+			}
+			resolved = append(resolved, item)
+			clockInputs = append(clockInputs, item.updatedAt())
+		}
+		mutationAt := nextMutationTimestamp(service.clock.Now(), clockInputs)
+		for _, item := range resolved {
+			var acceptedAt *string
+			if command.Accept {
+				value := mutationAt
+				acceptedAt = &value
+			}
+			var result AcceptanceResult
+			if item.target.TargetType == TargetPlan {
+				updated, updateErr := transaction.SetPlanAcceptance(ctx, domainplan.AcceptanceUpdate{
+					ProjectID: command.ProjectID, ID: item.plan.ID, AcceptedAt: acceptedAt,
+					ExpectedUpdatedAt: item.plan.UpdatedAt, UpdatedAt: mutationAt,
+				})
+				if updateErr != nil {
+					return updateErr
+				}
+				result = AcceptanceResult{TargetType: TargetPlan, ID: updated.ID, PlanID: updated.ID,
+					AcceptedAt: copyString(updated.AcceptedAt), Status: string(updated.Status)}
+			} else {
+				updated, updateErr := transaction.SetPlanTaskAcceptance(ctx, domainplan.AcceptanceUpdate{
+					ProjectID: command.ProjectID, ID: item.task.ID, AcceptedAt: acceptedAt,
+					ExpectedUpdatedAt: item.task.UpdatedAt, UpdatedAt: mutationAt,
+				})
+				if updateErr != nil {
+					return updateErr
+				}
+				result = AcceptanceResult{TargetType: TargetTask, ID: updated.ID, PlanID: updated.PlanID,
+					AcceptedAt: copyString(updated.AcceptedAt), Status: string(updated.Status)}
+			}
+			eventType := string(result.TargetType) + ".unaccepted"
+			if command.Accept {
+				eventType = string(result.TargetType) + ".accepted"
+			}
+			if eventErr := appendPlanEvent(ctx, transaction, route, command.RequestID, command.ProjectID,
+				result.TargetType, result.ID, eventType,
+				fmt.Sprintf("%s #%d acceptance updated", result.TargetType, result.ID),
+				map[string]any{
+					"target_type": result.TargetType, "id": result.ID, "plan_id": result.PlanID,
+					"accepted_at": result.AcceptedAt, "previous_accepted_at": item.acceptedAt(),
+				}, mutationAt); eventErr != nil {
+				return eventErr
+			}
+			items = append(items, result)
+		}
+		return nil
+	})
+	if err != nil {
+		return MutationResult{}, mapMutationError(err)
+	}
+	snapshot, err := service.snapshot(ctx, command.ProjectID, visibility)
+	if err != nil {
+		return MutationResult{}, err
+	}
+	return MutationResult{Snapshot: snapshot, Items: items}, nil
+}
+
+func (service *Service) Redo(
+	ctx context.Context,
+	command RedoCommand,
+	visibility domainproject.Visibility,
+) (MutationResult, error) {
+	if err := service.ready(ctx); err != nil {
+		return MutationResult{}, err
+	}
+	if command.ProjectID <= 0 || !validTarget(command.Target) {
+		return MutationResult{}, ErrInvalidCommand
+	}
+	command.Supplement = domainplan.NormalizeSupplement(command.Supplement)
+	items := make([]AcceptanceResult, 0, 1)
+	err := service.writer.TransactPlans(ctx, func(transaction repository.PlanWriteTransaction) error {
+		graph, graphErr := loadPlanGraph(ctx, transaction, command.ProjectID)
+		if graphErr != nil {
+			return graphErr
+		}
+		resolved, resolveErr := graph.resolve(command.Target)
+		if resolveErr != nil {
+			return resolveErr
+		}
+		if resolved.target.TargetType == TargetPlan {
+			if len(command.ExpectedTaskUpdatedAt) != len(graph.tasksByPlan[resolved.plan.ID]) {
+				return ErrStateConflict
+			}
+			for _, task := range graph.tasksByPlan[resolved.plan.ID] {
+				if command.ExpectedTaskUpdatedAt[task.ID] != task.UpdatedAt {
+					return ErrStateConflict
+				}
+			}
+			mutationAt := nextMutationTimestamp(service.clock.Now(), append([]string{resolved.plan.UpdatedAt}, graph.taskTimes(resolved.plan.ID)...))
+			updated, updateErr := transaction.RedoPlan(ctx, domainplan.PlanRedo{
+				ProjectID: command.ProjectID, PlanID: resolved.plan.ID,
+				ExpectedPlanUpdatedAt: resolved.plan.UpdatedAt,
+				ExpectedTaskUpdatedAt: copyUpdatedAt(command.ExpectedTaskUpdatedAt),
+				UpdatedAt:             mutationAt, Supplement: command.Supplement,
+			})
+			if updateErr != nil {
+				return updateErr
+			}
+			result := AcceptanceResult{TargetType: TargetPlan, ID: updated.ID, PlanID: updated.ID,
+				AcceptedAt: copyString(updated.AcceptedAt), Status: string(updated.Status)}
+			if eventErr := appendPlanEvent(ctx, transaction, RouteRedo, command.RequestID, command.ProjectID,
+				TargetPlan, updated.ID, "plan.redo", fmt.Sprintf("plan #%d returned for redo", updated.ID),
+				map[string]any{
+					"target_type": TargetPlan, "id": updated.ID, "plan_id": updated.ID,
+					"previous_status": resolved.plan.Status, "previous_accepted_at": resolved.plan.AcceptedAt,
+					"has_supplement": command.Supplement != "",
+				}, mutationAt); eventErr != nil {
+				return eventErr
+			}
+			items = append(items, result)
+			return nil
+		}
+		if !domainplan.ValidUTCTimestamp(command.Target.ExpectedPlanUpdatedAt) ||
+			command.Target.ExpectedPlanUpdatedAt != resolved.plan.UpdatedAt {
+			return ErrStateConflict
+		}
+		mutationAt := nextMutationTimestamp(service.clock.Now(), []string{resolved.plan.UpdatedAt, resolved.task.UpdatedAt})
+		updated, updateErr := transaction.RedoPlanTask(ctx, domainplan.TaskRedo{
+			ProjectID: command.ProjectID, PlanID: resolved.plan.ID, TaskID: resolved.task.ID,
+			ExpectedPlanUpdatedAt: resolved.plan.UpdatedAt, ExpectedTaskUpdatedAt: resolved.task.UpdatedAt,
+			UpdatedAt: mutationAt, Supplement: command.Supplement,
+		})
+		if updateErr != nil {
+			return updateErr
+		}
+		result := AcceptanceResult{TargetType: TargetTask, ID: updated.ID, PlanID: updated.PlanID,
+			AcceptedAt: copyString(updated.AcceptedAt), Status: string(updated.Status)}
+		if eventErr := appendPlanEvent(ctx, transaction, RouteRedo, command.RequestID, command.ProjectID,
+			TargetTask, updated.ID, "task.redo", fmt.Sprintf("task #%d returned for redo", updated.ID),
+			map[string]any{
+				"target_type": TargetTask, "id": updated.ID, "task_id": updated.ID, "plan_id": updated.PlanID,
+				"previous_status": resolved.task.Status, "previous_accepted_at": resolved.task.AcceptedAt,
+				"has_supplement": command.Supplement != "",
+			}, mutationAt); eventErr != nil {
+			return eventErr
+		}
+		items = append(items, result)
+		return nil
+	})
+	if err != nil {
+		return MutationResult{}, mapMutationError(err)
+	}
+	snapshot, err := service.snapshot(ctx, command.ProjectID, visibility)
+	if err != nil {
+		return MutationResult{}, err
+	}
+	return MutationResult{Snapshot: snapshot, Items: items}, nil
+}
+
+type planGraph struct {
+	plans       []domainplan.Plan
+	planByID    map[int64]domainplan.Plan
+	tasksByPlan map[int64][]domainplan.Task
+	taskByID    map[int64]domainplan.Task
+}
+
+func loadPlanGraph(ctx context.Context, transaction repository.PlanWriteTransaction, projectID int64) (planGraph, error) {
+	graph := planGraph{
+		plans: make([]domainplan.Plan, 0), planByID: make(map[int64]domainplan.Plan),
+		tasksByPlan: make(map[int64][]domainplan.Task), taskByID: make(map[int64]domainplan.Task),
+	}
+	const pageSize = 200
+	for offset := 0; ; offset += pageSize {
+		page, err := transaction.ListPlans(ctx, domainplan.ListOptions{ProjectID: projectID, Limit: pageSize, Offset: offset})
+		if err != nil {
+			return planGraph{}, err
+		}
+		for _, plan := range page {
+			if _, duplicate := graph.planByID[plan.ID]; duplicate {
+				return planGraph{}, repository.ErrInvalidStore
+			}
+			graph.plans = append(graph.plans, plan)
+			graph.planByID[plan.ID] = plan
+		}
+		if len(page) < pageSize {
+			break
+		}
+	}
+	for _, plan := range graph.plans {
+		tasks, err := transaction.ListPlanTasks(ctx, projectID, plan.ID)
+		if err != nil {
+			return planGraph{}, err
+		}
+		graph.tasksByPlan[plan.ID] = append([]domainplan.Task(nil), tasks...)
+		for _, task := range tasks {
+			if task.PlanID != plan.ID {
+				return planGraph{}, repository.ErrInvalidStore
+			}
+			if _, duplicate := graph.taskByID[task.ID]; duplicate {
+				return planGraph{}, repository.ErrInvalidStore
+			}
+			graph.taskByID[task.ID] = task
+		}
+	}
+	return graph, nil
+}
+
+type resolvedTarget struct {
+	target AcceptanceTarget
+	plan   domainplan.Plan
+	task   domainplan.Task
+}
+
+func (graph planGraph) resolve(target AcceptanceTarget) (resolvedTarget, error) {
+	if !validTarget(target) {
+		return resolvedTarget{}, ErrInvalidCommand
+	}
+	if target.TargetType == TargetPlan {
+		plan, exists := graph.planByID[target.ID]
+		if !exists {
+			return resolvedTarget{}, repository.ErrNotFound
+		}
+		if plan.UpdatedAt != target.ExpectedUpdatedAt {
+			return resolvedTarget{}, repository.ErrVersionConflict
+		}
+		return resolvedTarget{target: target, plan: plan}, nil
+	}
+	task, exists := graph.taskByID[target.ID]
+	if !exists {
+		return resolvedTarget{}, repository.ErrNotFound
+	}
+	if task.UpdatedAt != target.ExpectedUpdatedAt {
+		return resolvedTarget{}, repository.ErrVersionConflict
+	}
+	plan, exists := graph.planByID[task.PlanID]
+	if !exists {
+		return resolvedTarget{}, repository.ErrInvalidStore
+	}
+	return resolvedTarget{target: target, plan: plan, task: task}, nil
+}
+
+func (target resolvedTarget) updatedAt() string {
+	if target.target.TargetType == TargetPlan {
+		return target.plan.UpdatedAt
+	}
+	return target.task.UpdatedAt
+}
+
+func (target resolvedTarget) acceptedAt() *string {
+	if target.target.TargetType == TargetPlan {
+		return copyString(target.plan.AcceptedAt)
+	}
+	return copyString(target.task.AcceptedAt)
+}
+
+func (graph planGraph) planTimes() []string {
+	result := make([]string, 0, len(graph.plans))
+	for _, plan := range graph.plans {
+		result = append(result, plan.UpdatedAt)
+	}
+	return result
+}
+
+func (graph planGraph) taskTimes(planID int64) []string {
+	tasks := graph.tasksByPlan[planID]
+	result := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		result = append(result, task.UpdatedAt)
+	}
+	return result
+}
+
+func normalizeAcceptanceTargets(values []AcceptanceTarget) ([]AcceptanceTarget, error) {
+	if len(values) == 0 {
+		return nil, ErrInvalidCommand
+	}
+	result := make([]AcceptanceTarget, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if !validTarget(value) {
+			return nil, ErrInvalidCommand
+		}
+		key := string(value.TargetType) + ":" + decimal(value.ID)
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, value)
+	}
+	if len(result) == 0 {
+		return nil, ErrInvalidCommand
+	}
+	return result, nil
+}
+
+func validTarget(value AcceptanceTarget) bool {
+	return value.TargetType.Valid() && value.ID > 0 && domainplan.ValidUTCTimestamp(value.ExpectedUpdatedAt)
+}
+
+func nextMutationTimestamp(now time.Time, current []string) string {
+	next := now.UTC().Truncate(time.Millisecond)
+	for _, value := range current {
+		parsed, err := time.Parse(time.RFC3339Nano, value)
+		if err == nil && !next.After(parsed) {
+			next = parsed.UTC().Truncate(time.Millisecond).Add(time.Millisecond)
+		}
+	}
+	return next.Format("2006-01-02T15:04:05.000Z")
+}
+
+func appendPlanEvent(
+	ctx context.Context,
+	transaction repository.PlanWriteTransaction,
+	route, requestID string,
+	projectID int64,
+	targetType TargetType,
+	targetID int64,
+	eventType, message string,
+	data map[string]any,
+	occurredAt string,
+) error {
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
+		requestID = "local-plan-mutation"
+	}
+	if len(requestID) > 256 || strings.ContainsAny(requestID, "\r\n\x00") {
+		return ErrInvalidCommand
+	}
+	encoded, err := json.Marshal(data)
+	if err != nil {
+		return ErrInvalidCommand
+	}
+	metadata := string(encoded)
+	eventID, sequence := planEventIdentity(route, requestID, projectID, targetType, targetID, occurredAt)
+	return transaction.AppendEvent(ctx, domainevent.PendingEvent{
+		EventID: eventID, StreamKey: fmt.Sprintf("project:%d:plan:%s:%d", projectID, targetType, targetID),
+		Sequence: sequence, Type: eventType, RequestID: requestID, ProjectID: projectID,
+		Message: message, MetaJSON: &metadata, OccurredAt: occurredAt, CreatedAt: occurredAt,
+	})
+}
+
+func planEventIdentity(route, requestID string, projectID int64, targetType TargetType, targetID int64, occurredAt string) (string, int64) {
+	digest := sha256.Sum256([]byte(fmt.Sprintf("p07\x00%s\x00%s\x00%d\x00%s\x00%d\x00%s", route, requestID, projectID, targetType, targetID, occurredAt)))
+	sequence := int64(0)
+	for index := 0; index < 7; index++ {
+		sequence = (sequence << 8) | int64(digest[index])
+	}
+	return "evt-" + hex.EncodeToString(digest[:16]), sequence
+}
+
+func copyUpdatedAt(source map[int64]string) map[int64]string {
+	result := make(map[int64]string, len(source))
+	for id, updatedAt := range source {
+		result[id] = updatedAt
+	}
+	return result
+}
+
+func mapMutationError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, ErrStateConflict), errors.Is(err, repository.ErrVersionConflict):
+		return fmt.Errorf("%w: %w", ErrStateConflict, err)
+	case errors.Is(err, repository.ErrRelationConflict):
+		return fmt.Errorf("%w: %w", ErrProtected, err)
+	case errors.Is(err, repository.ErrInvalidPlan), errors.Is(err, repository.ErrInvalidTask),
+		errors.Is(err, repository.ErrInvalidEvent), errors.Is(err, repository.ErrPlanOrderConflict):
+		return fmt.Errorf("%w: %w", ErrInvalidCommand, err)
+	default:
+		return err
+	}
+}

@@ -135,6 +135,7 @@ export function IntakePanel({
   const attachmentsByOwner = useMemo(() => {
     const grouped = new Map<string, Attachment[]>();
     for (const attachment of attachments) {
+      if (!isOwnedIntakeAttachment(attachment)) continue;
       const key = intakeAttachmentKey(attachment.owner_type, attachment.owner_id);
       const group = grouped.get(key);
       if (group) {
@@ -145,6 +146,14 @@ export function IntakePanel({
     }
     return grouped;
   }, [attachments]);
+
+  // P06 snapshots intentionally omit owner/path/hash metadata. Show those
+  // safely-scoped records once at the project intake boundary instead of
+  // inventing an owner association in the renderer.
+  const unscopedAttachments = useMemo(
+    () => attachments.filter((attachment) => !isOwnedIntakeAttachment(attachment) && Boolean(attachment.download_url)),
+    [attachments],
+  );
 
   useEffect(() => {
     setVisibleLimit(INTAKE_INITIAL_VISIBLE_COUNT);
@@ -284,6 +293,7 @@ export function IntakePanel({
           <h2>{heading}</h2>
           <span>{subtitle}</span>
         </div>
+        {unscopedAttachments.length ? <AttachmentGrid attachments={unscopedAttachments} /> : null}
         <div className="list intake-list">
           {items.length ? (
             <>
@@ -1003,6 +1013,13 @@ function workspaceSearchAnchorId(type: IntakeType, id: number) {
 
 function intakeAttachmentKey(type: IntakeType | string, id: number | string) {
   return `${type}:${Number(id)}`;
+}
+
+function isOwnedIntakeAttachment(
+  attachment: Attachment,
+): attachment is Attachment & { owner_type: IntakeType; owner_id: number } {
+  return (attachment.owner_type === 'requirement' || attachment.owner_type === 'feedback') &&
+    Number.isInteger(attachment.owner_id) && Number(attachment.owner_id) > 0;
 }
 
 function retryDraftKey(type: IntakeType, id: number) {

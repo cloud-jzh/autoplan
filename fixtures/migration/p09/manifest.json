@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "kind": "p09-sanitized-scale-copy",
+  "generator_version": "p09-scale-v1",
+  "seed": "p09-near-real-v1",
+  "schema_version_target": 1,
+  "scale": {
+    "projects": 4,
+    "plans_per_project": 18,
+    "tasks_per_plan": 36,
+    "events_per_project": 1400,
+    "messages_per_project": 520,
+    "scripts_per_project": 9,
+    "executors_per_project": 9
+  },
+  "expected_rows": {
+    "projects": 4,
+    "plans": 72,
+    "plan_tasks": 2592,
+    "events": 5600,
+    "chat_messages": 2080,
+    "scripts": 36,
+    "executors": 36
+  },
+  "coverage": [
+    "deep_pagination",
+    "same_timestamp_ordering",
+    "long_sanitized_plans",
+    "historical_events",
+    "queued_and_interrupted_messages",
+    "multiple_scripts_and_executors",
+    "intentional_relation_anomalies"
+  ],
+  "redaction": {
+    "identifiers": "deterministic synthetic integers",
+    "content": "synthetic labels only",
+    "paths": "relative fixture paths only",
+    "credentials": "never generated"
+  },
+  "cleanup": "only remove a generated output directory containing scale-copy.json and scale-manifest.json beneath an explicit fixture/temp root"
+}

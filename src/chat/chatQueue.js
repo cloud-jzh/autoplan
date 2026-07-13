@@ -27,7 +27,12 @@ const { nowIso } = require('../database');
  * @param {Function} [deps.emit] - 变更成功后广播快照：(snapshot: Array<{id,content,state}>) => void
  * @returns {{enqueue:Function, peekNext:Function, markProcessing:Function, releaseProcessing:Function, getQueue:Function, cancelItem:Function, editItem:Function, clear:Function, hasQueued:Function, loadPersisted:Function}}
  */
-function createChatQueue({ db, conversationId, projectId, emit } = {}) {
+function createChatQueue({ db, conversationId, projectId, emit, legacyAdapterDisabled = false } = {}) {
+  if (legacyAdapterDisabled) {
+    const error = new Error('legacy_adapter_disabled');
+    error.code = 'legacy_adapter_disabled';
+    throw error;
+  }
   const cid = Number(conversationId);
   const pid = Number(projectId);
   const broadcast = typeof emit === 'function' ? emit : () => {};

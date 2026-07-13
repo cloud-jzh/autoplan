@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "kind": "p15-runtime-trace-scenarios",
+  "scenarios": [
+    { "id": "core_crud", "domains": ["projects", "requirements", "feedback", "plans"], "must_observe": ["renderer_to_go_transport", "go_application", "go_repository", "database_open", "database_write"] },
+    { "id": "loop_task", "domains": ["loop", "tasks", "acceptance", "intake"], "must_observe": ["renderer_to_go_transport", "go_application", "process_lifecycle", "database_write"] },
+    { "id": "chat", "domains": ["chat", "conversations"], "must_observe": ["renderer_to_go_transport", "go_application", "sse", "database_write"] },
+    { "id": "scripts_executors", "domains": ["scripts", "executors"], "must_observe": ["renderer_to_go_transport", "go_application", "process_lifecycle", "database_write"] },
+    { "id": "mcp", "domains": ["mcp"], "must_observe": ["mcp_to_go_application", "database_open"] },
+    { "id": "terminal", "domains": ["terminal"], "must_observe": ["renderer_to_go_transport", "go_application", "terminal_websocket", "process_lifecycle"] }
+  ],
+  "forbidden": ["node_database_open", "node_database_write", "node_business_write", "dual_writer", "business_ipc_after_p15_p005", "raw_payload", "credential", "absolute_path"]
+}

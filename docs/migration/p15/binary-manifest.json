@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "kind": "p15-go-sidecar-binary-manifest",
+  "status": "blocked",
+  "publish_policy": "never",
+  "source_module": "backend",
+  "source_entrypoint": "backend/cmd/autoplan-server",
+  "resource_layout": "sidecar/{platform}/{arch}/autoplan-server[.exe]",
+  "build_output_layout": "artifacts/sidecar/{platform}/{arch}/autoplan-server[.exe]",
+  "supported_targets": [
+    { "platform": "win32", "arch": "x64", "binary": "autoplan-server.exe" },
+    { "platform": "darwin", "arch": "x64", "binary": "autoplan-server" },
+    { "platform": "darwin", "arch": "arm64", "binary": "autoplan-server" },
+    { "platform": "linux", "arch": "x64", "binary": "autoplan-server" }
+  ],
+  "required_build_evidence": [
+    "go_version",
+    "goos",
+    "goarch",
+    "sha256",
+    "source_commit",
+    "source_tree_sha256",
+    "go_mod_sha256",
+    "go_sum_sha256"
+  ],
+  "release_gate": {
+    "macos": "signed-notarized with hardened-runtime signing, staple, and validation",
+    "windows": "package-path and Authenticode validation when signed",
+    "linux": "package-path and executable-permission validation"
+  },
+  "entries": [],
+  "blocked_reason": "No sidecar build or native package evidence has been recorded by this source manifest."
+}

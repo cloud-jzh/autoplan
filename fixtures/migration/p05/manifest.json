@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "version": "p05-node-mutation-golden-v1",
+  "generator": "scripts/migration-p05/generate-node-golden.js",
+  "generatorSha256": "64ef170aff97c36bcbec5d34a9c104087fa414f8c0d7c298e191427f3673c8be",
+  "source": {
+    "syntheticOnly": true,
+    "databaseCopy": "generator-owned OS temporary database; never Electron userData or autoplan.sqlite",
+    "fixtureRecipeSha256": "2131748203868e82a3204965cb8f93b04aafefa8184c52773a2afcab876644cb",
+    "databaseBeforeSha256": "5ade9a14ddd41706b0933a2cc07c8b8bea0695c56075ed244bb7c86c0a891248",
+    "databaseAfterSha256": "ad4d9adc0960902ece90c2a3bd7b066a357a9caa6ffdc7e23897f9231abb0b63"
+  },
+  "prerequisites": {
+    "writeContract": {
+      "path": "docs/migration/p05/write-contract.json",
+      "sha256": "0f9f14704384c7c5856f454b55b9835d51bbd21bdce1223fdc3fc2fd87b6b469"
+    },
+    "p04": [
+      {
+        "path": "docs/migration/p04/schema-inventory.json",
+        "sha256": "642eedad23c01b3c0fc6a54150e2354e87fe92d4e5a8fc8f9e8cf13d420c6e64"
+      },
+      {
+        "path": "fixtures/migration/p04/manifest.json",
+        "sha256": "4a8f33581653230271189b31cde2e092f38751cf025dc9dc270fdbc2c5cf6900"
+      },
+      {
+        "path": "backend/migrations/0001_schema_v1.sql",
+        "sha256": "f9ac8dd921e0bdf8bc3e6e78ce3489c77b02eca4d3a5df9f45551d5f8bf5b934"
+      }
+    ]
+  },
+  "normalization": {
+    "version": "p05-node-mutation-normalization-v1",
+    "placeholders": {
+      "fixtureRoot": "<fixture-root>",
+      "timestamp": "<time-N>",
+      "redacted": "<redacted>",
+      "command": "<redacted-command>",
+      "envVars": "<redacted-env-vars>"
+    },
+    "idMaps": {
+      "projects": {
+        "1": 1,
+        "2": 2,
+        "3": 3
+      }
+    }
+  },
+  "scenarios": [
+    "create",
+    "duplicate-create",
+    "delete-duplicate-create",
+    "update",
+    "configure",
+    "duplicate-configure",
+    "missing-update",
+    "missing-delete",
+    "running-delete",
+    "delete",
+    "duplicate-delete"
+  ],
+  "writerHandoff": {
+    "sequence": [
+      "Node opens generator-owned copy",
+      "Node executes serial mutations",
+      "Node closes sql.js and owner lock",
+      "Go may open a separately reset copy later"
+    ],
+    "sameCopyConcurrentWritersAllowed": false,
+    "nodeClosedBeforeArtifactCommit": true
+  },
+  "artifacts": [
+    {
+      "name": "node-mutations.golden.json",
+      "sha256": "f2bb7e50ca9b7950d6f92945b713de80f1b55f3b8ecd45076847d3ccf8c29ba6"
+    }
+  ]
+}

@@ -1,0 +1,206 @@
+{
+  "format_version": 1,
+  "fixture_set": "autoplan-p04-copy-migration",
+  "generated_by": "scripts/migration-p04/generate-fixtures.js",
+  "artifact_manifest": "generated-manifest.json",
+  "artifact_policy": {
+    "location": "caller-provided system temporary directory",
+    "overwrite": false,
+    "byte_size": "required per generated artifact",
+    "sha256": "required lowercase SHA-256 per generated artifact",
+    "database_content_in_manifest": false
+  },
+  "fixed_time": "2026-07-11T04:00:00.000Z",
+  "fixtures": [
+    {
+      "id": "empty-file",
+      "file": "empty-file.sqlite.copy",
+      "kind": "empty-file",
+      "classification": "valid-history",
+      "source_user_version": 0,
+      "expected_target_user_version": 1,
+      "expected_result": "migrated"
+    },
+    {
+      "id": "empty-sqlite",
+      "file": "empty-sqlite.sqlite.copy",
+      "kind": "empty-sqlite",
+      "classification": "valid-history",
+      "source_user_version": 0,
+      "expected_target_user_version": 1,
+      "expected_result": "migrated"
+    },
+    {
+      "id": "initial-single-project",
+      "file": "initial-single-project.sqlite.copy",
+      "kind": "initial-single-project",
+      "classification": "valid-history",
+      "source_user_version": 0,
+      "expected_target_user_version": 1,
+      "expected_result": "migrated"
+    },
+    {
+      "id": "ensure-column-intermediate",
+      "file": "ensure-column-intermediate.sqlite.copy",
+      "kind": "ensure-column-intermediate",
+      "classification": "valid-history",
+      "source_user_version": 0,
+      "expected_target_user_version": 1,
+      "expected_result": "migrated"
+    },
+    {
+      "id": "scan-files-old-primary-key",
+      "file": "scan-files-old-primary-key.sqlite.copy",
+      "kind": "scan-files-old-primary-key",
+      "classification": "valid-history",
+      "source_user_version": 0,
+      "expected_target_user_version": 1,
+      "expected_result": "migrated"
+    },
+    {
+      "id": "no-intake-plan-links",
+      "file": "no-intake-plan-links.sqlite.copy",
+      "kind": "no-intake-plan-links",
+      "classification": "valid-history",
+      "source_user_version": 0,
+      "expected_target_user_version": 1,
+      "expected_result": "migrated"
+    },
+    {
+      "id": "project-ai-configs",
+      "file": "project-ai-configs.sqlite.copy",
+      "kind": "project-ai-configs",
+      "classification": "valid-history",
+      "source_user_version": 0,
+      "expected_target_user_version": 1,
+      "expected_result": "migrated"
+    },
+    {
+      "id": "chat-without-conversation",
+      "file": "chat-without-conversation.sqlite.copy",
+      "kind": "chat-without-conversation",
+      "classification": "valid-history",
+      "source_user_version": 0,
+      "expected_target_user_version": 1,
+      "expected_result": "migrated"
+    },
+    {
+      "id": "current-node-valid",
+      "file": "current-node-valid.sqlite.copy",
+      "kind": "current-node-valid",
+      "classification": "valid-history",
+      "source_user_version": 0,
+      "expected_target_user_version": 1,
+      "expected_result": "migrated"
+    },
+    {
+      "id": "valid-edge-data",
+      "file": "valid-edge-data.sqlite.copy",
+      "kind": "valid-edge-data",
+      "classification": "valid-history",
+      "source_user_version": 0,
+      "expected_target_user_version": 1,
+      "expected_result": "migrated"
+    },
+    {
+      "id": "schema-v1",
+      "file": "schema-v1.sqlite.copy",
+      "kind": "schema-v1",
+      "classification": "valid-current",
+      "source_user_version": 1,
+      "expected_target_user_version": 1,
+      "expected_result": "no-op"
+    },
+    {
+      "id": "orphan-relations",
+      "file": "orphan-relations.sqlite.copy",
+      "kind": "orphan-relations",
+      "classification": "invalid-data",
+      "source_user_version": 0,
+      "expected_target_user_version": null,
+      "expected_result": "blocked",
+      "expected_code": "relation_audit_failed"
+    },
+    {
+      "id": "invalid-paths",
+      "file": "invalid-paths.sqlite.copy",
+      "kind": "invalid-paths",
+      "classification": "invalid-data",
+      "source_user_version": 0,
+      "expected_target_user_version": null,
+      "expected_result": "blocked",
+      "expected_code": "path_audit_failed"
+    },
+    {
+      "id": "foreign-key-conflict",
+      "file": "foreign-key-conflict.sqlite.copy",
+      "kind": "foreign-key-conflict",
+      "classification": "invalid-data",
+      "source_user_version": 1,
+      "expected_target_user_version": null,
+      "expected_result": "blocked",
+      "expected_code": "foreign_key_violation"
+    },
+    {
+      "id": "schema-checksum-drift",
+      "file": "schema-checksum-drift.sqlite.copy",
+      "kind": "schema-checksum-drift",
+      "classification": "invalid-schema",
+      "source_user_version": 1,
+      "expected_target_user_version": null,
+      "expected_result": "blocked",
+      "expected_code": "migration_checksum_drift"
+    },
+    {
+      "id": "schema-object-drift",
+      "file": "schema-object-drift.sqlite.copy",
+      "kind": "schema-object-drift",
+      "classification": "invalid-schema",
+      "source_user_version": 1,
+      "expected_target_user_version": null,
+      "expected_result": "blocked",
+      "expected_code": "schema_mismatch"
+    },
+    {
+      "id": "corrupt-page",
+      "file": "corrupt-page.sqlite.copy",
+      "kind": "corrupt-page",
+      "classification": "invalid-file",
+      "source_user_version": null,
+      "expected_target_user_version": null,
+      "expected_result": "blocked",
+      "expected_code": "integrity_check_failed"
+    },
+    {
+      "id": "truncated-file",
+      "file": "truncated-file.sqlite.copy",
+      "kind": "truncated-file",
+      "classification": "invalid-file",
+      "source_user_version": null,
+      "expected_target_user_version": null,
+      "expected_result": "blocked",
+      "expected_code": "source_invalid"
+    }
+  ],
+  "fault_stages": [
+    "before-backup",
+    "after-backup",
+    "migration-transaction",
+    "migration-sql",
+    "before-ledger-record",
+    "after-ledger-record",
+    "wal-checkpoint",
+    "post-migration-audit",
+    "restore-staging",
+    "restore-atomic-replace"
+  ],
+  "fault_modes": [
+    "cancellation",
+    "panic",
+    "process-interruption",
+    "short-write",
+    "enospc",
+    "permission-denied",
+    "checksum-damage"
+  ]
+}

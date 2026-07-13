@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "fixture_set": "p08-static-pagination",
+  "rules": {
+    "project_scope_required": true,
+    "cursor_is_opaque": true,
+    "no_duplicate_ids_across_pages": true,
+    "stable_sort_required": true,
+    "cross_project_cursor_rejected": true
+  },
+  "cases": [
+    { "id": "scripts-empty", "entity": "scripts", "project_id": 1, "limit": 2, "expected_ids": [], "next_cursor": "" },
+    { "id": "executors-boundary", "entity": "executors", "project_id": 1, "limit": 2, "expected_ids": [11, 12], "next_cursor": "" },
+    { "id": "executors-reorder-stable", "entity": "executors", "project_id": 1, "limit": 3, "expected_ids": [12, 11, 13], "sort": ["sort_order", "id"] },
+    { "id": "conversations-pinned-timestamp", "entity": "conversations", "project_id": 1, "limit": 1, "expected_ids": [21], "next_cursor": "opaque" },
+    { "id": "conversations-cursor-continuation", "entity": "conversations", "project_id": 1, "limit": 1, "expected_ids": [22], "cursor": "opaque" },
+    { "id": "messages-timestamp-tie", "entity": "chat_messages", "project_id": 1, "conversation_id": 21, "limit": 2, "expected_ids": [31, 32], "sort": ["created_at", "id"] },
+    { "id": "messages-insert-after-cursor", "entity": "chat_messages", "project_id": 1, "conversation_id": 21, "limit": 2, "cursor": "opaque", "expected_relation": "no_missing_preexisting_rows" },
+    { "id": "messages-delete-before-cursor", "entity": "chat_messages", "project_id": 1, "conversation_id": 21, "limit": 2, "cursor": "opaque", "expected_relation": "no_duplicate_rows" },
+    { "id": "large-page-cap", "entity": "conversations", "project_id": 1, "limit": 1000, "expected_page_size": 200 },
+    { "id": "forged-cursor", "entity": "conversations", "project_id": 1, "limit": 2, "cursor": "forged", "error": "invalid_cursor" },
+    { "id": "cross-project-cursor", "entity": "chat_messages", "project_id": 2, "conversation_id": 21, "limit": 2, "cursor": "opaque", "error": "conversation_not_found" }
+  ],
+  "relations": [
+    { "id": "delete-ai-unlinks-conversation", "expected": "conversation_ai_config_null" },
+    { "id": "delete-conversation-cascades-messages", "expected": "messages_deleted_before_conversation" }
+  ]
+}

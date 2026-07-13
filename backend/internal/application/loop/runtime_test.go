@@ -1,0 +1,72 @@
+package loop
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/lyming99/autoplan/backend/internal/application/capabilities"
+)
+
+type dispatcherSpy struct {
+	command Command
+	err     error
+}
+
+func (spy *dispatcherSpy) Dispatch(_ context.Context, command Command) (Result, error) {
+	spy.command = command
+	if spy.err != nil {
+		return Result{}, spy.err
+	}
+	return Result{Operation: capabilities.OperationReference{
+		OperationID: "operation-fixture", Type: string(command.Kind), Status: "accepted",
+		RequestID: command.RequestID, AcceptedAt: "2026-07-12T00:00:00.000Z",
+	}}, nil
+}
+
+func TestBridgeDispatchesClosedLoopCommand(t *testing.T) {
+	spy := &dispatcherSpy{}
+	bridge, err := NewBridge(NewService(Dependencies{Dispatcher: spy}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := Command{
+		Version: ContractVersion, Kind: CommandLoopStart, ProjectID: 7,
+		CallerScope: "fixture", RequestID: "request-fixture", IdempotencyKey: "intent-fixture",
+	}
+	result, err := bridge.Execute(context.Background(), command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Operation.OperationID == "" || spy.command.Kind != CommandLoopStart || spy.command.ProjectID != 7 {
+		t.Fatalf("result=%#v command=%#v", result, spy.command)
+	}
+}
+
+func TestBridgeFailsClosedWithoutDispatcherOrForUnownedCommand(t *testing.T) {
+	bridge, err := NewBridge(NewService(Dependencies{Dispatcher: UnavailableDispatcher{}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := Command{Version: ContractVersion, Kind: CommandLoopStop, ProjectID: 7, CallerScope: "fixture", RequestID: "request-fixture", IdempotencyKey: "intent-fixture"}
+	if _, err := bridge.Execute(context.Background(), command); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("unavailable error=%v", err)
+	}
+	command.Kind = CommandPlanRun
+	command.PlanID = 3
+	if _, err := bridge.Execute(context.Background(), command); !errors.Is(err, ErrUnsupportedCommand) {
+		t.Fatalf("unsupported error=%v", err)
+	}
+}
+
+func TestCommandValidationRejectsUnboundedRuntimeInputs(t *testing.T) {
+	command := Command{Version: ContractVersion, Kind: CommandChatSend, ProjectID: 7, ConversationID: 2, CallerScope: "fixture", RequestID: "request-fixture", Chat: &ChatInput{Content: ""}}
+	if err := ValidateCommand(command); !errors.Is(err, ErrInvalidCommand) {
+		t.Fatalf("empty content error=%v", err)
+	}
+	command.Chat.Content = "message"
+	command.Batches = []TaskBatch{{TaskIDs: []int64{1, 1}}}
+	if err := ValidateCommand(command); !errors.Is(err, ErrInvalidCommand) {
+		t.Fatalf("duplicate batch task error=%v", err)
+	}
+}

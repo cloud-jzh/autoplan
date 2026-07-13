@@ -272,6 +272,8 @@ export interface Project extends PlanGenerationSnapshotFields, PlanExecutionSnap
 
 export interface ProjectState extends PlanGenerationSnapshotFields, PlanExecutionSnapshotFields {
   project_id: number;
+  /** Go 配置写入的乐观并发版本；旧 IPC snapshot 可能不提供。 */
+  version?: number;
   running: number;
   phase: string;
   interval_seconds: number;
@@ -380,15 +382,19 @@ export interface Feedback extends AgentCliSessionInfo, IntakeGenerateFailureStat
 
 export interface Attachment {
   id: number;
-  project_id: number;
-  owner_type: IntakeType;
-  owner_id: number;
-  original_name: string;
-  stored_path: string;
+  /** Legacy IPC metadata; P06 HTTP snapshots intentionally omit owner/path/hash fields. */
+  project_id?: number;
+  owner_type?: IntakeType;
+  owner_id?: number;
+  original_name?: string;
+  stored_path?: string;
+  /** P06's only public attachment locator. It must point at the authenticated loopback API. */
+  display_name?: string;
+  download_url?: string;
   mime_type?: string | null;
   size: number;
-  hash: string;
-  created_at: string;
+  hash?: string;
+  created_at?: string;
 }
 
 export interface Plan extends AgentCliSessionInfo, PlanGenerationSnapshotFields, PlanExecutionSnapshotFields {
@@ -784,6 +790,53 @@ export interface ScriptRunResult {
   log: string | null;
   timedOut?: boolean;
   error?: string | null;
+  /** Present for a Go-owned P12 admission; never carries command or PID data. */
+  operation?: ProcessOperationAccepted | null;
+}
+
+/**
+ * P12 migration wire shape for a Script/Executor runtime command accepted by
+ * the owning Go runtime. The legacy Electron handlers above still return a
+ * completed DTO while their capability is Node-owned; consumers must not
+ * infer process ownership from a client-provided id, pid or command field.
+ */
+export interface RuntimeOperationAccepted {
+  operation_id: string;
+  status: 'queued';
+  request_id: string;
+  accepted_at: string;
+  /** Renderer-only aliases preserve the value of their snake_case wire peer. */
+  operationId?: string;
+  requestId?: string;
+  acceptedAt?: string;
+}
+
+/** Bounded, redacted runtime-output metadata for the P12 Operation/SSE path. */
+export interface RuntimeOutputMetadata {
+  stdout_bytes: number;
+  stderr_bytes: number;
+  stdout_lines: number;
+  stderr_lines: number;
+  stdout_truncated: boolean;
+  stderr_truncated: boolean;
+  exit_code: number | null;
+  duration_ms: number | null;
+  failure_code: string | null;
+}
+
+/** Transitional Go command envelope; snapshot is optional until SSE converges. */
+export interface RuntimeOperationCommandResult {
+  operation: RuntimeOperationAccepted;
+  snapshot?: AppSnapshot | null;
+}
+
+/** Safe P12 Script/Executor admission reference shared by REST and SSE. */
+export interface ProcessOperationAccepted {
+  operation_id: string;
+  type: 'script.run' | 'executor.run' | 'executor.action';
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
+  request_id: string;
+  accepted_at: string;
 }
 
 export type ExecutorType = 'shell' | 'process' | 'plugin';
@@ -957,6 +1010,8 @@ export interface ExecutorRunResult {
   timedOut?: boolean;
   error?: string | null;
   dependencyResults?: ExecutorDependencyRunResult[];
+  /** Present for a Go-owned P12 admission; no process identity is exposed. */
+  operation?: ProcessOperationAccepted | null;
 }
 
 export interface ExecutorImportTasksJsonInput {
@@ -1028,6 +1083,9 @@ export interface ActivityLine { role: string; text: string; at: string; }
 
 export interface ActiveOperation extends AgentCliSessionInfo, CodexSessionInfo {
   label: string;
+  /** P11 owner is fixed when an Operation is accepted; absent for legacy snapshots. */
+  operationId?: string | null;
+  runtimeOwner?: 'go' | 'node' | null;
   projectId: number | null;
   planId: number | null;
   taskId: number | null;
@@ -1066,6 +1124,8 @@ export interface PendingAttachmentBase {
   /** MIME type */
   type: string;
   previewUrl: string;
+  /** Browser-only byte source for the P06 multipart transport. Never serialize this object. */
+  blob?: Blob;
 }
 
 export interface PendingPathAttachment extends PendingAttachmentBase {
@@ -1089,6 +1149,8 @@ export interface CreateIntakeInput extends PlanGenerationInputFields {
   attachments: PendingAttachment[];
   title?: string;
   status?: string;
+  /** UI draft intent maps to the P06 status enum in HTTP mode. */
+  createAsDraft?: boolean;
   autoRun?: boolean;
   requirementId?: number | null;
   agentCliProvider?: AgentCliProvider;
@@ -1276,6 +1338,8 @@ export interface EnvVarEntry { name: string; value: string; }
 
 export interface LoopConfigInput extends PlanGenerationInputFields, PlanExecutionInputFields {
   projectId: number;
+  /** 最近一次 HTTP snapshot/config 读取到的版本；省略时客户端使用内存中的已读版本。 */
+  version?: number;
   workspacePath?: string;
   intervalSeconds?: number;
   validationCommand?: string;
@@ -1315,6 +1379,19 @@ export interface PlanIdInput extends ProjectIdInput {
   planId: number;
 }
 
+/** Existing plans:reorder IPC input; one of the two compatibility keys is required. */
+export type ReorderPlansInput = ProjectIdInput & (
+  | { planIds: number[]; plan_ids?: never }
+  | { planIds?: never; plan_ids: number[] }
+);
+
+/** Existing tasks:runParallel IPC batch shape. */
+export interface RunTaskBatch { taskIds: number[]; }
+
+export interface RunTaskBatchesInput extends PlanIdInput {
+  batches: RunTaskBatch[];
+}
+
 export interface UpdatePlanExecutionConfigInput extends PlanIdInput {
   provider?: string;
   command?: string;
@@ -1348,6 +1425,7 @@ export interface RetryIntakePlanGenerationOptions extends PlanGenerationInputFie
 export interface RetryIntakePlanGenerationInput extends IntakeActionInput, RetryIntakePlanGenerationOptions {}
 
 export interface UpdateRequirementInput extends RecordIdInput, PlanGenerationInputFields {
+  expectedUpdatedAt?: string;
   title?: string;
   body?: string;
   status?: string;
@@ -1460,6 +1538,8 @@ export interface AiConfig {
   thinkingBudgetTokens: number | null;
   createdAt: string;
   updatedAt: string;
+  /** Static REST writes use this optimistic-concurrency token. Legacy IPC may omit it. */
+  version?: number;
 }
 
 /** Claude CLI 连接配置明细（需求 #93）：auth_token 始终脱敏，仅暴露 hasAuthToken + maskedKey。 */
@@ -1474,6 +1554,8 @@ export interface ClaudeCliConfig {
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
+  /** Static REST writes use this optimistic-concurrency token. Legacy IPC may omit it. */
+  version?: number;
 }
 
 /** Claude CLI 配置列表项（需求 #93），与明细同构。 */
@@ -1723,20 +1805,36 @@ export interface ConversationListInput { projectId: number; }
 export type FileAccessScope = 'project' | 'workspace' | 'custom' | 'all';
 
 /** 文件访问设置快照：file-access:get 返回 / file-access:save 入参的公共形态 */
-export interface FileAccessSettings { scope: FileAccessScope; allowCrossProject: boolean; allowedRoots: string[]; }
+export interface FileAccessSettings {
+  scope: FileAccessScope;
+  allowCrossProject: boolean;
+  allowedRoots: string[];
+  /** Go file policy 的乐观并发版本；旧 IPC transport 可能不提供。 */
+  version?: number;
+  /** scope=all 时由服务端返回的高风险标记。 */
+  highRisk?: boolean;
+}
 
 /** file-access:save 入参（字段均可选，未提供字段沿用既有持久化值） */
-export interface FileAccessSaveInput { scope?: FileAccessScope; allowCrossProject?: boolean; allowedRoots?: string[]; }
+export interface FileAccessSaveInput {
+  scope?: FileAccessScope;
+  allowCrossProject?: boolean;
+  allowedRoots?: string[];
+  /** 最近一次读取到的版本；省略时 HTTP 客户端使用进程内已读版本。 */
+  version?: number;
+}
 
 /** file-access:save 返回：warned 表示已保存为 all 范围（高风险） */
-export interface FileAccessSaveResult { saved: boolean; warned?: boolean; }
+export interface FileAccessSaveResult { saved: boolean; warned?: boolean; version?: number; }
 
 /** 终端模块（需求 #55）：仅描述 renderer 可见的可序列化对象，不包含 PTY/进程句柄 */
 export type TerminalStatus = 'starting' | 'running' | 'exited' | 'killed' | 'error' | string;
 export type TerminalProfileKind = 'default' | 'custom' | string;
 export type TerminalEnvInput = Record<string, string | number | boolean | null | undefined>;
+/** The creator runtime is immutable for the life of one terminal session. */
+export type TerminalRuntime = 'node' | 'go';
 export interface TerminalProfile { id: string; name: string; kind: TerminalProfileKind; shellPath: string; args: string[]; env: Record<string, string>; }
-export interface TerminalSession { id: string; projectId: number | string; title: string; cwd: string; shell: string; status: TerminalStatus; createdAt: string; endedAt: string | null; exitCode: number | null; cols: number | null; rows: number | null; profile: TerminalProfile; closed?: boolean; }
+export interface TerminalSession { id: string; projectId: number | string; title: string; cwd: string; shell: string; status: TerminalStatus; createdAt: string; endedAt: string | null; exitCode: number | null; cols: number | null; rows: number | null; profile: TerminalProfile; closed?: boolean; runtime?: TerminalRuntime; }
 export interface TerminalProfileInput { id?: string; profileId?: string; name?: string; label?: string; kind?: TerminalProfileKind; shellPath?: string; shell?: string; path?: string; args?: string[]; env?: TerminalEnvInput; }
 export interface TerminalCreateInput { projectId: number; cwd?: string; profileId?: string; profile?: string | TerminalProfileInput; title?: string; cols?: number; rows?: number; env?: TerminalEnvInput; }
 export interface TerminalSessionIdInput { sessionId: string; }
@@ -1747,17 +1845,73 @@ export interface TerminalErrorResult { ok: false; code: string; message: string;
 export type TerminalSessionResult = { ok: true; session: TerminalSession } | TerminalErrorResult;
 export type TerminalCloseResult = { ok: true; session: TerminalSession; closed: true } | TerminalErrorResult;
 export type TerminalListResult = { ok: true; sessions: TerminalSession[] } | TerminalErrorResult;
-export type TerminalReplayResult = { ok: true; session: TerminalSession; chunks: string[]; data: string } | TerminalErrorResult;
+export type TerminalReplayResult = { ok: true; session: TerminalSession; chunks: string[]; data: string; lastSeq?: number } | TerminalErrorResult;
 export interface TerminalEvent {
   sessionId: string;
   projectId: number | string;
   session: TerminalSession;
+  /** Strictly increasing within one session when present on a data/output event. */
+  seq?: number;
   data?: string;
   exitCode?: number | null;
   signal?: string | null;
   closed?: boolean;
 }
+export type TerminalOutputEvent = TerminalEvent & { seq: number; data: string };
 export type TerminalClosedEvent = TerminalEvent & { closed: true };
+
+/**
+ * Frozen P14 Go REST wire DTOs. These preserve the existing renderer DTO
+ * semantics while retaining snake_case on the sidecar boundary. They are
+ * contract declarations only; P006 supplies the transport implementation.
+ */
+export interface TerminalRestProfile {
+  id: string;
+  name: string;
+  kind: TerminalProfileKind;
+  shell_path: string;
+  args: string[];
+  /** Always empty on Go REST reads; env values are write-only intent. */
+  env: Record<string, never>;
+}
+export interface TerminalRestSession {
+  id: string;
+  project_id: number;
+  title: string;
+  cwd: string;
+  shell: string;
+  status: TerminalStatus;
+  created_at: string;
+  ended_at: string | null;
+  exit_code: number | null;
+  cols: number;
+  rows: number;
+  profile: TerminalRestProfile;
+  closed: boolean;
+  runtime: 'go';
+}
+export interface TerminalRestEnvelope<T> { data: T; request_id: string; }
+export interface TerminalRestCreateInput {
+  cwd?: string;
+  profile_id?: string;
+  profile?: TerminalProfileInput;
+  title?: string;
+  cols?: number;
+  rows?: number;
+  env?: TerminalEnvInput;
+}
+export interface TerminalRestReplayEntry { seq: number; data: string; }
+export interface TerminalRestReplay { session: TerminalRestSession; first_seq: number; last_seq: number; entries: TerminalRestReplayEntry[]; replay_complete: boolean; }
+export type TerminalSocketClientEnvelope =
+  | { type: 'input'; data: string }
+  | { type: 'resize'; cols: number; rows: number }
+  | { type: 'ping'; nonce: string };
+export type TerminalSocketServerEnvelope =
+  | { type: 'output'; seq: number; data: string }
+  | { type: 'exit'; exit_code: number | null; signal: string | null }
+  | { type: 'status'; session: TerminalRestSession }
+  | { type: 'closed'; closed: true; session: TerminalRestSession }
+  | { type: 'pong'; nonce: string };
 
 /** 打开工作区文件（scope 文件）的输入参数（需求 #95）*/
 export interface OpenWorkspaceFileInput {
@@ -1791,6 +1945,7 @@ export interface AutoplanApi {
   readMcpAuthToken: () => Promise<McpAuthTokenReadResult>;
   saveMcpConfig: (config: McpConfigInput) => Promise<AppSnapshot>;
   readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
+  reorderPlans: (input: ReorderPlansInput) => Promise<AppSnapshot>;
   stopPlan: (input: PlanIdInput) => Promise<AppSnapshot>;
   resumePlan: (input: PlanIdInput) => Promise<AppSnapshot>;
   updatePlanExecutionConfig: (input: UpdatePlanExecutionConfigInput) => Promise<AppSnapshot>;
@@ -1799,6 +1954,7 @@ export interface AutoplanApi {
   appendPlanTask: (input: AppendPlanTaskInput) => Promise<AppSnapshot>;
   deletePlan: (input: PlanIdInput) => Promise<AppSnapshot>;
   runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+  runTaskBatches: (input: RunTaskBatchesInput) => Promise<AppSnapshot>;
   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
   acceptItem: (input: AcceptanceItemInput) => Promise<AppSnapshot>;
   unacceptItem: (input: AcceptanceItemInput) => Promise<AppSnapshot>;

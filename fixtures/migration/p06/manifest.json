@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "version": "p06-node-intake-golden-v1",
+  "fixture_set": "autoplan-p06-intake-contract",
+  "generator": "scripts/migration-p06/generate-node-golden.js",
+  "generatorSha256": "960a9bf3ca19f31a4dd0e5c2d1cd325b0bccd5fce05c1dc30da9c91e7abc35d6",
+  "inventory": {
+    "path": "scripts/migration-p06/inventory-intake-contract.js",
+    "sha256": "95e5464785a838482bc4b8f895342f8f63040aab63f4f8cf9bd8ca70dfe66306"
+  },
+  "source": {
+    "syntheticOnly": true,
+    "databaseCopy": "generator-owned OS temporary database; never Electron userData or production autoplan.sqlite",
+    "execution": "Node scenarios are serial; sql.js closes and releases ownership before artifact commit",
+    "hashBasis": "physical database hashes are captured during generator execution; committed logical hashes cover the normalized before/after fixture states",
+    "databaseLogicalBeforeSha256": "9a54f3e4d767ab9ae413c5f96fdfe2faa53ea216e0b69788bcc8d7c5181cc4b1",
+    "databaseLogicalAfterSha256": "59eee42284beba679d51f66096d7342db73f69f542944d563ce11786a62bfe1c",
+    "attachmentBytesSha256": "44f4a0ac866cb270e06bc46c5c08cf22a5f803ae3db97c2cf8356d27301494b8",
+    "attachmentBytes": "synthetic fixture only; content is not embedded in the golden artifact"
+  },
+  "artifact_policy": {
+    "location": "repository fixture directory after staging in an OS temporary directory",
+    "runtimeDatabase": "fresh generator-owned OS temporary directory",
+    "runtimeAttachmentRoot": "fresh generator-owned OS temporary directory",
+    "overwrite": "only the two named P06 fixture artifacts",
+    "productionDiscovery": false,
+    "realUserDataAllowed": false,
+    "realPathsInArtifactsAllowed": false
+  },
+  "prerequisites": {
+    "intakeContract": {
+      "path": "docs/migration/p06/intake-contract.json",
+      "sha256": "227b97372e981e99a2884aaa76b408599e209ad84dd009999498b15e69ce4c15"
+    },
+    "p05": [
+      {
+        "path": "docs/migration/p05/write-contract.json",
+        "sha256": "0f9f14704384c7c5856f454b55b9835d51bbd21bdce1223fdc3fc2fd87b6b469"
+      },
+      {
+        "path": "fixtures/migration/p05/manifest.json",
+        "sha256": "af55561dcce9c33dbf597b95fa4d0f704088ea64857b0d4587e07e5417f84873"
+      },
+      {
+        "path": "backend/migrations/0001_schema_v1.sql",
+        "sha256": "f9ac8dd921e0bdf8bc3e6e78ce3489c77b02eca4d3a5df9f45551d5f8bf5b934"
+      }
+    ]
+  },
+  "normalization": {
+    "version": "p06-node-intake-normalization-v1",
+    "placeholders": {
+      "fixtureRoot": "<fixture-root>",
+      "utc": "<utc>",
+      "redacted": "<redacted>"
+    },
+    "rules": [
+      "replace generator-owned timestamps with <utc>",
+      "never copy a private storage path, private integrity digest, user profile, userData path, token, env_vars value or real attachment content into a public DTO",
+      "retain key presence, null versus missing, scalar type and collection order",
+      "represent legacy attachment path/hash exposure as field/risk metadata"
+    ]
+  },
+  "scenarios": [
+    "default-title-and-attachment",
+    "normalized-duplicate",
+    "closed-duplicate",
+    "feedback-association",
+    "feedback-duplicate-groups",
+    "cross-project-feedback",
+    "update-null-and-empty",
+    "accept-unaccept",
+    "multi-phase-links",
+    "delete-plan-keep-intake",
+    "delete-requirement-cascade"
+  ],
+  "writerHandoff": {
+    "sequence": [
+      "P05 gates and frozen P06 contract are checked",
+      "Node opens a fresh generator-owned temporary database and attachment root",
+      "Node executes all scenarios serially",
+      "Node captures database and attachment hashes",
+      "Node closes sql.js and releases database ownership",
+      "artifacts are staged and committed",
+      "Go may later open only a separately reset copy"
+    ],
+    "sameCopyConcurrentWritersAllowed": false,
+    "nodeClosedBeforeArtifactCommit": true
+  },
+  "publicAttachmentFields": ["id", "display_name", "size", "mime_type", "download_url"],
+  "forbiddenPublicAttachmentClasses": [
+    "project ownership internals", "owner internals", "legacy original-name key",
+    "private storage path", "private integrity digest", "local file URL", "server absolute path"
+  ],
+  "artifacts": [
+    {
+      "name": "node-intake.golden.json",
+      "sha256": "3e46eef99d8763a862e6cc2584ff8386eb1800aaf915acd1c66500ade07f2776"
+    }
+  ]
+}

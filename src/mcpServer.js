@@ -2,6 +2,8 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const path = require('node:path');
 const { registerMcpTools } = require('./mcpTools');
+const { DATABASE_OWNERS, assertNodeMutationAllowed, selectProcessDatabaseOwner } = require('./data/databaseOwnerGuard');
+const { GoDataClient } = require('./data/goDataClient');
 
 const DEFAULT_MCP_CONFIG = Object.freeze({
   enabled: true,
@@ -15,12 +17,24 @@ const DEFAULT_MCP_CONFIG = Object.freeze({
 });
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
+const LEGACY_MCP_ADAPTER_DISABLED = 'legacy_mcp_adapter_disabled';
 
 class AutoPlanMcpServer {
   constructor(options = {}) {
     this.db = options.db;
     this.loop = options.loop;
     this.intakeService = options.intakeService;
+    // This is an explicit host-provided adapter to the Go P06 application
+    // boundary. Its presence is the migration switch; it is never inferred
+    // from a database path or silently replaced with a legacy writer.
+    this.goIntakeTransport = options.goIntakeTransport || null;
+    // In Go owner mode this is the only database-capable adapter handed to
+    // MCP tools. A missing client is not replaced with a local AppDatabase.
+    this.goDataClient = options.goDataClient || null;
+    if (!this.goDataClient && this.db) assertNodeMutationAllowed();
+    this.mcpCallerScope = String(options.mcpCallerScope || 'mcp-local');
+    this.mcpLocalCaller = options.mcpLocalCaller === true;
+    this.legacyAdapterDisabled = options.legacyAdapterDisabled === true;
     this.registerTools = options.registerTools || registerMcpTools;
     this.logger = options.logger || console;
     this.config = normalizeMcpConfig(options.config);
@@ -31,6 +45,12 @@ class AutoPlanMcpServer {
   }
 
   async start() {
+    if (this.legacyAdapterDisabled) {
+      this.state = { ...stoppedState(this.config), lastError: LEGACY_MCP_ADAPTER_DISABLED };
+      const error = new Error(LEGACY_MCP_ADAPTER_DISABLED);
+      error.code = LEGACY_MCP_ADAPTER_DISABLED;
+      throw error;
+    }
     if (!this.config.enabled) {
       this.state = { ...stoppedState(this.config), enabled: false };
       return this.state;
@@ -168,6 +188,11 @@ class AutoPlanMcpServer {
         db: this.db,
         loop: this.loop,
         intakeService: this.intakeService,
+        goIntakeTransport: this.goIntakeTransport,
+        goDataClient: this.goDataClient,
+        mcpCallerScope: this.mcpCallerScope,
+        mcpLocalCaller: this.mcpLocalCaller,
+        legacyAdapterDisabled: this.legacyAdapterDisabled,
       });
     }
     return sdkServer;
@@ -330,22 +355,38 @@ async function startStandalone() {
   const args = new Set(process.argv.slice(2));
   const transport = args.has('--stdio') ? 'stdio' : 'http';
   const dataDir = process.env.AUTOPLAN_DATA_DIR || path.join(process.cwd(), '.autoplan-runtime', 'mcp');
-  const { AppDatabase } = require('./database');
-  const { createIntakeService } = require('./intakeService');
-  const { LoopService } = require('./loopService');
-  const db = new AppDatabase(path.join(dataDir, 'autoplan.sqlite'));
-  await db.init();
-  const loop = new LoopService(db);
-  const server = createMcpServer({
-    db,
-    loop,
-    intakeService: createIntakeService({
+  const owner = selectProcessDatabaseOwner({ env: process.env });
+  const goMcpEnabled = owner.owner === DATABASE_OWNERS.GO && process.env.AUTOPLAN_SIDECAR_GO_MCP_API === 'true';
+  owner.assertLegacyNodeMcpAdapterAllowed?.(goMcpEnabled);
+  if (goMcpEnabled) {
+    const error = new Error(LEGACY_MCP_ADAPTER_DISABLED);
+    error.code = LEGACY_MCP_ADAPTER_DISABLED;
+    throw error;
+  }
+  let server;
+  if (owner.owner === DATABASE_OWNERS.GO) {
+    server = createMcpServer({
+      goDataClient: new GoDataClient({ baseUrl: owner.goApiUrl }),
+      config: normalizeMcpConfig({ transport }),
+    });
+  } else {
+    const { AppDatabase } = require('./database');
+    const { createIntakeService } = require('./intakeService');
+    const { LoopService } = require('./loopService');
+    const db = new AppDatabase(path.join(dataDir, 'autoplan.sqlite'), { ownerGuard: owner });
+    await db.init();
+    const loop = new LoopService(db);
+    server = createMcpServer({
       db,
       loop,
-      attachmentsRoot: () => path.join(dataDir, 'attachments'),
-    }),
-    config: normalizeMcpConfig({ transport }),
-  });
+      intakeService: createIntakeService({
+        db,
+        loop,
+        attachmentsRoot: () => path.join(dataDir, 'attachments'),
+      }),
+      config: normalizeMcpConfig({ transport }),
+    });
+  }
   const state = await server.start();
   process.stderr.write(`AutoPlan MCP ${state.transport} server started${state.url ? ` at ${state.url}` : ''}\n`);
   for (const signal of ['SIGINT', 'SIGTERM']) {
@@ -366,6 +407,7 @@ if (require.main === module) {
 module.exports = {
   AutoPlanMcpServer,
   DEFAULT_MCP_CONFIG,
+  LEGACY_MCP_ADAPTER_DISABLED,
   createMcpServer,
   normalizeMcpConfig,
   describeListenError,

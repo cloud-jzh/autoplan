@@ -1,204 +1,176 @@
+'use strict';
+
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
+const ROOT = path.resolve(__dirname, '..');
+const RELEASE_ROOT = path.join(ROOT, 'release');
+const PLATFORM = Object.freeze({ windows: 'win32', macos: 'darwin', linux: 'linux' });
+
+class ReleaseArtifactError extends Error {
+  constructor(code) {
+    super(code);
+    this.name = 'ReleaseArtifactError';
+    this.code = code;
+  }
+}
+
+function sha256(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
+
 function parseArgs(argv) {
-  const args = {
-    platform: process.env.RELEASE_PLATFORM || 'macos',
-    releaseDir: process.env.RELEASE_DIR || 'release',
-    mode: process.env.MACOS_RELEASE_MODE || 'unsigned-test',
-  };
+  const options = { platform: process.env.RELEASE_PLATFORM || hostPlatform(), releaseDir: process.env.RELEASE_DIR || RELEASE_ROOT, mode: process.env.RELEASE_MODE || process.env.MACOS_RELEASE_MODE || 'unsigned-test' };
   for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (arg === '--platform') args.platform = argv[++index];
-    else if (arg === '--release-dir') args.releaseDir = argv[++index];
-    else if (arg === '--mode') args.mode = argv[++index];
+    const key = argv[index];
+    if (!['--platform', '--release-dir', '--mode'].includes(key) || index + 1 >= argv.length) throw new ReleaseArtifactError('release_artifact_arguments_invalid');
+    const value = argv[++index];
+    if (key === '--platform') options.platform = value;
+    else if (key === '--release-dir') options.releaseDir = value;
+    else options.mode = value;
   }
-  args.releaseDir = path.resolve(args.releaseDir);
-  return args;
-}
-
-function fail(message) {
-  throw new Error(message);
-}
-
-function info(message) {
-  console.log(`[verify-release-artifacts] ${message}`);
-}
-
-function warn(message) {
-  console.warn(`[verify-release-artifacts] ${message}`);
-}
-
-function assertFile(filePath) {
-  if (!fs.existsSync(filePath)) fail(`Missing expected artifact: ${filePath}`);
-  const stats = fs.statSync(filePath);
-  if (!stats.isFile()) fail(`Expected a file artifact: ${filePath}`);
-  if (stats.size <= 0) fail(`Artifact is empty: ${filePath}`);
-  return stats;
-}
-
-function listFiles(dir) {
-  if (!fs.existsSync(dir)) fail(`Release directory does not exist: ${dir}`);
-  return fs.readdirSync(dir, { withFileTypes: true })
-    .filter((entry) => entry.isFile())
-    .map((entry) => entry.name)
-    .sort((left, right) => left.localeCompare(right));
-}
-
-function runRequired(label, command, args) {
-  const result = spawnSync(command, args, { encoding: 'utf8' });
-  if (result.error) fail(`${label} failed to start: ${result.error.message}`);
-  if (result.status !== 0) {
-    if (result.stdout) console.error(result.stdout.trim());
-    if (result.stderr) console.error(result.stderr.trim());
-    fail(`${label} failed with exit code ${result.status}.`);
+  if (!PLATFORM[options.platform] || !['unsigned-test', 'signed-notarized'].includes(options.mode)) {
+    throw new ReleaseArtifactError('release_artifact_arguments_invalid');
   }
-  return result.stdout || '';
+  options.releaseDir = path.resolve(options.releaseDir);
+  return options;
 }
 
-function collectMacArtifacts(releaseDir) {
-  const files = listFiles(releaseDir);
-  const expected = [];
-  for (const arch of ['x64', 'arm64']) {
-    for (const ext of ['dmg', 'zip']) expected.push({ arch, ext });
-  }
-
-  const artifacts = [];
-  for (const item of expected) {
-    const suffix = `-mac-${item.arch}.${item.ext}`;
-    const matches = files.filter((name) => name.endsWith(suffix));
-    if (matches.length !== 1) {
-      fail(`Expected exactly one macOS ${item.arch} ${item.ext} artifact, found ${matches.length}.`);
-    }
-    const filePath = path.join(releaseDir, matches[0]);
-    assertFile(filePath);
-    const blockmapPath = `${filePath}.blockmap`;
-    assertFile(blockmapPath);
-    artifacts.push({ ...item, name: matches[0], filePath, blockmapPath });
-  }
-
-  const expectedNames = new Set(artifacts.map((artifact) => artifact.name));
-  const extraInstallers = files.filter((name) => /-mac-[^.]+\.(dmg|zip)$/.test(name) && !expectedNames.has(name));
-  if (extraInstallers.length) fail(`Unexpected macOS installer artifacts: ${extraInstallers.join(', ')}`);
-
-  return artifacts;
+function hostPlatform() {
+  return process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux';
 }
 
-function verifyLatestMacYml(releaseDir, artifacts) {
-  const latestPath = path.join(releaseDir, 'latest-mac.yml');
-  if (!fs.existsSync(latestPath)) {
-    warn('latest-mac.yml was not generated; auto-update metadata will not be uploaded for macOS.');
-    return;
-  }
-  assertFile(latestPath);
-
-  const content = fs.readFileSync(latestPath, 'utf8');
-  const zipNames = new Set(artifacts.filter((artifact) => artifact.ext === 'zip').map((artifact) => artifact.name));
-  const referenced = [...content.matchAll(/[^\s'"/]+-mac-(?:x64|arm64)\.zip/g)].map((match) => match[0]);
-  if (!referenced.length) fail('latest-mac.yml does not reference an arch-specific macOS zip artifact.');
-  for (const name of referenced) {
-    if (!zipNames.has(name)) fail(`latest-mac.yml references missing artifact: ${name}`);
-  }
-  info(`latest-mac.yml references release zip artifact(s): ${[...new Set(referenced)].join(', ')}`);
+function assertFile(file, code = 'release_artifact_missing') {
+  const info = fs.lstatSync(file, { throwIfNoEntry: false });
+  if (!info?.isFile() || info.isSymbolicLink() || info.size <= 0) throw new ReleaseArtifactError(code);
+  return info;
 }
 
-function findAppBundles(dir) {
-  const found = [];
-  const walk = (current) => {
-    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
-      const fullPath = path.join(current, entry.name);
-      if (!entry.isDirectory()) continue;
-      if (entry.name.endsWith('.app')) {
-        found.push(fullPath);
-        continue;
-      }
-      walk(fullPath);
+function assertDirectory(directory, code = 'release_bundle_missing') {
+  const info = fs.lstatSync(directory, { throwIfNoEntry: false });
+  if (!info?.isDirectory() || info.isSymbolicLink()) throw new ReleaseArtifactError(code);
+  return info;
+}
+
+function expectedBinary(platform) { return platform === 'win32' ? 'autoplan-server.exe' : 'autoplan-server'; }
+
+function inspectSidecar(directory, platform, expectedArch) {
+  assertDirectory(directory);
+  const resources = platform === 'darwin' && path.basename(directory) === 'Contents'
+    ? path.join(directory, 'Resources')
+    : path.join(directory, 'resources');
+  const root = path.join(resources, 'sidecar', platform, expectedArch);
+  const binary = path.join(root, expectedBinary(platform));
+  const manifestPath = path.join(root, 'autoplan-server.manifest.json');
+  const binaryInfo = assertFile(binary, 'release_sidecar_binary_missing');
+  assertFile(manifestPath, 'release_sidecar_manifest_missing');
+  let manifest;
+  try { manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')); } catch { throw new ReleaseArtifactError('release_sidecar_manifest_invalid'); }
+  if (!manifest || manifest.schema_version !== 1 || manifest.kind !== 'autoplan-packaged-sidecar-resource' ||
+      manifest.platform !== platform || manifest.arch !== expectedArch || manifest.binary !== expectedBinary(platform) ||
+      manifest.bytes !== binaryInfo.size || !/^[a-f0-9]{64}$/.test(manifest.sha256 || '') ||
+      !/^[a-f0-9]{40}$/.test(manifest.source_commit || '') || !/^[a-f0-9]{64}$/.test(manifest.source_tree_sha256 || '')) {
+    throw new ReleaseArtifactError('release_sidecar_manifest_invalid');
+  }
+  if (sha256(fs.readFileSync(binary)) !== manifest.sha256) throw new ReleaseArtifactError('release_sidecar_checksum_invalid');
+  if (platform !== 'win32' && (binaryInfo.mode & 0o111) === 0) throw new ReleaseArtifactError('release_sidecar_not_executable');
+  return { binary, manifest };
+}
+
+function listFiles(directory) {
+  assertDirectory(directory, 'release_directory_missing');
+  return fs.readdirSync(directory, { withFileTypes: true }).filter((entry) => entry.isFile()).map((entry) => entry.name).sort();
+}
+
+function requireArtifact(files, expression) {
+  const matches = files.filter((name) => expression.test(name));
+  if (matches.length !== 1) throw new ReleaseArtifactError('release_installer_artifact_missing');
+  return matches[0];
+}
+
+function runRequired(command, args, code) {
+  const result = spawnSync(command, args, { encoding: 'utf8', windowsHide: true, shell: false });
+  if (result.error || result.status !== 0) throw new ReleaseArtifactError(code);
+}
+
+function findAppBundles(root) {
+  const bundles = [];
+  const walk = (directory) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+      const full = path.join(directory, entry.name);
+      if (entry.name.endsWith('.app')) bundles.push(full);
+      else walk(full);
     }
   };
-  walk(dir);
-  return found.sort((left, right) => left.localeCompare(right));
+  walk(root);
+  return bundles.sort();
 }
 
-function verifySingleAppTrust(appPath) {
-  runRequired(`codesign ${appPath}`, 'codesign', ['--verify', '--deep', '--strict', '--verbose=2', appPath]);
-  runRequired(`Gatekeeper assess ${appPath}`, 'spctl', ['--assess', '--type', 'execute', '--verbose', appPath]);
-  runRequired(`Stapler validate ${appPath}`, 'xcrun', ['stapler', 'validate', appPath]);
+function verifyMac(options) {
+  const files = listFiles(options.releaseDir);
+  for (const arch of ['x64', 'arm64']) {
+    requireArtifact(files, new RegExp(`-mac-${arch}\\.dmg$`));
+    requireArtifact(files, new RegExp(`-mac-${arch}\\.zip$`));
+  }
+  const apps = findAppBundles(options.releaseDir);
+  if (apps.length === 0) throw new ReleaseArtifactError('release_app_bundle_missing');
+  const observed = new Set();
+  for (const app of apps) {
+    const resourceRoot = path.join(app, 'Contents');
+    for (const arch of ['x64', 'arm64']) {
+      const candidate = path.join(resourceRoot, 'Resources', 'sidecar', 'darwin', arch);
+      if (fs.existsSync(candidate)) {
+        const sidecar = inspectSidecar(resourceRoot, 'darwin', arch);
+        observed.add(arch);
+        if (options.mode === 'signed-notarized') runRequired('codesign', ['--verify', '--strict', '--verbose=2', sidecar.binary], 'release_sidecar_signature_invalid');
+      }
+    }
+    if (options.mode === 'signed-notarized') {
+      runRequired('codesign', ['--verify', '--deep', '--strict', '--verbose=2', app], 'release_app_signature_invalid');
+      runRequired('spctl', ['--assess', '--type', 'execute', '--verbose', app], 'release_gatekeeper_invalid');
+      runRequired('xcrun', ['stapler', 'validate', app], 'release_notarization_invalid');
+    }
+  }
+  if (observed.size !== 2) throw new ReleaseArtifactError('release_sidecar_architecture_missing');
 }
 
-function verifyDmgMount(artifact, requireTrust) {
-  const mountDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-dmg-'));
+function verifyWindows(options) {
+  const files = listFiles(options.releaseDir);
+  requireArtifact(files, /-win-x64-Setup\.exe$/);
+  const unpacked = path.join(options.releaseDir, 'win-unpacked');
+  const sidecar = inspectSidecar(unpacked, 'win32', 'x64');
+  if (options.mode === 'signed-notarized') {
+    runRequired('powershell', ['-NoProfile', '-NonInteractive', '-Command', `if ((Get-AuthenticodeSignature -LiteralPath '${sidecar.binary.replace(/'/g, "''")}').Status -ne 'Valid') { exit 2 }`], 'release_sidecar_signature_invalid');
+  }
+}
+
+function verifyLinux(options) {
+  const files = listFiles(options.releaseDir);
+  requireArtifact(files, /-linux-x64\.AppImage$/);
+  requireArtifact(files, /-linux-x64\.deb$/);
+  inspectSidecar(path.join(options.releaseDir, 'linux-unpacked'), 'linux', 'x64');
+}
+
+function verifyReleaseArtifacts(options) {
+  if (options.platform === 'macos') verifyMac(options);
+  else if (options.platform === 'windows') verifyWindows(options);
+  else verifyLinux(options);
+  return { status: options.mode === 'signed-notarized' ? 'verified' : 'blocked', code: options.mode === 'signed-notarized' ? 'release_artifacts_verified' : 'release_artifacts_unsigned_test_only', platform: options.platform };
+}
+
+if (require.main === module) {
   try {
-    runRequired(`Mount ${artifact.name}`, 'hdiutil', [
-      'attach',
-      artifact.filePath,
-      '-nobrowse',
-      '-readonly',
-      '-mountpoint',
-      mountDir,
-    ]);
-    const appBundles = findAppBundles(mountDir);
-    if (!appBundles.length) fail(`${artifact.name} did not mount an .app bundle.`);
-    if (requireTrust) appBundles.forEach(verifySingleAppTrust);
-  } finally {
-    spawnSync('hdiutil', ['detach', mountDir, '-force'], { encoding: 'utf8' });
-    fs.rmSync(mountDir, { recursive: true, force: true });
+    const result = verifyReleaseArtifacts(parseArgs(process.argv.slice(2)));
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    // Unsigned packages are local-test evidence only. The caller records the
+    // blocked gate but can retain the artifact for later signed verification.
+    process.exitCode = result.status === 'verified' ? 0 : 2;
+  } catch (error) {
+    process.stdout.write(`${JSON.stringify({ status: 'blocked', code: error?.code || 'release_artifact_verification_failed' })}\n`);
+    process.exitCode = 1;
   }
 }
 
-function verifyZipExtract(artifact, requireTrust) {
-  const extractDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-zip-'));
-  try {
-    runRequired(`Extract ${artifact.name}`, 'ditto', ['-x', '-k', artifact.filePath, extractDir]);
-    const appBundles = findAppBundles(extractDir);
-    if (!appBundles.length) fail(`${artifact.name} did not extract an .app bundle.`);
-    if (requireTrust) appBundles.forEach(verifySingleAppTrust);
-  } finally {
-    fs.rmSync(extractDir, { recursive: true, force: true });
-  }
-}
-
-function verifyAppTrust(releaseDir) {
-  const appBundles = findAppBundles(releaseDir);
-  if (!appBundles.length) fail('No .app bundle found for signature and notarization checks.');
-  appBundles.forEach(verifySingleAppTrust);
-}
-
-function verifyMacArtifacts(options) {
-  info(`Checking macOS artifacts in ${options.releaseDir}.`);
-  const artifacts = collectMacArtifacts(options.releaseDir);
-  verifyLatestMacYml(options.releaseDir, artifacts);
-
-  if (process.platform !== 'darwin') {
-    warn('Skipping macOS-only mount, extract, signing, and notarization checks outside macOS.');
-    return;
-  }
-
-  const requireTrust = options.mode === 'signed-notarized';
-  for (const artifact of artifacts.filter((item) => item.ext === 'dmg')) verifyDmgMount(artifact, requireTrust);
-  for (const artifact of artifacts.filter((item) => item.ext === 'zip')) verifyZipExtract(artifact, requireTrust);
-
-  if (requireTrust) {
-    verifyAppTrust(options.releaseDir);
-  } else {
-    warn(`Skipping signature, Gatekeeper, and stapler checks for ${options.mode} mode.`);
-  }
-  info('macOS release artifact checks completed.');
-}
-
-function main() {
-  const options = parseArgs(process.argv.slice(2));
-  if (options.platform !== 'macos') {
-    info(`No specialized checks configured for ${options.platform}; skipping.`);
-    return;
-  }
-  verifyMacArtifacts(options);
-}
-
-try {
-  main();
-} catch (error) {
-  console.error(`[verify-release-artifacts] ${error.message}`);
-  process.exit(1);
-}
+module.exports = { PLATFORM, RELEASE_ROOT, ReleaseArtifactError, expectedBinary, findAppBundles, inspectSidecar, parseArgs, verifyReleaseArtifacts };

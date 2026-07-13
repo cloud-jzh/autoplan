@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useAutoplanClient, useTerminalConnectionOperations } from '../lib/api/provider';
 import type {
   TerminalCreateInput,
   TerminalEvent,
@@ -9,6 +10,7 @@ import type {
 
 export type TerminalBusyAction = 'create' | 'refresh' | 'write' | 'resize' | 'kill' | 'close' | 'rename' | 'clear' | 'replay';
 export type TerminalDataHandler = (data: string, session: TerminalSession) => void;
+type TerminalDataHandlers = Map<TerminalDataHandler, number>;
 
 export interface UseTerminalSessionsOptions {
   projectId: number;
@@ -46,15 +48,32 @@ export function useTerminalSessions({
   initialSessions = EMPTY_TERMINAL_SESSIONS,
   autoRefresh = true,
 }: UseTerminalSessionsOptions): UseTerminalSessionsResult {
+  const client = useAutoplanClient();
+  const terminalConnectionOperations = useTerminalConnectionOperations();
   const [sessions, setSessions] = useState<TerminalSession[]>(() => normalizeSessions(initialSessions, projectId));
   const [activeSessionId, setActiveSessionIdState] = useState<string | null>(() => sessions[0]?.id ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [busyAction, setBusyAction] = useState<TerminalBusyAction | null>(null);
   const projectIdRef = useRef(projectId);
-  const dataHandlersRef = useRef(new Map<string, Set<TerminalDataHandler>>());
+  const previousProjectIdRef = useRef(projectId);
+  const mountedRef = useRef(false);
+  const dataHandlersRef = useRef(new Map<string, TerminalDataHandlers>());
+  const terminalConnectionsRef = useRef(new Map<string, () => void>());
+  const terminalSequencesRef = useRef(new Map<string, number>());
   const closedSessionKeysRef = useRef(new Set<string>());
   projectIdRef.current = projectId;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      terminalConnectionsRef.current.forEach((unsubscribe) => unsubscribe());
+      terminalConnectionsRef.current.clear();
+      terminalSequencesRef.current.clear();
+      dataHandlersRef.current.clear();
+    };
+  }, []);
 
   const setActiveSessionId = useCallback((sessionId: string | null) => {
     setActiveSessionIdState(sessionId || null);
@@ -72,6 +91,9 @@ export function useTerminalSessions({
 
   const removeSession = useCallback((sessionId: string, sessionProjectId: number | string = projectIdRef.current) => {
     rememberClosedSession(sessionId, sessionProjectId, closedSessionKeysRef.current);
+    terminalConnectionsRef.current.get(sessionId)?.();
+    terminalConnectionsRef.current.delete(sessionId);
+    terminalSequencesRef.current.delete(sessionId);
     removeSessionFromState(sessionId, setSessions, setActiveSessionIdState, dataHandlersRef);
   }, []);
 
@@ -102,6 +124,51 @@ export function useTerminalSessions({
     upsertSession(event.session);
   }, [removeSession, upsertSession]);
 
+  const deliverTerminalData = useCallback((event: TerminalEvent & { data: string }) => {
+    if (!eventBelongsToProject(event, projectIdRef.current)) return;
+    if (terminalEventClosed(event, projectIdRef.current, closedSessionKeysRef.current)) {
+      removeSession(terminalEventSessionId(event), terminalEventProjectId(event) ?? projectIdRef.current);
+      return;
+    }
+    if (!event.session) return;
+    const sequence = event.seq;
+    if (typeof sequence === 'number') {
+      const previous = terminalSequencesRef.current.get(event.session.id) ?? 0;
+      if (sequence <= previous) return;
+      if (previous !== 0 && sequence !== previous + 1) {
+        setError('终端输出需要重新连接');
+        return;
+      }
+      terminalSequencesRef.current.set(event.session.id, sequence);
+    }
+    upsertSession(event.session);
+    const data = String(event.data ?? '');
+    if (!data) return;
+    const handlers = dataHandlersRef.current.get(event.session.id);
+    if (!handlers || handlers.size === 0) return;
+    handlers.forEach((_owners, handler) => handler(data, event.session));
+  }, [removeSession, upsertSession]);
+
+  const openTerminalConnection = useCallback((sessionId: string) => {
+    if (!mountedRef.current || !sessionId || terminalConnectionsRef.current.has(sessionId) ||
+        !dataHandlersRef.current.get(sessionId)?.size || !terminalSequencesRef.current.has(sessionId)) return;
+    const unsubscribe = terminalConnectionOperations?.connectTerminal?.(
+      projectIdRef.current,
+      sessionId,
+      terminalSequencesRef.current.get(sessionId) ?? 0,
+      {
+        onData: deliverTerminalData,
+        onExit: applyTerminalEvent,
+        onStatus: applyTerminalEvent,
+        onClosed: applyTerminalEvent,
+        onUnavailable: (reason) => {
+          if (mountedRef.current) setError(terminalConnectionError(reason));
+        },
+      },
+    );
+    if (typeof unsubscribe === 'function') terminalConnectionsRef.current.set(sessionId, unsubscribe);
+  }, [applyTerminalEvent, deliverTerminalData, terminalConnectionOperations]);
+
   const refresh = useCallback(async () => {
     const requestProjectId = projectId;
     if (!isValidProjectId(requestProjectId)) {
@@ -113,8 +180,8 @@ export function useTerminalSessions({
     setLoading(true);
     setBusyAction('refresh');
     try {
-      const result = await window.autoplan.listTerminals({ projectId: requestProjectId });
-      if (projectIdRef.current !== requestProjectId) return;
+      const result = await client.listTerminals({ projectId: requestProjectId });
+      if (!mountedRef.current || projectIdRef.current !== requestProjectId) return;
       if (!result.ok) {
         setError(result.message || '读取终端会话失败');
         setSessions([]);
@@ -126,16 +193,24 @@ export function useTerminalSessions({
       setSessions(nextSessions);
       selectExistingSession(nextSessions);
     } catch (err) {
-      if (projectIdRef.current === requestProjectId) setError(errorMessage(err, '读取终端会话失败'));
+      if (mountedRef.current && projectIdRef.current === requestProjectId) setError(errorMessage(err, '读取终端会话失败'));
     } finally {
-      if (projectIdRef.current === requestProjectId) {
+      if (mountedRef.current && projectIdRef.current === requestProjectId) {
         setLoading(false);
         setBusyAction((current) => (current === 'refresh' ? null : current));
       }
     }
-  }, [projectId, selectExistingSession]);
+  }, [client, projectId, selectExistingSession]);
 
   useEffect(() => {
+    if (previousProjectIdRef.current !== projectId) {
+      terminalConnectionsRef.current.forEach((unsubscribe) => unsubscribe());
+      terminalConnectionsRef.current.clear();
+      terminalSequencesRef.current.clear();
+      dataHandlersRef.current.clear();
+      closedSessionKeysRef.current.clear();
+      previousProjectIdRef.current = projectId;
+    }
     rememberClosedSessions(initialSessions, projectId, closedSessionKeysRef.current);
     const normalized = normalizeSessions(initialSessions, projectId, closedSessionKeysRef.current);
     setSessions((current) => {
@@ -159,30 +234,28 @@ export function useTerminalSessions({
   }, [autoRefresh, projectId, refresh, selectExistingSession]);
 
   useEffect(() => {
-    const unsubscribeData = window.autoplan.onTerminalData((event) => {
-      if (!eventBelongsToProject(event, projectIdRef.current)) return;
-      if (terminalEventClosed(event, projectIdRef.current, closedSessionKeysRef.current)) {
-        removeSession(terminalEventSessionId(event), terminalEventProjectId(event) ?? projectIdRef.current);
-        return;
-      }
-      if (!event.session) return;
-      upsertSession(event.session);
-      const data = String(event.data ?? '');
-      if (!data) return;
-      const handlers = dataHandlersRef.current.get(event.session.id);
-      if (!handlers || handlers.size === 0) return;
-      handlers.forEach((handler) => handler(data, event.session));
+    let active = true;
+    const unsubscribeData = client.onTerminalData((event) => {
+      if (!active) return;
+      deliverTerminalData(event);
     });
-    const unsubscribeExit = window.autoplan.onTerminalExit(applyTerminalEvent);
-    const unsubscribeStatus = window.autoplan.onTerminalStatus(applyTerminalEvent);
-    const unsubscribeClosed = window.autoplan.onTerminalClosed(applyTerminalEvent);
+    const unsubscribeExit = client.onTerminalExit((event) => {
+      if (active) applyTerminalEvent(event);
+    });
+    const unsubscribeStatus = client.onTerminalStatus((event) => {
+      if (active) applyTerminalEvent(event);
+    });
+    const unsubscribeClosed = client.onTerminalClosed((event) => {
+      if (active) applyTerminalEvent(event);
+    });
     return () => {
+      active = false;
       unsubscribeData();
       unsubscribeExit();
       unsubscribeStatus();
       unsubscribeClosed();
     };
-  }, [applyTerminalEvent, removeSession, upsertSession]);
+  }, [applyTerminalEvent, client, deliverTerminalData]);
 
   const createSession = useCallback(async (input: Partial<TerminalCreateInput> = {}) => {
     if (!isValidProjectId(projectId)) {
@@ -195,59 +268,63 @@ export function useTerminalSessions({
         projectId,
         ...input,
       };
-      const result = await window.autoplan.createTerminal(payload);
-      if (projectIdRef.current !== projectId) return null;
+      const result = await client.createTerminal(payload);
+      if (!mountedRef.current || projectIdRef.current !== projectId) return null;
       const session = sessionFromResult(result, '创建终端失败', setError);
       if (!session) return null;
       upsertSession(session);
       setActiveSessionIdState(session.id);
       return session;
     } catch (err) {
-      if (projectIdRef.current === projectId) setError(errorMessage(err, '创建终端失败'));
+      if (mountedRef.current && projectIdRef.current === projectId) setError(errorMessage(err, '创建终端失败'));
       return null;
     } finally {
-      if (projectIdRef.current === projectId) setBusyAction((current) => (current === 'create' ? null : current));
+      if (mountedRef.current && projectIdRef.current === projectId) setBusyAction((current) => (current === 'create' ? null : current));
     }
-  }, [projectId, upsertSession]);
+  }, [client, projectId, upsertSession]);
 
   const write = useCallback(async (sessionId: string, data: string) => {
     if (!sessionId || !data) return true;
     try {
-      const result = await window.autoplan.writeTerminal({ sessionId, data });
+      const result = await client.writeTerminal({ sessionId, data });
+      if (!mountedRef.current) return false;
       return Boolean(sessionFromResult(result, '终端写入失败', setError, { silentOk: true }));
     } catch (err) {
-      setError(errorMessage(err, '终端写入失败'));
+      if (mountedRef.current) setError(errorMessage(err, '终端写入失败'));
       return false;
     }
-  }, []);
+  }, [client]);
 
   const resize = useCallback(async (sessionId: string, cols: number, rows: number) => {
     if (!sessionId || !Number.isInteger(cols) || !Number.isInteger(rows)) return false;
     try {
-      const result = await window.autoplan.resizeTerminal({ sessionId, cols, rows });
+      const result = await client.resizeTerminal({ sessionId, cols, rows });
+      if (!mountedRef.current) return false;
       const session = sessionFromResult(result, '调整终端尺寸失败', setError, { silentOk: true });
       if (session) upsertSession(session);
       return Boolean(session);
     } catch (err) {
-      setError(errorMessage(err, '调整终端尺寸失败'));
+      if (mountedRef.current) setError(errorMessage(err, '调整终端尺寸失败'));
       return false;
     }
-  }, [upsertSession]);
+  }, [client, upsertSession]);
 
   const kill = useCallback(async (sessionId: string) => runSessionAction(
     'kill',
-    () => window.autoplan.killTerminal({ sessionId }),
+    () => client.killTerminal({ sessionId }),
     '停止终端失败',
     setBusyAction,
     setError,
     upsertSession,
-  ), [upsertSession]);
+    () => mountedRef.current,
+  ), [client, upsertSession]);
 
   const close = useCallback(async (sessionId: string) => {
     if (!sessionId) return false;
     setBusyAction('close');
     try {
-      const result = await window.autoplan.closeTerminal({ sessionId });
+      const result = await client.closeTerminal({ sessionId });
+      if (!mountedRef.current) return false;
       if (!result.ok) {
         setError(result.message || '关闭终端失败');
         return false;
@@ -255,56 +332,66 @@ export function useTerminalSessions({
       removeSession(result.session?.id || sessionId, result.session?.projectId ?? projectIdRef.current);
       return true;
     } catch (err) {
-      setError(errorMessage(err, '关闭终端失败'));
+      if (mountedRef.current) setError(errorMessage(err, '关闭终端失败'));
       return false;
     } finally {
-      setBusyAction((current) => (current === 'close' ? null : current));
+      if (mountedRef.current) setBusyAction((current) => (current === 'close' ? null : current));
     }
-  }, [removeSession]);
+  }, [client, removeSession]);
 
   const rename = useCallback(async (sessionId: string, title: string) => runSessionAction(
     'rename',
-    () => window.autoplan.renameTerminal({ sessionId, title }),
+    () => client.renameTerminal({ sessionId, title }),
     '重命名终端失败',
     setBusyAction,
     setError,
     upsertSession,
-  ), [upsertSession]);
+    () => mountedRef.current,
+  ), [client, upsertSession]);
 
   const clear = useCallback(async (sessionId: string) => {
     if (!sessionId) return false;
     setBusyAction('clear');
     try {
-      const result = await window.autoplan.clearTerminal({ sessionId });
+      const result = await client.clearTerminal({ sessionId });
+      if (!mountedRef.current) return false;
       const session = sessionFromResult(result, '清屏失败', setError, { silentOk: true });
       if (session) upsertSession(session);
       return Boolean(session);
     } catch (err) {
-      setError(errorMessage(err, '清屏失败'));
+      if (mountedRef.current) setError(errorMessage(err, '清屏失败'));
       return false;
     } finally {
-      setBusyAction((current) => (current === 'clear' ? null : current));
+      if (mountedRef.current) setBusyAction((current) => (current === 'clear' ? null : current));
     }
-  }, [upsertSession]);
+  }, [client, upsertSession]);
 
   const replay = useCallback(async (sessionId: string) => {
     if (!sessionId) return null;
     setBusyAction('replay');
     try {
-      const result = await window.autoplan.replayTerminal({ sessionId });
+      const result = await client.replayTerminal({ sessionId });
+      if (!mountedRef.current) return null;
       if (!result.ok) {
         setError(result.message || '读取终端输出失败');
         return null;
       }
+      if (typeof result.lastSeq === 'number' && result.lastSeq >= 0) {
+        terminalSequencesRef.current.set(sessionId, result.lastSeq);
+        // The view writes this REST replay in the promise continuation. Delay
+        // the first live attach to the next task so replay always precedes
+        // live output, including a synchronous WebSocket test double.
+        setTimeout(() => openTerminalConnection(sessionId), 0);
+      }
       upsertSession(result.session);
       return result;
     } catch (err) {
-      setError(errorMessage(err, '读取终端输出失败'));
+      if (mountedRef.current) setError(errorMessage(err, '读取终端输出失败'));
       return null;
     } finally {
-      setBusyAction((current) => (current === 'replay' ? null : current));
+      if (mountedRef.current) setBusyAction((current) => (current === 'replay' ? null : current));
     }
-  }, [upsertSession]);
+  }, [client, openTerminalConnection, upsertSession]);
 
   const removeLocal = useCallback((sessionId: string) => {
     removeSession(sessionId);
@@ -314,17 +401,31 @@ export function useTerminalSessions({
     if (!sessionId) return () => {};
     let handlers = dataHandlersRef.current.get(sessionId);
     if (!handlers) {
-      handlers = new Set();
+      handlers = new Map();
       dataHandlersRef.current.set(sessionId, handlers);
     }
-    handlers.add(handler);
+    handlers.set(handler, (handlers.get(handler) || 0) + 1);
+    openTerminalConnection(sessionId);
+    let active = true;
     return () => {
+      if (!active) return;
+      active = false;
       const current = dataHandlersRef.current.get(sessionId);
       if (!current) return;
-      current.delete(handler);
-      if (current.size === 0) dataHandlersRef.current.delete(sessionId);
+      const owners = current.get(handler) || 0;
+      if (owners > 1) current.set(handler, owners - 1);
+      else current.delete(handler);
+      if (current.size === 0) {
+        dataHandlersRef.current.delete(sessionId);
+        terminalConnectionsRef.current.get(sessionId)?.();
+        terminalConnectionsRef.current.delete(sessionId);
+        // A remounted xterm starts from an empty screen. Force it through the
+        // bounded REST replay before a fresh socket attach rather than letting
+        // an old live cursor race ahead of that reconstruction.
+        terminalSequencesRef.current.delete(sessionId);
+      }
     };
-  }, []);
+  }, [openTerminalConnection]);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null,
@@ -363,6 +464,19 @@ export function isTerminalActive(session: TerminalSession) {
 
 function isValidProjectId(projectId: number) {
   return Number.isInteger(projectId) && projectId > 0;
+}
+
+function terminalConnectionError(reason: string): string {
+  const messages: Record<string, string> = {
+    replay_gap: '终端回放已过期，请刷新会话',
+    cursor_too_old: '终端回放游标无效，请刷新会话',
+    authorization_failed: '终端访问权限已失效',
+    origin_forbidden: '终端来源校验被拒绝',
+    protocol_error: '终端数据通道协议错误',
+    slow_consumer: '终端输出过快，连接已关闭',
+    feature_disabled: 'Terminal Go transport 未启用',
+  };
+  return messages[reason] ?? '终端数据通道暂不可用';
 }
 
 function belongsToProject(session: TerminalSession, projectId: number) {
@@ -425,7 +539,7 @@ function removeSessionFromState(
   sessionId: string,
   setSessions: (action: (current: TerminalSession[]) => TerminalSession[]) => void,
   setActiveSessionIdState: (action: (active: string | null) => string | null) => void,
-  dataHandlersRef: { current: Map<string, Set<TerminalDataHandler>> },
+  dataHandlersRef: { current: Map<string, TerminalDataHandlers> },
 ) {
   if (!sessionId) return;
   setSessions((current) => {
@@ -523,19 +637,21 @@ async function runSessionAction(
   setBusyAction: (action: TerminalBusyAction | null | ((current: TerminalBusyAction | null) => TerminalBusyAction | null)) => void,
   setError: (message: string) => void,
   upsertSession: (session: TerminalSession | null | undefined) => void,
+  isActive: () => boolean,
 ) {
   setBusyAction(action);
   try {
     const result = await call();
+    if (!isActive()) return null;
     const session = sessionFromResult(result, fallback, setError);
     if (!session) return null;
     upsertSession(session);
     return session;
   } catch (err) {
-    setError(errorMessage(err, fallback));
+    if (isActive()) setError(errorMessage(err, fallback));
     return null;
   } finally {
-    setBusyAction((current) => (current === action ? null : current));
+    if (isActive()) setBusyAction((current) => (current === action ? null : current));
   }
 }
 

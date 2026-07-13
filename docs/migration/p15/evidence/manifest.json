@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "kind": "p15-evidence-manifest",
+  "status": "blocked",
+  "publish_policy": "never",
+  "source_revision": null,
+  "generated_at": null,
+  "required_platforms": ["windows", "macos", "linux"],
+  "required_evidence": [
+    "p09_p14_accepted_runs",
+    "topology_and_ipc_thin_shell",
+    "unique_writer_runtime",
+    "electron_go_e2e",
+    "migration_and_recovery",
+    "release_artifacts_windows",
+    "release_artifacts_macos",
+    "release_artifacts_linux"
+  ],
+  "entries": [],
+  "blocked_reasons": [
+    "p005_business_ipc_registrations_present",
+    "p006_deletion_not_authorized",
+    "unique_writer_runtime_evidence_missing",
+    "electron_go_e2e_evidence_missing",
+    "three_platform_release_and_recovery_evidence_missing",
+    "publish_never_without_manual_approval"
+  ]
+}

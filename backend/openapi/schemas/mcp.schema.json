@@ -1,0 +1,397 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autoplan.local/schemas/mcp.schema.json",
+  "title": "P13B frozen MCP transport and tool contracts",
+  "$ref": "#/$defs/mcp_status",
+  "$defs": {
+    "id": { "type": "integer", "format": "int64", "minimum": 1 },
+    "nullable_id": { "type": ["integer", "null"], "format": "int64", "minimum": 1 },
+    "utc_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    },
+    "nullable_utc_timestamp": {
+      "oneOf": [
+        { "$ref": "#/$defs/utc_timestamp" },
+        { "type": "null" }
+      ]
+    },
+    "safe_text": { "type": "string", "maxLength": 4000 },
+    "bounded_body": { "type": "string", "maxLength": 100000 },
+    "tool_name": {
+      "enum": [
+        "list_projects", "get_project", "create_project",
+        "list_requirements", "create_requirement", "get_requirement", "update_requirement", "delete_requirement",
+        "list_requirement_plan_links", "replace_requirement_plan_links", "upload_requirement_attachment",
+        "list_feedback", "create_feedback", "get_feedback", "update_feedback", "delete_feedback",
+        "list_feedback_plan_links", "replace_feedback_plan_links", "upload_feedback_attachment", "delete_attachment",
+        "list_plans", "get_plan", "list_tasks", "list_executors", "run_executor", "stop_executor", "start_loop", "stop_loop"
+      ]
+    },
+    "tool_doc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "title", "description", "markdown"],
+      "properties": {
+        "name": { "$ref": "#/$defs/tool_name" },
+        "title": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 4000 },
+        "markdown": { "type": "string", "maxLength": 16000 }
+      }
+    },
+    "mcp_status": {
+      "description": "Frozen AppSnapshot.mcp projection. Its public field names remain camelCase; the REST configuration DTO separately supplies snake_case aliases.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled", "running", "status", "transport", "host", "port", "path", "url",
+        "hasAuthToken", "authTokenMasked", "authHeader", "localOnly", "tools", "toolDocs",
+        "connectionExample", "note"
+      ],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "running": { "type": "boolean" },
+        "status": { "enum": ["disabled", "configured", "running", "error"] },
+        "transport": { "enum": ["http", "stdio"] },
+        "host": { "type": ["string", "null"], "maxLength": 255 },
+        "port": { "type": ["integer", "null"], "minimum": 1, "maximum": 65535 },
+        "path": { "type": ["string", "null"], "maxLength": 1024 },
+        "url": { "type": ["string", "null"], "maxLength": 2048 },
+        "hasAuthToken": { "type": "boolean" },
+        "authTokenMasked": { "type": "string", "maxLength": 256 },
+        "authHeader": { "type": "string", "maxLength": 256, "pattern": "^(?:$|.*<token>.*)$" },
+        "localOnly": { "type": "boolean" },
+        "tools": { "type": "array", "maxItems": 28, "uniqueItems": true, "items": { "$ref": "#/$defs/tool_name" } },
+        "toolDocs": { "type": "array", "maxItems": 28, "items": { "$ref": "#/$defs/tool_doc" } },
+        "connectionExample": { "$ref": "#/$defs/safe_text" },
+        "note": { "$ref": "#/$defs/safe_text" },
+        "lastEvent": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "message", "createdAt"],
+              "properties": {
+                "type": { "$ref": "#/$defs/safe_text" },
+                "message": { "$ref": "#/$defs/safe_text" },
+                "createdAt": { "$ref": "#/$defs/utc_timestamp" }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "lastError": { "type": ["string", "null"], "maxLength": 2048 },
+        "startedAt": { "$ref": "#/$defs/nullable_utc_timestamp" }
+      }
+    },
+    "mcp_config": {
+      "description": "REST configuration projection. Auth material is represented only by presence and a mask; raw auth_token is never a response, event, log, URL or stdio diagnostic field.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled", "transport", "host", "port", "path",
+        "port_explicit", "portExplicit", "has_auth_token", "hasAuthToken",
+        "auth_token_masked", "authTokenMasked"
+      ],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "transport": { "enum": ["http", "stdio"] },
+        "host": { "type": "string", "maxLength": 255 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "path": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "port_explicit": { "type": "boolean" },
+        "portExplicit": { "type": "boolean" },
+        "has_auth_token": { "type": "boolean" },
+        "hasAuthToken": { "type": "boolean" },
+        "auth_token_masked": { "type": "string", "maxLength": 256 },
+        "authTokenMasked": { "type": "string", "maxLength": 256 }
+      }
+    },
+    "project_id": { "type": "integer", "minimum": 1 },
+    "limit": { "type": "integer", "minimum": 1, "maximum": 200 },
+    "agent_cli": {
+      "type": "object",
+      "properties": {
+        "agentCliProvider": { "enum": ["codex", "claude", "opencode", "oh-my-pi"] },
+        "agentCliCommand": { "type": "string", "maxLength": 1000 },
+        "codexReasoningEffort": { "enum": ["low", "medium", "high", "xhigh"] }
+      }
+    },
+    "plan_generation": {
+      "type": "object",
+      "properties": {
+        "planGenerationStrategy": { "enum": ["external-cli-markdown", "external-cli-structured", "builtin-llm-structured"] },
+        "planGenerationProvider": { "enum": ["codex", "claude", "opencode", "oh-my-pi", "openai", "deepseek", "anthropic"] },
+        "planGenerationCommand": { "type": "string", "maxLength": 1000 },
+        "planGenerationModel": { "type": "string", "maxLength": 200 },
+        "planGenerationCodexReasoningEffort": { "enum": ["low", "medium", "high", "xhigh"] }
+      }
+    },
+    "plan_execution": {
+      "type": "object",
+      "properties": {
+        "planExecutionStrategy": { "enum": ["external-cli", "builtin-llm"] },
+        "planExecutionProvider": { "enum": ["codex", "claude", "opencode", "oh-my-pi", "openai", "deepseek", "anthropic"] },
+        "planExecutionCommand": { "type": "string", "maxLength": 1000 },
+        "planExecutionModel": { "type": "string", "maxLength": 200 },
+        "planExecutionCodexReasoningEffort": { "enum": ["low", "medium", "high", "xhigh"] }
+      }
+    },
+    "attachment": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "size": { "type": "integer", "minimum": 0 },
+        "source": { "enum": ["path", "clipboard-image"] },
+        "path": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "type": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "dataUrl": { "type": "string", "minLength": 1, "maxLength": 10485760 },
+        "base64": { "type": "string", "minLength": 1, "maxLength": 10485760 },
+        "dataBase64": { "type": "string", "minLength": 1, "maxLength": 10485760 },
+        "bytes": { "type": "array", "maxItems": 10485760, "items": { "type": "integer", "minimum": 0, "maximum": 255 } }
+      }
+    },
+    "list_projects_input": {
+      "type": "object", "additionalProperties": false,
+      "properties": { "query": { "type": "string", "maxLength": 200 }, "limit": { "$ref": "#/$defs/limit" } }
+    },
+    "project_input": {
+      "type": "object", "additionalProperties": false, "required": ["projectId"],
+      "properties": { "projectId": { "$ref": "#/$defs/project_id" } }
+    },
+    "create_project_input": {
+      "type": "object", "unevaluatedProperties": false, "required": ["name", "workspacePath"],
+      "allOf": [{ "$ref": "#/$defs/agent_cli" }, { "$ref": "#/$defs/plan_generation" }, { "$ref": "#/$defs/plan_execution" }],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "workspacePath": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "description": { "type": "string", "maxLength": 5000 }
+      }
+    },
+    "intake_list_input": {
+      "type": "object", "additionalProperties": false, "required": ["projectId"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/project_id" },
+        "status": { "enum": ["open", "completed", "closed"] },
+        "limit": { "$ref": "#/$defs/limit" }
+      }
+    },
+    "create_requirement_input": {
+      "type": "object", "unevaluatedProperties": false, "required": ["projectId", "title", "body"],
+      "allOf": [{ "$ref": "#/$defs/agent_cli" }, { "$ref": "#/$defs/plan_generation" }],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/project_id" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "body": { "$ref": "#/$defs/bounded_body" },
+        "attachments": { "type": "array", "maxItems": 20, "items": { "$ref": "#/$defs/attachment" } },
+        "autoRun": { "type": "boolean" },
+        "status": { "enum": ["open", "completed", "closed"] }
+      }
+    },
+    "intake_item_input": {
+      "type": "object", "additionalProperties": false, "required": ["projectId", "id"],
+      "properties": { "projectId": { "$ref": "#/$defs/project_id" }, "id": { "$ref": "#/$defs/id" } }
+    },
+    "update_requirement_input": {
+      "type": "object", "unevaluatedProperties": false, "required": ["projectId", "id"],
+      "allOf": [{ "$ref": "#/$defs/agent_cli" }, { "$ref": "#/$defs/plan_generation" }],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/project_id" }, "id": { "$ref": "#/$defs/id" },
+        "expectedUpdatedAt": { "type": "string", "maxLength": 64 },
+        "title": { "type": "string", "maxLength": 200 }, "body": { "$ref": "#/$defs/bounded_body" },
+        "status": { "enum": ["draft", "open", "completed", "closed"] }
+      }
+    },
+    "replace_links_input": {
+      "type": "object", "additionalProperties": false, "required": ["projectId", "id", "links"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/project_id" }, "id": { "$ref": "#/$defs/id" },
+        "links": {
+          "type": "array", "maxItems": 200,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["planId"],
+            "properties": {
+              "planId": { "$ref": "#/$defs/id" },
+              "phaseIndex": { "type": "integer", "minimum": 0 },
+              "phaseTitle": { "type": "string", "maxLength": 500 }
+            }
+          }
+        }
+      }
+    },
+    "intake_attachment_input": {
+      "type": "object", "additionalProperties": false, "required": ["projectId", "id", "name"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/project_id" }, "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 }, "type": { "type": "string", "maxLength": 200 },
+        "path": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "base64": { "type": "string", "minLength": 1, "maxLength": 37748736 },
+        "dataBase64": { "type": "string", "minLength": 1, "maxLength": 37748736 },
+        "dataUrl": { "type": "string", "minLength": 1, "maxLength": 37748736 },
+        "bytes": { "type": "array", "maxItems": 26214400, "items": { "type": "integer", "minimum": 0, "maximum": 255 } }
+      }
+    },
+    "create_feedback_input": {
+      "type": "object", "unevaluatedProperties": false, "required": ["projectId", "title", "body"],
+      "allOf": [{ "$ref": "#/$defs/agent_cli" }, { "$ref": "#/$defs/plan_generation" }],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/project_id" }, "requirementId": { "$ref": "#/$defs/nullable_id" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 }, "body": { "$ref": "#/$defs/bounded_body" },
+        "attachments": { "type": "array", "maxItems": 20, "items": { "$ref": "#/$defs/attachment" } },
+        "autoRun": { "type": "boolean" }, "status": { "enum": ["open", "completed", "closed"] }
+      }
+    },
+    "update_feedback_input": {
+      "type": "object", "unevaluatedProperties": false, "required": ["projectId", "id"],
+      "allOf": [{ "$ref": "#/$defs/agent_cli" }, { "$ref": "#/$defs/plan_generation" }],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/project_id" }, "id": { "$ref": "#/$defs/id" },
+        "expectedUpdatedAt": { "type": "string", "maxLength": 64 },
+        "title": { "type": "string", "maxLength": 200 }, "body": { "$ref": "#/$defs/bounded_body" },
+        "status": { "enum": ["draft", "open", "completed", "closed"] }, "requirementId": { "$ref": "#/$defs/nullable_id" }
+      }
+    },
+    "attachment_delete_input": {
+      "type": "object", "additionalProperties": false, "required": ["projectId", "attachmentId"],
+      "properties": { "projectId": { "$ref": "#/$defs/project_id" }, "attachmentId": { "$ref": "#/$defs/id" } }
+    },
+    "list_plans_input": {
+      "type": "object", "additionalProperties": false, "required": ["projectId"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/project_id" },
+        "status": { "enum": ["pending", "running", "ready_for_validation", "completed", "interrupted", "draft"] },
+        "limit": { "$ref": "#/$defs/limit" }
+      }
+    },
+    "get_plan_input": {
+      "type": "object", "additionalProperties": false, "required": ["projectId", "planId"],
+      "properties": { "projectId": { "$ref": "#/$defs/project_id" }, "planId": { "$ref": "#/$defs/id" } }
+    },
+    "list_tasks_input": {
+      "type": "object", "additionalProperties": false, "required": ["projectId"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/project_id" }, "planId": { "$ref": "#/$defs/id" },
+        "status": { "enum": ["pending", "running", "completed", "blocked", "failed", "stopping", "stopped", "interrupted"] },
+        "limit": { "$ref": "#/$defs/limit" }
+      }
+    },
+    "list_executors_input": {
+      "type": "object", "additionalProperties": false, "required": ["projectId"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/project_id" }, "label": { "type": "string", "maxLength": 200 },
+        "group": { "type": "string", "maxLength": 120 },
+        "status": { "enum": ["idle", "running", "ok", "bad", "stopped"] },
+        "enabled": { "type": "boolean" }, "limit": { "$ref": "#/$defs/limit" }
+      }
+    },
+    "executor_action_input": {
+      "type": "object", "additionalProperties": false, "required": ["projectId"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/project_id" }, "executorId": { "$ref": "#/$defs/id" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 200 }
+      },
+      "anyOf": [{ "required": ["executorId"] }, { "required": ["label"] }]
+    },
+    "tool_call": {
+      "description": "Frozen MCP tools/call binding. HTTP and stdio use the same name, argument schema, application service, authorization, idempotency and audit behavior.",
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "list_projects" }, "arguments": { "$ref": "#/$defs/list_projects_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "get_project" }, "arguments": { "$ref": "#/$defs/project_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "create_project" }, "arguments": { "$ref": "#/$defs/create_project_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "list_requirements" }, "arguments": { "$ref": "#/$defs/intake_list_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "create_requirement" }, "arguments": { "$ref": "#/$defs/create_requirement_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "get_requirement" }, "arguments": { "$ref": "#/$defs/intake_item_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "update_requirement" }, "arguments": { "$ref": "#/$defs/update_requirement_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "delete_requirement" }, "arguments": { "$ref": "#/$defs/intake_item_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "list_requirement_plan_links" }, "arguments": { "$ref": "#/$defs/intake_item_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "replace_requirement_plan_links" }, "arguments": { "$ref": "#/$defs/replace_links_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "upload_requirement_attachment" }, "arguments": { "$ref": "#/$defs/intake_attachment_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "list_feedback" }, "arguments": { "$ref": "#/$defs/intake_list_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "create_feedback" }, "arguments": { "$ref": "#/$defs/create_feedback_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "get_feedback" }, "arguments": { "$ref": "#/$defs/intake_item_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "update_feedback" }, "arguments": { "$ref": "#/$defs/update_feedback_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "delete_feedback" }, "arguments": { "$ref": "#/$defs/intake_item_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "list_feedback_plan_links" }, "arguments": { "$ref": "#/$defs/intake_item_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "replace_feedback_plan_links" }, "arguments": { "$ref": "#/$defs/replace_links_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "upload_feedback_attachment" }, "arguments": { "$ref": "#/$defs/intake_attachment_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "delete_attachment" }, "arguments": { "$ref": "#/$defs/attachment_delete_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "list_plans" }, "arguments": { "$ref": "#/$defs/list_plans_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "get_plan" }, "arguments": { "$ref": "#/$defs/get_plan_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "list_tasks" }, "arguments": { "$ref": "#/$defs/list_tasks_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "list_executors" }, "arguments": { "$ref": "#/$defs/list_executors_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "run_executor" }, "arguments": { "$ref": "#/$defs/executor_action_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "stop_executor" }, "arguments": { "$ref": "#/$defs/executor_action_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "start_loop" }, "arguments": { "$ref": "#/$defs/project_input" } } },
+        { "type": "object", "additionalProperties": false, "required": ["name", "arguments"], "properties": { "name": { "const": "stop_loop" }, "arguments": { "$ref": "#/$defs/project_input" } } }
+      ]
+    },
+    "tool_result": {
+      "description": "MCP CallToolResult framing. structuredContent keeps the existing business result field names documented in contracts.md. content is a bounded text rendering of the same sanitized projection; it is not a second result model.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content", "structuredContent"],
+      "properties": {
+        "content": {
+          "type": "array", "minItems": 1, "maxItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["type", "text"],
+            "properties": { "type": { "const": "text" }, "text": { "type": "string", "maxLength": 65536 } }
+          }
+        },
+        "structuredContent": { "type": "object", "maxProperties": 128, "additionalProperties": true }
+      }
+    },
+    "tool_error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["isError", "content", "structuredContent"],
+      "properties": {
+        "isError": { "const": true },
+        "content": {
+          "type": "array", "minItems": 1, "maxItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["type", "text"],
+            "properties": { "type": { "const": "text" }, "text": { "type": "string", "maxLength": 2048 } }
+          }
+        },
+        "structuredContent": {
+          "type": "object", "additionalProperties": false, "required": ["error"],
+          "properties": {
+            "error": { "type": "string", "maxLength": 2048 },
+            "code": { "$ref": "#/$defs/mcp_error_code" },
+            "errorCode": { "$ref": "#/$defs/mcp_error_code" },
+            "intakeType": { "enum": ["requirement", "feedback"] },
+            "existingId": { "$ref": "#/$defs/nullable_id" },
+            "existingRequirementId": { "$ref": "#/$defs/nullable_id" },
+            "existingFeedbackId": { "$ref": "#/$defs/nullable_id" },
+            "duplicate": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "code": { "$ref": "#/$defs/mcp_error_code" },
+                "intakeType": { "enum": ["requirement", "feedback"] },
+                "existingId": { "$ref": "#/$defs/nullable_id" },
+                "existingRequirementId": { "$ref": "#/$defs/nullable_id" },
+                "existingFeedbackId": { "$ref": "#/$defs/nullable_id" }
+              }
+            },
+            "detail": { "type": "string", "maxLength": 2048 }
+          }
+        }
+      }
+    },
+    "mcp_error_code": {
+      "enum": [
+        "mcp_disabled", "mcp_prerequisite_failed", "mcp_transport_invalid", "mcp_auth_failed",
+        "mcp_tool_not_found", "mcp_tool_invalid", "mcp_tool_forbidden", "mcp_tool_conflict",
+        "mcp_tool_unavailable", "mcp_tool_timeout", "mcp_tool_internal",
+        "invalid_intake", "invalid_attachment", "attachment_path_denied", "attachment_recovery_required",
+        "not_found", "duplicate_intake", "precondition_failed", "relation_conflict",
+        "idempotency_key_reused", "request_in_progress", "unsupported_media_type", "request_timeout",
+        "service_unavailable", "internal_error", "DUPLICATE_INTAKE"
+      ]
+    }
+  }
+}

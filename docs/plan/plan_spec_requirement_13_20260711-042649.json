@@ -1,0 +1,234 @@
+{
+  "title": "P06：Requirements、Feedback、Attachments 与 intake_plan_links 完整迁移",
+  "summary": "在 P05 Project/Config 写入闭环与 Files policy 实际通过的前提下，依据 D:\\docs\\autoplan-go-backend-separation-plan.md v1.0，将 Requirements、Feedback、Attachments 和 intake_plan_links 完整迁入本机 Go sidecar 的模块化单体：冻结现有重复 intake 判定、状态、需求与反馈归属、计划多阶段关联、删除级联和兼容 snapshot 语义；由共享 application service 统一承载 HTTP、MCP 与 UI transport 的查询和写入；提供受本机会话鉴权保护的 REST CRUD、multipart bytes 上传和受控下载/删除；以持久化文件操作记录、数据库事务、原子落盘、隔离区和启动恢复解决数据库与文件系统无法跨资源原子提交的问题，并提供确定性的孤儿审计、报告和修复模式；复用 P05 Files policy 校验项目归属、授权根、realpath、名称、MIME、数量及大小，浏览器路径一律不作为可信文件来源。保持既有 snake_case DTO、AppSnapshot、状态机、排序、nullability 和业务语义，不顺手重写 UI；附件 API 和 snapshot 只暴露附件 ID、显示名、大小、MIME 与受控 URL，绝不暴露 stored_path、file://、服务端绝对路径、秘密或未授权路径。所有实现、故障注入、黄金对比和恢复演练只使用系统临时目录中的脱敏 fixture 或调用方显式副本，Go 持有数据库 owner 锁后才可写入，Node/sql.js 与 Go 不得同时写同一数据库，也不得自动发现或操作真实 Electron userData。若 P05、owner、schema、Files policy、显式副本或安全门禁任一未通过，本阶段必须报告 blocked 并停止，不跨阶段。",
+  "tasks": [
+    {
+      "title": "冻结 Intake、附件、计划关联与删除的现行兼容契约",
+      "scope": [
+        "src/intakeService.js",
+        "src/attachments.js",
+        "src/main.js",
+        "src/loop/intakeAttachments.js",
+        "src/loop/intakeDeletion.js",
+        "src/loop/intakePlanLinks.js",
+        "src/loop/snapshots.js",
+        "src/mcpTools.js",
+        "scripts/migration-p06/inventory-intake-contract.js",
+        "scripts/migration-p06/generate-node-golden.js",
+        "fixtures/migration/p06/manifest.json",
+        "fixtures/migration/p06/node-intake.golden.json",
+        "docs/migration/p06/intake-contract.json"
+      ],
+      "acceptance": [
+        "逐项取证 requirement/feedback 的列表、详情、创建、更新、删除、接受状态、默认标题、空值、UTC 时间、生成配置、排序和 mutation 后 AppSnapshot，冻结 snake_case、字段存在性、null/缺失、枚举、错误与事件语义，不通过修改 Node 实现来简化迁移。",
+        "冻结重复 intake 规则：仅在同一项目内比较规范化 title/body，换行、行内空白与 trim 按现行算法处理，closed 项不参与阻挡；feedback 还按 requirement_id 分组，并固定重复错误码及 existing intake 标识。",
+        "冻结反馈关联需求必须存在且属于同一项目、intake 与 plan 必须同项目、intake_plan_links 的唯一键、phase_index 顺序、phase_title、legacy linked_plan_id 回退/同步及多计划关联的确定性顺序。",
+        "冻结删除语义，包括删除 requirement 时 feedback.requirement_id 置空、停止关联计划运行、删除关联计划/任务/scan_files/link、附件元数据与文件处理、删除 plan 时保留 intake 并同步 legacy link，以及任一步失败时应采用的原子或可恢复边界。",
+        "附件契约记录 owner_type 兼容值、项目归属、显示名、MIME、size、hash、创建顺序和现有路径风险；新 HTTP/snapshot 公共表示明确只允许 id、display_name、size、mime_type、download_url，不得出现 stored_path、hash、file:// 或服务端绝对路径。",
+        "Node 黄金生成仅串行访问 P05 批准的脱敏临时库或显式副本，记录 schema、fixture、数据库前后和附件 bytes 的哈希；完全关闭 sql.js 后才允许 Go 打开对应的独立重置副本，任何真实 userData、用户名、token、env_vars 或真实路径命中均安全失败。"
+      ]
+    },
+    {
+      "title": "实现 Intake 领域模型与 Requirements/Feedback/PlanLinks 事务型 SQLite repository",
+      "scope": [
+        "backend/internal/domain/intake",
+        "backend/internal/repository/repository.go",
+        "backend/internal/repository/sqlite/intake.go",
+        "backend/internal/repository/sqlite/intake_plan_links.go",
+        "backend/internal/repository/sqlite/intake_transactions.go",
+        "backend/internal/repository/sqlite/intake_test.go",
+        "backend/migrations"
+      ],
+      "acceptance": [
+        "领域对象和 repository 接口完整覆盖 requirements、feedback 与 intake_plan_links 的冻结字段、默认值、nullability、状态、生成失败信息、接受时间和多阶段关联，不让 SQL row、文件路径或 transport 类型泄漏到 domain/application。",
+        "repository 提供按项目分页/稳定排序的列表与详情、create/update/delete、重复候选查询、feedback requirement 校验、link 查询/替换/删除和 legacy linked_plan_id 同步；所有查询强制携带 project_id 或经 owner join 验证，不能仅凭全局 id 越权读取或修改。",
+        "requirement/feedback mutation 与 link/legacy 字段更新、删除级联及待发布事件在一个顶层事务中完成；SQL 错误、约束、context 取消、并发冲突或故障注入均完整回滚，不产生部分状态或提交前事件。",
+        "并发创建在数据库约束或同事务串行化策略下保持冻结的重复判定，两个等价开放 intake 只有一个成功；不同项目、closed 记录、不同 requirement_id 或不同规范化正文不会被错误合并。",
+        "intake_plan_links 拒绝缺失或跨项目 intake/plan、非法 intake_type、重复 plan 和 phase_index 冲突；替换关联时保持 phase 顺序、legacy 首计划兼容和幂等重放，删除后不存在悬空 link。",
+        "repository 只在 P05/P04 readiness、schema/checksum、数据库 owner 锁和显式副本授权通过后建立写连接；临时库测试覆盖 CRUD、状态、重复、跨项目、并发、事务回滚、legacy 回退、关联与删除关系，且不访问真实 userData。"
+      ]
+    },
+    {
+      "title": "构建统一 Intake application service 并固化状态、幂等、关联与删除规则",
+      "scope": [
+        "backend/internal/application/intake/service.go",
+        "backend/internal/application/intake/commands.go",
+        "backend/internal/application/intake/queries.go",
+        "backend/internal/application/intake/links.go",
+        "backend/internal/application/intake/deletion.go",
+        "backend/internal/application/intake/dto.go",
+        "backend/internal/application/snapshot/assembler.go",
+        "backend/internal/application/intake/service_test.go",
+        "backend/internal/bootstrap/dependencies.go"
+      ],
+      "acceptance": [
+        "HTTP、MCP 与 UI transport 只调用同一组 application use case；默认标题、重复判断、状态迁移、requirement 归属、计划关联、删除级联、幂等、权限和脱敏规则不得复制到 handler、MCP 工具或 renderer client。",
+        "创建、更新、删除及 link mutation 在提交后重新读取 repository，并由共享 snapshot assembler 生成与 Node 兼容的 requirements、feedback、attachments 和关联计划集合；禁止用请求体拼装成功快照，失败或回滚不发布成功事件。",
+        "状态更新只接受冻结枚举和转换，accepted_at、generate_fail_count、失败信息、CLI/计划生成配置及 linked plan 状态保持既有语义；非法或竞态转换返回稳定错误且不覆盖较新的状态。",
+        "Idempotency-Key 按调用方、路由、项目和规范化请求指纹持久化；相同 key/payload 重放返回同一业务结果而不重复创建、加附件、改 link 或删除，相同 key/不同 payload 稳定冲突，无 key 时仍执行冻结的业务幂等和重复规则。",
+        "删除 requirement/feedback 时协调运行停止、关系删除和附件删除工作流：数据库提交失败不触碰最终文件，文件清理失败进入可审计待恢复状态并在响应/事件中报告安全摘要，不能把部分失败伪装为完整成功。",
+        "application 测试覆盖成功、缺失、跨项目、重复、状态竞态、并发幂等、关联替换、删除关系、提交后重读和附件工作流协作，并证明 DTO、事件、日志与幂等记录不包含秘密、stored_path 或未授权绝对路径。"
+      ]
+    },
+    {
+      "title": "实现受 P05 Files policy 约束的附件存储、补偿、崩溃恢复与孤儿审计",
+      "scope": [
+        "backend/internal/domain/files/attachment.go",
+        "backend/internal/application/attachments/service.go",
+        "backend/internal/application/attachments/recovery.go",
+        "backend/internal/application/attachments/audit.go",
+        "backend/internal/repository/sqlite/attachments.go",
+        "backend/internal/repository/sqlite/attachment_operations.go",
+        "backend/internal/platform/filesystem/attachment_store.go",
+        "backend/internal/platform/filesystem/attachment_store_test.go",
+        "backend/cmd/autoplan-audit",
+        "backend/migrations"
+      ],
+      "acceptance": [
+        "上传只接收受限 bytes/stream 与声明元数据，不信任浏览器提供的本地路径；MCP 或桌面来源若引用文件，必须先由 P05 Files policy 按项目、操作和 realpath 授权后转换为受控流，application service 不接收可任意打开的路径。",
+        "统一限制 HTTP body、multipart part、单附件、总附件数量/总字节、允许 MIME、内容嗅探、扩展名与规范化显示名；拒绝 NUL、保留名、ADS、混合分隔符、路径遍历、绝对/UNC/设备路径、双扩展绕过和声明 MIME 与内容不符。",
+        "上传采用同一受控附件根内的独占临时文件、流式限额与哈希、fsync/原子 rename、持久化 file operation 状态和数据库事务；任一读取、短写、磁盘满、rename、SQL、commit 或响应断开故障都可确定性补偿或由重启恢复，绝不留下未报告文件。",
+        "删除采用数据库可恢复标记与同卷隔离区，保证并发下载、重复删除、数据库回滚、文件不存在、权限拒绝和进程崩溃后可重放；成功终态同时移除元数据和 bytes，失败终态保留明确审计记录而不暴露物理路径。",
+        "启动恢复按持久化 operation 状态处理 staged、ready、deleting 与 quarantined 文件，具备租约/重入和幂等性；恢复未完成前 readiness 失败关闭，不允许新上传或静默忽略未知状态。",
+        "只读审计确定性报告 DB 缺文件、存储孤儿、临时/隔离超龄文件、size/hash/MIME 不符、越界路径和 owner/project 不一致；显式 repair 模式仅执行白名单修复并生成前后哈希与动作摘要，无法安全判定的项只报告不删除。",
+        "所有路径检查复用 P05 policy 并在打开、rename、download、quarantine 和 unlink 时重新验证根、realpath 与 symlink/junction/reparse point；日志、API、事件、fixture 和审计公共报告仅使用 attachment_id、相对占位符和错误码。"
+      ]
+    },
+    {
+      "title": "实现 Intake REST CRUD、multipart 上传及授权下载删除契约",
+      "scope": [
+        "backend/internal/httpapi/router.go",
+        "backend/internal/httpapi/intake.go",
+        "backend/internal/httpapi/attachments.go",
+        "backend/internal/httpapi/multipart.go",
+        "backend/internal/httpapi/errors.go",
+        "backend/internal/httpapi/intake_test.go",
+        "backend/internal/httpapi/attachments_test.go",
+        "backend/openapi/openapi.yaml",
+        "backend/openapi/schemas/intake.schema.json",
+        "backend/openapi/schemas/attachment.schema.json"
+      ],
+      "acceptance": [
+        "提供项目作用域的 requirements/feedback 列表、详情、POST、PATCH、DELETE，以及冻结所需的计划关联查询/写入路由；列表具备统一分页、稳定排序和状态过滤，所有资源通过项目归属校验防止 IDOR。",
+        "提供 requirement 与 feedback 的 multipart bytes 上传、GET /api/v1/attachments/{id}/content 受控下载和附件 DELETE；handler 流式处理并在读取完整 body 前执行会话、Origin/Host、项目权限、Content-Type 和 Content-Length 门禁。",
+        "附件成功响应和兼容 snapshot 只包含 id、display_name、size、mime_type、download_url；下载设置受控 Content-Type、Content-Length、Content-Disposition、nosniff 与缓存策略，URL 仅指向本机受鉴权 API，不含 stored_path、hash、file:// 或绝对路径。",
+        "所有 mutation 支持 Idempotency-Key、严格 JSON/multipart 字段、未知字段拒绝、body/part/数量限额和 AbortSignal/context 取消；并发同键、重复上传/删除、客户端断开及超时不产生重复副作用或未报告孤儿。",
+        "400/401/403/404/405/409/412/413/415/422/423/500/507 分别映射稳定错误码与 request_id，路径穿越、跨项目 owner、猜测 attachment id、非法 range、未授权下载和已隔离附件全部在返回 bytes 前拒绝。",
+        "OpenAPI 精确描述 snake_case DTO、分页、状态、link、multipart、Idempotency-Key、受控下载、认证、限额和稳定错误；示例、错误 details、header、访问日志及 httptest capture 不包含凭据、用户内容、stored_path 或服务端绝对路径。"
+      ]
+    },
+    {
+      "title": "将 MCP 与 UI transport 接入共享 Intake/Attachments application service",
+      "scope": [
+        "backend/internal/mcp/intake_tools.go",
+        "backend/internal/mcp/attachment_inputs.go",
+        "backend/internal/mcp/intake_tools_test.go",
+        "backend/internal/bootstrap/dependencies.go",
+        "src/mcpTools.js",
+        "src/mcpServer.js",
+        "src/preload.js"
+      ],
+      "acceptance": [
+        "Go MCP 的 list/create/open/update/delete requirement/feedback 与附件能力调用和 HTTP 相同的 application service，不直连 repository、SQLite 或文件系统；MCP 与 REST 对相同输入得到相同业务结果和稳定错误。",
+        "MCP bytes/base64 输入受与 multipart 相同的解码后字节、数量、MIME 和名称限制；path 输入仅在明确本机调用方、已绑定项目且通过 P05 Files policy 时读取，未授权或浏览器来源路径一律拒绝且不回显。",
+        "迁移开关只把 P06 已迁移能力切至 Go；默认或未授权配置继续使用批准的单一旧 transport，不能在 HTTP/MCP 失败时静默回退并让 Node/sql.js 与 Go 同时写同一数据库。",
+        "MCP 工具返回的 intake、link 和 attachment DTO 经过同一脱敏 mapper，附件不返回 stored_path、file://、hash 或绝对路径，错误和工具日志不包含正文、附件 bytes、token 或授权根。",
+        "契约测试使用 application spy 证明 HTTP、MCP 和 UI adapter 共享 use case，并覆盖重复 intake、跨项目关联、幂等重放、超限附件、未授权路径和删除恢复中的一致错误语义。"
+      ]
+    },
+    {
+      "title": "扩展 HttpAutoplanClient 并以受控 URL 兼容现有附件 UI",
+      "scope": [
+        "src/renderer/lib/api/client.ts",
+        "src/renderer/lib/api/httpClient.ts",
+        "src/renderer/lib/api/transport.ts",
+        "src/renderer/lib/api/httpClient.test.js",
+        "src/renderer/lib/api/intakeTransport.contract.test.js",
+        "src/renderer/types.ts",
+        "src/renderer/components/shared.tsx",
+        "src/renderer/components/IntakePanel.tsx"
+      ],
+      "acceptance": [
+        "HttpAutoplanClient 实现 requirement/feedback 查询、创建、更新、删除、计划关联与附件 multipart 上传/下载/删除，保持现有 AutoplanClient 调用面、snake_case snapshot 和错误边界，不改写 Intake UI 结构或状态管理。",
+        "浏览器通过 File/Blob/FormData 上传 bytes，不发送 File.path、本机绝对路径、data URL 日志或 base64 JSON；请求支持总大小预检、AbortSignal、超时和进度所需接口，服务端限额仍为最终权威。",
+        "附件类型和展示组件使用服务端 display_name、size、mime_type 与 download_url，图片和普通文件均访问受控同源 URL；移除 HTTP 模式对 stored_path、pathToFileURL、autoplan-file:// 和任意 href 路径的依赖。",
+        "一个用户意图生成稳定 Idempotency-Key，并在网络超时、可重试断开和显式重试中复用；新意图使用新 key，key、会话凭据、正文和附件 bytes 不进入 URL、localStorage、错误或普通日志。",
+        "transport feature flag 仅切换 P06 已迁移方法，其余能力保持既定委托；取消、StrictMode 重挂载、快速项目切换、并发编辑和迟到 snapshot 不覆盖新项目或较新状态，也不会触发双 writer。",
+        "IPC/HTTP 双传输契约比较 requirement、feedback、link、attachment 元数据、AppSnapshot 与稳定错误；HTTP 模式断言不调用已迁移 window.autoplan 写入口且任何响应均不含 stored_path、file:// 或未授权绝对路径。"
+      ]
+    },
+    {
+      "title": "建立 Intake/附件契约、权限、并发、路径与故障注入自动化覆盖",
+      "scope": [
+        "backend/internal/repository/sqlite/intake_contract_test.go",
+        "backend/internal/application/intake/golden_test.go",
+        "backend/internal/application/attachments/fault_test.go",
+        "backend/internal/application/attachments/recovery_test.go",
+        "backend/internal/httpapi/intake_contract_test.go",
+        "backend/internal/httpapi/attachments_contract_test.go",
+        "scripts/migration-p06/compare-intake-golden.js",
+        "scripts/migration-p06/compare-intake-golden.test.js",
+        "fixtures/migration/p06/expected-errors.json"
+      ],
+      "acceptance": [
+        "repository/application 场景覆盖 requirement/feedback CRUD、全部状态、重复规范化、跨项目 requirement、计划多阶段关联、legacy link、删除级联、幂等与两个并发 writer；每种失败断言稳定 code、数据库不变或明确可恢复状态。",
+        "HTTP/MCP 权限矩阵覆盖缺失/伪造会话、Origin/Host、项目 A 访问项目 B intake/attachment/link、枚举 id、非法 owner、未 ready 和 owner 锁丢失，所有越权在 application/文件读取前拒绝。",
+        "附件矩阵覆盖空/合法 bytes、零字节、数量和大小边界、chunked 超限、伪造 MIME、危险 SVG/名称、NUL、..、绝对/UNC/设备路径、symlink/junction/reparse point、同名并发上传、range 与下载中删除。",
+        "故障注入逐点覆盖临时文件创建/写入/fsync/rename、事务 insert/update/delete/commit、隔离移动、unlink、磁盘满、权限拒绝、context 取消、进程在每个持久化状态崩溃及重启恢复；最终只能是完整成功或带持久化报告的可修复状态。",
+        "审计在 DB 缺文件、文件孤儿、未知文件、size/hash 不符、越界 link、超龄 staged/quarantine 和重复 operation 上产生稳定排序与相同哈希；repair 重复执行幂等，外部哨兵文件与未授权目录始终不变。",
+        "Node 与 Go 在独立重置的同源脱敏 fixture 上深比较字段存在性、snake_case、类型、null/缺失、状态、时间规范化、集合/phase 顺序、mutation snapshot、删除结果和错误；未知字段、stored_path/file:// 泄漏或宽松忽略差异直接失败。"
+      ]
+    },
+    {
+      "title": "固化 P06 阶段门禁、恢复运行手册、验证编排与脱敏证据",
+      "scope": [
+        "scripts/migration-p06/verify.js",
+        "scripts/migration-p06/verify.test.js",
+        "scripts/migration-p06/check-safety.js",
+        "scripts/migration-p06/check-safety.test.js",
+        "package.json",
+        "docs/migration/p06/README.md",
+        "docs/migration/p06/runbook.md",
+        "docs/migration/p06/attachment-recovery.md",
+        "docs/migration/p06/evidence/README.md"
+      ],
+      "acceptance": [
+        "migration:p06:verify 首先运行 P05 真实门禁并核对完成证据、schema/checksum、Files policy、数据库 owner 锁与冻结输入哈希；任一前置或授权不满足时记录 blocked 和原始非零退出码，停止 Go 写入、附件动作和跨阶段步骤。",
+        "验证编排只在系统临时目录创建脱敏数据库、附件根和独立副本，串行执行 Node 黄金后关闭 sql.js，再执行 Go repository/application/httpapi/MCP、renderer transport、故障恢复、审计、OpenAPI 漂移和敏感信息扫描；每条子命令记录实际命令、起止时间、stdout/stderr 与退出码。",
+        "安全守卫证明 Node/sql.js 与 Go 从未同时打开同一写库，Go 始终持有 owner 锁，所有文件均位于本次临时附件根，真实 Electron userData、生产 autoplan.sqlite 和未授权目录没有被发现、打开、修改或清理。",
+        "runbook 记录 P05 前置、显式副本授权、上传/删除状态机、各崩溃点恢复、只读 audit、显式 repair、回滚、孤儿处置和证据收集顺序，并明确不通过热回退恢复 Node writer、不重写 UI、不迁移 P06 以外领域。",
+        "证据汇总受影响文件、实际命令和退出码、CRUD/状态/关联/权限/幂等/并发矩阵、故障点与恢复终态、审计/修复摘要、数据库及附件哈希、Node/Go diff、OpenAPI 覆盖和剩余风险，所有路径和内容均脱敏。",
+        "npm.cmd run check 与 npm.cmd test 按 P00 冻结红灯签名比较，不得新增、隐藏或重命名失败；P06 专项 Go、Node、HTTP、MCP、renderer、黄金、故障恢复和安全测试必须全部零退出码。"
+      ]
+    },
+    {
+      "title": "完整验收",
+      "scope": [
+        "validation"
+      ],
+      "acceptance": [
+        "先执行 P05 前置门禁，再以 migration:p06:verify 完成 Intake、附件、计划关联、跨 transport 契约、故障恢复、孤儿审计、OpenAPI 和兼容 snapshot 的全量验收；前置失败必须 blocked 且不跨阶段。",
+        "所有专项测试零退出码，npm check/test 相对 P00 已知红灯无新增失败；验证输出包含实际命令、原始退出码、脱敏证据、受影响文件和剩余风险。",
+        "验收全过程仅使用脱敏 fixture、系统临时库/附件根或显式副本，Node/sql.js 与 Go 不同写一个库，不自动触碰真实 userData，拒绝场景的数据库和外部哨兵哈希保持不变。",
+        "API、MCP、UI、日志、事件、OpenAPI、fixture、diff 与证据均不出现秘密、stored_path、file://、真实附件内容或未授权绝对路径，所有路径穿越和跨项目访问均被拒绝。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm.cmd run migration:p06:verify",
+    "criteria": [
+      "P05 的 Project/Config 写入闭环、Files policy、schema/checksum、数据库 owner 与完成证据全部真实通过；任一前置或安全条件不满足时结果明确为 blocked，未打开 Go 写连接、未写附件且未跨阶段。",
+      "Requirements、Feedback、Attachments 和 intake_plan_links 的 domain/repository/application 分层生效，HTTP、MCP 与 UI transport 复用同一 application service；CRUD、状态、重复 intake、项目归属、计划多阶段关联、legacy link、删除级联、幂等和并发场景全部通过。",
+      "REST 列表/详情/POST/PATCH/DELETE、multipart bytes 上传、受控下载和附件删除符合 OpenAPI；分页、稳定排序、过滤、Idempotency-Key、request_id、body/part/MIME/名称限额、取消和稳定错误码均通过成功与拒绝用例。",
+      "附件上传和删除在每个数据库/文件故障点、磁盘满、权限拒绝、断连和进程崩溃后均恢复到完整成功或持久化可报告状态；启动恢复幂等，未完成恢复时 readiness 失败关闭，不存在未报告孤儿。",
+      "审计确定性发现并分类 DB 缺文件、存储孤儿、staged/quarantine、size/hash/MIME、owner/project 与越界问题；显式 repair 只处理白名单项、重复执行幂等，无法安全判定的数据只报告不删除。",
+      "P05 Files policy 在上传、MCP 路径源、落盘、下载、隔离和删除的每次文件操作前生效；..、绝对/UNC/设备路径、危险名称、symlink、junction/reparse point、路径替换竞态和跨项目访问均被拒绝，外部哨兵不变。",
+      "API 和兼容 snapshot 的附件表示只含 id、display_name、size、mime_type 与受控 download_url，不含 stored_path、hash、file:// 或服务端绝对路径；普通响应、错误、日志、事件、fixture、OpenAPI 示例、diff 和证据也无秘密、env_vars、token、真实用户数据或未授权路径。",
+      "HttpAutoplanClient 以 File/Blob multipart 发送 bytes 并使用受控 URL 展示/下载附件，保持既有 DTO、snapshot、状态机和未改 UI 行为；显式 HTTP 模式不调用已迁移 IPC 写入口，也不因失败静默回退造成双 writer。",
+      "同一脱敏来源的 Node/Go 黄金在批准的确定性规范化后，对字段存在性、snake_case、类型、null/缺失、默认值、状态、集合/phase 顺序、关联、删除结果、mutation snapshot 和错误进行严格深比较，无未知字段忽略或宽松比较。",
+      "P06 专项 Go repository/application/httpapi/MCP/files 测试、renderer transport、Node/Go 黄金、故障恢复、审计修复、OpenAPI 漂移和安全守卫全部零退出码；npm.cmd run check 与 npm.cmd test 相对 P00 冻结基线没有新增、隐藏或重命名失败。",
+      "验证仅操作系统临时目录中的脱敏 fixture 或调用方显式副本，Go 全程持有 owner 锁，Node/sql.js 与 Go 写入时间线不重叠，真实 Electron userData、生产数据库与未授权目录未被发现、打开、修改或删除。",
+      "证据包含实际命令、真实退出码、脱敏 stdout/stderr、数据库/fixture/附件/黄金哈希、CRUD/权限/并发/故障/恢复/审计矩阵、受影响文件和剩余风险；最终 git status 仅包含 P06 预期文件及原有用户改动，现有 package.json 修改、未跟踪 .claude/、docs/migration/、前序计划、fixtures/、scripts/migration-baseline/ 和其他无关改动保持原样。"
+    ]
+  }
+}

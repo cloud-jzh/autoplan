@@ -1,0 +1,1976 @@
+{
+  "handoff": {
+    "databaseOwnerReleased": true,
+    "sqlJsClosed": true
+  },
+  "normalization": {
+    "placeholders": {
+      "command": "<redacted-command>",
+      "content": "<redacted-content>",
+      "env": "<redacted-env>",
+      "fixtureRoot": "<fixture-root>",
+      "maskedSecret": "<masked-secret>",
+      "path": "<redacted-path>",
+      "redacted": "<redacted>",
+      "session": "<redacted-session-id>",
+      "toolData": "<redacted-tool-data>",
+      "utc": "<utc>"
+    },
+    "version": "p08-node-static-normalization-v1"
+  },
+  "rowCounts": {
+    "ai_configs": 1,
+    "chat_messages": 4,
+    "claude_cli_configs": 1,
+    "conversations": 2,
+    "executors": 2,
+    "project_states": 2,
+    "scripts": 1,
+    "settings": 42
+  },
+  "scenarios": [
+    {
+      "executorIds": [
+        1,
+        2
+      ],
+      "executors": [
+        {
+          "actions": [],
+          "argsShape": [
+            {
+              "type": "string",
+              "value": "<redacted-command>"
+            },
+            {
+              "keys": [
+                "quoting",
+                "value"
+              ],
+              "type": "object",
+              "value": "<redacted-command>"
+            }
+          ],
+          "command": "<redacted-command>",
+          "createdAt": "<utc>",
+          "created_at": "<utc>",
+          "dependsOn": [],
+          "dependsOrder": "parallel",
+          "depends_order": "parallel",
+          "enabled": true,
+          "fields": [
+            "activeOperation",
+            "args",
+            "command",
+            "createdAt",
+            "created_at",
+            "dependsOn",
+            "dependsOrder",
+            "depends_order",
+            "enabled",
+            "group",
+            "group_is_default",
+            "group_kind",
+            "id",
+            "label",
+            "lastDurationMs",
+            "lastExitCode",
+            "lastLog",
+            "lastRunAt",
+            "lastStatus",
+            "last_duration_ms",
+            "last_exit_code",
+            "last_log",
+            "last_run_at",
+            "last_status",
+            "options",
+            "presentation",
+            "problemMatcher",
+            "projectId",
+            "project_id",
+            "runStatus",
+            "running",
+            "sortOrder",
+            "sort_order",
+            "type",
+            "updatedAt",
+            "updated_at"
+          ],
+          "group": {
+            "isDefault": true,
+            "kind": "build"
+          },
+          "group_is_default": 1,
+          "group_kind": "build",
+          "hasActiveOperation": false,
+          "hasLastLog": true,
+          "has_last_log": true,
+          "id": 1,
+          "label": "P08 shell executor",
+          "lastDurationMs": 234,
+          "lastExitCode": 0,
+          "lastRunAt": "<utc>",
+          "lastStatus": "ok",
+          "last_duration_ms": 234,
+          "last_exit_code": 0,
+          "last_run_at": "<utc>",
+          "last_status": "ok",
+          "options": {
+            "cwd": "<redacted-path>",
+            "env": "<redacted-env>",
+            "envKeyCount": 1
+          },
+          "presentation": {
+            "clear": true,
+            "panel": "dedicated",
+            "reveal": "silent"
+          },
+          "problemMatcherType": "array",
+          "projectId": 2,
+          "project_id": 2,
+          "runStatus": "ok",
+          "running": false,
+          "sortOrder": 20,
+          "sort_order": 20,
+          "type": "shell",
+          "updatedAt": "<utc>",
+          "updated_at": "<utc>"
+        },
+        {
+          "actions": [
+            "reload",
+            "start",
+            "stop"
+          ],
+          "argsShape": [
+            {
+              "type": "string",
+              "value": "<redacted-command>"
+            },
+            {
+              "type": "string",
+              "value": "<redacted-command>"
+            }
+          ],
+          "command": "<redacted-command>",
+          "createdAt": "<utc>",
+          "created_at": "<utc>",
+          "dependsOn": [
+            "P08 shell executor"
+          ],
+          "dependsOrder": "sequence",
+          "depends_order": "sequence",
+          "enabled": false,
+          "fields": [
+            "actions",
+            "activeOperation",
+            "args",
+            "command",
+            "createdAt",
+            "created_at",
+            "dependsOn",
+            "dependsOrder",
+            "depends_order",
+            "enabled",
+            "group",
+            "group_is_default",
+            "group_kind",
+            "id",
+            "label",
+            "lastDurationMs",
+            "lastExitCode",
+            "lastLog",
+            "lastRunAt",
+            "lastStatus",
+            "last_duration_ms",
+            "last_exit_code",
+            "last_log",
+            "last_run_at",
+            "last_status",
+            "options",
+            "presentation",
+            "problemMatcher",
+            "projectId",
+            "project_id",
+            "runStatus",
+            "running",
+            "sortOrder",
+            "sort_order",
+            "type",
+            "updatedAt",
+            "updated_at"
+          ],
+          "group": {
+            "isDefault": false,
+            "kind": null
+          },
+          "group_is_default": 0,
+          "group_kind": null,
+          "hasActiveOperation": false,
+          "hasLastLog": false,
+          "has_last_log": false,
+          "id": 2,
+          "label": "P08 plugin executor",
+          "lastDurationMs": null,
+          "lastExitCode": null,
+          "lastRunAt": null,
+          "lastStatus": null,
+          "last_duration_ms": null,
+          "last_exit_code": null,
+          "last_run_at": null,
+          "last_status": null,
+          "options": {
+            "cwd": "<redacted-path>",
+            "env": "<redacted-env>",
+            "envKeyCount": 1
+          },
+          "presentation": {},
+          "problemMatcherType": "object",
+          "projectId": 2,
+          "project_id": 2,
+          "runStatus": "idle",
+          "running": false,
+          "sortOrder": 30,
+          "sort_order": 30,
+          "type": "plugin",
+          "updatedAt": "<utc>",
+          "updated_at": "<utc>"
+        }
+      ],
+      "id": "automation-static",
+      "scriptIds": [
+        1
+      ],
+      "scripts": [
+        {
+          "context_inject": "env",
+          "created_at": "<utc>",
+          "enabled": 1,
+          "fail_aborts": 1,
+          "fields": [
+            "body",
+            "context_inject",
+            "created_at",
+            "description",
+            "enabled",
+            "fail_aborts",
+            "hook_stage",
+            "id",
+            "last_duration_ms",
+            "last_exit_code",
+            "last_log",
+            "last_run_at",
+            "last_status",
+            "name",
+            "path",
+            "project_id",
+            "runtime",
+            "schedule_cron",
+            "sort_order",
+            "source_type",
+            "timeout_seconds",
+            "trigger_mode",
+            "updated_at",
+            "work_dir"
+          ],
+          "has_body": true,
+          "has_last_log": true,
+          "has_path": true,
+          "has_work_dir": true,
+          "hook_stage": null,
+          "id": 1,
+          "last_duration_ms": 123,
+          "last_exit_code": 0,
+          "last_run_at": "<utc>",
+          "last_status": "ok",
+          "name": "P08 fixture script",
+          "project_id": 2,
+          "runtime": "node",
+          "schedule_cron": "*/5 * * * *",
+          "sort_order": 10,
+          "source_type": "inline",
+          "timeout_seconds": 42,
+          "trigger_mode": "schedule",
+          "updated_at": "<utc>"
+        }
+      ]
+    },
+    {
+      "chatHistory": [
+        {
+          "content": "<redacted-content>",
+          "conversation_id": 1,
+          "created_at": "<utc>",
+          "fields": [
+            "content",
+            "conversation_id",
+            "created_at",
+            "id",
+            "project_id",
+            "role",
+            "status",
+            "tool_calls",
+            "tool_result"
+          ],
+          "id": 1,
+          "project_id": 2,
+          "role": "user",
+          "status": "done",
+          "tool_calls": null,
+          "tool_result": null
+        },
+        {
+          "content": "<redacted-content>",
+          "conversation_id": 1,
+          "created_at": "<utc>",
+          "fields": [
+            "content",
+            "conversation_id",
+            "created_at",
+            "id",
+            "project_id",
+            "role",
+            "status",
+            "tool_calls",
+            "tool_result"
+          ],
+          "id": 2,
+          "project_id": 2,
+          "role": "assistant",
+          "status": "done",
+          "tool_calls": "<redacted-tool-data>",
+          "tool_result": null
+        },
+        {
+          "content": "<redacted-content>",
+          "conversation_id": 1,
+          "created_at": "<utc>",
+          "fields": [
+            "content",
+            "conversation_id",
+            "created_at",
+            "id",
+            "project_id",
+            "role",
+            "status",
+            "tool_calls",
+            "tool_result"
+          ],
+          "id": 3,
+          "project_id": 2,
+          "role": "tool",
+          "status": "done",
+          "tool_calls": null,
+          "tool_result": "<redacted-tool-data>"
+        },
+        {
+          "content": "<redacted-content>",
+          "conversation_id": 1,
+          "created_at": "<utc>",
+          "fields": [
+            "content",
+            "conversation_id",
+            "created_at",
+            "id",
+            "project_id",
+            "role",
+            "status",
+            "tool_calls",
+            "tool_result"
+          ],
+          "id": 4,
+          "project_id": 2,
+          "role": "user",
+          "status": "queued",
+          "tool_calls": null,
+          "tool_result": null
+        }
+      ],
+      "conversationsAfterAiDelete": [
+        {
+          "aiConfigId": null,
+          "ai_config_id": null,
+          "codex_session_id_public": false,
+          "createdAt": "<utc>",
+          "created_at": "<utc>",
+          "fields": [
+            "aiConfigId",
+            "ai_config_id",
+            "createdAt",
+            "created_at",
+            "id",
+            "pinned",
+            "pinnedAt",
+            "pinned_at",
+            "projectId",
+            "project_id",
+            "title",
+            "updatedAt",
+            "updated_at"
+          ],
+          "id": 2,
+          "pinned": true,
+          "pinnedAt": "<utc>",
+          "pinned_at": "<utc>",
+          "projectId": 2,
+          "project_id": 2,
+          "title": "P08 conversation B",
+          "updatedAt": "<utc>",
+          "updated_at": "<utc>"
+        },
+        {
+          "aiConfigId": null,
+          "ai_config_id": null,
+          "codex_session_id_public": false,
+          "createdAt": "<utc>",
+          "created_at": "<utc>",
+          "fields": [
+            "aiConfigId",
+            "ai_config_id",
+            "createdAt",
+            "created_at",
+            "id",
+            "pinned",
+            "pinnedAt",
+            "pinned_at",
+            "projectId",
+            "project_id",
+            "title",
+            "updatedAt",
+            "updated_at"
+          ],
+          "id": 1,
+          "pinned": false,
+          "pinnedAt": null,
+          "pinned_at": null,
+          "projectId": 2,
+          "project_id": 2,
+          "title": "P08 conversation A",
+          "updatedAt": "<utc>",
+          "updated_at": "<utc>"
+        }
+      ],
+      "conversationsBeforeAiDelete": [
+        {
+          "aiConfigId": null,
+          "ai_config_id": null,
+          "codex_session_id_public": false,
+          "createdAt": "<utc>",
+          "created_at": "<utc>",
+          "fields": [
+            "aiConfigId",
+            "ai_config_id",
+            "createdAt",
+            "created_at",
+            "id",
+            "pinned",
+            "pinnedAt",
+            "pinned_at",
+            "projectId",
+            "project_id",
+            "title",
+            "updatedAt",
+            "updated_at"
+          ],
+          "id": 2,
+          "pinned": true,
+          "pinnedAt": "<utc>",
+          "pinned_at": "<utc>",
+          "projectId": 2,
+          "project_id": 2,
+          "title": "P08 conversation B",
+          "updatedAt": "<utc>",
+          "updated_at": "<utc>"
+        },
+        {
+          "aiConfigId": 2,
+          "ai_config_id": 2,
+          "codex_session_id_public": false,
+          "createdAt": "<utc>",
+          "created_at": "<utc>",
+          "fields": [
+            "aiConfigId",
+            "ai_config_id",
+            "createdAt",
+            "created_at",
+            "id",
+            "pinned",
+            "pinnedAt",
+            "pinned_at",
+            "projectId",
+            "project_id",
+            "title",
+            "updatedAt",
+            "updated_at"
+          ],
+          "id": 1,
+          "pinned": false,
+          "pinnedAt": null,
+          "pinned_at": null,
+          "projectId": 2,
+          "project_id": 2,
+          "title": "P08 conversation A",
+          "updatedAt": "<utc>",
+          "updated_at": "<utc>"
+        }
+      ],
+      "id": "chat-static"
+    },
+    {
+      "aiConfigsAfterDelete": [
+        {
+          "baseUrl": "https://api.openai.com",
+          "createdAt": "<utc>",
+          "fields": [
+            "baseUrl",
+            "createdAt",
+            "hasApiKey",
+            "id",
+            "maskedKey",
+            "model",
+            "name",
+            "projectId",
+            "provider",
+            "temperature",
+            "thinkingBudgetTokens",
+            "thinkingDepth",
+            "updatedAt"
+          ],
+          "hasApiKey": false,
+          "id": 1,
+          "maskedKey": "",
+          "model": "gpt-5.5",
+          "name": "默认配置",
+          "projectId": null,
+          "provider": "openai",
+          "rawApiKeyPublic": false,
+          "temperature": "0.3",
+          "thinkingBudgetTokens": null,
+          "thinkingDepth": null,
+          "updatedAt": "<utc>"
+        }
+      ],
+      "aiConfigsBeforeDelete": [
+        {
+          "baseUrl": "https://api.openai.com",
+          "createdAt": "<utc>",
+          "fields": [
+            "baseUrl",
+            "createdAt",
+            "hasApiKey",
+            "id",
+            "maskedKey",
+            "model",
+            "name",
+            "projectId",
+            "provider",
+            "temperature",
+            "thinkingBudgetTokens",
+            "thinkingDepth",
+            "updatedAt"
+          ],
+          "hasApiKey": false,
+          "id": 1,
+          "maskedKey": "",
+          "model": "gpt-5.5",
+          "name": "默认配置",
+          "projectId": null,
+          "provider": "openai",
+          "rawApiKeyPublic": false,
+          "temperature": "0.3",
+          "thinkingBudgetTokens": null,
+          "thinkingDepth": null,
+          "updatedAt": "<utc>"
+        },
+        {
+          "baseUrl": "https://invalid.example.test/anthropic",
+          "createdAt": "<utc>",
+          "fields": [
+            "baseUrl",
+            "createdAt",
+            "hasApiKey",
+            "id",
+            "maskedKey",
+            "model",
+            "name",
+            "projectId",
+            "provider",
+            "temperature",
+            "thinkingBudgetTokens",
+            "thinkingDepth",
+            "updatedAt"
+          ],
+          "hasApiKey": true,
+          "id": 2,
+          "maskedKey": "<masked-secret>",
+          "model": "claude-sonnet-fixture",
+          "name": "P08 AI config",
+          "projectId": null,
+          "provider": "anthropic",
+          "rawApiKeyPublic": false,
+          "temperature": "0.2",
+          "thinkingBudgetTokens": 4096,
+          "thinkingDepth": null,
+          "updatedAt": "<utc>"
+        }
+      ],
+      "claudeAfterDelete": [
+        {
+          "baseUrl": "https://invalid.example.test/claude-a",
+          "createdAt": "<utc>",
+          "fields": [
+            "baseUrl",
+            "createdAt",
+            "hasAuthToken",
+            "id",
+            "isDefault",
+            "maskedKey",
+            "model",
+            "name",
+            "projectId",
+            "updatedAt"
+          ],
+          "hasAuthToken": true,
+          "id": 1,
+          "isDefault": true,
+          "maskedKey": "<masked-secret>",
+          "model": "claude-a-fixture",
+          "name": "P08 Claude A",
+          "projectId": null,
+          "rawAuthTokenPublic": false,
+          "updatedAt": "<utc>"
+        }
+      ],
+      "claudeBeforeDelete": [
+        {
+          "baseUrl": "https://invalid.example.test/claude-a",
+          "createdAt": "<utc>",
+          "fields": [
+            "baseUrl",
+            "createdAt",
+            "hasAuthToken",
+            "id",
+            "isDefault",
+            "maskedKey",
+            "model",
+            "name",
+            "projectId",
+            "updatedAt"
+          ],
+          "hasAuthToken": true,
+          "id": 1,
+          "isDefault": false,
+          "maskedKey": "<masked-secret>",
+          "model": "claude-a-fixture",
+          "name": "P08 Claude A",
+          "projectId": null,
+          "rawAuthTokenPublic": false,
+          "updatedAt": "<utc>"
+        },
+        {
+          "baseUrl": "https://invalid.example.test/claude-b",
+          "createdAt": "<utc>",
+          "fields": [
+            "baseUrl",
+            "createdAt",
+            "hasAuthToken",
+            "id",
+            "isDefault",
+            "maskedKey",
+            "model",
+            "name",
+            "projectId",
+            "updatedAt"
+          ],
+          "hasAuthToken": true,
+          "id": 2,
+          "isDefault": true,
+          "maskedKey": "<masked-secret>",
+          "model": "claude-b-fixture",
+          "name": "P08 Claude B",
+          "projectId": null,
+          "rawAuthTokenPublic": false,
+          "updatedAt": "<utc>"
+        }
+      ],
+      "id": "config-static"
+    },
+    {
+      "id": "mcp-static",
+      "serverConfig": {
+        "autoPortFallback": false,
+        "enabled": false,
+        "fields": [
+          "autoPortFallback",
+          "enabled",
+          "host",
+          "path",
+          "port",
+          "transport"
+        ],
+        "hasAuthToken": true,
+        "host": "127.0.0.1",
+        "path": "<redacted-path>",
+        "port": 43910,
+        "secretFields": [
+          "authToken"
+        ],
+        "secretValuePublic": false,
+        "transport": "http"
+      },
+      "settings": {
+        "enabled": "false",
+        "hasAuthToken": true,
+        "host": "127.0.0.1",
+        "keys": [
+          "mcp.authToken",
+          "mcp.enabled",
+          "mcp.host",
+          "mcp.path",
+          "mcp.port",
+          "mcp.portExplicit",
+          "mcp.transport"
+        ],
+        "path": "<redacted-path>",
+        "port": "43910",
+        "portExplicit": "true",
+        "secretValuePublic": false,
+        "transport": "http"
+      },
+      "snapshot": {
+        "authHeader": "Authorization: Bearer <redacted>",
+        "authTokenMasked": "<masked-secret>",
+        "connectionExample": "http://127.0.0.1:43910/p08-mcp",
+        "enabled": false,
+        "fields": [
+          "authHeader",
+          "authTokenMasked",
+          "connectionExample",
+          "enabled",
+          "hasAuthToken",
+          "host",
+          "lastError",
+          "lastEvent",
+          "localOnly",
+          "note",
+          "path",
+          "port",
+          "running",
+          "startedAt",
+          "status",
+          "toolDocs",
+          "tools",
+          "transport",
+          "url"
+        ],
+        "hasAuthToken": true,
+        "host": "127.0.0.1",
+        "lastError": null,
+        "lastEvent": null,
+        "localOnly": true,
+        "note": "默认仅监听本机地址，供本机 MCP 客户端连接。",
+        "path": "<redacted-path>",
+        "port": 43910,
+        "rawAuthTokenPublic": false,
+        "running": false,
+        "startedAt": null,
+        "status": "disabled",
+        "toolCount": 28,
+        "toolDocCount": 28,
+        "tools": [
+          "create_feedback",
+          "create_project",
+          "create_requirement",
+          "delete_attachment",
+          "delete_feedback",
+          "delete_requirement",
+          "get_feedback",
+          "get_plan",
+          "get_project",
+          "get_requirement",
+          "list_executors",
+          "list_feedback",
+          "list_feedback_plan_links",
+          "list_plans",
+          "list_projects",
+          "list_requirement_plan_links",
+          "list_requirements",
+          "list_tasks",
+          "replace_feedback_plan_links",
+          "replace_requirement_plan_links",
+          "run_executor",
+          "start_loop",
+          "stop_executor",
+          "stop_loop",
+          "update_feedback",
+          "update_requirement",
+          "upload_feedback_attachment",
+          "upload_requirement_attachment"
+        ],
+        "transport": "http",
+        "url": "http://127.0.0.1:43910/p08-mcp"
+      }
+    },
+    {
+      "id": "snapshot-static",
+      "snapshot": {
+        "activeOperation": null,
+        "activeProjectFields": [
+          "created_at",
+          "description",
+          "id",
+          "name",
+          "updated_at",
+          "workspace_path"
+        ],
+        "activeProjectId": 2,
+        "collectionCounts": {
+          "activeOperations": 0,
+          "attachments": 0,
+          "events": 0,
+          "executors": 2,
+          "feedback": 0,
+          "plans": 0,
+          "requirements": 0,
+          "scripts": 1,
+          "tasks": 0,
+          "terminals": 0
+        },
+        "executorOrder": [
+          1,
+          2
+        ],
+        "lastOperation": null,
+        "mcp": {
+          "authHeader": "Authorization: Bearer <redacted>",
+          "authTokenMasked": "<masked-secret>",
+          "connectionExample": "http://127.0.0.1:43910/p08-mcp",
+          "enabled": false,
+          "fields": [
+            "authHeader",
+            "authTokenMasked",
+            "connectionExample",
+            "enabled",
+            "hasAuthToken",
+            "host",
+            "lastError",
+            "lastEvent",
+            "localOnly",
+            "note",
+            "path",
+            "port",
+            "running",
+            "startedAt",
+            "status",
+            "toolDocs",
+            "tools",
+            "transport",
+            "url"
+          ],
+          "hasAuthToken": true,
+          "host": "127.0.0.1",
+          "lastError": null,
+          "lastEvent": null,
+          "localOnly": true,
+          "note": "默认仅监听本机地址，供本机 MCP 客户端连接。",
+          "path": "<redacted-path>",
+          "port": 43910,
+          "rawAuthTokenPublic": false,
+          "running": false,
+          "startedAt": null,
+          "status": "disabled",
+          "toolCount": 28,
+          "toolDocCount": 28,
+          "tools": [
+            "create_feedback",
+            "create_project",
+            "create_requirement",
+            "delete_attachment",
+            "delete_feedback",
+            "delete_requirement",
+            "get_feedback",
+            "get_plan",
+            "get_project",
+            "get_requirement",
+            "list_executors",
+            "list_feedback",
+            "list_feedback_plan_links",
+            "list_plans",
+            "list_projects",
+            "list_requirement_plan_links",
+            "list_requirements",
+            "list_tasks",
+            "replace_feedback_plan_links",
+            "replace_requirement_plan_links",
+            "run_executor",
+            "start_loop",
+            "stop_executor",
+            "stop_loop",
+            "update_feedback",
+            "update_requirement",
+            "upload_feedback_attachment",
+            "upload_requirement_attachment"
+          ],
+          "transport": "http",
+          "url": "http://127.0.0.1:43910/p08-mcp"
+        },
+        "projectsCount": 2,
+        "scriptOrder": [
+          1
+        ],
+        "stateFields": [
+          "agent_cli_command",
+          "agent_cli_provider",
+          "codex_reasoning_effort",
+          "env_vars",
+          "interval_seconds",
+          "last_error",
+          "last_issue_hash",
+          "phase",
+          "plan_execution_claude_auth_token",
+          "plan_execution_claude_base_url",
+          "plan_execution_claude_config_id",
+          "plan_execution_claude_model",
+          "plan_execution_codex_reasoning_effort",
+          "plan_execution_command",
+          "plan_execution_has_claude_auth_token",
+          "plan_execution_model",
+          "plan_execution_provider",
+          "plan_execution_strategy",
+          "plan_generation_claude_auth_token",
+          "plan_generation_claude_base_url",
+          "plan_generation_claude_config_id",
+          "plan_generation_claude_model",
+          "plan_generation_codex_reasoning_effort",
+          "plan_generation_command",
+          "plan_generation_has_claude_auth_token",
+          "plan_generation_model",
+          "plan_generation_provider",
+          "plan_generation_strategy",
+          "project_id",
+          "project_prompt",
+          "running",
+          "updated_at",
+          "validation_command",
+          "workspace_path"
+        ],
+        "stateSecrets": {
+          "env_vars": "<redacted-env>",
+          "plan_execution_claude_auth_token": "<masked-secret>",
+          "plan_execution_has_claude_auth_token": true,
+          "plan_generation_claude_auth_token": "<masked-secret>",
+          "plan_generation_has_claude_auth_token": true
+        },
+        "topLevelFields": [
+          "activeOperation",
+          "activeOperations",
+          "activeProject",
+          "activeProjectId",
+          "attachments",
+          "events",
+          "executors",
+          "feedback",
+          "lastOperation",
+          "mcp",
+          "plans",
+          "projects",
+          "requirements",
+          "scanSummary",
+          "scans",
+          "scripts",
+          "state",
+          "tasks",
+          "terminals"
+        ]
+      }
+    },
+    {
+      "id": "secret-redaction",
+      "observations": {
+        "aiConfigMaskedOnly": true,
+        "aiConfigRawKeyPublic": false,
+        "chatContentRedactedInGolden": true,
+        "claudeMaskedOnly": true,
+        "claudeRawTokenPublic": false,
+        "conversationCodexSessionIdGolden": "<redacted-session-id>",
+        "mcpMaskedOnly": true,
+        "mcpRawTokenPublic": false,
+        "stateEnvVarsRedacted": true,
+        "toolDataPresentButRedacted": true
+      }
+    }
+  ],
+  "schema": {
+    "ai_configs": [
+      {
+        "cid": 0,
+        "dflt_value": null,
+        "name": "id",
+        "notnull": 0,
+        "pk": 1,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 1,
+        "dflt_value": null,
+        "name": "project_id",
+        "notnull": 0,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 2,
+        "dflt_value": null,
+        "name": "name",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 3,
+        "dflt_value": "'openai'",
+        "name": "provider",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 4,
+        "dflt_value": "''",
+        "name": "base_url",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 5,
+        "dflt_value": "''",
+        "name": "api_key",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 6,
+        "dflt_value": "''",
+        "name": "model",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 7,
+        "dflt_value": "'0.3'",
+        "name": "temperature",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 8,
+        "dflt_value": null,
+        "name": "thinking_depth",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 9,
+        "dflt_value": null,
+        "name": "thinking_budget_tokens",
+        "notnull": 0,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 10,
+        "dflt_value": null,
+        "name": "created_at",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 11,
+        "dflt_value": null,
+        "name": "updated_at",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      }
+    ],
+    "chat_messages": [
+      {
+        "cid": 0,
+        "dflt_value": null,
+        "name": "id",
+        "notnull": 0,
+        "pk": 1,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 1,
+        "dflt_value": null,
+        "name": "project_id",
+        "notnull": 0,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 2,
+        "dflt_value": null,
+        "name": "role",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 3,
+        "dflt_value": null,
+        "name": "content",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 4,
+        "dflt_value": null,
+        "name": "tool_calls",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 5,
+        "dflt_value": null,
+        "name": "tool_result",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 6,
+        "dflt_value": null,
+        "name": "status",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 7,
+        "dflt_value": null,
+        "name": "created_at",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 8,
+        "dflt_value": null,
+        "name": "conversation_id",
+        "notnull": 0,
+        "pk": 0,
+        "type": "INTEGER"
+      }
+    ],
+    "claude_cli_configs": [
+      {
+        "cid": 0,
+        "dflt_value": null,
+        "name": "id",
+        "notnull": 0,
+        "pk": 1,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 1,
+        "dflt_value": null,
+        "name": "project_id",
+        "notnull": 0,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 2,
+        "dflt_value": null,
+        "name": "name",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 3,
+        "dflt_value": "''",
+        "name": "base_url",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 4,
+        "dflt_value": "''",
+        "name": "auth_token",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 5,
+        "dflt_value": "''",
+        "name": "model",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 6,
+        "dflt_value": "0",
+        "name": "is_default",
+        "notnull": 1,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 7,
+        "dflt_value": null,
+        "name": "created_at",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 8,
+        "dflt_value": null,
+        "name": "updated_at",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      }
+    ],
+    "conversations": [
+      {
+        "cid": 0,
+        "dflt_value": null,
+        "name": "id",
+        "notnull": 0,
+        "pk": 1,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 1,
+        "dflt_value": null,
+        "name": "project_id",
+        "notnull": 0,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 2,
+        "dflt_value": "''",
+        "name": "title",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 3,
+        "dflt_value": null,
+        "name": "ai_config_id",
+        "notnull": 0,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 4,
+        "dflt_value": null,
+        "name": "pinned_at",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 5,
+        "dflt_value": null,
+        "name": "created_at",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 6,
+        "dflt_value": null,
+        "name": "updated_at",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 7,
+        "dflt_value": null,
+        "name": "codex_session_id",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      }
+    ],
+    "executors": [
+      {
+        "cid": 0,
+        "dflt_value": null,
+        "name": "id",
+        "notnull": 0,
+        "pk": 1,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 1,
+        "dflt_value": null,
+        "name": "project_id",
+        "notnull": 1,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 2,
+        "dflt_value": null,
+        "name": "label",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 3,
+        "dflt_value": "'shell'",
+        "name": "type",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 4,
+        "dflt_value": null,
+        "name": "command",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 5,
+        "dflt_value": "'[]'",
+        "name": "args_json",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 6,
+        "dflt_value": null,
+        "name": "actions_json",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 7,
+        "dflt_value": "'{}'",
+        "name": "options_json",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 8,
+        "dflt_value": null,
+        "name": "group_kind",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 9,
+        "dflt_value": "0",
+        "name": "group_is_default",
+        "notnull": 1,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 10,
+        "dflt_value": "'{}'",
+        "name": "presentation_json",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 11,
+        "dflt_value": null,
+        "name": "problem_matcher_json",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 12,
+        "dflt_value": "'[]'",
+        "name": "depends_on_json",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 13,
+        "dflt_value": "'parallel'",
+        "name": "depends_order",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 14,
+        "dflt_value": "1",
+        "name": "enabled",
+        "notnull": 1,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 15,
+        "dflt_value": "0",
+        "name": "sort_order",
+        "notnull": 1,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 16,
+        "dflt_value": null,
+        "name": "last_status",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 17,
+        "dflt_value": null,
+        "name": "last_exit_code",
+        "notnull": 0,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 18,
+        "dflt_value": null,
+        "name": "last_duration_ms",
+        "notnull": 0,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 19,
+        "dflt_value": null,
+        "name": "last_log",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 20,
+        "dflt_value": null,
+        "name": "last_run_at",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 21,
+        "dflt_value": null,
+        "name": "plugin_state_json",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 22,
+        "dflt_value": null,
+        "name": "created_at",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 23,
+        "dflt_value": null,
+        "name": "updated_at",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      }
+    ],
+    "project_states": [
+      {
+        "cid": 0,
+        "dflt_value": null,
+        "name": "project_id",
+        "notnull": 0,
+        "pk": 1,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 1,
+        "dflt_value": "0",
+        "name": "running",
+        "notnull": 1,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 2,
+        "dflt_value": "'idle'",
+        "name": "phase",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 3,
+        "dflt_value": "5",
+        "name": "interval_seconds",
+        "notnull": 1,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 4,
+        "dflt_value": "''",
+        "name": "validation_command",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 5,
+        "dflt_value": "''",
+        "name": "project_prompt",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 6,
+        "dflt_value": "'codex'",
+        "name": "agent_cli_provider",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 7,
+        "dflt_value": "''",
+        "name": "agent_cli_command",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 8,
+        "dflt_value": null,
+        "name": "codex_reasoning_effort",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 9,
+        "dflt_value": "'external-cli-markdown'",
+        "name": "plan_generation_strategy",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 10,
+        "dflt_value": null,
+        "name": "plan_generation_provider",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 11,
+        "dflt_value": "''",
+        "name": "plan_generation_command",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 12,
+        "dflt_value": "''",
+        "name": "plan_generation_model",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 13,
+        "dflt_value": null,
+        "name": "plan_generation_codex_reasoning_effort",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 14,
+        "dflt_value": "''",
+        "name": "plan_generation_claude_base_url",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 15,
+        "dflt_value": "''",
+        "name": "plan_generation_claude_auth_token",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 16,
+        "dflt_value": "''",
+        "name": "plan_generation_claude_model",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 17,
+        "dflt_value": "'external-cli'",
+        "name": "plan_execution_strategy",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 18,
+        "dflt_value": null,
+        "name": "plan_execution_provider",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 19,
+        "dflt_value": "''",
+        "name": "plan_execution_command",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 20,
+        "dflt_value": "''",
+        "name": "plan_execution_model",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 21,
+        "dflt_value": null,
+        "name": "plan_execution_codex_reasoning_effort",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 22,
+        "dflt_value": "''",
+        "name": "plan_execution_claude_base_url",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 23,
+        "dflt_value": "''",
+        "name": "plan_execution_claude_auth_token",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 24,
+        "dflt_value": "''",
+        "name": "plan_execution_claude_model",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 25,
+        "dflt_value": null,
+        "name": "last_issue_hash",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 26,
+        "dflt_value": null,
+        "name": "last_error",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 27,
+        "dflt_value": "''",
+        "name": "env_vars",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 28,
+        "dflt_value": null,
+        "name": "updated_at",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 29,
+        "dflt_value": "0",
+        "name": "plan_generation_claude_config_id",
+        "notnull": 1,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 30,
+        "dflt_value": "0",
+        "name": "plan_execution_claude_config_id",
+        "notnull": 1,
+        "pk": 0,
+        "type": "INTEGER"
+      }
+    ],
+    "scripts": [
+      {
+        "cid": 0,
+        "dflt_value": null,
+        "name": "id",
+        "notnull": 0,
+        "pk": 1,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 1,
+        "dflt_value": null,
+        "name": "project_id",
+        "notnull": 0,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 2,
+        "dflt_value": null,
+        "name": "name",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 3,
+        "dflt_value": "''",
+        "name": "path",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 4,
+        "dflt_value": "'node'",
+        "name": "runtime",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 5,
+        "dflt_value": "''",
+        "name": "body",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 6,
+        "dflt_value": "''",
+        "name": "description",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 7,
+        "dflt_value": "'manual'",
+        "name": "trigger_mode",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 8,
+        "dflt_value": null,
+        "name": "hook_stage",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 9,
+        "dflt_value": null,
+        "name": "schedule_cron",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 10,
+        "dflt_value": "1",
+        "name": "enabled",
+        "notnull": 1,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 11,
+        "dflt_value": "''",
+        "name": "work_dir",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 12,
+        "dflt_value": "60",
+        "name": "timeout_seconds",
+        "notnull": 1,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 13,
+        "dflt_value": "0",
+        "name": "fail_aborts",
+        "notnull": 1,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 14,
+        "dflt_value": "'none'",
+        "name": "context_inject",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 15,
+        "dflt_value": "0",
+        "name": "sort_order",
+        "notnull": 1,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 16,
+        "dflt_value": null,
+        "name": "last_status",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 17,
+        "dflt_value": null,
+        "name": "last_exit_code",
+        "notnull": 0,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 18,
+        "dflt_value": null,
+        "name": "last_duration_ms",
+        "notnull": 0,
+        "pk": 0,
+        "type": "INTEGER"
+      },
+      {
+        "cid": 19,
+        "dflt_value": null,
+        "name": "last_log",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 20,
+        "dflt_value": null,
+        "name": "last_run_at",
+        "notnull": 0,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 21,
+        "dflt_value": null,
+        "name": "created_at",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 22,
+        "dflt_value": null,
+        "name": "updated_at",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      },
+      {
+        "cid": 23,
+        "dflt_value": "'inline'",
+        "name": "source_type",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      }
+    ],
+    "settings": [
+      {
+        "cid": 0,
+        "dflt_value": null,
+        "name": "key",
+        "notnull": 0,
+        "pk": 1,
+        "type": "TEXT"
+      },
+      {
+        "cid": 1,
+        "dflt_value": null,
+        "name": "value",
+        "notnull": 1,
+        "pk": 0,
+        "type": "TEXT"
+      }
+    ]
+  },
+  "schemaSha256": "3c0dbb9dddf27bf35484ea59254166875c6ec0140dddd602de634f4a0406ef0e",
+  "schemaVersion": 1,
+  "version": "p08-node-static-golden-v1"
+}

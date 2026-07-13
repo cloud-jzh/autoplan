@@ -15,9 +15,12 @@ const {
   TERMINAL_CHANNELS,
   TERMINAL_ERROR_CODES,
   TERMINAL_LIMITS,
+  TERMINAL_RUNTIME,
   TERMINAL_SESSION_ID_PREFIX,
   TERMINAL_STATUS,
   terminalError,
+  terminalLegacyAdmissionDisabledError,
+  terminalLegacyAdmissionForPlatform,
   terminalPtyUnavailableError,
 } = require('./terminalTypes');
 
@@ -31,11 +34,18 @@ class TerminalService extends EventEmitter {
     this.fs = options.fs || fs;
     this.env = options.env || process.env;
     this.platform = options.platform || process.platform;
+    this.legacyAdmission = normalizeLegacyAdmission(options.legacyAdmission, this.platform);
     this.now = options.now || (() => new Date().toISOString());
     this.idFactory = options.idFactory || defaultSessionId;
   }
 
   createSession(project, input = {}) {
+    // This is deliberately before project/cwd validation and node-pty loading.
+    // After a platform withdraws the legacy creator, an IPC caller cannot
+    // create a partial Node process or use this route for filesystem probing.
+    if (!this.legacyAdmission.allowNewNodeSessions) {
+      return terminalLegacyAdmissionDisabledError(this.legacyAdmission.reason);
+    }
     const projectResult = normalizeProject(project, this.fs);
     if (!projectResult.ok) return projectResult.error;
 
@@ -90,6 +100,10 @@ class TerminalService extends EventEmitter {
       killRequested: false,
       suppressExitEvents: false,
       closed: false,
+      // P14 session ownership is fixed at admission. A future Go session is
+      // a different handle even when an identifier happens to look similar.
+      runtime: TERMINAL_RUNTIME.NODE,
+      outputSeq: 0,
     };
 
     this.sessions.set(session.id, session);
@@ -227,7 +241,14 @@ class TerminalService extends EventEmitter {
     const text = String(data ?? '');
     if (!text) return;
     appendScrollback(session, text);
-    const payload = { sessionId: session.id, projectId: session.projectId, data: text, session: publicSession(session) };
+    session.outputSeq += 1;
+    const payload = {
+      sessionId: session.id,
+      projectId: session.projectId,
+      data: text,
+      seq: session.outputSeq,
+      session: publicSession(session),
+    };
     this.emit(TERMINAL_CHANNELS.DATA, payload);
     this.emit('data', payload);
   }
@@ -347,6 +368,7 @@ function publicSession(session) {
     cols: session.cols,
     rows: session.rows,
     closed: Boolean(session.closed),
+    runtime: session.runtime || TERMINAL_RUNTIME.NODE,
     profile: {
       id: session.profile.id,
       name: session.profile.name,
@@ -407,6 +429,16 @@ function normalizePtyFactory(value) {
   if (!value) return null;
   if (typeof value === 'function') return { spawn: value };
   return typeof value.spawn === 'function' ? value : null;
+}
+
+function normalizeLegacyAdmission(value, platform) {
+  if (value && typeof value === 'object' && typeof value.allowNewNodeSessions === 'boolean') {
+    return Object.freeze({
+      allowNewNodeSessions: value.allowNewNodeSessions,
+      reason: String(value.reason || 'platform_evidence_missing'),
+    });
+  }
+  return terminalLegacyAdmissionForPlatform(platform);
 }
 
 function loadNodePty() {

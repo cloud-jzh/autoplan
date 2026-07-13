@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "migration": "P14/P008",
+  "generated_at": null,
+  "policy": {
+    "legacy_node_pty_withdrawal": "release-bound-per-platform",
+    "minimum_consecutive_packaged_smokes": 3,
+    "runtime_toggle": "not permitted",
+    "current_disposition": "blocked"
+  },
+  "platforms": {
+    "win32": {
+      "status": "blocked",
+      "new_node_pty_admission": "retained",
+      "evidence_id": null,
+      "evidence_manifest_sha256": null,
+      "successful_packaged_smokes": 0,
+      "owner": "release-engineering",
+      "risk_expiry_utc": null,
+      "blocker": "packaged_smoke_evidence_missing"
+    },
+    "darwin": {
+      "status": "blocked",
+      "new_node_pty_admission": "retained",
+      "evidence_id": null,
+      "evidence_manifest_sha256": null,
+      "successful_packaged_smokes": 0,
+      "owner": "release-engineering",
+      "risk_expiry_utc": null,
+      "blocker": "packaged_smoke_evidence_missing"
+    },
+    "linux": {
+      "status": "blocked",
+      "new_node_pty_admission": "retained",
+      "evidence_id": null,
+      "evidence_manifest_sha256": null,
+      "successful_packaged_smokes": 0,
+      "owner": "release-engineering",
+      "risk_expiry_utc": null,
+      "blocker": "packaged_smoke_evidence_missing"
+    }
+  },
+  "legacy_inventory": {
+    "handlers": [
+      "terminal:create",
+      "terminal:list",
+      "terminal:write",
+      "terminal:resize",
+      "terminal:kill",
+      "terminal:close",
+      "terminal:rename",
+      "terminal:replay",
+      "terminal:clear"
+    ],
+    "preload": [
+      "createTerminal",
+      "listTerminals",
+      "writeTerminal",
+      "resizeTerminal",
+      "killTerminal",
+      "closeTerminal",
+      "renameTerminal",
+      "replayTerminal",
+      "clearTerminal",
+      "onTerminalData",
+      "onTerminalExit",
+      "onTerminalStatus",
+      "onTerminalClosed"
+    ],
+    "renderer": [
+      "IpcAutoplanClient",
+      "TerminalTransport"
+    ],
+    "events": [
+      "terminal:data",
+      "terminal:exit",
+      "terminal:status",
+      "terminal:closed"
+    ],
+    "dependencies": [
+      "node-pty"
+    ],
+    "package_assets": [
+      "node_modules/node-pty/**/*"
+    ],
+    "runtime_metrics_required_before_withdrawal": [
+      "new_node_pty_admissions=0",
+      "legacy_terminal_route_invocations=0 after session drain",
+      "node_owned_sessions=0 before asset deletion"
+    ],
+    "removed": []
+  },
+  "rollback": {
+    "future_sessions_only": true,
+    "go_session_owner": "Go until exit/kill/close",
+    "node_session_owner": "Node until exit/kill/close",
+    "automatic_cross_runtime_fallback": false,
+    "re_enable_node_admission": "new platform release with accepted evidence"
+  }
+}

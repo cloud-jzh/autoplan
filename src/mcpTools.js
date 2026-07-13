@@ -11,8 +11,21 @@ const MCP_TOOL_NAMES = Object.freeze({
   CREATE_PROJECT: 'create_project',
   LIST_REQUIREMENTS: 'list_requirements',
   CREATE_REQUIREMENT: 'create_requirement',
+  GET_REQUIREMENT: 'get_requirement',
+  UPDATE_REQUIREMENT: 'update_requirement',
+  DELETE_REQUIREMENT: 'delete_requirement',
+  LIST_REQUIREMENT_PLAN_LINKS: 'list_requirement_plan_links',
+  REPLACE_REQUIREMENT_PLAN_LINKS: 'replace_requirement_plan_links',
+  UPLOAD_REQUIREMENT_ATTACHMENT: 'upload_requirement_attachment',
   LIST_FEEDBACK: 'list_feedback',
   CREATE_FEEDBACK: 'create_feedback',
+  GET_FEEDBACK: 'get_feedback',
+  UPDATE_FEEDBACK: 'update_feedback',
+  DELETE_FEEDBACK: 'delete_feedback',
+  LIST_FEEDBACK_PLAN_LINKS: 'list_feedback_plan_links',
+  REPLACE_FEEDBACK_PLAN_LINKS: 'replace_feedback_plan_links',
+  UPLOAD_FEEDBACK_ATTACHMENT: 'upload_feedback_attachment',
+  DELETE_ATTACHMENT: 'delete_attachment',
   LIST_PLANS: 'list_plans',
   GET_PLAN: 'get_plan',
   LIST_TASKS: 'list_tasks',
@@ -23,6 +36,55 @@ const MCP_TOOL_NAMES = Object.freeze({
   STOP_LOOP: 'stop_loop',
 });
 
+// These are the P06 operations whose implementation may be switched as one
+// unit to the Go application boundary. The switch is injected by the trusted
+// host, never selected by an MCP tool argument.
+const P06_INTAKE_TOOL_NAMES = new Set([
+  MCP_TOOL_NAMES.LIST_REQUIREMENTS,
+  MCP_TOOL_NAMES.CREATE_REQUIREMENT,
+  MCP_TOOL_NAMES.GET_REQUIREMENT,
+  MCP_TOOL_NAMES.UPDATE_REQUIREMENT,
+  MCP_TOOL_NAMES.DELETE_REQUIREMENT,
+  MCP_TOOL_NAMES.LIST_REQUIREMENT_PLAN_LINKS,
+  MCP_TOOL_NAMES.REPLACE_REQUIREMENT_PLAN_LINKS,
+  MCP_TOOL_NAMES.UPLOAD_REQUIREMENT_ATTACHMENT,
+  MCP_TOOL_NAMES.LIST_FEEDBACK,
+  MCP_TOOL_NAMES.CREATE_FEEDBACK,
+  MCP_TOOL_NAMES.GET_FEEDBACK,
+  MCP_TOOL_NAMES.UPDATE_FEEDBACK,
+  MCP_TOOL_NAMES.DELETE_FEEDBACK,
+  MCP_TOOL_NAMES.LIST_FEEDBACK_PLAN_LINKS,
+  MCP_TOOL_NAMES.REPLACE_FEEDBACK_PLAN_LINKS,
+  MCP_TOOL_NAMES.UPLOAD_FEEDBACK_ATTACHMENT,
+  MCP_TOOL_NAMES.DELETE_ATTACHMENT,
+]);
+
+const P06_GO_ONLY_TOOL_NAMES = new Set([
+  MCP_TOOL_NAMES.GET_REQUIREMENT,
+  MCP_TOOL_NAMES.UPDATE_REQUIREMENT,
+  MCP_TOOL_NAMES.DELETE_REQUIREMENT,
+  MCP_TOOL_NAMES.LIST_REQUIREMENT_PLAN_LINKS,
+  MCP_TOOL_NAMES.REPLACE_REQUIREMENT_PLAN_LINKS,
+  MCP_TOOL_NAMES.UPLOAD_REQUIREMENT_ATTACHMENT,
+  MCP_TOOL_NAMES.GET_FEEDBACK,
+  MCP_TOOL_NAMES.UPDATE_FEEDBACK,
+  MCP_TOOL_NAMES.DELETE_FEEDBACK,
+  MCP_TOOL_NAMES.LIST_FEEDBACK_PLAN_LINKS,
+  MCP_TOOL_NAMES.REPLACE_FEEDBACK_PLAN_LINKS,
+  MCP_TOOL_NAMES.UPLOAD_FEEDBACK_ATTACHMENT,
+  MCP_TOOL_NAMES.DELETE_ATTACHMENT,
+]);
+
+// Go owner mode exposes only MCP operations with an explicit P002 runtime
+// command. Keeping SQL-backed listing/configuration tools out of discovery is
+// safer than advertising an operation that could accidentally reach sql.js.
+const GO_DATA_CLIENT_TOOL_NAMES = new Set([
+  MCP_TOOL_NAMES.RUN_EXECUTOR,
+  MCP_TOOL_NAMES.STOP_EXECUTOR,
+  MCP_TOOL_NAMES.START_LOOP,
+  MCP_TOOL_NAMES.STOP_LOOP,
+]);
+
 const AGENT_CLI_PROVIDERS = Object.freeze(['codex', 'claude', 'opencode', 'oh-my-pi']);
 const CODEX_REASONING_EFFORTS = Object.freeze(['low', 'medium', 'high', 'xhigh']);
 const PLAN_GENERATION_STRATEGIES = Object.freeze([...planBackendConfig.PLAN_GENERATION_STRATEGIES]);
@@ -31,6 +93,7 @@ const PLAN_BACKEND_PROVIDERS = Object.freeze([
   ...new Set([...AGENT_CLI_PROVIDERS, ...planBackendConfig.BUILTIN_LLM_PROVIDERS]),
 ]);
 const INTAKE_STATUSES = Object.freeze(['open', 'completed', 'closed']);
+const P06_INTAKE_STATUSES = Object.freeze(['draft', 'open', 'completed', 'closed']);
 const PLAN_STATUSES = Object.freeze(['pending', 'running', 'ready_for_validation', 'completed', 'interrupted', 'draft']);
 const TASK_STATUSES = Object.freeze(['pending', 'running', 'completed', 'blocked', 'failed', 'stopping', 'stopped', 'interrupted']);
 const EXECUTOR_STATUSES = Object.freeze(['idle', 'running', 'ok', 'bad', 'stopped']);
@@ -218,6 +281,42 @@ const MCP_TOOL_DEFINITIONS = Object.freeze([
     },
   },
   {
+    name: MCP_TOOL_NAMES.GET_REQUIREMENT,
+    title: 'Get AutoPlan requirement',
+    description: 'Read one requirement through the P06 shared Intake service.',
+    inputSchema: intakeItemSchema(),
+  },
+  {
+    name: MCP_TOOL_NAMES.UPDATE_REQUIREMENT,
+    title: 'Update AutoPlan requirement',
+    description: 'Update one requirement through the P06 shared Intake service.',
+    inputSchema: intakeUpdateSchema(false),
+  },
+  {
+    name: MCP_TOOL_NAMES.DELETE_REQUIREMENT,
+    title: 'Delete AutoPlan requirement',
+    description: 'Delete one requirement through the P06 shared Intake service.',
+    inputSchema: intakeItemSchema(),
+  },
+  {
+    name: MCP_TOOL_NAMES.LIST_REQUIREMENT_PLAN_LINKS,
+    title: 'List requirement plan links',
+    description: 'List ordered plan links for one requirement.',
+    inputSchema: intakeItemSchema(),
+  },
+  {
+    name: MCP_TOOL_NAMES.REPLACE_REQUIREMENT_PLAN_LINKS,
+    title: 'Replace requirement plan links',
+    description: 'Atomically replace ordered plan links for one requirement.',
+    inputSchema: replacePlanLinksSchema(),
+  },
+  {
+    name: MCP_TOOL_NAMES.UPLOAD_REQUIREMENT_ATTACHMENT,
+    title: 'Upload requirement attachment',
+    description: 'Upload one P06 policy-checked attachment for an existing requirement.',
+    inputSchema: intakeAttachmentSchema(),
+  },
+  {
     name: MCP_TOOL_NAMES.LIST_FEEDBACK,
     title: 'List AutoPlan feedback',
     description: 'List feedback for a project.',
@@ -243,6 +342,48 @@ const MCP_TOOL_DEFINITIONS = Object.freeze([
         ...PLAN_GENERATION_PROPERTIES,
       },
     },
+  },
+  {
+    name: MCP_TOOL_NAMES.GET_FEEDBACK,
+    title: 'Get AutoPlan feedback',
+    description: 'Read one feedback record through the P06 shared Intake service.',
+    inputSchema: intakeItemSchema(),
+  },
+  {
+    name: MCP_TOOL_NAMES.UPDATE_FEEDBACK,
+    title: 'Update AutoPlan feedback',
+    description: 'Update one feedback record through the P06 shared Intake service.',
+    inputSchema: intakeUpdateSchema(true),
+  },
+  {
+    name: MCP_TOOL_NAMES.DELETE_FEEDBACK,
+    title: 'Delete AutoPlan feedback',
+    description: 'Delete one feedback record through the P06 shared Intake service.',
+    inputSchema: intakeItemSchema(),
+  },
+  {
+    name: MCP_TOOL_NAMES.LIST_FEEDBACK_PLAN_LINKS,
+    title: 'List feedback plan links',
+    description: 'List ordered plan links for one feedback record.',
+    inputSchema: intakeItemSchema(),
+  },
+  {
+    name: MCP_TOOL_NAMES.REPLACE_FEEDBACK_PLAN_LINKS,
+    title: 'Replace feedback plan links',
+    description: 'Atomically replace ordered plan links for one feedback record.',
+    inputSchema: replacePlanLinksSchema(),
+  },
+  {
+    name: MCP_TOOL_NAMES.UPLOAD_FEEDBACK_ATTACHMENT,
+    title: 'Upload feedback attachment',
+    description: 'Upload one P06 policy-checked attachment for existing feedback.',
+    inputSchema: intakeAttachmentSchema(),
+  },
+  {
+    name: MCP_TOOL_NAMES.DELETE_ATTACHMENT,
+    title: 'Delete attachment',
+    description: 'Delete one P06 attachment by project-scoped identifier.',
+    inputSchema: attachmentDeleteSchema(),
   },
   {
     name: MCP_TOOL_NAMES.LIST_PLANS,
@@ -327,7 +468,7 @@ const MCP_TOOL_DEFINITIONS = Object.freeze([
 async function registerMcpTools(server, context = {}) {
   const { CallToolRequestSchema, ListToolsRequestSchema } = await import('@modelcontextprotocol/sdk/types.js');
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: MCP_TOOL_DEFINITIONS.map((tool) => ({
+    tools: (context?.legacyAdapterDisabled ? [] : visibleMcpToolDefinitions(context)).map((tool) => ({
       name: tool.name,
       title: tool.title,
       description: tool.description,
@@ -342,11 +483,14 @@ async function registerMcpTools(server, context = {}) {
 }
 
 async function callMcpTool(name, input = {}, context = {}) {
-  const tool = MCP_TOOL_DEFINITIONS.find((item) => item.name === name);
+  if (context?.legacyAdapterDisabled) return toolError(serviceUnavailableError());
+  const tool = visibleMcpToolDefinitions(context).find((item) => item.name === name);
   if (!tool) throw new Error(`Unknown MCP tool: ${name || ''}`);
 
   try {
-    const validated = validateToolInput(tool.name, input);
+    const validated = validateToolInput(tool.name, input, {
+      p06Transport: Boolean(context?.goIntakeTransport),
+    });
     const result = await runTool(tool.name, validated, context);
     return toolResult(result);
   } catch (error) {
@@ -354,7 +498,16 @@ async function callMcpTool(name, input = {}, context = {}) {
   }
 }
 
+function serviceUnavailableError() {
+  const error = new Error('service_unavailable');
+  error.code = 'service_unavailable';
+  return error;
+}
+
 async function runTool(name, input, context) {
+  if (context?.goDataClient) return runGoDataClientTool(context.goDataClient, name, input);
+  const p06Transport = resolveP06IntakeTransport(context, name);
+  if (p06Transport) return runP06IntakeTool(p06Transport, name, input, context);
   if (name === MCP_TOOL_NAMES.LIST_PROJECTS) {
     const db = requiredDb(context);
     return {
@@ -497,15 +650,148 @@ async function runTool(name, input, context) {
   throw new Error(`Unknown MCP tool: ${name}`);
 }
 
-function validateToolInput(name, input) {
+function visibleMcpToolDefinitions(context = {}) {
+  if (context?.goDataClient) {
+    return MCP_TOOL_DEFINITIONS.filter((tool) => GO_DATA_CLIENT_TOOL_NAMES.has(tool.name));
+  }
+  const goTransportEnabled = Boolean(context?.goIntakeTransport);
+  const tools = goTransportEnabled
+    ? MCP_TOOL_DEFINITIONS
+    : MCP_TOOL_DEFINITIONS.filter((tool) => !P06_GO_ONLY_TOOL_NAMES.has(tool.name));
+  return goTransportEnabled ? tools.map(p06TransportDefinition) : tools;
+}
+
+async function runGoDataClientTool(client, name, input) {
+  if (!client || typeof client !== 'object') {
+    const error = new Error('service_unavailable');
+    error.code = 'service_unavailable';
+    throw error;
+  }
+  let result;
+  switch (name) {
+    case MCP_TOOL_NAMES.START_LOOP:
+      result = await client.startLoop(input.projectId);
+      break;
+    case MCP_TOOL_NAMES.STOP_LOOP:
+      result = await client.stopLoop(input.projectId);
+      break;
+    case MCP_TOOL_NAMES.RUN_EXECUTOR:
+      result = await client.runExecutor(input.projectId, input.executorId);
+      break;
+    case MCP_TOOL_NAMES.STOP_EXECUTOR:
+      result = await client.stopExecutor(input.projectId, input.executorId);
+      break;
+    default: {
+      const error = new Error('service_unavailable');
+      error.code = 'service_unavailable';
+      throw error;
+    }
+  }
+  return {
+    projectId: input.projectId,
+    operation: result?.operation || null,
+    snapshot: result?.snapshot ? snapshotSummary(result.snapshot) : null,
+  };
+}
+
+function p06TransportDefinition(tool) {
+  if (!P06_INTAKE_TOOL_NAMES.has(tool.name) || !tool.inputSchema?.properties?.status) return tool;
+  return {
+    ...tool,
+    inputSchema: {
+      ...tool.inputSchema,
+      properties: {
+        ...tool.inputSchema.properties,
+        status: { ...tool.inputSchema.properties.status, enum: P06_INTAKE_STATUSES },
+      },
+    },
+  };
+}
+
+function resolveP06IntakeTransport(context, name) {
+  if (!P06_INTAKE_TOOL_NAMES.has(name)) return null;
+  const transport = context?.goIntakeTransport;
+  if (transport === undefined || transport === null) return null;
+  if (typeof transport.call !== 'function') {
+    const error = new Error('P06 Intake MCP transport is unavailable');
+    error.code = 'service_unavailable';
+    throw error;
+  }
+  return transport;
+}
+
+async function runP06IntakeTool(transport, name, input, context) {
+  if ((name === MCP_TOOL_NAMES.CREATE_REQUIREMENT || name === MCP_TOOL_NAMES.CREATE_FEEDBACK)
+      && Array.isArray(input.attachments) && input.attachments.length > 0) {
+    const error = new Error('P06 attachment upload requires an existing Intake owner');
+    error.code = 'invalid_attachment';
+    throw error;
+  }
+  // The migration transport is authoritative once present. In particular, a
+  // failure here must never fall through to Node/sql.js and create a second
+  // writer for the same intent.
+  try {
+    const result = await transport.call(name, input, {
+      callerScope: String(context?.mcpCallerScope || 'mcp-local'),
+      localCaller: Boolean(context?.mcpLocalCaller),
+    });
+    return sanitizeP06Result(result);
+  } catch (error) {
+    // A Go-side adapter is allowed to surface only its stable code. Transport
+    // failures can contain endpoint URLs, request bodies, credentials, or a
+    // caller path, so turn every unknown failure into one generic code before
+    // it reaches the MCP response or a host logger.
+    const code = p06FailureCode(error);
+    const failure = new Error(code);
+    failure.code = code;
+    throw failure;
+  }
+}
+
+function p06FailureCode(error) {
+  return isP06ToolError(error) ? error.code : 'service_unavailable';
+}
+
+function sanitizeP06Result(value, depth = 0) {
+  if (depth > 32 || value === null || value === undefined ||
+      typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+  if (Buffer.isBuffer(value) || value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return null;
+  if (Array.isArray(value)) return value.map((item) => sanitizeP06Result(item, depth + 1));
+  if (typeof value !== 'object') return null;
+  const result = {};
+  for (const [key, item] of Object.entries(value)) {
+    const normalized = key.replace(/[^a-z0-9]/gi, '').toLowerCase();
+    if (normalized.includes('storedpath') || normalized === 'hash' || normalized.endsWith('hash') ||
+        normalized.includes('token') || normalized.includes('secret') || normalized.includes('credential') ||
+        normalized === 'path' || normalized.endsWith('filepath') || normalized.endsWith('sourcepath') ||
+        normalized === 'bytes' || normalized.endsWith('bytes') || normalized === 'base64' ||
+        normalized.endsWith('base64') || normalized === 'dataurl') continue;
+    result[key] = sanitizeP06Result(item, depth + 1);
+  }
+  return result;
+}
+
+function validateToolInput(name, input, options = {}) {
   assertPlainObject(input, 'Input must be an object');
+  const intakeStatuses = options.p06Transport ? P06_INTAKE_STATUSES : INTAKE_STATUSES;
   if (name === MCP_TOOL_NAMES.LIST_PROJECTS) return validateListProjectsInput(input);
   if (name === MCP_TOOL_NAMES.GET_PROJECT) return validateProjectIdInput(input);
   if (name === MCP_TOOL_NAMES.CREATE_PROJECT) return validateCreateProjectInput(input);
-  if (name === MCP_TOOL_NAMES.LIST_REQUIREMENTS) return validateListIntakesInput(input);
-  if (name === MCP_TOOL_NAMES.CREATE_REQUIREMENT) return validateCreateRequirementInput(input);
-  if (name === MCP_TOOL_NAMES.LIST_FEEDBACK) return validateListIntakesInput(input);
-  if (name === MCP_TOOL_NAMES.CREATE_FEEDBACK) return validateCreateFeedbackInput(input);
+  if (name === MCP_TOOL_NAMES.LIST_REQUIREMENTS) return validateListIntakesInput(input, intakeStatuses);
+  if (name === MCP_TOOL_NAMES.CREATE_REQUIREMENT) return validateCreateRequirementInput(input, intakeStatuses);
+  if (name === MCP_TOOL_NAMES.GET_REQUIREMENT || name === MCP_TOOL_NAMES.DELETE_REQUIREMENT ||
+      name === MCP_TOOL_NAMES.LIST_REQUIREMENT_PLAN_LINKS) return validateIntakeItemInput(input);
+  if (name === MCP_TOOL_NAMES.UPDATE_REQUIREMENT) return validateIntakeUpdateInput(input, false);
+  if (name === MCP_TOOL_NAMES.REPLACE_REQUIREMENT_PLAN_LINKS) return validateReplacePlanLinksInput(input);
+  if (name === MCP_TOOL_NAMES.UPLOAD_REQUIREMENT_ATTACHMENT) return validateIntakeAttachmentInput(input);
+  if (name === MCP_TOOL_NAMES.LIST_FEEDBACK) return validateListIntakesInput(input, intakeStatuses);
+  if (name === MCP_TOOL_NAMES.CREATE_FEEDBACK) return validateCreateFeedbackInput(input, intakeStatuses);
+  if (name === MCP_TOOL_NAMES.GET_FEEDBACK || name === MCP_TOOL_NAMES.DELETE_FEEDBACK ||
+      name === MCP_TOOL_NAMES.LIST_FEEDBACK_PLAN_LINKS) return validateIntakeItemInput(input);
+  if (name === MCP_TOOL_NAMES.UPDATE_FEEDBACK) return validateIntakeUpdateInput(input, true);
+  if (name === MCP_TOOL_NAMES.REPLACE_FEEDBACK_PLAN_LINKS) return validateReplacePlanLinksInput(input);
+  if (name === MCP_TOOL_NAMES.UPLOAD_FEEDBACK_ATTACHMENT) return validateIntakeAttachmentInput(input);
+  if (name === MCP_TOOL_NAMES.DELETE_ATTACHMENT) return validateAttachmentDeleteInput(input);
   if (name === MCP_TOOL_NAMES.LIST_PLANS) return validateListPlansInput(input);
   if (name === MCP_TOOL_NAMES.GET_PLAN) return validateGetPlanInput(input);
   if (name === MCP_TOOL_NAMES.LIST_TASKS) return validateListTasksInput(input);
@@ -541,15 +827,15 @@ function validateCreateProjectInput(input) {
   });
 }
 
-function validateListIntakesInput(input) {
+function validateListIntakesInput(input, statuses = INTAKE_STATUSES) {
   return stripUndefined({
     projectId: requiredPositiveInteger(input, 'projectId'),
-    status: optionalEnum(input, 'status', INTAKE_STATUSES),
+    status: optionalEnum(input, 'status', statuses),
     limit: optionalLimit(input),
   });
 }
 
-function validateCreateRequirementInput(input) {
+function validateCreateRequirementInput(input, statuses = INTAKE_STATUSES) {
   assertNoPlanExecutionInput(input);
   return stripUndefined({
     projectId: requiredPositiveInteger(input, 'projectId'),
@@ -557,13 +843,13 @@ function validateCreateRequirementInput(input) {
     body: requiredString(input, 'body', LIMITS.body),
     attachments: optionalAttachments(input),
     autoRun: optionalBoolean(input, 'autoRun'),
-    status: optionalEnum(input, 'status', INTAKE_STATUSES),
+    status: optionalEnum(input, 'status', statuses),
     ...validatedAgentCliInput(input),
     ...validatedPlanGenerationInput(input),
   });
 }
 
-function validateCreateFeedbackInput(input) {
+function validateCreateFeedbackInput(input, statuses = INTAKE_STATUSES) {
   assertNoPlanExecutionInput(input);
   return stripUndefined({
     projectId: requiredPositiveInteger(input, 'projectId'),
@@ -572,7 +858,7 @@ function validateCreateFeedbackInput(input) {
     body: requiredString(input, 'body', LIMITS.body),
     attachments: optionalAttachments(input),
     autoRun: optionalBoolean(input, 'autoRun'),
-    status: optionalEnum(input, 'status', INTAKE_STATUSES),
+    status: optionalEnum(input, 'status', statuses),
     ...validatedAgentCliInput(input),
     ...validatedPlanGenerationInput(input),
   });
@@ -1400,11 +1686,101 @@ function toolResult(result) {
 
 function toolError(error) {
   if (isDuplicateIntakeError(error)) return duplicateIntakeToolError(error);
+  if (isP06ToolError(error)) return p06ToolError(error);
   const message = error?.message || String(error || 'Unknown error');
   return {
     isError: true,
     content: [{ type: 'text', text: message }],
     structuredContent: { error: message },
+  };
+}
+
+function validateIntakeItemInput(input) {
+  assertOnlyKeys(input, ['projectId', 'id']);
+  return {
+    projectId: requiredPositiveInteger(input, 'projectId'),
+    id: requiredPositiveInteger(input, 'id'),
+  };
+}
+
+function validateIntakeUpdateInput(input, feedback) {
+  const allowed = [
+    'projectId', 'id', 'expectedUpdatedAt', 'title', 'body', 'status',
+    'agentCliProvider', 'agentCliCommand', 'codexReasoningEffort',
+    'planGenerationStrategy', 'planGenerationProvider', 'planGenerationCommand',
+    'planGenerationModel', 'planGenerationCodexReasoningEffort',
+  ];
+  if (feedback) allowed.push('requirementId');
+  assertOnlyKeys(input, allowed);
+  const result = stripUndefined({
+    projectId: requiredPositiveInteger(input, 'projectId'),
+    id: requiredPositiveInteger(input, 'id'),
+    expectedUpdatedAt: optionalString(input, 'expectedUpdatedAt', 64),
+    title: optionalString(input, 'title', LIMITS.title),
+    body: optionalString(input, 'body', LIMITS.body),
+    status: optionalEnum(input, 'status', P06_INTAKE_STATUSES),
+    ...(feedback ? { requirementId: optionalPositiveInteger(input, 'requirementId', { nullable: true }) } : {}),
+    ...validatedAgentCliInput(input),
+    ...validatedPlanGenerationInput(input),
+  });
+  if (!['title', 'body', 'status', 'requirementId', 'agentCliProvider', 'agentCliCommand', 'codexReasoningEffort',
+    'planGenerationStrategy', 'planGenerationProvider', 'planGenerationCommand', 'planGenerationModel',
+    'planGenerationCodexReasoningEffort'].some((key) => Object.prototype.hasOwnProperty.call(result, key))) {
+    throw new Error('at least one mutable Intake field is required');
+  }
+  return result;
+}
+
+function validateReplacePlanLinksInput(input) {
+  assertOnlyKeys(input, ['projectId', 'id', 'links']);
+  if (!Array.isArray(input.links) || input.links.length > LIMITS.rows) throw new Error('links must be an array with at most 200 items');
+  const links = input.links.map((link, index) => {
+    assertPlainObject(link, `links[${index}] must be an object`);
+    assertOnlyKeys(link, ['planId', 'phaseIndex', 'phaseTitle']);
+    return {
+      planId: requiredPositiveInteger(link, 'planId'),
+      phaseIndex: optionalNonNegativeInteger(link, 'phaseIndex') ?? 0,
+      phaseTitle: optionalString(link, 'phaseTitle', 500) || '',
+    };
+  });
+  return { projectId: requiredPositiveInteger(input, 'projectId'), id: requiredPositiveInteger(input, 'id'), links };
+}
+
+function validateIntakeAttachmentInput(input) {
+  assertOnlyKeys(input, ['projectId', 'id', 'name', 'type', 'path', 'base64', 'dataBase64', 'dataUrl', 'bytes']);
+  const attachment = validateAttachment(input, 0);
+  if (!attachment.name || (!attachment.path && !attachment.base64 && !attachment.dataBase64 && !attachment.dataUrl && !attachment.bytes)) {
+    throw new Error('attachment name and exactly one byte source are required');
+  }
+  const sourceCount = [attachment.path, attachment.base64, attachment.dataBase64, attachment.dataUrl, attachment.bytes]
+    .filter((value) => value !== undefined).length;
+  if (sourceCount !== 1) throw new Error('attachment requires exactly one byte source');
+  return { projectId: requiredPositiveInteger(input, 'projectId'), id: requiredPositiveInteger(input, 'id'), attachment };
+}
+
+function validateAttachmentDeleteInput(input) {
+  assertOnlyKeys(input, ['projectId', 'attachmentId']);
+  return { projectId: requiredPositiveInteger(input, 'projectId'), attachmentId: requiredPositiveInteger(input, 'attachmentId') };
+}
+
+function isP06ToolError(error) {
+  return typeof error?.code === 'string' && [
+    'invalid_intake', 'invalid_attachment', 'attachment_path_denied', 'attachment_recovery_required',
+    'not_found', 'duplicate_intake', 'precondition_failed', 'relation_conflict', 'idempotency_key_reused',
+    'request_in_progress', 'unsupported_media_type', 'request_timeout', 'service_unavailable', 'internal_error',
+  ].includes(error.code);
+}
+
+function p06ToolError(error) {
+  const code = error.code;
+  const message = code === 'not_found' ? 'Requested Intake resource was not found.'
+    : code === 'attachment_path_denied' ? 'Attachment path input is not authorized.'
+      : code === 'service_unavailable' ? 'P06 Intake service is unavailable.'
+        : 'P06 Intake request failed.';
+  return {
+    isError: true,
+    content: [{ type: 'text', text: message }],
+    structuredContent: { error: message, code, errorCode: code },
   };
 }
 
@@ -1463,6 +1839,73 @@ function intakeListSchema(statusValues) {
   };
 }
 
+function intakeItemSchema() {
+  return {
+    type: 'object', additionalProperties: false, required: ['projectId', 'id'],
+    properties: { ...PROJECT_ID_SCHEMA, id: { type: 'integer', minimum: 1 } },
+  };
+}
+
+function intakeUpdateSchema(feedback) {
+  const properties = {
+    ...PROJECT_ID_SCHEMA,
+    id: { type: 'integer', minimum: 1 },
+    expectedUpdatedAt: { type: 'string', maxLength: 64 },
+    title: { type: 'string', maxLength: LIMITS.title },
+    body: { type: 'string', maxLength: LIMITS.body },
+    status: { type: 'string', enum: P06_INTAKE_STATUSES },
+    ...COMMON_CLI_PROPERTIES,
+    ...PLAN_GENERATION_PROPERTIES,
+  };
+  if (feedback) properties.requirementId = { type: ['integer', 'null'], minimum: 1 };
+  return { type: 'object', additionalProperties: false, required: ['projectId', 'id'], properties };
+}
+
+function replacePlanLinksSchema() {
+  return {
+    type: 'object', additionalProperties: false, required: ['projectId', 'id', 'links'],
+    properties: {
+      ...PROJECT_ID_SCHEMA,
+      id: { type: 'integer', minimum: 1 },
+      links: {
+        type: 'array', maxItems: LIMITS.rows,
+        items: {
+          type: 'object', additionalProperties: false, required: ['planId'],
+          properties: {
+            planId: { type: 'integer', minimum: 1 },
+            phaseIndex: { type: 'integer', minimum: 0 },
+            phaseTitle: { type: 'string', maxLength: 500 },
+          },
+        },
+      },
+    },
+  };
+}
+
+function intakeAttachmentSchema() {
+  return {
+    type: 'object', additionalProperties: false, required: ['projectId', 'id', 'name'],
+    properties: {
+      ...PROJECT_ID_SCHEMA,
+      id: { type: 'integer', minimum: 1 },
+      name: { type: 'string', minLength: 1, maxLength: 120 },
+      type: { type: 'string', maxLength: 200 },
+      path: { type: 'string', minLength: 1, maxLength: LIMITS.attachmentPath },
+      base64: { type: 'string', minLength: 1, maxLength: 36 * 1024 * 1024 },
+      dataBase64: { type: 'string', minLength: 1, maxLength: 36 * 1024 * 1024 },
+      dataUrl: { type: 'string', minLength: 1, maxLength: 36 * 1024 * 1024 },
+      bytes: { type: 'array', maxItems: 25 * 1024 * 1024, items: { type: 'integer', minimum: 0, maximum: 255 } },
+    },
+  };
+}
+
+function attachmentDeleteSchema() {
+  return {
+    type: 'object', additionalProperties: false, required: ['projectId', 'attachmentId'],
+    properties: { ...PROJECT_ID_SCHEMA, attachmentId: { type: 'integer', minimum: 1 } },
+  };
+}
+
 function projectActionSchema() {
   return {
     type: 'object',
@@ -1497,6 +1940,9 @@ function executorActionSchema() {
 module.exports = {
   MCP_TOOL_DEFINITIONS,
   MCP_TOOL_NAMES,
+  P06_INTAKE_TOOL_NAMES,
+  P06_GO_ONLY_TOOL_NAMES,
   callMcpTool,
   registerMcpTools,
+  visibleMcpToolDefinitions,
 };

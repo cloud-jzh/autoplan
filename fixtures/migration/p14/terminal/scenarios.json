@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "kind": "p14-terminal-smoke-scenarios",
+  "project_id": 70014,
+  "session_prefix": "term_fixture",
+  "checks": [
+    "create",
+    "list",
+    "write",
+    "output_sequence",
+    "resize",
+    "exit",
+    "kill",
+    "close",
+    "reconnect",
+    "process_tree_cleanup"
+  ],
+  "security_checks": [
+    "origin",
+    "project_scope",
+    "bounded_replay",
+    "no_raw_output_persistence"
+  ]
+}

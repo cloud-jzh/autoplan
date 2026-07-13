@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "kind": "p12-sanitized-node-script-executor-runtime-fixture",
+  "generator": "scripts/migration-p12/generate-node-golden.js",
+  "artifacts": [
+    "node-runtime.golden.json"
+  ],
+  "authorization": "Repository-owned sanitized compatibility fixture only. It does not read Electron userData, a database, an external workspace, environment values or a live process.",
+  "redaction": {
+    "project_id": "fixture integer",
+    "resource_id": "fixture integer",
+    "operation_id": "<operation:type>",
+    "request_id": "<request:type>",
+    "timestamp": "<utc>",
+    "path": "never recorded",
+    "command_args_env": "never recorded",
+    "pid": "<pid> or never recorded",
+    "log": "<log-tail> or <stable-summary>"
+  },
+  "determinism": "The generator uses only checked-in contract metadata. Dynamic operation ids, timestamps, executor run ids and pids are placeholders, so equal normalized fixture input has a byte-stable result."
+}

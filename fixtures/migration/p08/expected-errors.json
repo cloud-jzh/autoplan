@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "transport_errors": [
+    { "operation": "automation.runtime", "status": 501, "code": "not_implemented", "retryable": false },
+    { "operation": "chat.runtime", "status": 501, "code": "not_implemented", "retryable": false },
+    { "operation": "mcp.runtime", "status": 501, "code": "not_implemented", "retryable": false },
+    { "operation": "automation.invalid", "status": 422, "code": "invalid_automation", "retryable": false },
+    { "operation": "conversation.invalid", "status": 422, "code": "invalid_conversation", "retryable": false },
+    { "operation": "cursor.invalid", "status": 400, "code": "invalid_cursor", "retryable": false },
+    { "operation": "automation.missing", "status": 404, "code": "automation_not_found", "retryable": false },
+    { "operation": "conversation.missing", "status": 404, "code": "conversation_not_found", "retryable": false },
+    { "operation": "version.stale", "status": 412, "code": "precondition_failed", "retryable": false },
+    { "operation": "request.cancelled", "status": 504, "code": "request_timeout", "retryable": true }
+  ],
+  "tool_errors": [
+    "invalid_request",
+    "not_found",
+    "precondition_failed",
+    "service_unavailable",
+    "request_timeout",
+    "internal_error"
+  ],
+  "secret_errors": [
+    "secret_provider_failed",
+    "secret_compensation_required",
+    "secret_conflict",
+    "secret_not_found"
+  ]
+}

@@ -1,0 +1,246 @@
+{
+  "title": "P07：Plans、PlanTasks、Acceptance 与 Events 持久化业务状态迁移",
+  "summary": "在 P05 Project/Config 写入闭环与 P06 Intake/Attachments/intake_plan_links 完整迁移均有真实通过证据的前提下，依据 D:\\docs\\autoplan-go-backend-separation-plan.md v1.0，将 plans、plan_tasks、acceptance 与 events 的纯持久化业务状态迁入本机 Go sidecar 模块化单体。先从现有 LoopService、planLifecycle、acceptance、intakeDeletion、snapshot 与测试中冻结 plan/task 合法状态、非法转换、排序、验收/取消验收、批量原子预校验、redo、保护/级联删除、事件顺序和 mutation snapshot；再实现事务型 SQLite repository 与 HTTP/MCP/UI 共用的 application service，支持项目隔离、提交后事件、乐观并发冲突及确定性排序。仅迁移查询、排序、删除、accept/unaccept/redo 等不启动 CLI 或进程的能力；run、stop、resume、re-execute、recreate、run-batches 等长任务只定义版本化契约和能力状态，Go 端稳定返回 NOT_IMPLEMENTED/能力关闭且不得产生状态、事件或进程副作用，HttpAutoplanClient 不得提前把这些动作从 IPC 切走，也不得把失败伪装成 2xx。保持既有 snake_case DTO、字段存在性、null、AppSnapshot、状态机、错误、事件与业务语义，不重写 UI；所有实现和验证只使用脱敏 fixture、系统临时库或调用方显式副本，Go 写入必须持有 owner 锁，Node/sql.js 与 Go 不得同时写同一数据库，且不得自动发现或操作真实 Electron userData。秘密、CLI 配置、会话标识和未授权路径不得进入 API、日志、事件、OpenAPI 示例、fixture 或证据；任一 P05/P06、schema/checksum、owner、显式副本或安全前置未通过时本阶段必须 blocked 并停止。",
+  "tasks": [
+    {
+      "title": "冻结 Plans、Tasks、Acceptance、排序、删除与事件的现行兼容契约",
+      "scope": [
+        "src/loopService.js",
+        "src/loop/planLifecycle.js",
+        "src/loop/acceptance.js",
+        "src/loop/intakeDeletion.js",
+        "src/loop/snapshots.js",
+        "src/main.js",
+        "src/mcpTools.js",
+        "src/loopService.test.js",
+        "src/loop/planLifecycle.test.js",
+        "src/loop/acceptance.test.js",
+        "src/loop/intakeDeletion.test.js",
+        "scripts/migration-p07/inventory-plan-contract.js",
+        "scripts/migration-p07/generate-node-golden.js",
+        "fixtures/migration/p07/manifest.json",
+        "fixtures/migration/p07/node-plans.golden.json",
+        "docs/migration/p07/plan-contract.json"
+      ],
+      "acceptance": [
+        "从 LoopService 及现有测试逐项取证 plans、plan_tasks、events 的字段、snake_case、字段存在性、null/空串、默认值、状态枚举、时间格式、聚合计数、稳定排序、AppSnapshot 和 mutation 返回语义，不通过修改 Node 实现来简化迁移。",
+        "冻结 plan/task 合法与非法状态场景：计划完成态、运行态、中断态、待验证态、验证失败态与草稿态，任务 pending/running/completed/done/passed 等兼容值，以及 acceptance 与执行 status 正交的规则。",
+        "冻结 accept/unaccept 的单项和批量语义，包括仅允许已完成目标验收、取消验收不要求完成态、重复操作幂等但保留既有事件语义、批量去重保序、统一时间戳、全量预校验和任一非法目标时零写入。",
+        "冻结 redo 对计划和任务的合法前态、运行中/跨项目/不存在目标拒绝、accepted_at/validation_passed/任务状态/计划聚合的重置范围、补充说明截断规则及 plan.redo/task.redo 事件元数据；不得把 re-execute 的长任务语义并入 redo。",
+        "冻结排序的完整集合校验、非法/重复/缺失/跨项目 ID 拒绝、连续 sort_order、相同值回退顺序和排序后 snapshot；冻结删除的项目归属、活动状态保护、plan_tasks 与 intake_plan_links 级联、intake 保留、legacy link 同步、scan/event 关系和失败零部分提交语义。",
+        "冻结事件 type、message、meta、previous/next 值、project_id、created_at、倒序读取、数量边界及先提交业务行后发布事件/刷新 snapshot 的顺序；API、日志、事件和黄金输出中的 CLI token、auth token、真实路径、正文及会话秘密均以稳定占位符脱敏。",
+        "Node 黄金生成器只串行访问 P06 批准的脱敏临时库或显式副本，记录 fixture/schema/input/output 与数据库前后哈希；关闭 sql.js 后才允许 Go 打开独立重置副本，命中真实 userData、未授权路径或非脱敏值时安全失败。"
+      ]
+    },
+    {
+      "title": "实现 Plan 领域模型与 Plans/PlanTasks/Events 事务型 SQLite repository",
+      "scope": [
+        "backend/internal/domain/plan",
+        "backend/internal/domain/event",
+        "backend/internal/repository/repository.go",
+        "backend/internal/repository/sqlite/transaction.go",
+        "backend/internal/repository/sqlite/plans.go",
+        "backend/internal/repository/sqlite/plan_tasks.go",
+        "backend/internal/repository/sqlite/events.go",
+        "backend/internal/repository/sqlite/plan_transactions.go",
+        "backend/internal/repository/sqlite/plans_test.go",
+        "backend/migrations"
+      ],
+      "acceptance": [
+        "领域对象和 repository 接口覆盖冻结的 plan/task/event 字段、状态、acceptance 时间、计划聚合、执行配置兼容列、排序和审计元数据，不让 SQL row、transport 类型、秘密字段或文件系统路径泄漏到公共 DTO。",
+        "repository 提供按项目隔离的计划列表/详情、任务列表/详情、事件分页查询、确定性排序、计划全量重排、计划与任务验收字段更新、redo 状态更新和计划删除所需原子原语；所有按 id 的查询与写入同时校验 project_id 或通过受约束 join 证明归属。",
+        "重排、批量 accept/unaccept、redo、计划删除及其 plan_tasks/intake_plan_links/legacy link/scan 关系和待发布事件在单个顶层事务中完成；SQL 错误、约束错误、context 取消或故障注入时业务行、聚合和事件全部回滚。",
+        "并发写入使用明确的版本或 compare-and-swap 条件检测旧 snapshot/updated_at，丢失更新稳定映射为冲突；两个重排、验收与 redo、验收与删除、两个删除竞争时至多一个基于同一前态提交，失败方不覆盖新状态也不重复发布事件。",
+        "数据库约束与 repository 校验共同保证 task_key 在计划内唯一、sort_order 和计数合法、事件项目归属有效、跨项目任务不可见；历史兼容状态保留读取能力，未知新状态不得被静默归一化为成功。",
+        "repository 仅在 P04/P05/P06 readiness、schema/checksum、数据库 owner 锁和显式副本授权通过后建立写连接；临时库测试覆盖空库、历史库、孤儿/异常关系、事务回滚、并发冲突和确定性查询，绝不访问真实 userData。"
+      ]
+    },
+    {
+      "title": "构建共享 Plan/Task 查询、排序与保护性删除 application service",
+      "scope": [
+        "backend/internal/application/plans/service.go",
+        "backend/internal/application/plans/queries.go",
+        "backend/internal/application/plans/reorder.go",
+        "backend/internal/application/plans/deletion.go",
+        "backend/internal/application/plans/dto.go",
+        "backend/internal/application/events/service.go",
+        "backend/internal/application/snapshot/assembler.go",
+        "backend/internal/application/plans/service_test.go",
+        "backend/internal/bootstrap/dependencies.go"
+      ],
+      "acceptance": [
+        "HTTP、MCP 与 UI adapter 只调用同一组 application use case 获取 plans/tasks/events、执行重排和删除，不直接访问 repository、SQLite 或复制状态机、项目授权和事件规则。",
+        "查询保持现有 AppSnapshot 与 MCP 摘要所需的 snake_case、null、计划/任务聚合、计划顺序、任务顺序和事件倒序；分页、过滤和上限具有确定性，跨项目、缺失与孤儿数据按冻结错误或审计语义处理。",
+        "计划重排要求请求恰好包含当前项目全部计划且无重复、非法或外项目 ID，在一个事务内写入连续顺序并生成兼容事件/snapshot；版本陈旧或并发集合变化返回稳定冲突，不接受部分排序。",
+        "删除在事务开始后重新校验项目归属、版本和保护条件；存在运行中任务、活动 Operation 或需由未迁移 runtime 处理的进程/文件副作用时稳定拒绝且不尝试 stop/kill，允许删除时原子级联任务与链接、同步 legacy link、保留 intake 并记录兼容审计事件。",
+        "删除不信任客户端提供的文件路径或运行状态，不自动触碰真实 workspace；若冻结契约要求计划文件处置，则只生成提交后的受控补偿意图并复用 P05 Files policy，在本阶段无安全 owner 的场景返回能力关闭而非部分删除。",
+        "application service 只在事务提交后组装权威 snapshot 并发布事件；回滚、冲突、未授权、NOT_IMPLEMENTED 或补偿未完成均不得发布成功事件或用请求体拼装假成功响应。"
+      ]
+    },
+    {
+      "title": "实现 Acceptance 单项/批量状态机、Redo 与提交后审计事件",
+      "scope": [
+        "backend/internal/application/acceptance/service.go",
+        "backend/internal/application/acceptance/commands.go",
+        "backend/internal/application/acceptance/state_machine.go",
+        "backend/internal/application/acceptance/dto.go",
+        "backend/internal/application/acceptance/service_test.go",
+        "backend/internal/application/events/publisher.go",
+        "backend/internal/application/snapshot/assembler.go",
+        "backend/internal/bootstrap/dependencies.go"
+      ],
+      "acceptance": [
+        "单项 accept 仅接受 completed 计划及 completed/done/passed 任务，写 accepted_at 而不改变执行 status；unaccept 清空 accepted_at 且保持 status，重复 accept/unaccept 的时间刷新、previousAcceptedAt 和事件数量与 Node 契约一致。",
+        "批量 accept/unaccept 先规范化并去重保序，再在任何写入前验证全部目标、项目归属、状态、版本与重复项；混合 plan/task 使用同一事务和冻结的统一时间戳，任一目标失败时所有 accepted_at、事件与 snapshot 均不变化。",
+        "计划 redo 仅对冻结的完成/已验收且非运行状态生效，原子清空 accepted_at 与 validation_passed、按契约重置计划/任务/聚合字段并记录 plan.redo；任务 redo 只重置目标任务和必要的所属计划聚合并记录 task.redo。",
+        "redo 补充说明按现有最大长度、空白与 Unicode 规则规范化，事件仅保留允许的目标标识、旧新状态和脱敏补充摘要；CLI 会话、命令、token、未授权路径及其他秘密不进入事件、错误或日志。",
+        "状态机拒绝跨项目、非法 targetType/id、缺失目标、未完成目标、运行中计划/任务、未知状态和版本冲突，返回稳定错误且不做部分更新；acceptance 逻辑绝不调用 validation、脚本、CLI、任务执行或进程 adapter。",
+        "提交后事件按冻结顺序发布并由共享 snapshot assembler 重新读取权威数据；事件发布失败不得伪装业务完全成功，采用 P06 已批准的 outbox/恢复语义保证可审计重放且不重复业务 mutation。"
+      ]
+    },
+    {
+      "title": "定义长任务 Action 契约、能力关闭与稳定 NOT_IMPLEMENTED 边界",
+      "scope": [
+        "backend/internal/application/capabilities/service.go",
+        "backend/internal/application/plans/actions.go",
+        "backend/internal/application/tasks/actions.go",
+        "backend/internal/httpapi/capabilities.go",
+        "backend/internal/httpapi/plan_actions.go",
+        "backend/internal/httpapi/task_actions.go",
+        "backend/internal/httpapi/errors.go",
+        "backend/openapi/openapi.yaml",
+        "backend/openapi/schemas/capability.schema.json",
+        "backend/openapi/schemas/action.schema.json"
+      ],
+      "acceptance": [
+        "为 run、stop、resume、re-execute、recreate、run-batches 及现有任务执行入口定义版本化请求、目标标识、幂等/并发前置、Operation 引用、成功响应和稳定错误契约，但本阶段不实现 CLI、进程、调度、文件生成或状态预更新。",
+        "能力发现明确区分 plans/tasks 的 query、reorder、delete、accept/unaccept/redo 已可用与所有长任务 action disabled，默认关闭且不得由缺失配置、开发模式或请求参数隐式开启。",
+        "直接调用未实现 action 返回非 2xx 的稳定 NOT_IMPLEMENTED/能力关闭错误、request_id 和可机器判断的 capability，不返回假 operation、假 snapshot 或 success=true，也不写计划/任务/事件、启动进程、创建文件或消费 CLI 凭据。",
+        "未实现与未授权的判定顺序遵循安全契约，不通过能力错误泄露资源是否存在、项目归属、命令、session id 或路径；错误响应、访问日志、OpenAPI 示例与审计记录保持脱敏。",
+        "契约测试逐个覆盖所有现有 IPC 长任务动作和常见别名，防止遗漏某条路由后落入通用 200 handler；未来实现必须显式提升 capability 并通过独立阶段门禁，不能复用本阶段占位返回绕过状态机。"
+      ]
+    },
+    {
+      "title": "扩展 Plans/Tasks/Acceptance/Events REST、OpenAPI 与 MCP 共享适配器",
+      "scope": [
+        "backend/internal/httpapi/router.go",
+        "backend/internal/httpapi/plans.go",
+        "backend/internal/httpapi/tasks.go",
+        "backend/internal/httpapi/acceptance.go",
+        "backend/internal/httpapi/events.go",
+        "backend/internal/httpapi/errors.go",
+        "backend/internal/httpapi/plans_test.go",
+        "backend/internal/mcp/plan_tools.go",
+        "backend/internal/mcp/plan_tools_test.go",
+        "backend/openapi/openapi.yaml",
+        "backend/openapi/schemas/plan.schema.json",
+        "backend/openapi/schemas/plan_task.schema.json",
+        "backend/openapi/schemas/event.schema.json",
+        "backend/openapi/schemas/acceptance.schema.json"
+      ],
+      "acceptance": [
+        "REST 提供项目作用域的 plans/tasks/events 查询、计划重排与删除、单项/批量 accept/unaccept 和 redo；所有 handler 在读取或写入前校验本机会话、Origin/Host、项目授权、严格 JSON、请求大小和资源归属。",
+        "mutation 使用版本/If-Match 或冻结的等价并发前置并映射 400/401/403/404/409/412/422/423/500 等稳定错误；事务冲突、保护性删除和非法转换不返回 2xx，也不发布成功事件或 mutation snapshot。",
+        "OpenAPI 精确描述 snake_case DTO、字段存在性、null、状态枚举、排序、分页、批量目标、redo supplement、并发 header、事件 meta 脱敏规则、capability 与 NOT_IMPLEMENTED 响应，不把未知字段或未知状态静默忽略。",
+        "Go MCP 的 list_plans/get_plan/list_tasks 及适用的纯持久化 mutation 调用同一 application service 和授权/错误 mapper，不直接读写 repository；未迁移的 MCP 执行动作保持能力关闭或既定 IPC owner，不引入隐藏管理入口。",
+        "HTTP、MCP 和 UI 对相同输入得到一致的业务状态、错误、排序、事件和提交后 snapshot；transport 契约测试使用 application spy 证明 handler/tool 无 SQL、状态机或事件拼装副本。",
+        "API、MCP 结果、request_id 日志、事件和 OpenAPI 示例不包含 auth token、CLI command/auth、agent session、真实 workspace/userData 路径或未授权资源详情，枚举 ID 和跨项目访问均在 application service 前后双重受控。"
+      ]
+    },
+    {
+      "title": "扩展 HttpAutoplanClient 并按能力逐方法保留未迁移 IPC Action",
+      "scope": [
+        "src/renderer/lib/api/client.ts",
+        "src/renderer/lib/api/httpClient.ts",
+        "src/renderer/lib/api/ipcClient.ts",
+        "src/renderer/lib/api/transport.ts",
+        "src/renderer/lib/api/events.ts",
+        "src/renderer/lib/api/httpClient.test.js",
+        "src/renderer/lib/api/planTransport.contract.test.js",
+        "src/renderer/types.ts"
+      ],
+      "acceptance": [
+        "AutoplanClient 与 HttpAutoplanClient 覆盖计划/任务/事件查询、重排、删除、accept/unaccept、批量验收和 redo，保持现有调用面、snake_case AppSnapshot、错误边界、AbortSignal 与 renderer 状态模型，不改写计划、任务或验收 UI。",
+        "transport 按具体方法和服务端 capability 决定 owner；只有本阶段已迁移的纯持久化能力可在 P07 limited 环境走 HTTP，run/stop/resume/re-execute/recreate/run-batches 与任务执行始终走既有 IPC owner，绝不因 HTTP 路由存在而提前切换。",
+        "HTTP 对 NOT_IMPLEMENTED、冲突、超时、断连或非 2xx 保留稳定错误，不静默回退后重复 mutation，不把错误响应转换为成功 snapshot；同一用户意图的重试复用幂等/版本上下文，陈旧响应不覆盖较新状态。",
+        "P07 feature flag 只允许在脱敏临时库或显式副本、Go owner 锁和 Node writer 已关闭的 limited 环境启用；关闭或前置不满足时整组 P07 HTTP mutation 保持 IPC，不允许 Node/sql.js 与 Go 同写一个库。",
+        "IPC/HTTP 双传输契约比较 plans、tasks、events、acceptance、排序、删除和错误；HTTP 模式断言已迁移方法不调用 window.autoplan 直写口，未迁移 action 断言不调用 Go HTTP，且两类调用都不泄露 token、session、命令或路径。"
+      ]
+    },
+    {
+      "title": "建立 Node/Go 状态机黄金、Snapshot、事务并发与审计事件自动化覆盖",
+      "scope": [
+        "backend/internal/repository/sqlite/plan_contract_test.go",
+        "backend/internal/application/plans/golden_test.go",
+        "backend/internal/application/acceptance/golden_test.go",
+        "backend/internal/application/events/audit_test.go",
+        "backend/internal/httpapi/plans_contract_test.go",
+        "backend/internal/httpapi/plan_actions_contract_test.go",
+        "scripts/migration-p07/compare-plan-golden.js",
+        "scripts/migration-p07/compare-plan-golden.test.js",
+        "fixtures/migration/p07/state-machine-cases.json",
+        "fixtures/migration/p07/expected-errors.json"
+      ],
+      "acceptance": [
+        "Node 与 Go 在来自同一脱敏来源但互相独立重置的 fixture 上深比较 plan/task/event 字段存在性、snake_case、类型、null、状态、时间规范化、聚合、排序、mutation snapshot、删除关系和稳定错误，不用宽松子集或自动更新黄金掩盖漂移。",
+        "状态矩阵覆盖每个合法/非法 accept、unaccept、批量、redo、排序和删除前态，包含跨项目、缺失、未知状态、运行中保护、重复操作、批量重复、补充说明边界和事件 previous/next meta；非法场景断言数据库与事件哈希不变。",
+        "事务故障注入覆盖 plan/task/link/legacy link/scan/event 的每个写点、commit 失败和 context 取消；最终只能是完整提交或完整回滚，成功事件只在提交后可见，恢复/重放不产生重复 mutation。",
+        "并发矩阵覆盖双重排、重排与删除、accept 与 redo、批量验收与单项更新、双删除及事件分页期间写入，断言稳定冲突、无丢失更新、无重复 sort_order、无半批验收和确定性事件顺序。",
+        "长任务 action 矩阵覆盖 run/stop/resume/re-execute/recreate/run-batches 及任务 run/stop，断言 Go 返回非 2xx NOT_IMPLEMENTED/能力关闭、零业务行/事件/文件/进程副作用，并断言 HttpAutoplanClient 仍把真实用户动作交给 IPC。",
+        "敏感信息扫描覆盖 HTTP/MCP 响应、错误、日志、事件、snapshot、OpenAPI 示例、fixture、golden diff 与证据，任何 auth token、CLI secret、agent session、真实 userData/workspace 路径或未授权资源详情均使测试失败。"
+      ]
+    },
+    {
+      "title": "固化 P07 前置门禁、验证编排、回退手册与脱敏证据",
+      "scope": [
+        "scripts/migration-p07/verify.js",
+        "scripts/migration-p07/verify.test.js",
+        "scripts/migration-p07/check-safety.js",
+        "scripts/migration-p07/check-safety.test.js",
+        "package.json",
+        "docs/migration/p07/README.md",
+        "docs/migration/p07/runbook.md",
+        "docs/migration/p07/evidence/README.md"
+      ],
+      "acceptance": [
+        "migration:p07:verify 首先真实执行并核验 P05、P06 完成证据、schema/checksum、数据库 owner 锁、显式副本授权和安全门禁；任一前置缺失或非零时记录 blocked 与原始退出码并停止，不打开 Go 写连接、不运行 P07 mutation 且不跨阶段。",
+        "验证编排只在系统临时目录创建脱敏数据库和独立副本，串行完成 Node 黄金后关闭 sql.js，再运行 Go repository/application/httpapi/MCP、Http client、OpenAPI、并发/故障、NOT_IMPLEMENTED 和敏感信息检查；每个子命令保留实际命令、起止时间、stdout/stderr 与退出码。",
+        "安全守卫证明 Node/sql.js 与 Go 写入时间线不重叠、Go 持有 owner 锁、真实 Electron userData 和生产数据库未被发现/打开/修改，未授权 workspace、计划文件与外部哨兵保持不变。",
+        "runbook 记录 P05/P06 前置、P07 capability/feature flag、纯持久化方法与 IPC 长任务 owner 映射、并发冲突、事件恢复、回滚和证据收集步骤；回退只关闭 P07 HTTP 路由并丢弃副本，不把 Go 写过的库热交回 Node。",
+        "证据汇总受影响文件、实际命令和退出码、fixture/schema/golden 哈希、状态/排序/删除/验收/并发/事务/事件矩阵、OpenAPI 覆盖、长任务非 2xx 证明、双 writer 阻断、脱敏扫描与剩余风险。",
+        "npm.cmd run check 与 npm.cmd test 按 P00 冻结红灯签名比较，不新增、隐藏或重命名失败；P07 专项 Go、Node、HTTP、MCP、client、golden、事务并发、安全与 OpenAPI 测试必须全部零退出码。"
+      ]
+    },
+    {
+      "title": "完整验收",
+      "scope": [
+        "validation"
+      ],
+      "acceptance": [
+        "先验证 P05、P06 及所有 schema/owner/显式副本安全前置，再由 migration:p07:verify 完成 Plans、PlanTasks、Acceptance、Events、REST/MCP/UI 共享 application service、Node/Go 黄金、OpenAPI、并发事务与审计事件全量验收；前置失败必须 blocked 且不跨阶段。",
+        "合法/非法状态转换、排序完整性、保护/级联删除、单项/批量 accept/unaccept、redo、事务回滚、并发冲突、提交后事件和 mutation snapshot 与冻结现有行为一致，不借迁移重设计业务状态机或 UI。",
+        "run、stop、resume、re-execute、recreate、run-batches 及任务执行在 Go 端稳定非 2xx NOT_IMPLEMENTED/能力关闭且零副作用，HttpAutoplanClient 未提前从 IPC 切离这些 action，也不存在静默回退或假成功。",
+        "所有专项测试零退出码，npm check/test 相对 P00 已知红灯无新增失败；输出包含实际命令、真实退出码、脱敏证据、受影响文件和剩余风险。",
+        "验收全过程只使用脱敏 fixture、系统临时库或调用方显式副本，Go 持有 owner 锁且与 Node/sql.js 写入不重叠，不自动发现、打开或修改真实 userData、生产数据库、真实 workspace 或未授权计划文件。",
+        "API、MCP、UI、日志、事件、snapshot、OpenAPI、fixture、golden diff 和证据均不包含秘密、CLI/token/session、真实用户内容、stored_path/file:// 或未授权绝对路径；跨项目、枚举 ID 和未知状态请求均按稳定错误拒绝。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm.cmd run migration:p07:verify",
+    "criteria": [
+      "P05 Project/Config/Files policy 与 P06 Intake/Attachments/intake_plan_links 的完成证据、schema/checksum、数据库 owner 锁和显式副本授权全部真实通过；任一前置或安全条件失败时结果明确为 blocked，未建立 Go 写连接、未执行 P07 mutation 且未跨阶段。",
+      "Plans、PlanTasks 与 Events 的 domain/repository/application 分层生效，HTTP、MCP 与 UI transport 复用同一 application service；查询、稳定排序、保护/级联删除、单项/批量 accept/unaccept 和 redo 全部保持冻结的 DTO、状态机、聚合、错误、事件与 snapshot 语义。",
+      "计划重排严格校验当前项目完整集合、重复/缺失/跨项目 ID 和版本；删除正确保护活动状态并原子处理 tasks、intake_plan_links、legacy link、scan 与 intake 保留关系，任何错误、冲突或故障注入均完整回滚且不发布成功事件。",
+      "acceptance 与执行 status 保持正交，completed 计划及 completed/done/passed 任务的验收、幂等取消、批量去重保序与全量预校验、计划/任务 redo、supplement 边界和 previous/next 审计元数据均与 Node 黄金一致。",
+      "两个并发 writer 场景对重排、验收、redo 和删除产生稳定 409/412 等冲突而非丢失更新；不存在重复 sort_order、半批验收、悬空链接、错误聚合、提交前事件或重复业务 mutation。",
+      "REST 与 OpenAPI 完整覆盖 plans/tasks/events 查询、排序、删除、accept/unaccept/redo、分页、严格 snake_case、null、状态枚举、并发前置、稳定错误和脱敏事件；MCP 与 HTTP 对相同输入具有一致授权、结果与错误。",
+      "run、stop、resume、re-execute、recreate、run-batches 及任务执行 action 的 Go 契约全部返回非 2xx 稳定 NOT_IMPLEMENTED/能力关闭，capability 默认 disabled，且数据库、事件、文件、Operation、进程和 CLI 凭据均无副作用。",
+      "HttpAutoplanClient 只在 P07 limited 条件下把已迁移纯持久化方法路由到 HTTP，所有未迁移执行 action 继续走 IPC；HTTP 错误不被转换为 2xx 或成功 snapshot，不发生静默 IPC 回退导致重复写入，也不存在 Node/sql.js 与 Go 同写同库。",
+      "同一脱敏来源的 Node/Go 黄金在独立重置副本上严格深比较字段存在性、snake_case、类型、null、默认值、状态、时间、排序、聚合、删除关系、mutation snapshot、事件和错误，无未知字段忽略、宽松子集或自动学习漂移。",
+      "P07 专项 Go repository/application/httpapi/MCP、renderer transport、Node/Go golden、事务回滚、并发冲突、审计事件、OpenAPI 与安全守卫测试全部零退出码；npm.cmd run check 与 npm.cmd test 相对 P00 冻结基线没有新增、隐藏或重命名失败。",
+      "全部验证只操作系统临时目录内的脱敏 fixture 或调用方显式副本，Go 全程持有 owner 锁，Node/sql.js 与 Go 写入时间线不重叠，真实 Electron userData、生产数据库、真实 workspace 和未授权路径未被发现、打开、修改或删除。",
+      "HTTP/MCP/UI 响应、错误、日志、事件、snapshot、OpenAPI 示例、fixture、golden diff 与证据不包含秘密、auth token、CLI command/token、agent session、真实用户内容、stored_path/file:// 或未授权绝对路径；证据包含实际命令、真实退出码、脱敏 stdout/stderr、哈希、状态/并发/故障矩阵、受影响文件与剩余风险，最终 git status 仅新增 P07 预期文件并保留原有 package.json、.claude/、docs/migration/、既有计划、fixtures、scripts/migration-baseline/ 及其他用户改动。"
+    ]
+  }
+}

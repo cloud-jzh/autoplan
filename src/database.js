@@ -1,49 +1,114 @@
 const fs = require('node:fs');
 const crypto = require('node:crypto');
+const net = require('node:net');
 const path = require('node:path');
-const initSqlJs = require('sql.js');
+const { guardFromExplicitEnvironment } = require('./data/databaseOwnerGuard');
+
+let initSqlJs;
 
 const PERSIST_RETRY_DELAYS_MS = [20, 50, 100, 200, 400];
 const RETRYABLE_FS_ERROR_CODES = new Set(['EACCES', 'EBUSY', 'EPERM']);
 const READ_ONLY_SQL_COMMANDS = new Set(['', 'SELECT', 'EXPLAIN']);
 const ROW_MODIFYING_SQL_COMMANDS = new Set(['UPDATE', 'DELETE', 'INSERT', 'REPLACE']);
 const DEFAULT_CHAT_MODEL = 'gpt-5.5';
+const DATABASE_OWNER_PROTOCOL_VERSION = 1;
+const DATABASE_OWNER_PORT_BASE = 20000;
+const DATABASE_OWNER_PORT_SPAN = 20000;
+
+const DATABASE_COMPATIBILITY_CODES = Object.freeze({
+  OWNER_LOCKED: 'DATABASE_OWNER_LOCKED',
+  OWNER_INVALID: 'DATABASE_OWNER_STATE_INVALID',
+  GO_SCHEMA: 'DATABASE_SCHEMA_OWNED_BY_GO',
+  UNSUPPORTED_SCHEMA: 'DATABASE_SCHEMA_UNSUPPORTED',
+  NODE_SQL_FORBIDDEN: 'DATABASE_NODE_SQL_FORBIDDEN',
+});
+
+class DatabaseCompatibilityError extends Error {
+  constructor(code) {
+    super(code);
+    this.name = 'DatabaseCompatibilityError';
+    this.code = code;
+  }
+}
 
 class AppDatabase {
-  constructor(dbPath) {
+  constructor(dbPath, options = {}) {
     this.dbPath = dbPath;
     this.db = null;
+    this.databaseOwner = null;
+    // Production entry points pass the immutable startup selection. Direct
+    // fixtures retain their legacy setup when no owner was selected, while an
+    // explicit Go environment is still rejected before sql.js can open.
+    this.ownerGuard = options.ownerGuard || guardFromExplicitEnvironment();
   }
 
   async init() {
+    await this.assertSqlJsOpenAllowed();
     fs.mkdirSync(path.dirname(this.dbPath), { recursive: true });
-    const SQL = await initSqlJs({
-      locateFile: (file) => path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', file),
-    });
-    const bytes = this.readPersistedBytes();
-    this.db = new SQL.Database(bytes);
-    this.migrate();
-    this.persist();
+    this.databaseOwner = await acquireDatabaseOwner(this.dbPath);
+    try {
+      const SQL = await sqlJsInitializer()({
+        locateFile: (file) => path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', file),
+      });
+      const snapshot = this.readPersistedSnapshot();
+      this.db = new SQL.Database(snapshot?.bytes);
+      const closeDatabase = this.db.close.bind(this.db);
+      this.db.close = () => {
+        try {
+          closeDatabase();
+        } finally {
+          releaseDatabaseOwner(this.databaseOwner);
+          this.databaseOwner = null;
+        }
+      };
+      assertLegacySchemaCompatibility(this.db);
+      this.restorePersistedSnapshot(snapshot);
+      this.migrate();
+      this.persist();
+    } catch (error) {
+      if (this.db && typeof this.db.close === 'function') this.db.close();
+      this.db = null;
+      releaseDatabaseOwner(this.databaseOwner);
+      this.databaseOwner = null;
+      throw error;
+    }
   }
 
   readPersistedBytes() {
+    this.assertSqlJsAllowed();
+    return this.readPersistedSnapshot()?.bytes;
+  }
+
+  readPersistedSnapshot() {
+    this.assertSqlJsAllowed();
     const candidates = [this.dbPath, `${this.dbPath}.mirror`, `${this.dbPath}.bak`];
     for (const candidate of candidates) {
       if (!fs.existsSync(candidate)) continue;
       const bytes = fs.readFileSync(candidate);
-      if (candidate !== this.dbPath) {
-        try {
-          retryFileOperation(() => fs.copyFileSync(candidate, this.dbPath));
-        } catch (error) {
-          console.warn(`[database] restore failed for ${this.dbPath}:`, error);
-        }
-      }
-      return bytes;
+      return { bytes, candidate };
     }
     return undefined;
   }
 
+  restorePersistedSnapshot(snapshot) {
+    if (!snapshot || snapshot.candidate === this.dbPath) return;
+    try {
+      retryFileOperation(() => fs.copyFileSync(snapshot.candidate, this.dbPath));
+    } catch {
+      throw new DatabaseCompatibilityError(DATABASE_COMPATIBILITY_CODES.UNSUPPORTED_SCHEMA);
+    }
+  }
+
+  close() {
+    if (this.db && typeof this.db.close === 'function') this.db.close();
+    this.db = null;
+    releaseDatabaseOwner(this.databaseOwner);
+    this.databaseOwner = null;
+  }
+
   migrate() {
+    this.assertSqlJsAllowed();
+    this.assertLegacyWritable(true);
     this.db.run(`
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
@@ -914,6 +979,8 @@ class AppDatabase {
   }
 
   persist() {
+    this.assertSqlJsAllowed();
+    this.assertLegacyWritable(true);
     const data = Buffer.from(this.db.export());
     const tmp = `${this.dbPath}.${process.pid}.${Date.now()}.tmp`;
     const mirror = `${this.dbPath}.mirror`;
@@ -924,8 +991,8 @@ class AppDatabase {
       if (fs.existsSync(this.dbPath)) {
         try {
           retryFileOperation(() => fs.copyFileSync(this.dbPath, `${this.dbPath}.bak`));
-        } catch (error) {
-          console.warn(`[database] backup failed for ${this.dbPath}:`, error);
+        } catch {
+          console.warn('[database] backup_failed');
         }
       }
       if (process.platform === 'win32') {
@@ -935,23 +1002,27 @@ class AppDatabase {
         retryFileOperation(() => fs.renameSync(tmp, this.dbPath));
       }
       this.lastPersistError = null;
-    } catch (error) {
-      this.lastPersistError = error;
+    } catch {
+      this.lastPersistError = new Error('DATABASE_PERSIST_FAILED');
       tryUnlink(tmp);
-      console.error(`[database] persist failed for ${this.dbPath}:`, error);
+      console.error('[database] persist_failed');
     }
   }
 
   run(sql, params = []) {
+    this.assertSqlJsAllowed();
+    this.assertLegacyWritable();
     this.db.run(sql, params);
     if (this.shouldPersistAfterStatement(sql)) this.persist();
   }
 
   runBatch(statements = []) {
+    this.assertSqlJsAllowed();
     const validStatements = Array.isArray(statements)
       ? statements.filter((statement) => String(statement?.sql || '').trim())
       : [];
     if (validStatements.length === 0) return;
+    this.assertLegacyWritable();
     let changed = false;
     this.db.run('BEGIN TRANSACTION');
     try {
@@ -972,11 +1043,13 @@ class AppDatabase {
   }
 
   get(sql, params = []) {
+    this.assertSqlJsAllowed();
     const rows = this.all(sql, params);
     return rows[0] || null;
   }
 
   all(sql, params = []) {
+    this.assertSqlJsAllowed();
     const stmt = this.db.prepare(sql);
     try {
       stmt.bind(params);
@@ -989,6 +1062,8 @@ class AppDatabase {
   }
 
   insert(sql, params = []) {
+    this.assertSqlJsAllowed();
+    this.assertLegacyWritable();
     this.db.run(sql, params);
     const id = this.get('SELECT last_insert_rowid() AS id').id;
     if (this.shouldPersistAfterStatement(sql)) this.persist();
@@ -1002,6 +1077,30 @@ class AppDatabase {
       return this.db.getRowsModified() > 0;
     }
     return true;
+  }
+
+  assertLegacyWritable(validateSchema = false) {
+    this.assertSqlJsAllowed();
+    if (!this.databaseOwner || !this.db) {
+      throw new DatabaseCompatibilityError(DATABASE_COMPATIBILITY_CODES.OWNER_INVALID);
+    }
+    if (validateSchema) assertLegacySchemaCompatibility(this.db);
+  }
+
+  assertSqlJsAllowed() {
+    this.ownerGuard?.assertSqlJsAllowed?.(this.dbPath, {
+      // Once the Node owner listener has been acquired, its own diagnostic
+      // marker is expected. A foreign/Go marker remains a hard failure.
+      allowLegacyOwnerMarker: Boolean(this.databaseOwner),
+    });
+  }
+
+  async assertSqlJsOpenAllowed() {
+    if (typeof this.ownerGuard?.assertSqlJsOpenAllowed === 'function') {
+      await this.ownerGuard.assertSqlJsOpenAllowed(this.dbPath);
+      return;
+    }
+    this.assertSqlJsAllowed();
   }
 }
 
@@ -1047,4 +1146,153 @@ function firstSqlCommand(sql) {
   return String(sql || '').trim().split(/\s+/, 1)[0].toUpperCase();
 }
 
-module.exports = { AppDatabase, nowIso };
+function sqlJsInitializer() {
+  if (!initSqlJs) initSqlJs = require('sql.js');
+  return initSqlJs;
+}
+
+function assertLegacySchemaCompatibility(database) {
+  let userVersion;
+  let ledgerCount;
+  try {
+    userVersion = Number(database.exec('PRAGMA user_version')?.[0]?.values?.[0]?.[0]);
+    ledgerCount = Number(
+      database.exec(
+        "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'schema_migrations'",
+      )?.[0]?.values?.[0]?.[0],
+    );
+  } catch {
+    throw new DatabaseCompatibilityError(DATABASE_COMPATIBILITY_CODES.UNSUPPORTED_SCHEMA);
+  }
+  if (!Number.isSafeInteger(userVersion) || userVersion < 0 ||
+      !Number.isSafeInteger(ledgerCount) || ledgerCount < 0 || ledgerCount > 1) {
+    throw new DatabaseCompatibilityError(DATABASE_COMPATIBILITY_CODES.UNSUPPORTED_SCHEMA);
+  }
+  if (userVersion === 0 && ledgerCount === 0) return;
+  if (userVersion === 1 && ledgerCount === 1) {
+    throw new DatabaseCompatibilityError(DATABASE_COMPATIBILITY_CODES.GO_SCHEMA);
+  }
+  throw new DatabaseCompatibilityError(DATABASE_COMPATIBILITY_CODES.UNSUPPORTED_SCHEMA);
+}
+
+async function acquireDatabaseOwner(databasePath) {
+  let identity;
+  try {
+    identity = databaseOwnerIdentity(databasePath);
+  } catch {
+    throw new DatabaseCompatibilityError(DATABASE_COMPATIBILITY_CODES.OWNER_INVALID);
+  }
+  const server = net.createServer();
+  try {
+    await listenDatabaseOwner(server, identity.host, identity.port);
+  } catch {
+    throw new DatabaseCompatibilityError(DATABASE_COMPATIBILITY_CODES.OWNER_LOCKED);
+  }
+  server.unref();
+
+  const ownerDigest = crypto.randomBytes(16).toString('hex').slice(0, 16);
+  const pidDigest = crypto
+    .createHash('sha256')
+    .update(`${process.pid}\0${ownerDigest}`)
+    .digest('hex')
+    .slice(0, 16);
+  const record = {
+    version: DATABASE_OWNER_PROTOCOL_VERSION,
+    database_id: identity.databaseId,
+    pid_digest: pidDigest,
+    owner_digest: ownerDigest,
+    ports: [identity.port],
+  };
+  const metadataPath = `${identity.canonicalPath}.autoplan-owner.lock`;
+  try {
+    if (fs.existsSync(metadataPath)) {
+      const info = fs.lstatSync(metadataPath);
+      if (!info.isFile() || info.isSymbolicLink()) {
+        throw new Error('invalid owner metadata');
+      }
+      fs.unlinkSync(metadataPath);
+    }
+    fs.writeFileSync(metadataPath, `${JSON.stringify(record)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+  } catch {
+    server.close();
+    throw new DatabaseCompatibilityError(DATABASE_COMPATIBILITY_CODES.OWNER_INVALID);
+  }
+  return { server, metadataPath, databaseId: identity.databaseId, ownerDigest };
+}
+
+function releaseDatabaseOwner(owner) {
+  if (!owner || owner.released) return;
+  owner.released = true;
+  try {
+    const content = fs.readFileSync(owner.metadataPath, 'utf8');
+    if (Buffer.byteLength(content) <= 4096) {
+      const record = JSON.parse(content);
+      if (record?.version === DATABASE_OWNER_PROTOCOL_VERSION &&
+          record?.database_id === owner.databaseId && record?.owner_digest === owner.ownerDigest) {
+        fs.unlinkSync(owner.metadataPath);
+      }
+    }
+  } catch {
+    // Replacement or missing metadata is never deleted by this owner.
+  }
+  try {
+    owner.server.close();
+  } catch {
+    // The OS still releases the listener when the process exits.
+  }
+}
+
+function databaseOwnerIdentity(databasePath) {
+  const absolute = path.resolve(databasePath);
+  let canonicalPath;
+  try {
+    canonicalPath = fs.realpathSync.native(absolute);
+  } catch {
+    const parent = fs.realpathSync.native(path.dirname(absolute));
+    canonicalPath = path.join(parent, path.basename(absolute));
+  }
+  const identityPath = normalizeDatabaseIdentityPath(canonicalPath);
+  const digest = crypto
+    .createHash('sha256')
+    .update(`autoplan-database-owner-v1\0${identityPath}`)
+    .digest();
+  const port = DATABASE_OWNER_PORT_BASE + digest.readUInt16BE(0) % DATABASE_OWNER_PORT_SPAN;
+  const host = `127.${1 + digest[2] % 254}.${digest[3]}.${digest[4]}`;
+  return { canonicalPath, databaseId: digest.subarray(0, 8).toString('hex'), host, port };
+}
+
+function normalizeDatabaseIdentityPath(value) {
+  let result = path.normalize(value);
+  if (process.platform === 'win32') {
+    if (result.startsWith('\\\\?\\UNC\\')) {
+      result = `\\\\${result.slice(8)}`;
+    } else if (result.startsWith('\\\\?\\')) {
+      result = result.slice(4);
+    }
+  }
+  if (process.platform === 'win32' || process.platform === 'darwin') result = result.toLowerCase();
+  return result;
+}
+
+function listenDatabaseOwner(server, host, port) {
+  return new Promise((resolve, reject) => {
+    const onError = (error) => {
+      server.removeListener('listening', onListening);
+      reject(error);
+    };
+    const onListening = () => {
+      server.removeListener('error', onError);
+      resolve();
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen({ host, port, exclusive: true });
+  });
+}
+
+module.exports = {
+  AppDatabase,
+  DatabaseCompatibilityError,
+  DATABASE_COMPATIBILITY_CODES,
+  nowIso,
+};

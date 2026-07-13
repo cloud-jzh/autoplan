@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "description": "P00 基线证据目录格式及完整性规则。该文件描述证据，不伪造尚未执行的命令结果。",
+  "status": "capture-pending-unified-validation",
+  "producer": {
+    "command": "npm.cmd run migration:p00:verify",
+    "script": "scripts/migration-baseline/run-baseline.js",
+    "expectations": "docs/migration/p00/baseline-expectations.json"
+  },
+  "runDirectory": {
+    "pattern": "docs/migration/p00/evidence/runs/<UTC>-pid-<pid>",
+    "overwrite": "never",
+    "cleanup": "never by the baseline driver",
+    "trackedAsBusinessSource": false
+  },
+  "requiredArtifacts": [
+    {
+      "path": "git-status-start.json",
+      "purpose": "baseline working tree before any command"
+    },
+    {
+      "path": "git-status-end.json",
+      "purpose": "working tree after all commands"
+    },
+    {
+      "path": "dist-start.json",
+      "purpose": "ignored dist content before build"
+    },
+    {
+      "path": "dist-end.json",
+      "purpose": "ignored dist content after build and smoke"
+    },
+    {
+      "path": "01-specialized.stdout.log",
+      "purpose": "complete migration-specific test stdout"
+    },
+    {
+      "path": "01-specialized.stderr.log",
+      "purpose": "complete migration-specific test stderr"
+    },
+    {
+      "path": "02-check.stdout.log",
+      "purpose": "complete npm check stdout"
+    },
+    {
+      "path": "02-check.stderr.log",
+      "purpose": "complete npm check stderr"
+    },
+    {
+      "path": "03-test.stdout.log",
+      "purpose": "complete npm test stdout"
+    },
+    {
+      "path": "03-test.stderr.log",
+      "purpose": "complete npm test stderr"
+    },
+    {
+      "path": "04-build.stdout.log",
+      "purpose": "complete npm build stdout"
+    },
+    {
+      "path": "04-build.stderr.log",
+      "purpose": "complete npm build stderr"
+    },
+    {
+      "path": "05-smoke.stdout.log",
+      "purpose": "complete safe smoke stdout or empty blocked log"
+    },
+    {
+      "path": "05-smoke.stderr.log",
+      "purpose": "complete safe smoke stderr or empty blocked log"
+    },
+    {
+      "path": "summary.json",
+      "purpose": "commands, UTC timestamps, actual exit codes, environment summary, failure evaluation, source/worktree/dist deltas"
+    },
+    {
+      "path": "evidence-manifest.json",
+      "purpose": "byte counts and SHA-256 for every other artifact in the immutable run directory"
+    }
+  ],
+  "integrity": {
+    "algorithm": "sha256",
+    "manifestSelfHashExcluded": true,
+    "sourceHashesRecordedAt": [
+      "start",
+      "end"
+    ],
+    "sourceHashDrift": "fail",
+    "missingArtifact": "fail",
+    "unknownFailure": "fail",
+    "resolvedKnownFailureWithoutDisposition": "fail"
+  },
+  "privacy": {
+    "environmentValues": "never captured",
+    "secretVariableValues": "removed before smoke and never captured",
+    "electronUserData": "never read or written",
+    "database": "unique system-temporary autoplan.sqlite",
+    "realAgentCli": "never invoked by smoke"
+  }
+}

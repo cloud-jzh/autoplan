@@ -1,0 +1,370 @@
+{
+  "schema_version": 1,
+  "synthetic_only": true,
+  "shape": {
+    "project_fields": [
+      "id", "name", "description", "created_at", "updated_at", "running", "phase",
+      "interval_seconds", "validation_command", "project_prompt", "agent_cli_provider",
+      "agent_cli_command", "codex_reasoning_effort", "plan_generation_strategy",
+      "plan_generation_provider", "plan_generation_command", "plan_generation_model",
+      "plan_generation_codex_reasoning_effort", "plan_generation_claude_base_url",
+      "plan_generation_claude_model", "plan_generation_has_claude_auth_token",
+      "plan_generation_claude_config_id", "plan_execution_strategy",
+      "plan_execution_provider", "plan_execution_command", "plan_execution_model",
+      "plan_execution_codex_reasoning_effort", "plan_execution_claude_base_url",
+      "plan_execution_claude_model", "plan_execution_has_claude_auth_token",
+      "plan_execution_claude_config_id"
+    ],
+    "project_required": ["id", "name", "description", "created_at", "updated_at"],
+    "snapshot_fields": [
+      "activeProjectId", "activeProject", "projects", "mcp", "state", "requirements",
+      "feedback", "attachments", "plans", "tasks", "events", "scans", "scanSummary",
+      "scripts", "executors", "terminals", "activeOperation", "activeOperations", "lastOperation"
+    ],
+    "operation_statuses": ["queued", "running", "succeeded", "failed", "cancelled", "interrupted"],
+    "operation_required": [
+      "operation_id", "type", "status", "request_id", "idempotency_key", "created_at",
+      "updated_at", "started_at", "finished_at", "result", "error"
+    ],
+    "sse_required": ["schema_version", "event_id", "type", "request_id", "operation_id", "occurred_at", "data"],
+    "ws_required": ["schema_version", "event_id", "type", "request_id", "operation_id", "direction", "occurred_at", "data"],
+    "error_catalog": [
+      { "code": "not_found", "message": "resource not found", "retryable": false },
+      { "code": "method_not_allowed", "message": "method not allowed", "retryable": false },
+      { "code": "invalid_json", "message": "request body must be valid JSON", "retryable": false },
+      { "code": "body_too_large", "message": "request body exceeds the configured limit", "retryable": false },
+      { "code": "unsupported_media_type", "message": "content type must be application/json", "retryable": false },
+      { "code": "invalid_idempotency_key", "message": "idempotency key is invalid", "retryable": false },
+      { "code": "unauthorized", "message": "authentication required", "retryable": false },
+      { "code": "origin_forbidden", "message": "origin is not allowed", "retryable": false },
+      { "code": "not_implemented", "message": "operation is not implemented", "retryable": false },
+      { "code": "service_unavailable", "message": "service is unavailable", "retryable": true },
+      { "code": "shutting_down", "message": "service is shutting down", "retryable": true },
+      { "code": "internal_error", "message": "internal server error", "retryable": false }
+    ]
+  },
+  "cases": [
+    {
+      "id": "project_minimal",
+      "contract": "project",
+      "valid": true,
+      "value": {
+        "id": 1,
+        "name": "Synthetic Project",
+        "description": "Fixture project without local machine data.",
+        "created_at": "2026-01-02T03:04:05Z",
+        "updated_at": "2026-01-02T03:04:05Z"
+      }
+    },
+    {
+      "id": "project_full",
+      "contract": "project",
+      "valid": true,
+      "value": {
+        "id": 2,
+        "name": "Configured Synthetic Project",
+        "description": "All public compatibility fields.",
+        "created_at": "2026-01-02T03:04:05.123Z",
+        "updated_at": "2026-01-02T03:05:05.123Z",
+        "running": 0,
+        "phase": "idle",
+        "interval_seconds": 30,
+        "validation_command": "synthetic-check",
+        "project_prompt": "Synthetic prompt",
+        "agent_cli_provider": "codex",
+        "agent_cli_command": "synthetic-agent",
+        "codex_reasoning_effort": null,
+        "plan_generation_strategy": "external-cli-structured",
+        "plan_generation_provider": "codex",
+        "plan_generation_command": "synthetic-plan",
+        "plan_generation_model": null,
+        "plan_generation_codex_reasoning_effort": "high",
+        "plan_generation_claude_base_url": null,
+        "plan_generation_claude_model": null,
+        "plan_generation_has_claude_auth_token": false,
+        "plan_generation_claude_config_id": 0,
+        "plan_execution_strategy": "external-cli",
+        "plan_execution_provider": "codex",
+        "plan_execution_command": "synthetic-run",
+        "plan_execution_model": null,
+        "plan_execution_codex_reasoning_effort": "medium",
+        "plan_execution_claude_base_url": null,
+        "plan_execution_claude_model": null,
+        "plan_execution_has_claude_auth_token": false,
+        "plan_execution_claude_config_id": 0
+      }
+    },
+    {
+      "id": "snapshot_empty",
+      "contract": "snapshot",
+      "valid": true,
+      "value": {
+        "activeProjectId": null,
+        "activeProject": null,
+        "projects": [],
+        "mcp": {},
+        "state": null,
+        "requirements": [],
+        "feedback": [],
+        "attachments": [],
+        "plans": [],
+        "tasks": [],
+        "events": [],
+        "scans": [],
+        "scanSummary": {},
+        "scripts": [],
+        "executors": [],
+        "terminals": [],
+        "activeOperation": null,
+        "activeOperations": [],
+        "lastOperation": null
+      }
+    },
+    {
+      "id": "snapshot_minimal",
+      "contract": "snapshot",
+      "valid": true,
+      "value": {
+        "activeProjectId": 1,
+        "activeProject": {
+          "id": 1,
+          "name": "Synthetic Project",
+          "description": "Fixture project without local machine data.",
+          "created_at": "2026-01-02T03:04:05Z",
+          "updated_at": "2026-01-02T03:04:05Z"
+        },
+        "projects": [{
+          "id": 1,
+          "name": "Synthetic Project",
+          "description": "Fixture project without local machine data.",
+          "created_at": "2026-01-02T03:04:05Z",
+          "updated_at": "2026-01-02T03:04:05Z"
+        }],
+        "mcp": {},
+        "state": null,
+        "requirements": [],
+        "feedback": [],
+        "attachments": [],
+        "plans": [],
+        "tasks": [],
+        "events": [],
+        "scans": [],
+        "scanSummary": {},
+        "scripts": [],
+        "executors": [],
+        "terminals": [],
+        "activeOperation": null,
+        "activeOperations": [],
+        "lastOperation": null
+      }
+    },
+    {
+      "id": "snapshot_full",
+      "contract": "snapshot",
+      "valid": true,
+      "value": {
+        "activeProjectId": 1,
+        "activeProject": {
+          "id": 1,
+          "name": "Synthetic Project",
+          "description": "Fixture project without local machine data.",
+          "created_at": "2026-01-02T03:04:05Z",
+          "updated_at": "2026-01-02T03:04:05Z"
+        },
+        "projects": [{
+          "id": 1,
+          "name": "Synthetic Project",
+          "description": "Fixture project without local machine data.",
+          "created_at": "2026-01-02T03:04:05Z",
+          "updated_at": "2026-01-02T03:04:05Z"
+        }],
+        "mcp": { "status": "stopped", "has_configuration": true },
+        "state": { "project_id": 1, "phase": "idle", "source_path": "relative/state.json" },
+        "requirements": [{ "id": 10, "title": "Synthetic requirement" }],
+        "feedback": [{ "id": 11, "title": "Synthetic feedback" }],
+        "attachments": [{ "id": 12, "file_path": "relative/input.txt" }],
+        "plans": [{ "id": 13, "filePath": "relative/plan.md" }],
+        "tasks": [{ "id": 14, "status": "pending" }],
+        "events": [{ "id": 15, "type": "synthetic_event" }],
+        "scans": [{ "id": 16, "stored_path": "relative/scan.json" }],
+        "scanSummary": { "total": 1 },
+        "scripts": [{ "id": 17, "name": "Synthetic script" }],
+        "executors": [{ "id": 18, "name": "Synthetic executor" }],
+        "terminals": [{ "id": "terminal_1", "sessionId": "terminal_1" }],
+        "activeOperation": { "id": "legacy_active_1", "status": "running" },
+        "activeOperations": [{ "id": "legacy_active_1", "status": "running" }],
+        "lastOperation": { "id": "legacy_done_1", "status": "completed" }
+      }
+    },
+    {
+      "id": "operation_queued",
+      "contract": "operation",
+      "valid": true,
+      "value": {
+        "operation_id": "op_queued_1", "type": "project.refresh", "status": "queued",
+        "request_id": "req_fixture_1", "idempotency_key": "fixture-key-1",
+        "created_at": "2026-01-02T03:04:05Z", "updated_at": "2026-01-02T03:04:05Z",
+        "started_at": null, "finished_at": null, "result": null, "error": null
+      }
+    },
+    {
+      "id": "operation_running",
+      "contract": "operation",
+      "valid": true,
+      "value": {
+        "operation_id": "op_running_1", "type": "project.refresh", "status": "running",
+        "request_id": "req_fixture_2", "idempotency_key": null,
+        "created_at": "2026-01-02T03:04:05Z", "updated_at": "2026-01-02T03:04:07Z",
+        "started_at": "2026-01-02T03:04:06Z", "finished_at": null, "result": null, "error": null
+      }
+    },
+    {
+      "id": "operation_succeeded",
+      "contract": "operation",
+      "valid": true,
+      "value": {
+        "operation_id": "op_succeeded_1", "type": "project.refresh", "status": "succeeded",
+        "request_id": "req_fixture_3", "idempotency_key": "fixture-key-3",
+        "created_at": "2026-01-02T03:04:05Z", "updated_at": "2026-01-02T03:04:09Z",
+        "started_at": "2026-01-02T03:04:06Z", "finished_at": "2026-01-02T03:04:08Z",
+        "result": { "changed": false }, "error": null
+      }
+    },
+    {
+      "id": "operation_failed",
+      "contract": "operation",
+      "valid": true,
+      "value": {
+        "operation_id": "op_failed_1", "type": "project.refresh", "status": "failed",
+        "request_id": "req_fixture_4", "idempotency_key": "fixture-key-4",
+        "created_at": "2026-01-02T03:04:05Z", "updated_at": "2026-01-02T03:04:09Z",
+        "started_at": "2026-01-02T03:04:06Z", "finished_at": "2026-01-02T03:04:08Z",
+        "result": null,
+        "error": { "code": "internal_error", "message": "internal server error", "request_id": "req_fixture_4", "retryable": false }
+      }
+    },
+    {
+      "id": "operation_cancelled",
+      "contract": "operation",
+      "valid": true,
+      "value": {
+        "operation_id": "op_cancelled_1", "type": "project.refresh", "status": "cancelled",
+        "request_id": "req_fixture_5", "idempotency_key": null,
+        "created_at": "2026-01-02T03:04:05Z", "updated_at": "2026-01-02T03:04:08Z",
+        "started_at": null, "finished_at": "2026-01-02T03:04:07Z", "result": null, "error": null
+      }
+    },
+    {
+      "id": "operation_interrupted",
+      "contract": "operation",
+      "valid": true,
+      "value": {
+        "operation_id": "op_interrupted_1", "type": "project.refresh", "status": "interrupted",
+        "request_id": "req_fixture_6", "idempotency_key": "fixture-key-6",
+        "created_at": "2026-01-02T03:04:05Z", "updated_at": "2026-01-02T03:04:09Z",
+        "started_at": "2026-01-02T03:04:06Z", "finished_at": "2026-01-02T03:04:08Z",
+        "result": null, "error": null
+      }
+    },
+    {
+      "id": "operation_accepted",
+      "contract": "operation_accepted",
+      "valid": true,
+      "value": {
+        "operation_id": "op_accepted_1", "status": "queued", "request_id": "req_fixture_7",
+        "accepted_at": "2026-01-02T03:04:05Z"
+      }
+    },
+    {
+      "id": "sse_v1",
+      "contract": "sse",
+      "valid": true,
+      "value": {
+        "schema_version": 1, "event_id": "event_1", "type": "operation.updated",
+        "request_id": "req_fixture_8", "operation_id": "op_running_1", "project_id": 1,
+        "occurred_at": "2026-01-02T03:04:07Z", "sequence": 1,
+        "data": { "status": "running" }
+      }
+    },
+    {
+      "id": "ws_v1",
+      "contract": "ws",
+      "valid": true,
+      "value": {
+        "schema_version": 1, "event_id": "event_2", "type": "terminal.status",
+        "request_id": "req_fixture_9", "operation_id": null, "terminal_session_id": "terminal_1",
+        "direction": "server_to_client", "occurred_at": "2026-01-02T03:04:08Z",
+        "data": { "status": "ready" }
+      }
+    },
+    {
+      "id": "error_not_found", "contract": "error", "valid": true,
+      "value": { "code": "not_found", "message": "resource not found", "request_id": "req_error_1", "retryable": false }
+    },
+    {
+      "id": "error_method_not_allowed", "contract": "error", "valid": true,
+      "value": { "code": "method_not_allowed", "message": "method not allowed", "request_id": "req_error_2", "retryable": false, "details": { "allowed_methods": ["GET"] } }
+    },
+    {
+      "id": "error_invalid_json", "contract": "error", "valid": true,
+      "value": { "code": "invalid_json", "message": "request body must be valid JSON", "request_id": "req_error_3", "retryable": false }
+    },
+    {
+      "id": "error_body_too_large", "contract": "error", "valid": true,
+      "value": { "code": "body_too_large", "message": "request body exceeds the configured limit", "request_id": "req_error_4", "retryable": false, "details": { "limit_bytes": 1024 } }
+    },
+    {
+      "id": "error_unsupported_media_type", "contract": "error", "valid": true,
+      "value": { "code": "unsupported_media_type", "message": "content type must be application/json", "request_id": "req_error_5", "retryable": false }
+    },
+    {
+      "id": "error_invalid_idempotency_key", "contract": "error", "valid": true,
+      "value": { "code": "invalid_idempotency_key", "message": "idempotency key is invalid", "request_id": "req_error_6", "retryable": false, "details": { "field": "idempotency_key" } }
+    },
+    {
+      "id": "error_unauthorized", "contract": "error", "valid": true,
+      "value": { "code": "unauthorized", "message": "authentication required", "request_id": "req_error_7", "retryable": false }
+    },
+    {
+      "id": "error_origin_forbidden", "contract": "error", "valid": true,
+      "value": { "code": "origin_forbidden", "message": "origin is not allowed", "request_id": "req_error_8", "retryable": false }
+    },
+    {
+      "id": "error_not_implemented", "contract": "error", "valid": true,
+      "value": { "code": "not_implemented", "message": "operation is not implemented", "request_id": "req_error_9", "retryable": false }
+    },
+    {
+      "id": "error_service_unavailable", "contract": "error", "valid": true,
+      "value": { "code": "service_unavailable", "message": "service is unavailable", "request_id": "req_error_10", "retryable": true }
+    },
+    {
+      "id": "error_shutting_down", "contract": "error", "valid": true,
+      "value": { "code": "shutting_down", "message": "service is shutting down", "request_id": "req_error_11", "retryable": true }
+    },
+    {
+      "id": "error_internal", "contract": "error", "valid": true,
+      "value": { "code": "internal_error", "message": "internal server error", "request_id": "req_error_12", "retryable": false }
+    },
+    { "id": "invalid_project_unknown_field", "contract": "project", "valid": false, "base": "project_minimal", "mutation": "unknown_field" },
+    { "id": "invalid_project_non_utc", "contract": "project", "valid": false, "base": "project_minimal", "mutation": "non_utc_time" },
+    { "id": "invalid_project_null_optional", "contract": "project", "valid": false, "base": "project_minimal", "mutation": "null_nonnullable" },
+    { "id": "invalid_duplicate_key", "contract": "project", "valid": false, "base": "project_minimal", "mutation": "duplicate_key" },
+    { "id": "invalid_snapshot_missing_field", "contract": "snapshot", "valid": false, "base": "snapshot_empty", "mutation": "missing_snapshot_field" },
+    { "id": "invalid_snapshot_active_project", "contract": "snapshot", "valid": false, "base": "snapshot_minimal", "mutation": "mismatched_active_project" },
+    { "id": "invalid_snapshot_absolute_path", "contract": "snapshot", "valid": false, "base": "snapshot_minimal", "mutation": "absolute_path" },
+    { "id": "invalid_snapshot_credential_field", "contract": "snapshot", "valid": false, "base": "snapshot_minimal", "mutation": "credential_field" },
+    { "id": "invalid_error_missing_request", "contract": "error", "valid": false, "base": "error_internal", "mutation": "missing_request_id" },
+    { "id": "invalid_operation_status", "contract": "operation", "valid": false, "base": "operation_queued", "mutation": "unknown_status" },
+    { "id": "invalid_operation_terminal", "contract": "operation", "valid": false, "base": "operation_failed", "mutation": "invalid_terminal" },
+    { "id": "invalid_operation_time", "contract": "operation", "valid": false, "base": "operation_running", "mutation": "non_utc_time" },
+    { "id": "invalid_operation_idempotency", "contract": "operation", "valid": false, "base": "operation_queued", "mutation": "invalid_idempotency" },
+    { "id": "invalid_sse_version", "contract": "sse", "valid": false, "base": "sse_v1", "mutation": "unknown_version" },
+    { "id": "invalid_sse_missing_data", "contract": "sse", "valid": false, "base": "sse_v1", "mutation": "missing_data" },
+    { "id": "invalid_sse_time", "contract": "sse", "valid": false, "base": "sse_v1", "mutation": "non_utc_time" },
+    { "id": "invalid_sse_credential_field", "contract": "sse", "valid": false, "base": "sse_v1", "mutation": "credential_field" },
+    { "id": "invalid_ws_version", "contract": "ws", "valid": false, "base": "ws_v1", "mutation": "unknown_version" },
+    { "id": "invalid_ws_direction", "contract": "ws", "valid": false, "base": "ws_v1", "mutation": "invalid_direction" },
+    { "id": "invalid_ws_time", "contract": "ws", "valid": false, "base": "ws_v1", "mutation": "non_utc_time" },
+    { "id": "invalid_ws_credential_field", "contract": "ws", "valid": false, "base": "ws_v1", "mutation": "credential_field" }
+  ]
+}

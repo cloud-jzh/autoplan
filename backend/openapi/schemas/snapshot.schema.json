@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autoplan.local/schemas/snapshot.schema.json",
+  "title": "AppSnapshot",
+  "description": "Complete compatibility snapshot returned by Project and LoopConfig reads and post-commit mutations. Top-level camelCase names and explicit null/empty defaults are intentionally retained; raw tokens, env values, and unauthorized paths are excluded.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "activeProjectId",
+    "activeProject",
+    "projects",
+    "mcp",
+    "state",
+    "requirements",
+    "feedback",
+    "attachments",
+    "plans",
+    "tasks",
+    "events",
+    "scans",
+    "scanSummary",
+    "scripts",
+    "executors",
+    "terminals",
+    "activeOperation",
+    "activeOperations",
+    "lastOperation"
+  ],
+  "properties": {
+    "activeProjectId": {
+      "oneOf": [
+        { "type": "integer", "minimum": 1 },
+        { "type": "null" }
+      ]
+    },
+    "activeProject": {
+      "oneOf": [
+        { "$ref": "project.schema.json" },
+        { "type": "null" }
+      ]
+    },
+    "projects": { "type": "array", "items": { "$ref": "project.schema.json" } },
+    "mcp": { "$ref": "#/$defs/safe_object" },
+    "state": { "$ref": "#/$defs/nullable_safe_object" },
+    "requirements": { "$ref": "#/$defs/safe_object_array" },
+    "feedback": { "$ref": "#/$defs/safe_object_array" },
+    "attachments": { "$ref": "#/$defs/safe_object_array" },
+    "plans": { "$ref": "#/$defs/safe_object_array" },
+    "tasks": { "$ref": "#/$defs/safe_object_array" },
+    "events": { "$ref": "#/$defs/safe_object_array" },
+    "scans": { "$ref": "#/$defs/safe_object_array" },
+    "scanSummary": { "$ref": "#/$defs/safe_object" },
+    "scripts": { "$ref": "#/$defs/safe_object_array" },
+    "executors": { "$ref": "#/$defs/safe_object_array" },
+    "terminals": { "$ref": "#/$defs/safe_object_array" },
+    "activeOperation": { "$ref": "#/$defs/nullable_safe_object" },
+    "activeOperations": { "$ref": "#/$defs/safe_object_array" },
+    "lastOperation": { "$ref": "#/$defs/nullable_safe_object" }
+  },
+  "$defs": {
+    "nullable_safe_object": {
+      "oneOf": [
+        { "$ref": "#/$defs/safe_object" },
+        { "type": "null" }
+      ]
+    },
+    "safe_object_array": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/safe_object" }
+    },
+    "safe_object": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/safe_property_name" },
+      "patternProperties": {
+        "^version$": { "type": "integer", "minimum": 1 },
+        "^project_id$": { "type": "integer", "minimum": 1 },
+        "^interval_seconds$": { "type": "integer", "minimum": 1 },
+        "^running$": { "type": ["integer", "boolean"], "enum": [0, 1, false, true] },
+        "(?:^|_)has_|Has[A-Z]": { "type": "boolean" },
+        "(?:_masked|Masked)$": { "type": "string" },
+        "^workspace_path$": { "type": "string", "maxLength": 4096 },
+        "^env_vars$": { "type": "string", "enum": ["", "<redacted-env-vars>"] },
+        "(?:^|_)auth_token$|AuthToken$": {
+          "type": "string",
+          "pattern": "^(?:|····|····.{1,4})$"
+        },
+        "(?:^|_)auth_header$|AuthHeader$": {
+          "type": "string",
+          "pattern": "^(?:$|.*<token>.*)$"
+        },
+        "^(?!workspace_path$).*(?:path|Path|cwd|Cwd|workdir|Workdir|log_file|logFile|file_path|filePath|source_path|sourcePath|stored_path|storedPath)$": {
+          "oneOf": [
+            { "type": "string", "pattern": "^(?!/|\\\\|[A-Za-z]:[\\\\/]).*$" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "additionalProperties": { "$ref": "#/$defs/safe_value" }
+    },
+    "safe_property_name": {
+      "anyOf": [
+        { "pattern": "(?:^|_)has_|Has[A-Z]" },
+        { "pattern": "(?:_masked|Masked)$" },
+        { "const": "workspace_path" },
+        { "const": "env_vars" },
+        { "pattern": "(?:^|_)auth_token$|AuthToken$" },
+        {
+          "not": {
+            "pattern": "[Ww]orkspace[_-]?[Pp]ath|(?:^|_)[Ee]nv(?:$|_)|[Ee]nv[_-]?[Vv]ars|[Aa][Pp][Ii][_-]?[Kk]ey|[Aa]uth[_-]?[Tt]oken|[Aa]ccess[_-]?[Tt]oken|[Rr]efresh[_-]?[Tt]oken|[Tt]oken|[Pp]assword|[Ss]ecret|[Cc]redential|[Pp]rivate[_-]?[Kk]ey|[Aa]uthorization|[Cc]ookie|(?:^|_)[Ss]ession(?:$|_(?:[Tt]oken|[Ss]ecret|[Cc]redential))|[Ss]ession(?:Token|Secret|Credential)"
+          }
+        }
+      ]
+    },
+    "safe_value": {
+      "anyOf": [
+        { "type": ["string", "number", "integer", "boolean", "null"] },
+        { "$ref": "#/$defs/safe_object" },
+        { "type": "array", "items": { "$ref": "#/$defs/safe_value" } }
+      ]
+    }
+  }
+}

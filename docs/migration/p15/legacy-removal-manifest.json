@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "kind": "p15-legacy-removal-manifest",
+  "status": "blocked_p006_deletion_gate",
+  "deletion_authorized": false,
+  "blocked_reasons": [
+    "p005_business_ipc_registrations_present",
+    "p15_unique_writer_runtime_evidence_missing",
+    "p15_electron_go_e2e_evidence_missing",
+    "p15_three_platform_release_and_recovery_evidence_missing"
+  ],
+  "mutation_policy": "This manifest is an inventory and deletion gate, never deletion authorization. P001 must retain every listed path; P005 removes IPC registrations before P006 can remove modules.",
+  "required_evidence": [
+    "accepted immutable P09, P10, P11, P12, P13A, P13B and P14 evidence in order",
+    "P15 topology inventory without unaccounted direct renderer bridge access",
+    "P15 runtime trace with Go as the sole database and business writer",
+    "P15 IPC allowlist in thin-shell-ready state",
+    "P15 unique-writer, Electron+Go E2E, release artifact and recovery evidence"
+  ],
+  "legacy_ipc": [
+    {
+      "domain": "snapshot_and_maintenance",
+      "channels": ["snapshot", "loop:update", "loop:patch"],
+      "replacement": ["Go REST snapshot projection", "project SSE with bounded resync"],
+      "source": ["src/main.js", "src/preload.js"],
+      "removal_gate": "p15_p005"
+    },
+    {
+      "domain": "projects_and_plans",
+      "channels": ["projects:create", "projects:update", "projects:delete", "plans:read", "plans:reorder", "plans:stop", "plans:resume", "plans:updateExecutionConfig", "plans:reExecute", "plans:recreate", "plans:appendTask", "plans:delete"],
+      "replacement": ["Go Project and Plan REST", "project SSE"],
+      "source": ["src/main.js", "src/preload.js", "src/renderer/lib/api/ipcClient.ts"],
+      "removal_gate": "p15_p005"
+    },
+    {
+      "domain": "loop_task_acceptance_and_intake",
+      "channels": ["loop:configure", "loop:start", "loop:stop", "loop:runOnce", "tasks:run", "tasks:runParallel", "tasks:stop", "acceptance:accept", "acceptance:unaccept", "acceptance:redo", "acceptance:acceptBatch", "acceptance:unacceptBatch", "intake:accept", "intake:unaccept", "intake:interrupt", "intake:resume", "intake:appendTask", "intake:retryGeneratePlan", "requirements:create", "requirements:update", "requirements:delete", "feedback:create", "feedback:update", "feedback:delete"],
+      "replacement": ["Go Runtime and Intake REST", "Operation and project SSE"],
+      "source": ["src/main.js", "src/preload.js", "src/loopService.js", "src/intakeService.js"],
+      "removal_gate": "p15_p005"
+    },
+    {
+      "domain": "mcp",
+      "channels": ["mcp:start", "mcp:stop", "mcp:status", "mcp:readAuthToken", "mcp:saveConfig"],
+      "replacement": ["Go MCP transport", "Go configuration application service"],
+      "source": ["src/main.js", "src/preload.js", "src/mcpServer.js"],
+      "removal_gate": "p15_p005"
+    },
+    {
+      "domain": "scripts_and_executors",
+      "channels": ["scripts:create", "scripts:update", "scripts:delete", "scripts:toggle", "scripts:run", "scripts:stop", "executors:create", "executors:update", "executors:delete", "executors:toggle", "executors:run", "executors:stop", "executors:runAction", "executors:importTasksJson"],
+      "replacement": ["Go Script and Executor application services", "Operation SSE"],
+      "source": ["src/main.js", "src/preload.js", "src/executors"],
+      "removal_gate": "p15_p005"
+    },
+    {
+      "domain": "chat_and_conversations",
+      "channels": ["chat:send", "chat:stop", "chat:clear", "chat:history", "chat:queueList", "chat:queueCancel", "chat:queueEdit", "chat:queueClear", "chat:saveConfig", "chat:getConfig", "chat:chunk", "chat:done", "chat:queue", "conversation:list", "conversation:create", "conversation:update", "conversation:delete"],
+      "replacement": ["Go Chat REST", "Chat SSE", "Go Conversation application service"],
+      "source": ["src/main.js", "src/preload.js", "src/chat"],
+      "removal_gate": "p15_p005"
+    },
+    {
+      "domain": "configuration_and_file_policy",
+      "channels": ["file-access:get", "file-access:save", "ai-config:list", "ai-config:get", "ai-config:create", "ai-config:update", "ai-config:delete", "ai-config:changed", "claude-cli-config:list", "claude-cli-config:get", "claude-cli-config:create", "claude-cli-config:update", "claude-cli-config:delete", "claude-cli-config:set-default", "claude-cli-config:changed"],
+      "replacement": ["Go Config and Files application services", "project SSE or explicit bounded REST reads"],
+      "source": ["src/main.js", "src/preload.js"],
+      "removal_gate": "p15_p005"
+    },
+    {
+      "domain": "terminal",
+      "channels": ["terminal:create", "terminal:list", "terminal:write", "terminal:resize", "terminal:kill", "terminal:close", "terminal:rename", "terminal:replay", "terminal:clear", "terminal:data", "terminal:exit", "terminal:status", "terminal:closed"],
+      "replacement": ["Go Terminal REST", "independent authenticated Terminal WebSocket"],
+      "source": ["src/preload.js", "src/terminal/terminalIpc.js", "src/terminal/terminalService.js"],
+      "removal_gate": "p15_p005"
+    }
+  ],
+  "legacy_modules": [
+    { "path": "src/database.js", "owner": "Node/sql.js", "replacement": "Go SQLite repository", "removal_gate": "p15_p006" },
+    { "path": "src/loopService.js", "owner": "Node Loop", "replacement": "Go Loop application service", "removal_gate": "p15_p006" },
+    { "path": "src/chat", "owner": "Node Chat", "replacement": "Go Chat application service", "removal_gate": "p15_p006" },
+    { "path": "src/executors", "owner": "Node Executor", "replacement": "Go Executor application service", "removal_gate": "p15_p006" },
+    { "path": "src/terminal", "owner": "Node PTY", "replacement": "Go Terminal application service", "removal_gate": "p15_p006" },
+    { "path": "src/mcpServer.js", "owner": "Node MCP", "replacement": "Go MCP transport", "removal_gate": "p15_p006" }
+  ],
+  "rollback": {
+    "automatic_cross_runtime_fallback": false,
+    "session_ownership": "The runtime that admits a session owns it until its terminal state; neither Node nor Go may adopt the other runtime's session.",
+    "writer_rollback": "After Go writes production data, rollback is limited to a compatible Go version, forward fix, or the recorded Go recovery path. Node/sql.js never reopens that database."
+  }
+}

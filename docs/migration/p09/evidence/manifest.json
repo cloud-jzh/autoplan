@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "kind": "p09-evidence-definition",
+  "status": "capture-pending-unified-validation",
+  "run_directory": "docs/migration/p09/evidence/runs/<run-id>",
+  "immutable_run_directory": true,
+  "required_artifacts": [
+    "summary.json",
+    "evidence-manifest.json",
+    "sanitized command stdout/stderr logs",
+    "source and input SHA-256 records",
+    "owner timeline and cleanup result"
+  ],
+  "required_coverage": [
+    "P00 frozen red signature and test result",
+    "P04-P08 immutable completion evidence",
+    "explicit sanitized copy authorization and userData rejection",
+    "Node database audit and GoDataClient owner guard",
+    "daemon readiness, process/handle cleanup and single writer",
+    "maintenance lock, first Go write, backup restore and fault injection",
+    "near-real scale schema rows, table hashes and runtime compatibility"
+  ],
+  "forbidden_content": [
+    "secrets, tokens, credentials, cookies or sessions",
+    "raw user data or database rows",
+    "real userData or production database paths",
+    "unauthorized absolute paths and file URLs"
+  ],
+  "remaining_stage_risk": "P15 owns formal disposition of the exact P00 check red signature; no P09 verifier may hide, rename, skip or swallow it."
+}

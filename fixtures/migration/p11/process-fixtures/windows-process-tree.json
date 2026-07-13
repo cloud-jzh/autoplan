@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "platform": "windows",
+  "kind": "fake-process-tree",
+  "launch": {"executable":"<fake-executable>.exe","args":["--parent","--child","--grandchild"],"shell":false,"cwd":"<fixture-workspace>"},
+  "tree": {"parent":1,"children":[2],"grandchildren":[3]},
+  "scenarios": [
+    {"id":"cancel","helper":"taskkill.exe","args":["/PID","<pid>","/T"],"expected_reaped":[1,2,3]},
+    {"id":"timeout_force","helper":"taskkill.exe","args":["/PID","<pid>","/T","/F"],"expected_reaped":[1,2,3]},
+    {"id":"output_pressure","max_combined_bytes":65536,"raw_output_persisted":false},
+    {"id":"service_exit","expected_reaped":[1,2,3]}
+  ]
+}

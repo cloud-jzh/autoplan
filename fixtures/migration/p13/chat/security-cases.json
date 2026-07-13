@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "kind": "p13a-chat-safety-cases",
+  "cases": [
+    {
+      "id": "ordered_chunks_then_single_done",
+      "given": "one admitted turn with ordered bounded chunks",
+      "expect": "sequence starts at one, chunks precede exactly one terminal event and history is authoritative"
+    },
+    {
+      "id": "reconnect_drops_duplicate_event",
+      "given": "Last-Event-ID resumes at a committed durable event",
+      "expect": "the duplicate event is ignored without reissuing a provider request"
+    },
+    {
+      "id": "conversation_switch_ignores_late_event",
+      "given": "the renderer selects another conversation before a late event arrives",
+      "expect": "late chunk, queue and done records cannot alter the new conversation"
+    },
+    {
+      "id": "resync_reads_history_and_queue_without_resend",
+      "given": "cursor retention, revision disorder or slow consumer requires resync",
+      "expect": "the renderer reloads history and queue then resumes without submitting another message"
+    },
+    {
+      "id": "cancelled_turn_stays_with_origin_runtime",
+      "given": "the Chat flag changes after a turn was admitted",
+      "expect": "stop and terminal ownership remain with the origin runtime; no cross-runtime adoption occurs"
+    },
+    {
+      "id": "secret_and_path_redaction",
+      "given": "provider or tool output contains protected fields or absolute path-looking text",
+      "expect": "REST, SSE, logs and evidence omit the value and record only bounded safe metadata"
+    },
+    {
+      "id": "idempotency_timeout_never_replays_turn",
+      "given": "the sender loses transport after admission",
+      "expect": "the renderer does not replay the mutation; same key resolves only to the original admission"
+    }
+  ]
+}

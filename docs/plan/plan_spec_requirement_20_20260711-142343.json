@@ -1,0 +1,273 @@
+{
+  "title": "P13：Chat 与 MCP 双独立门禁迁移",
+  "summary": "在 P10–P12 的 Operation、可恢复 SSE、统一 Process Runner、Files policy、唯一 Go 数据库 owner 与共享 application service 门禁均真实通过后，依据 D:\\docs\\autoplan-go-backend-separation-plan.md v1.0，以两个互不替代的门禁完成 P13A Chat 和 P13B MCP 迁移。P13A 在 Go 模块化单体中实现 Conversation/Message 持久化、FIFO 队列、停止、部分消息恢复、AI/Claude/Codex provider Operation 以及 chat_chunk/chat_done/chat_queue SSE，并通过独立默认关闭的 Chat feature flag 切换 HttpAutoplanClient；P13B 迁移 localhost HTTP/stdio transport 和现有 MCP 工具目录，使每个工具仅适配 REST/UI 已使用的同一 application service、repository、Files policy、权限、幂等与审计策略，不建立第二套业务规则、仓储或状态机。两个门禁分别测试、分别切换、分别回滚，任一失败只阻止对应通道；旧 Chat 或 MCP IPC 仅在各自门禁稳定证据成立后移除。全过程只使用脱敏 fixture、临时库或调用方明确副本，不自动发现或触碰真实 Electron userData，不允许 Node/sql.js 与 Go 双写，不改变现有 DTO、snake_case、snapshot 与业务规则，并保证失败安全关闭、输出有界且 API key、token、env_vars、正文/tool data 和未授权路径不会进入响应、事件、日志或证据。交付代码、契约文档、自动化测试、真实命令与退出码、脱敏证据、文件清单和剩余风险；前置不满足时标记 blocked，不伪造跨平台或签名结果，不新增 P00 基线失败，且 P13A/P13B 相关测试必须分别通过。",
+  "tasks": [
+    {
+      "title": "冻结 P13A Chat 与 P13B MCP 的独立契约、门禁和回滚边界",
+      "scope": [
+        "backend/openapi/openapi.yaml",
+        "backend/openapi/schemas/chat.schema.json",
+        "backend/openapi/schemas/mcp.schema.json",
+        "backend/internal/config/features.go",
+        "docs/migration/p13/contracts.md",
+        "docs/migration/p13/gates-and-rollback.md"
+      ],
+      "acceptance": [
+        "契约冻结现有 Conversation、ChatMessage、ChatQueue、ChatDone、MCP status/tool DTO 的 snake_case、兼容别名、nullability、snapshot 投影、稳定错误码、request_id、UTC RFC 3339 时间和既有业务状态语义，不借迁移重写 UI 或改变 tool 行为。",
+        "P13A 与 P13B 都以 P10、P11、P12 passed 证据、P00 既有红灯签名、Go 唯一数据库 owner、Files policy、secret mapper、Operation/process runner 和审计能力为前置；任一前置缺失、过期或不一致时对应门禁失败关闭并标记 blocked。",
+        "P13A 明确定义 Conversation/Message REST、发送/排队/停止/清理、部分消息状态和 chat_chunk、chat_done、chat_queue 事件信封、序号、终态及重连语义；P13B 冻结 HTTP/stdio transport、全部现有工具名、输入 schema、结果和错误映射。",
+        "Chat 与 MCP 使用不同的默认关闭 feature flag、验证证据、切换清单和回滚点；P13A 未通过只禁止 Chat 新路由，P13B 未通过只禁止 MCP 新 transport，不以另一门禁通过代替本门禁。",
+        "回滚契约规定已开始的 Chat turn、Operation 或 MCP mutation 留在创建它的 runtime 到确定终态，不跨 runtime 接管、停止或重放非幂等请求；Go 已写入的数据不交回 Node/sql.js writer，关闭 flag 不恢复第二数据库 writer。"
+      ]
+    },
+    {
+      "title": "实现 Conversation、Message、队列与部分消息的共享 Chat Application Service",
+      "scope": [
+        "backend/internal/domain/chat",
+        "backend/internal/application/chat/service.go",
+        "backend/internal/application/chat/queue.go",
+        "backend/internal/application/chat/recovery.go",
+        "backend/internal/repository/sqlite/conversations.go",
+        "backend/internal/repository/sqlite/chat_messages.go",
+        "backend/internal/repository/sqlite/chat_queue.go",
+        "backend/migrations",
+        "backend/internal/application/chat/service_test.go",
+        "backend/internal/repository/sqlite/chat_repository_test.go",
+        "backend/internal/bootstrap/dependencies.go"
+      ],
+      "acceptance": [
+        "Conversation 列表、创建、更新、置顶、删除、默认会话和 AI config 绑定以及 Message 历史、清理均校验 project_id/conversation_id 归属，保持现有排序、标题生成占位规则、兼容字段和 snapshot 历史结果。",
+        "同一 Conversation 的发送按持久化 FIFO 队列串行 pump，不同 Conversation 在 P11/P12 全局限流内可调度；重复提交、快速连续发送、编辑/取消/清空队列和 stop 竞态产生唯一、可重放且幂等的状态结果。",
+        "用户消息、assistant 部分内容、tool call/result 摘要、queued/running/done/error/aborted 状态、Conversation 更新时间和 outbox 事件在明确事务边界内提交，写点失败不会留下有消息无事件、队列幽灵项或错误历史终态。",
+        "stop 可取消 queued turn 或请求取消 running Operation，完成/失败/取消竞态只有一个文档化终态；daemon 重启把无法继续控制的 running turn 标记 interrupted/aborted，并从权威持久化队列恢复而不重复 provider 副作用。",
+        "application service 是 REST、MCP、UI adapter 和 Chat tools 的唯一用例入口，transport 不获得任意 repository 写接口；缺少归属、权限、repository、runner 或审计依赖时失败关闭且无数据库、文件、进程或事件副作用。"
+      ]
+    },
+    {
+      "title": "将 AI、Claude CLI 与 Codex Chat Provider 接入 Operation 和统一 Process Runner",
+      "scope": [
+        "backend/internal/application/chat/provider_service.go",
+        "backend/internal/application/chat/tools.go",
+        "backend/internal/domain/chat/provider.go",
+        "backend/internal/runtime/agentcli/chat_adapters.go",
+        "backend/internal/runtime/process/runner.go",
+        "backend/internal/platform/secrets/chat_mapper.go",
+        "backend/internal/application/operations/service.go",
+        "backend/internal/application/chat/provider_service_test.go",
+        "backend/internal/runtime/agentcli/chat_adapters_test.go"
+      ],
+      "acceptance": [
+        "OpenAI-compatible/Anthropic HTTP provider 与 Claude/Codex CLI adapter 都由 Chat application service 创建和关联 Operation，复用 P11 Process Runner 的 context 取消、超时、完整进程树终止、每项目/全局并发限制、输出上限和确定性终态。",
+        "CLI 使用参数数组且默认 shell=false，cwd 经共享 Files policy 校验；客户端不能覆盖 command、args、cwd、env、token、PID 或授权字段，未知 provider、非法模型、runner 不可用、限流和 provider 非零退出均返回稳定错误并无越权降级。",
+        "API key、Claude auth token 和受控 env 只从 secret reference 经 mapper 注入目标请求或子进程，绝不进入 argv、普通 DTO、SQLite、Operation 输出、SSE、审计日志、错误详情、fixture、diff 或证据。",
+        "provider chunk、reasoning、tool call/result 和部分文本按单调序号归并到同一 turn；分块 UTF-8、跨 chunk 敏感值、超大或无换行输出、慢消费者和 provider 半途失败均执行统一脱敏与硬上限，不形成无界内存或持久化。",
+        "取消、超时、限流、网络失败、认证失败、CLI 启动失败、非零退出、完成与取消竞态及 daemon 重启均同步形成一致的 Operation、Message、Conversation、outbox 和审计后置状态。"
+      ]
+    },
+    {
+      "title": "提供复用 Chat Application Service 的 REST 与可恢复 SSE 接口",
+      "scope": [
+        "backend/internal/httpapi/chat.go",
+        "backend/internal/httpapi/conversations.go",
+        "backend/internal/httpapi/events.go",
+        "backend/internal/httpapi/sse.go",
+        "backend/internal/httpapi/router.go",
+        "backend/internal/httpapi/errors.go",
+        "backend/internal/httpapi/chat_test.go",
+        "backend/internal/httpapi/chat_sse_test.go",
+        "backend/openapi/openapi.yaml",
+        "backend/openapi/schemas/chat.schema.json"
+      ],
+      "acceptance": [
+        "实现 Conversation 列表/创建/更新/删除、Message 历史/发送、队列查询/编辑/取消/清空和 stop 的冻结 REST 路径，handler 只调用共享 Chat application service 并返回兼容 DTO、request_id 与稳定错误码。",
+        "发送接受结果明确关联 conversation_id、message/turn id 和 operation_id；重复幂等键复用原请求，不同摘要冲突拒绝，断线或 HTTP 超时不会自动重放非幂等 turn。",
+        "chat_chunk、chat_queue、chat_done 使用 P10 outbox/event bus 的递增 event_id、project revision、conversation/turn 归属和事件序号；chunk 严格先于唯一 done，最终队列快照和历史持久化状态在 done 可见时一致。",
+        "SSE 支持 Last-Event-ID 重连、重复事件去重依据、历史清理水位、revision 缺口和 resync_required；重连只重放事件而不重新执行 provider，慢订阅者采用有界缓冲并安全断开或要求 resync。",
+        "REST 与 SSE 执行相同 session、Origin、project/conversation 归属、body/速率/输出上限和审计检查，未授权或跨项目请求不泄漏 Conversation 是否存在、正文、tool data、secret、env_vars 或真实绝对路径。"
+      ]
+    },
+    {
+      "title": "按 P13A 独立 Feature Flag 切换 Chat HttpAutoplanClient 与 SSE",
+      "scope": [
+        "src/renderer/lib/api/client.ts",
+        "src/renderer/lib/api/httpClient.ts",
+        "src/renderer/lib/api/eventStream.ts",
+        "src/renderer/lib/api/events.ts",
+        "src/renderer/lib/api/transport.ts",
+        "src/renderer/lib/api/provider.tsx",
+        "src/renderer/lib/api/chatTransport.contract.test.ts",
+        "src/renderer/hooks/useChat.ts",
+        "src/renderer/hooks/useChatQueue.ts",
+        "src/renderer/components/workspace/ChatView.tsx",
+        "src/renderer/components/workspace/WorkspaceSidebar.tsx",
+        "src/renderer/types.ts",
+        "src/data/goDataClient.js",
+        "src/data/databaseOwnerGuard.js",
+        "src/main.js",
+        "src/preload.js",
+        "backend/internal/config/features.go"
+      ],
+      "acceptance": [
+        "Chat hooks、Conversation sidebar 和 ChatView 只通过统一 AutoplanClient 访问业务能力；HttpAutoplanClient 覆盖历史、Conversation、发送、队列、停止和 chat_chunk/chat_queue/chat_done SSE，不新增组件级 window.autoplan 业务直调。",
+        "P13A Chat API/events 作为一个独立且默认关闭的相容切换单元，与 P13B MCP flag 无耦合；缺失、非法或关闭配置安全留在允许的旧 adapter，Go 错误不会伪装成功或自动重放发送。",
+        "事件归并按 project_id、conversation_id、turn/message id、event_id 和 chunk 序号隔离并去重；项目/会话切换、StrictMode、卸载重挂、断线重连、resync 和迟到事件不会污染另一会话、追加重复正文或覆盖新终态。",
+        "切 flag 时已开始 turn 始终由创建它的 runtime 处理到 done/abort，stop 不跨 runtime 接管；Node 回退在 Go 数据 owner 阶段只经 GoDataClient，databaseOwnerGuard 阻止 AppDatabase/sql.js 直写和双写。",
+        "UI 保持现有 loading、thinking、部分正文、queue、stop、错误、自动标题和历史体验；渲染层只接收脱敏有界数据，不显示 API key、token、env_vars、tool 私密数据或越权路径。"
+      ]
+    },
+    {
+      "title": "建立 P13A 流式顺序、取消恢复、切换回滚与泄密自动化门禁",
+      "scope": [
+        "backend/internal/application/chat/integration_test.go",
+        "backend/internal/httpapi/chat_contract_test.go",
+        "backend/internal/httpapi/chat_sse_integration_test.go",
+        "backend/internal/runtime/agentcli/chat_security_test.go",
+        "src/renderer/lib/api/chatTransport.contract.test.ts",
+        "src/renderer/hooks/useChat.test.ts",
+        "src/renderer/hooks/useChatQueue.test.ts",
+        "scripts/migration-p13/check-prerequisites.js",
+        "scripts/migration-p13/check-p13a-safety.js",
+        "scripts/migration-p13/verify-p13a.js",
+        "scripts/migration-p13/verify-p13a.test.js",
+        "fixtures/migration/p13/chat",
+        "package.json",
+        "docs/migration/p13/p13a-runbook.md",
+        "docs/migration/p13/evidence/p13a-manifest.json"
+      ],
+      "acceptance": [
+        "矩阵覆盖正常多 chunk、reasoning/tool chunk、唯一 done、FIFO 队列、快速连续发送、stop queued/running、取消完成竞态、provider 部分失败、数据库写点失败、daemon 崩溃恢复和最终历史一致性。",
+        "矩阵覆盖 SSE 首连/断线/Last-Event-ID 重连、重复事件、乱序或缺口、历史水位、resync、慢消费者、项目/会话切换和 React StrictMode，断言正文顺序正确、done 不早到/不重复且不重新执行 provider。",
+        "provider 故障矩阵覆盖超时、限流、认证/网络错误、CLI 启动/非零退出、父子孙进程取消、超大/无换行/分块 UTF-8 输出与跨 chunk secret，断言状态、退出码、截断标记和资源清理确定且无孤儿。",
+        "安全扫描覆盖数据库、REST、SSE、renderer、Operation、审计日志、fixture、diff 和证据，断言 API key、token、env_vars、真实 userData、未授权路径、完整 tool data 与跨项目正文均不出现。",
+        "P13A 验证器只在 P10–P12 前置和安全副本门禁通过后运行，产出真实子命令、argv、退出码、脱敏 stdout/stderr、哈希、文件清单、平台能力、回滚点与剩余风险；失败只阻止 Chat flag，不伪造平台结果也不修改 P13B 状态。"
+      ]
+    },
+    {
+      "title": "迁移 MCP localhost HTTP/stdio Transport、配置与工具注册",
+      "scope": [
+        "backend/internal/mcp/server.go",
+        "backend/internal/mcp/http_transport.go",
+        "backend/internal/mcp/stdio_transport.go",
+        "backend/internal/mcp/registry.go",
+        "backend/internal/mcp/config.go",
+        "backend/internal/mcp/auth.go",
+        "backend/internal/mcp/audit.go",
+        "backend/internal/mcp/transport_test.go",
+        "backend/internal/bootstrap/dependencies.go",
+        "backend/internal/bootstrap/lifecycle.go",
+        "backend/cmd/autoplan-server/main.go"
+      ],
+      "acceptance": [
+        "Go MCP 支持现有 Streamable HTTP 与 stdio 启停、工具列表/调用、健康状态和优雅关闭语义；HTTP 默认仅绑定 loopback，精确校验 session/token/Origin、方法、路径、body 大小、超时和连接上限，非法配置失败关闭。",
+        "HTTP 与 stdio 注册同一不可变工具目录和 adapter factory，不因 transport 差异拥有不同 schema、权限、错误、幂等、审计或业务实现；未知工具和缺失 capability 返回稳定且脱敏的 MCP 错误。",
+        "MCP 配置 DTO 只暴露 has_auth_token、masked token 和非敏感连接信息；token 通过受控 secret reference 读取，禁止进入 URL、普通响应、日志、事件、进程 argv 或 stdio stderr 诊断。",
+        "stdio 模式保持 stdout 仅输出协议帧，日志走脱敏有界 stderr；断连、半帧、超大请求、慢客户端、重复 initialize/call 和 shutdown 竞态不会阻塞 daemon、泄漏状态或重复执行业务 mutation。",
+        "transport 生命周期复用 daemon bootstrap 和共享依赖容器，不初始化独立数据库、repository、scheduler、Files policy 或业务状态机；启动失败不创建隐藏的 Node/sql.js writer 或静默退回旧 MCP server。"
+      ]
+    },
+    {
+      "title": "将全部 MCP 工具改为共享 Application Service 的无业务规则适配器",
+      "scope": [
+        "backend/internal/mcp/tools/catalog.go",
+        "backend/internal/mcp/tools/handlers.go",
+        "backend/internal/mcp/tools/mapper.go",
+        "backend/internal/mcp/tools/handlers_test.go",
+        "backend/internal/application/projects/service.go",
+        "backend/internal/application/intake/service.go",
+        "backend/internal/application/plans/service.go",
+        "backend/internal/application/tasks/service.go",
+        "backend/internal/application/loop/service.go",
+        "backend/internal/application/executors/service.go",
+        "backend/internal/application/files/service.go",
+        "backend/internal/application/audit/service.go"
+      ],
+      "acceptance": [
+        "迁移 list_projects、get_project、create_project、list/create requirements、list/create feedback、list/get plans、list_tasks、list_executors、run/stop_executor 和 start/stop_loop 的现有名称、描述、输入限制与结果契约。",
+        "每个 MCP handler 仅完成协议解码、调用方上下文构造、共享 application service 调用及结果/错误编码，不直接 SQL、读取 repository、访问文件系统、启动/停止进程、修改 snapshot 或复制状态转换与重复检测规则。",
+        "项目、Intake、Plan、Task、Loop、Executor 和 Files 能力与 REST/UI 使用相同 service 实例、事务、repository、project/resource 归属、白名单/realpath、权限、幂等键、Operation、并发限制和审计策略。",
+        "客户端 projectId、workspacePath、manual、autoRun、command/args/cwd/env/PID、operation_id、localhost 来源或 MCP token 均不能伪装授权；跨项目、枚举资源、路径逃逸、未知 capability 和无权限请求失败关闭且无可观察副作用。",
+        "列表和详情应用冻结的分页、行数、正文、附件、日志和 tool result 上限，结果与错误不包含 secret、token、env_vars、stored_path、真实绝对路径、其他项目数据或内部 repository/状态机细节。"
+      ]
+    },
+    {
+      "title": "建立 P13B UI、REST、MCP 结果与数据库后置状态一致性门禁",
+      "scope": [
+        "backend/internal/mcp/cross_transport_contract_test.go",
+        "backend/internal/mcp/authorization_test.go",
+        "backend/internal/mcp/audit_test.go",
+        "backend/internal/mcp/architecture_test.go",
+        "backend/internal/httpapi/cross_transport_fixture_test.go",
+        "scripts/migration-p13/check-p13b-architecture.js",
+        "scripts/migration-p13/check-p13b-safety.js",
+        "scripts/migration-p13/verify-p13b.js",
+        "scripts/migration-p13/verify-p13b.test.js",
+        "fixtures/migration/p13/mcp",
+        "package.json",
+        "docs/migration/p13/p13b-runbook.md",
+        "docs/migration/p13/evidence/p13b-manifest.json"
+      ],
+      "acceptance": [
+        "对每个现有 MCP 工具使用相同脱敏初始库和规范化输入分别经 UI adapter、REST 与 MCP HTTP/stdio 执行，比较业务 DTO、稳定错误码、Operation/审计事件和表级数据库后置状态；允许差异仅限 request_id、transport 元数据和文档化时间字段。",
+        "一致性矩阵覆盖成功、重复幂等键、幂等冲突、并发重复提交、无权限、跨项目 ID、资源枚举、Files 白名单/realpath 逃逸、状态非法、限流和依赖不可用，证明 MCP 不绕过项目归属、权限、白名单、幂等或审计。",
+        "架构测试禁止 MCP 包导入 sqlite repository 实现、Node AppDatabase、文件/进程平台实现或领域状态机内部写接口，并验证依赖容器中 HTTP、stdio、REST 与 UI adapter 指向相同 application service/repository/Files policy 实例。",
+        "P13B flag 默认关闭并与 P13A 无耦合；切换、启动失败、连接断开和回滚不会双启 listener、双写数据库、接管在途 Operation 或自动降级到旧 Node MCP，失败只阻止 MCP 新 transport。",
+        "P13B 验证器独立核验 P10–P12 前置、安全副本、HTTP/stdio、全工具一致性、架构和泄密矩阵，并记录真实命令、退出码、脱敏输出、哈希、文件清单、平台能力和风险；不以 P13A 结果替代 P13B 证据。"
+      ]
+    },
+    {
+      "title": "按各自稳定门禁收缩旧 Chat 与 MCP IPC/Node 路径并固化独立回滚",
+      "scope": [
+        "src/main.js",
+        "src/preload.js",
+        "src/chat/chatController.js",
+        "src/chat/chatQueue.js",
+        "src/mcpServer.js",
+        "src/mcpTools.js",
+        "src/renderer/lib/api/ipcClient.ts",
+        "src/renderer/lib/api/client.ts",
+        "src/data/goDataClient.js",
+        "src/data/databaseOwnerGuard.js",
+        "backend/internal/config/features.go",
+        "docs/migration/p13/gates-and-rollback.md",
+        "docs/migration/p13/legacy-removal-manifest.json"
+      ],
+      "acceptance": [
+        "只有 P13A 独立验证连续满足稳定标准并留存证据后，才移除对应 chat/conversation IPC handler、preload 暴露和 Node controller/queue 业务入口；P13B 未通过不影响该判定，反之亦然。",
+        "只有 P13B 独立验证连续满足稳定标准并留存证据后，才移除旧 MCP HTTP/stdio server、工具业务实现和相关 IPC 控制路径；P13A 未通过不影响该判定，且不删除仍属 DesktopBridge 的原生能力。",
+        "每次清理都有工具/路由/事件/写路径清单和静态零引用证明；任何未满足、证据不一致或仍有流量的门禁保持旧 adapter 可识别且不可作为第二 writer，而不是提前删除或静默代理到不同业务规则。",
+        "清理后 renderer 业务调用只经 AutoplanClient，MCP 只经 Go transport 与共享 application service，Node/sql.js 不可写 Go owner 数据库；回滚目标是兼容 Go 路由/版本或冻结 mutation，不恢复 Node writer 热切换。",
+        "Chat 与 MCP 的 flag、进程/连接清理、证据、回滚步骤和剩余风险分别记录；任一回滚不会停止或接管另一通道的在途 Operation，也不会泄漏 secret、路径或无界诊断输出。"
+      ]
+    },
+    {
+      "title": "完整验收",
+      "scope": [
+        "validation"
+      ],
+      "acceptance": [
+        "执行 finalValidation.command；只有 P10–P12 前置、P13A Chat、P13B MCP、跨通道一致性、安全/唯一 owner、独立切换回滚、条件式旧路径清理和相对 P00 基线回归全部满足 finalValidation.criteria 时才通过。",
+        "验收输出保留真实命令与退出码、脱敏 stdout/stderr、证据 manifest/哈希、文件清单、最终 git status、平台能力和剩余风险；真实 userData 风险、双写、泄密、新增 P00 红灯、无法证明的门禁或跨平台结果均必须非零退出并标记 blocked。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm.cmd run migration:p13:verify",
+    "criteria": [
+      "验证器首先核验 P10、P11、P12 passed 证据、P00 既有红灯签名、Go 唯一数据库 owner、Node 回退仅经 GoDataClient、Files policy、secret mapper、Operation/process runner 和安全副本门禁；任一失败均真实非零退出并标记 blocked，且不启动 P13 provider、MCP listener 或写测试库。",
+      "P13A 与 P13B 具有不同的默认关闭 feature flag、独立验证命令、证据 manifest、切换清单和回滚点；A 失败只禁止 Chat 切换，B 失败只禁止 MCP 切换，任何组合都不产生跨 runtime 接管、双写、双 listener 或非幂等自动降级。",
+      "Conversation/Message repository、默认会话、置顶/标题/config 绑定、历史/清理、部分消息和 FIFO 队列保持现有 DTO、snake_case、snapshot 与业务规则；项目/会话归属、事务、幂等和重启恢复正确且无幽灵队列或矛盾终态。",
+      "Chat 正常、快速连续发送、队列编辑/取消/清空、stop queued/running、完成取消竞态、provider 部分失败、数据库故障和 daemon 重启均产生唯一确定的 Operation、Message、Conversation、revision、outbox、审计和历史后置状态。",
+      "chat_chunk 按 turn/message 单调序号且严格先于唯一 chat_done，chat_queue 反映权威 FIFO 状态；SSE 断线、Last-Event-ID 重连、重复/乱序/缺口、清理水位、resync、慢消费者、项目/会话切换和 StrictMode 不丢失最终状态、不重复正文且不重跑 provider。",
+      "AI HTTP、Claude/Codex CLI provider 复用 Operation、P11 Process Runner、Files policy、context 取消、超时、完整进程树清理和每项目/全局限流；认证/网络/启动/非零退出/超时/取消/限流和 daemon 崩溃均失败关闭并无孤儿进程。",
+      "MCP HTTP 默认仅 loopback 并正确执行 session/token/Origin、方法、路径、大小、超时和连接上限；stdio 保持 stdout 纯协议、stderr 脱敏有界，两个 transport 注册同一工具目录且启动、断连、关闭和并发调用无重复 mutation。",
+      "全部现有 MCP 工具 list_projects、get_project、create_project、list/create requirements、list/create feedback、list/get plans、list_tasks、list_executors、run/stop_executor、start/stop_loop 保持冻结 schema 与行为，并且 handler 仅做 transport 映射和共享 application service 调用。",
+      "相同脱敏初始库和规范化输入经 UI adapter、REST、MCP HTTP 与 MCP stdio 获得相同业务 DTO、稳定错误码、Operation/审计事件和数据库后置状态；非业务差异仅限文档化 request_id、transport 和时间字段。",
+      "跨项目、资源枚举、无权限、白名单/realpath 逃逸、客户端 command/args/cwd/env/PID/manual/operation_id 授权伪装、未知 capability、状态非法、重复幂等键与幂等冲突矩阵证明 MCP 不绕过项目归属、Files policy、权限、幂等、限流或审计，拒绝场景无副作用。",
+      "架构检查证明 MCP transport/tools 不直接依赖 sqlite repository 实现、Node AppDatabase、文件/进程平台实现或第二套状态机，并且 HTTP、stdio、REST 与 UI adapter 在依赖容器中复用同一 application service、repository、Files policy、Operation 和审计实例。",
+      "数据库、REST、SSE、MCP、renderer、Operation、访问/审计日志、stdio stderr、fixture、diff 和证据均不包含 API key、token、env_vars、真实 Electron userData、未授权绝对路径、跨项目正文或完整私密 tool data；所有请求、队列、chunk、日志、列表、tool result、内存缓冲和持久化输出均有硬上限及准确 truncated 标记。",
+      "旧 Chat IPC/Node 路径仅在 P13A 稳定证据成立后移除，旧 MCP IPC/Node transport/tools 仅在 P13B 稳定证据成立后移除；清理清单和零引用检查完整，未达稳定标准的路径不提前删除，同时任何保留 adapter 都不能恢复 Node/sql.js writer。",
+      "P13A/P13B 专项 Go application/repository/httpapi/SSE/provider/MCP/architecture、renderer transport/hook、幂等并发、故障恢复、输出压力与泄密测试全部零退出码；npm.cmd run check 与 npm.cmd test 相对 P00 冻结基线无新增、隐藏、跳过或重命名失败。",
+      "所有验证只使用脱敏 fixture、系统临时库或调用方明确副本，Node/sql.js 与 Go 写入时间线不重叠且不自动发现、读取或修改真实 Electron userData；证据保留实际命令、真实退出码、脱敏输出、哈希、文件清单、当前平台能力、最终 git status、独立回滚点和剩余风险，未实际运行的平台或签名结果如实标注而不伪造。"
+    ]
+  }
+}

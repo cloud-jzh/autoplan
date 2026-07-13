@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "platform": "unix",
+  "kind": "fake-process-tree",
+  "launch": {"executable":"<fake-executable>","args":["--parent","--child","--grandchild"],"shell":false,"cwd":"<fixture-workspace>"},
+  "tree": {"parent":1,"children":[2],"grandchildren":[3]},
+  "scenarios": [
+    {"id":"cancel","expected_signal":"SIGTERM","expected_reaped":[1,2,3],"zombies":0},
+    {"id":"timeout_force","expected_signal":"SIGKILL","expected_reaped":[1,2,3],"zombies":0},
+    {"id":"output_pressure","max_combined_bytes":65536,"raw_output_persisted":false,"zombies":0},
+    {"id":"service_exit","expected_reaped":[1,2,3],"zombies":0}
+  ]
+}

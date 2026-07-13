@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "version": "p06-intake-expected-errors-v1",
+  "normalization": {
+    "request_id": "<request-id>",
+    "message": "catalog-only",
+    "details": "transport-safe-only"
+  },
+  "scenarios": {
+    "normalized-duplicate": {
+      "node": "DUPLICATE_INTAKE",
+      "go": "duplicate_intake",
+      "http": "duplicate_intake",
+      "retryable": false
+    },
+    "cross-project-feedback": {
+      "node": "LEGACY_NODE_ERROR",
+      "go": "project_mismatch",
+      "http": "intake_not_found",
+      "retryable": false
+    },
+    "invalid-intake": {
+      "go": "invalid_intake",
+      "http": "invalid_intake",
+      "retryable": false
+    },
+    "stale-intake": {
+      "go": "state_conflict",
+      "http": "precondition_failed",
+      "retryable": false
+    },
+    "attachment-owner-not-found": {
+      "go": "not_found",
+      "http": "intake_not_found",
+      "retryable": false
+    },
+    "attachment-invalid-content": {
+      "go": "invalid_attachment_content",
+      "http": "invalid_attachment",
+      "retryable": false
+    },
+    "attachment-mime-mismatch": {
+      "go": "attachment_content_type",
+      "http": "unsupported_media_type",
+      "retryable": false
+    },
+    "attachment-recovery-required": {
+      "go": "attachment_recovery_required",
+      "http": "attachment_recovery_required",
+      "retryable": true
+    },
+    "repository-busy": {
+      "go": "transaction",
+      "http": "repository_busy",
+      "retryable": true
+    }
+  }
+}

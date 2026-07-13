@@ -20,6 +20,7 @@ import type {
 } from '../types';
 import { useComposerDrafts } from './useComposerDrafts';
 import { useSnapshot } from './useSnapshot';
+import { useAutoplanClient, useDesktopBridge } from '../lib/api/provider';
 import { searchWorkspaceSnapshot } from '../utils/search';
 import { buildIntakeMentionCandidates } from '../utils/intakeMentions';
 import {
@@ -74,6 +75,8 @@ import {
 } from '../utils/planTasks';
 
 export function useWorkspaceController() {
+  const client = useAutoplanClient();
+  const desktopBridge = useDesktopBridge();
   const params = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -260,7 +263,7 @@ export function useWorkspaceController() {
   const openScopeFile = useCallback((filePath: string) => {
     void (async () => {
       try {
-        const result = await window.autoplan.openWorkspaceFile({
+        const result = await desktopBridge.openWorkspaceFile({
           projectId,
           filePath,
           mode: scopeFileOpenSettings.mode,
@@ -271,7 +274,7 @@ export function useWorkspaceController() {
         showError(e);
       }
     })();
-  }, [projectId, scopeFileOpenSettings.mode, scopeFileOpenSettings.command, showError]);
+  }, [desktopBridge, projectId, scopeFileOpenSettings.mode, scopeFileOpenSettings.command, showError]);
 
   const resetPlanReaderState = useCallback(() => {
     planReadRequestRef.current += 1;
@@ -472,7 +475,7 @@ export function useWorkspaceController() {
             : {}),
         };
         const planGenerationPayload = Object.keys(explicitPlanGeneration).length ? explicitPlanGeneration : selectedPlanGeneration;
-        const next = await window.autoplan[type === 'requirement' ? 'createRequirement' : 'createFeedback']({
+        const next = await client[type === 'requirement' ? 'createRequirement' : 'createFeedback']({
           projectId,
           body: payload.body,
           attachments: pendingAttachments[type],
@@ -488,7 +491,7 @@ export function useWorkspaceController() {
         return false;
       }
     },
-    [composerPlanGeneration, pendingAttachments, projectId, setSnapshot, setError, showError],
+    [client, composerPlanGeneration, pendingAttachments, projectId, setSnapshot, setError, showError],
   );
 
   const createRequirement = useCallback((body: string | ({ body: string; createAsDraft?: boolean } & PlanGenerationInputFields)) => createIntake('requirement', body), [createIntake]);
@@ -498,7 +501,7 @@ export function useWorkspaceController() {
     async (id: number, input: { title?: string; body?: string; status?: string }) => {
       if (!projectId) return false;
       try {
-        const next = await window.autoplan.updateRequirement({ projectId, id, ...input });
+        const next = await client.updateRequirement({ projectId, id, ...input });
         setSnapshot(next);
         setError(null);
         return true;
@@ -507,14 +510,14 @@ export function useWorkspaceController() {
         return false;
       }
     },
-    [projectId, setSnapshot, setError, showError],
+    [client, projectId, setSnapshot, setError, showError],
   );
 
   const deleteRequirement = useCallback(
     async (id: number) => {
       if (!projectId) return false;
       try {
-        const next = await window.autoplan.deleteRequirement({ projectId, id });
+        const next = await client.deleteRequirement({ projectId, id });
         setSnapshot(next);
         clearDeletedPlanReader(next);
         setError(null);
@@ -524,14 +527,14 @@ export function useWorkspaceController() {
         return false;
       }
     },
-    [clearDeletedPlanReader, projectId, setSnapshot, setError, showError],
+    [clearDeletedPlanReader, client, projectId, setSnapshot, setError, showError],
   );
 
   const updateFeedback = useCallback(
     async (id: number, input: { title?: string; body?: string; status?: string }) => {
       if (!projectId) return false;
       try {
-        const next = await window.autoplan.updateFeedback({ projectId, id, ...input });
+        const next = await client.updateFeedback({ projectId, id, ...input });
         setSnapshot(next);
         setError(null);
         return true;
@@ -540,14 +543,14 @@ export function useWorkspaceController() {
         return false;
       }
     },
-    [projectId, setSnapshot, setError, showError],
+    [client, projectId, setSnapshot, setError, showError],
   );
 
   const deleteFeedback = useCallback(
     async (id: number) => {
       if (!projectId) return false;
       try {
-        const next = await window.autoplan.deleteFeedback({ projectId, id });
+        const next = await client.deleteFeedback({ projectId, id });
         setSnapshot(next);
         clearDeletedPlanReader(next);
         setError(null);
@@ -557,13 +560,13 @@ export function useWorkspaceController() {
         return false;
       }
     },
-    [clearDeletedPlanReader, projectId, setSnapshot, setError, showError],
+    [clearDeletedPlanReader, client, projectId, setSnapshot, setError, showError],
   );
 
   const submitLoopConfig = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     try {
-      const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
+      const next = await client.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
       if (next.state && Number(next.state.project_id) === Number(projectId)) {
         setLoopForm(loopFormFromProjectState(next.state));
       }
@@ -590,9 +593,9 @@ export function useWorkspaceController() {
       const targetProjectId = Number(plan?.project_id || projectId);
       const planId = Number(plan?.id || 0);
       if (!targetProjectId || !planId) return;
-      await runLoopAction(() => window.autoplan.stopPlan({ projectId: targetProjectId, planId }));
+      await runLoopAction(() => client.stopPlan({ projectId: targetProjectId, planId }));
     },
-    [projectId, runLoopAction],
+    [client, projectId, runLoopAction],
   );
 
   const deletePlan = useCallback(
@@ -601,7 +604,7 @@ export function useWorkspaceController() {
       const planId = Number(plan?.id || 0);
       if (!targetProjectId || !planId) return;
       try {
-        const next = await window.autoplan.deletePlan({ projectId: targetProjectId, planId });
+        const next = await client.deletePlan({ projectId: targetProjectId, planId });
         setSnapshot(next);
         clearDeletedPlanReader(next);
         setError(null);
@@ -609,7 +612,7 @@ export function useWorkspaceController() {
         showError(e);
       }
     },
-    [clearDeletedPlanReader, projectId, setSnapshot, setError, showError],
+    [clearDeletedPlanReader, client, projectId, setSnapshot, setError, showError],
   );
 
   const resumePlan = useCallback(
@@ -617,9 +620,9 @@ export function useWorkspaceController() {
       const targetProjectId = Number(plan?.project_id || projectId);
       const planId = Number(plan?.id || 0);
       if (!targetProjectId || !planId) return;
-      await runLoopAction(() => window.autoplan.resumePlan({ projectId: targetProjectId, planId }));
+      await runLoopAction(() => client.resumePlan({ projectId: targetProjectId, planId }));
     },
-    [projectId, runLoopAction],
+    [client, projectId, runLoopAction],
   );
 
   const updatePlanExecutionConfig = useCallback(
@@ -628,10 +631,10 @@ export function useWorkspaceController() {
       const planId = Number(plan?.id || 0);
       if (!targetProjectId || !planId) return;
       await runLoopAction(() =>
-        window.autoplan.updatePlanExecutionConfig({ projectId: targetProjectId, planId, provider, command }),
+        client.updatePlanExecutionConfig({ projectId: targetProjectId, planId, provider, command }),
       );
     },
-    [projectId, runLoopAction],
+    [client, projectId, runLoopAction],
   );
 
   const reExecutePlan = useCallback(
@@ -639,9 +642,9 @@ export function useWorkspaceController() {
       const targetProjectId = Number(plan?.project_id || projectId);
       const planId = Number(plan?.id || 0);
       if (!targetProjectId || !planId) return;
-      await runLoopAction(() => window.autoplan.reExecutePlan({ projectId: targetProjectId, planId }));
+      await runLoopAction(() => client.reExecutePlan({ projectId: targetProjectId, planId }));
     },
-    [projectId, runLoopAction],
+    [client, projectId, runLoopAction],
   );
 
   const recreatePlanFromIntake = useCallback(
@@ -650,10 +653,10 @@ export function useWorkspaceController() {
       const planId = Number(plan?.id || 0);
       if (!targetProjectId || !planId) return;
       await runLoopAction(() =>
-        window.autoplan.recreatePlanFromIntake({ projectId: targetProjectId, planId }),
+        client.recreatePlanFromIntake({ projectId: targetProjectId, planId }),
       );
     },
-    [projectId, runLoopAction],
+    [client, projectId, runLoopAction],
   );
 
   const appendPlanTask = useCallback(
@@ -662,18 +665,18 @@ export function useWorkspaceController() {
       const planId = Number(plan?.id || 0);
       if (!targetProjectId || !planId) return;
       await runLoopAction(() =>
-        window.autoplan.appendPlanTask({ projectId: targetProjectId, planId, title }),
+        client.appendPlanTask({ projectId: targetProjectId, planId, title }),
       );
     },
-    [projectId, runLoopAction],
+    [client, projectId, runLoopAction],
   );
 
-  const startMcp = () => runLoopAction(() => window.autoplan.startMcp({ projectId }));
-  const stopMcp = () => runLoopAction(() => window.autoplan.stopMcp({ projectId }));
+  const startMcp = () => runLoopAction(() => client.startMcp({ projectId }));
+  const stopMcp = () => runLoopAction(() => client.stopMcp({ projectId }));
   const saveMcpConfig = async () => {
     if (!projectId) return;
     try {
-      const next = await window.autoplan.saveMcpConfig(mcpConfigFormToPayload(projectId, mcpForm, mcpAuthTokenTouched));
+      const next = await client.saveMcpConfig(mcpConfigFormToPayload(projectId, mcpForm, mcpAuthTokenTouched));
       resetMcpForm(next.mcp);
       setSnapshot(next);
       setError(null);
@@ -681,22 +684,22 @@ export function useWorkspaceController() {
   };
 
   const acceptItem = (targetType: 'plan' | 'task', id: number) =>
-    runLoopAction(() => window.autoplan.acceptItem({ projectId, targetType, id }));
+    runLoopAction(() => client.acceptItem({ projectId, targetType, id }));
   const unacceptItem = (targetType: 'plan' | 'task', id: number) =>
-    runLoopAction(() => window.autoplan.unacceptItem({ projectId, targetType, id }));
+    runLoopAction(() => client.unacceptItem({ projectId, targetType, id }));
   const redoAcceptanceItem = (targetType: 'plan' | 'task', id: number, supplement?: string) =>
-    runLoopAction(() => window.autoplan.redoAcceptanceItem({ projectId, targetType, id, supplement }));
+    runLoopAction(() => client.redoAcceptanceItem({ projectId, targetType, id, supplement }));
 
   const acceptItems = (targets: { targetType: 'plan' | 'task'; id: number }[]) => {
     if (!targets || targets.length === 0) return; // 空列表短路，不发 IPC（后端亦拒绝）
-    return runLoopAction(() => window.autoplan.acceptItems({
+    return runLoopAction(() => client.acceptItems({
       projectId,
       targets: targets.map((t) => ({ projectId, targetType: t.targetType, id: t.id })),
     }));
   };
   const unacceptItems = (targets: { targetType: 'plan' | 'task'; id: number }[]) => {
     if (!targets || targets.length === 0) return; // 空列表短路，不发 IPC（后端亦拒绝）
-    return runLoopAction(() => window.autoplan.unacceptItems({
+    return runLoopAction(() => client.unacceptItems({
       projectId,
       targets: targets.map((t) => ({ projectId, targetType: t.targetType, id: t.id })),
     }));
@@ -705,68 +708,68 @@ export function useWorkspaceController() {
   const acceptIntake = useCallback<IntakeAcceptanceHandler>(
     async (type, id) => {
       if (!projectId || !id) return;
-      await runLoopAction(() => window.autoplan.acceptIntake({ projectId, type, id }));
+      await runLoopAction(() => client.acceptIntake({ projectId, type, id }));
     },
-    [projectId, runLoopAction],
+    [client, projectId, runLoopAction],
   );
 
   const unacceptIntake = useCallback<IntakeAcceptanceHandler>(
     async (type, id) => {
       if (!projectId || !id) return;
-      await runLoopAction(() => window.autoplan.unacceptIntake({ projectId, type, id }));
+      await runLoopAction(() => client.unacceptIntake({ projectId, type, id }));
     },
-    [projectId, runLoopAction],
+    [client, projectId, runLoopAction],
   );
   const interruptIntake = useCallback(
     async (type: IntakeType, id: number) => {
       try {
-        const next = await window.autoplan.interruptIntake({ projectId, type, id });
+        const next = await client.interruptIntake({ projectId, type, id });
         setSnapshot(next);
         setError(null);
       } catch (e) {
         showError(e);
       }
     },
-    [projectId, setSnapshot, setError, showError],
+    [client, projectId, setSnapshot, setError, showError],
   );
 
   const resumeIntake = useCallback(
     async (type: IntakeType, id: number) => {
       try {
-        const next = await window.autoplan.resumeIntake({ projectId, type, id });
+        const next = await client.resumeIntake({ projectId, type, id });
         setSnapshot(next);
         setError(null);
       } catch (e) {
         showError(e);
       }
     },
-    [projectId, setSnapshot, setError, showError],
+    [client, projectId, setSnapshot, setError, showError],
   );
 
   const appendIntakeTask = useCallback(
     async (type: IntakeType, id: number, title: string) => {
       try {
-        const next = await window.autoplan.appendIntakeTask({ projectId, type, id, title });
+        const next = await client.appendIntakeTask({ projectId, type, id, title });
         setSnapshot(next);
         setError(null);
       } catch (e) {
         showError(e);
       }
     },
-    [projectId, setSnapshot, setError, showError],
+    [client, projectId, setSnapshot, setError, showError],
   );
 
   const retryIntakePlanGeneration = useCallback(
     async (type: IntakeType, id: number, options: RetryIntakePlanGenerationOptions = {}) => {
       try {
-        const next = await window.autoplan.retryIntakePlanGeneration({ projectId, type, id, ...options });
+        const next = await client.retryIntakePlanGeneration({ projectId, type, id, ...options });
         setSnapshot(next);
         setError(null);
       } catch (e) {
         showError(e);
       }
     },
-    [projectId, setSnapshot, setError, showError],
+    [client, projectId, setSnapshot, setError, showError],
   );
 
   const readPlanForReader = useCallback(async (plan: Plan) => {
@@ -775,7 +778,7 @@ export function useWorkspaceController() {
     setPlanReadState({ plan, result: null, loading: true, error: null });
 
     try {
-      const result = await window.autoplan.readPlan({ projectId: plan.project_id, planId: plan.id });
+      const result = await client.readPlan({ projectId: plan.project_id, planId: plan.id });
       if (planReadRequestRef.current !== requestId) return;
 
       setPlanReadState({
@@ -798,7 +801,7 @@ export function useWorkspaceController() {
         error: getErrorMessage(e, '读取 Plan 全文失败'),
       });
     }
-  }, []);
+  }, [client]);
 
   const openPlanReader = useCallback(
     (plan: Plan) => {

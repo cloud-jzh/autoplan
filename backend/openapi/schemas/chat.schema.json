@@ -1,0 +1,299 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autoplan.local/schemas/chat.schema.json",
+  "title": "P13A frozen Chat compatibility contracts",
+  "$ref": "#/$defs/conversation",
+  "$defs": {
+    "id": { "type": "integer", "format": "int64", "minimum": 1 },
+    "nullable_id": { "type": ["integer", "null"], "format": "int64", "minimum": 1 },
+    "request_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$" },
+    "event_id": { "type": "string", "pattern": "^[1-9][0-9]{0,18}$" },
+    "turn_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "utc_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    },
+    "nullable_utc_timestamp": {
+      "oneOf": [
+        { "$ref": "#/$defs/utc_timestamp" },
+        { "type": "null" }
+      ]
+    },
+    "conversation": {
+      "description": "Frozen Conversation snapshot projection. Snake_case and camelCase aliases are both required and must carry identical values.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "project_id", "projectId", "title", "ai_config_id", "aiConfigId",
+        "pinned_at", "pinnedAt", "pinned", "created_at", "createdAt", "updated_at", "updatedAt"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "project_id": { "$ref": "#/$defs/id" },
+        "projectId": { "$ref": "#/$defs/id" },
+        "title": { "type": "string", "maxLength": 200 },
+        "ai_config_id": { "$ref": "#/$defs/nullable_id" },
+        "aiConfigId": { "$ref": "#/$defs/nullable_id" },
+        "pinned_at": { "$ref": "#/$defs/nullable_utc_timestamp" },
+        "pinnedAt": { "$ref": "#/$defs/nullable_utc_timestamp" },
+        "pinned": { "type": "boolean" },
+        "created_at": { "$ref": "#/$defs/utc_timestamp" },
+        "createdAt": { "$ref": "#/$defs/utc_timestamp" },
+        "updated_at": { "$ref": "#/$defs/utc_timestamp" },
+        "updatedAt": { "$ref": "#/$defs/utc_timestamp" }
+      }
+    },
+    "tool_call": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "args"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "args": { "type": "object", "maxProperties": 64, "additionalProperties": true }
+      }
+    },
+    "chat_message": {
+      "description": "Frozen full history projection. The renderer-visible streaming value is the public representation of a partial assistant message; raw provider, secret, command and unrestricted tool data are never part of this DTO.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "project_id", "projectId", "conversation_id", "conversationId", "role", "content",
+        "tool_calls", "toolCalls", "tool_result", "toolResult", "status", "created_at", "createdAt"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "project_id": { "$ref": "#/$defs/id" },
+        "projectId": { "$ref": "#/$defs/id" },
+        "conversation_id": { "$ref": "#/$defs/id" },
+        "conversationId": { "$ref": "#/$defs/id" },
+        "role": { "enum": ["user", "assistant", "tool", "system"] },
+        "content": { "type": "string", "maxLength": 1000000 },
+        "tool_calls": { "type": ["string", "null"], "maxLength": 65536 },
+        "toolCalls": { "type": ["array", "null"], "maxItems": 64, "items": { "$ref": "#/$defs/tool_call" } },
+        "tool_result": { "type": ["string", "null"], "maxLength": 65536 },
+        "toolResult": { "type": ["object", "null"], "maxProperties": 64, "additionalProperties": true },
+        "status": { "enum": ["streaming", "queued", "done", "aborted", "error", "max_rounds", "interrupted"] },
+        "created_at": { "$ref": "#/$defs/utc_timestamp" },
+        "createdAt": { "$ref": "#/$defs/utc_timestamp" }
+      }
+    },
+    "legacy_chat_message": {
+      "description": "Exact existing renderer ChatMessage projection. The P13 adapter may derive it from chat_message but cannot rename, remove or make optional fields required.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "projectId", "role", "content", "toolCalls", "toolResult", "status", "createdAt"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "project_id": { "$ref": "#/$defs/id" },
+        "projectId": { "$ref": "#/$defs/id" },
+        "role": { "enum": ["user", "assistant", "tool", "system"] },
+        "content": { "type": "string", "maxLength": 1000000 },
+        "tool_calls": { "type": ["string", "null"], "maxLength": 65536 },
+        "toolCalls": { "type": ["array", "null"], "maxItems": 64, "items": { "$ref": "#/$defs/tool_call" } },
+        "tool_result": { "type": ["string", "null"], "maxLength": 65536 },
+        "toolResult": { "type": ["object", "null"], "maxProperties": 64, "additionalProperties": true },
+        "status": { "enum": ["streaming", "queued", "done", "aborted", "error"] },
+        "created_at": { "$ref": "#/$defs/utc_timestamp" },
+        "createdAt": { "$ref": "#/$defs/utc_timestamp" }
+      }
+    },
+    "message_metadata": {
+      "description": "Pre-P13 static metadata response retained for compatibility. It deliberately does not disclose content or tool data.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "project_id", "conversation_id", "role", "status", "created_at", "has_content", "has_tool_calls", "has_tool_result"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "project_id": { "$ref": "#/$defs/id" },
+        "conversation_id": { "$ref": "#/$defs/id" },
+        "role": { "enum": ["user", "assistant", "tool", "system"] },
+        "status": { "type": ["string", "null"] },
+        "created_at": { "$ref": "#/$defs/utc_timestamp" },
+        "has_content": { "type": "boolean" },
+        "has_tool_calls": { "type": "boolean" },
+        "has_tool_result": { "type": "boolean" }
+      }
+    },
+    "queue_item": {
+      "description": "A durable FIFO entry. processing is the legacy queue state; running is represented by the turn lifecycle, not a replacement queue state.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "content", "state"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "content": { "type": "string", "minLength": 1, "maxLength": 1000000 },
+        "state": { "enum": ["queued", "processing"] }
+      }
+    },
+    "chat_queue": {
+      "description": "Complete replacement snapshot, never a delta. FIFO is ascending persisted message id.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id", "projectId", "conversation_id", "conversationId", "items", "count"],
+      "properties": {
+        "project_id": { "$ref": "#/$defs/id" },
+        "projectId": { "$ref": "#/$defs/id" },
+        "conversation_id": { "$ref": "#/$defs/id" },
+        "conversationId": { "$ref": "#/$defs/id" },
+        "items": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/queue_item" } },
+        "count": { "type": "integer", "minimum": 0, "maximum": 200 }
+      }
+    },
+    "legacy_chat_queue": {
+      "description": "Exact existing ChatQueueSnapshot renderer projection. New transport metadata belongs to the outer SSE envelope, not this compatibility object.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conversationId", "items", "count"],
+      "properties": {
+        "conversationId": { "$ref": "#/$defs/id" },
+        "items": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/queue_item" } },
+        "count": { "type": "integer", "minimum": 0, "maximum": 200 }
+      }
+    },
+    "chat_done": {
+      "description": "Exactly one terminal event is emitted for an accepted turn. error and title are omitted rather than set to null when unavailable, matching the legacy renderer event.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id", "projectId", "conversation_id", "conversationId", "turn_id", "status"],
+      "properties": {
+        "project_id": { "$ref": "#/$defs/id" },
+        "projectId": { "$ref": "#/$defs/id" },
+        "conversation_id": { "$ref": "#/$defs/id" },
+        "conversationId": { "$ref": "#/$defs/id" },
+        "turn_id": { "$ref": "#/$defs/turn_id" },
+        "status": { "enum": ["done", "aborted", "error", "max_rounds", "interrupted"] },
+        "error": { "type": "string", "maxLength": 2048 },
+        "title": { "type": "string", "maxLength": 200 },
+        "operation_id": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" }
+      }
+    },
+    "legacy_chat_done": {
+      "description": "Exact existing ChatDoneEvent renderer projection. Its optional fields remain omitted, not null, when absent.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["done", "aborted", "error", "max_rounds"] },
+        "error": { "type": "string", "maxLength": 2048 },
+        "conversationId": { "$ref": "#/$defs/id" },
+        "title": { "type": "string", "maxLength": 200 }
+      }
+    },
+    "chat_chunk": {
+      "description": "One ordered, bounded, redacted fragment. sequence is strictly monotonic within project_id/conversation_id/turn_id and every chunk precedes the matching chat_done.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id", "projectId", "conversation_id", "conversationId", "turn_id", "sequence", "type", "data"],
+      "properties": {
+        "project_id": { "$ref": "#/$defs/id" },
+        "projectId": { "$ref": "#/$defs/id" },
+        "conversation_id": { "$ref": "#/$defs/id" },
+        "conversationId": { "$ref": "#/$defs/id" },
+        "turn_id": { "$ref": "#/$defs/turn_id" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "type": { "enum": ["thinking_start", "thinking_delta", "thinking_end", "chunk", "tool_start", "tool_result", "error", "status"] },
+        "data": { "type": "object", "maxProperties": 32, "additionalProperties": true }
+      }
+    },
+    "chat_event_envelope": {
+      "description": "P13A SSE data envelope. event_id is the P10 durable cursor, Last-Event-ID replays committed events only, and reconnect never executes a provider request.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "event_id", "project_id", "project_revision", "request_id", "occurred_at", "type", "data"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "event_id": { "$ref": "#/$defs/event_id" },
+        "project_id": { "$ref": "#/$defs/id" },
+        "project_revision": { "type": "integer", "format": "int64", "minimum": 1 },
+        "request_id": { "$ref": "#/$defs/request_id" },
+        "occurred_at": { "$ref": "#/$defs/utc_timestamp" },
+        "type": { "enum": ["chat_chunk", "chat_queue", "chat_done"] },
+        "data": {
+          "oneOf": [
+            { "$ref": "#/$defs/chat_chunk" },
+            { "$ref": "#/$defs/chat_queue" },
+            { "$ref": "#/$defs/chat_done" }
+          ]
+        }
+      }
+    },
+    "conversation_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string", "maxLength": 200 },
+        "ai_config_id": { "$ref": "#/$defs/nullable_id" },
+        "pinned": { "type": "boolean" }
+      }
+    },
+    "conversation_patch_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "title": { "type": "string", "maxLength": 200 },
+        "ai_config_id": { "$ref": "#/$defs/nullable_id" },
+        "pinned": { "type": "boolean" },
+        "pinned_at": { "$ref": "#/$defs/nullable_utc_timestamp" }
+      }
+    },
+    "send_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message"],
+      "properties": {
+        "message": { "type": "string", "minLength": 1, "maxLength": 1000000 },
+        "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "send_accepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accepted", "project_id", "conversation_id", "message_id", "turn_id", "operation_id"],
+      "properties": {
+        "accepted": { "const": true },
+        "project_id": { "$ref": "#/$defs/id" },
+        "conversation_id": { "$ref": "#/$defs/id" },
+        "message_id": { "$ref": "#/$defs/id" },
+        "turn_id": { "$ref": "#/$defs/turn_id" },
+        "operation_id": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" }
+      }
+    },
+    "queue_edit_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message"],
+      "properties": {
+        "message": { "type": "string", "minLength": 1, "maxLength": 1000000 }
+      }
+    },
+    "boolean_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok"],
+      "properties": { "ok": { "type": "boolean" } }
+    },
+    "stop_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stopped", "project_id", "conversation_id"],
+      "properties": {
+        "stopped": { "type": "boolean" },
+        "project_id": { "$ref": "#/$defs/id" },
+        "conversation_id": { "$ref": "#/$defs/id" },
+        "operation_id": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" }
+      }
+    },
+    "clear_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cleared", "project_id", "conversation_id"],
+      "properties": {
+        "cleared": { "type": "boolean" },
+        "project_id": { "$ref": "#/$defs/id" },
+        "conversation_id": { "$ref": "#/$defs/id" }
+      }
+    }
+  }
+}

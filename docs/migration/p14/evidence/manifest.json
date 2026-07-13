@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "kind": "p14-terminal-evidence-policy",
+  "run_root": "docs/migration/p14/evidence/runs",
+  "immutable_run_directory": true,
+  "default_status": "blocked_until_verified",
+  "required_platforms": [
+    "win32",
+    "darwin",
+    "linux"
+  ],
+  "required_artifacts": [
+    "summary.json",
+    "evidence-manifest.json",
+    "sanitized command stdout/stderr logs",
+    "packaged artifact hash",
+    "actual argv and exit code",
+    "process tree cleanup result"
+  ],
+  "required_summary_fields": [
+    "run_id",
+    "status",
+    "fixture",
+    "prerequisite_evidence",
+    "source_hashes_start",
+    "source_hashes_end",
+    "command_results",
+    "packaged_smoke",
+    "remaining_risks"
+  ],
+  "forbidden_content": [
+    "credential values",
+    "environment values",
+    "real Electron user data locations",
+    "external workspace locations",
+    "raw terminal input or output",
+    "real process identifiers",
+    "cross-platform substitute results"
+  ]
+}

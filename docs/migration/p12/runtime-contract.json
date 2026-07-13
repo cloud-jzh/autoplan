@@ -1,0 +1,171 @@
+{
+  "schema_version": 1,
+  "kind": "p12-script-executor-runtime-compatibility-contract",
+  "status": "frozen-node-runtime-contract",
+  "purpose": "Freeze the Node Script and Executor runtime, stop, log, authorization and live snapshot semantics before the Go process runtime is enabled. This contract describes a migration boundary; it does not authorize a second runtime to execute or terminate an existing process.",
+  "scope": [
+    "src/loop/scriptHooks.js",
+    "src/executors/executorRunner.js",
+    "src/executors/executorConfig.js",
+    "src/executors/executorStore.js",
+    "src/loop/snapshots.js",
+    "src/mcpTools.js",
+    "src/main.js",
+    "src/preload.js",
+    "src/renderer/types.ts"
+  ],
+  "safety": {
+    "fixture_inputs": "repository-owned sanitized metadata and placeholders only",
+    "forbidden_fixture_content": [
+      "real workspace or temporary path",
+      "command, inline body or argument value",
+      "environment variable value",
+      "pid or process handle",
+      "credential, secret or user data",
+      "real stdout or stderr"
+    ],
+    "generator_rules": [
+      "Never start Electron, sql.js, a process, a scheduler or a plugin.",
+      "Never read userData, a project workspace, process environment values or a database.",
+      "Only write an explicitly selected artifact below fixtures/migration/p12.",
+      "Normalize ids, timestamps, paths, pids, logs and process-specific values to placeholders."
+    ]
+  },
+  "compatibility_boundary": {
+    "unchanged": [
+      "Script CRUD, validation, ordering and tasks.json Executor import remain Node/static behavior until their separately scoped migration work.",
+      "DesktopBridge file selection remains a privileged DesktopBridge concern and is not part of Script or Executor runtime execution.",
+      "Existing AppSnapshot collection presence and non-runtime business semantics remain unchanged; P12 freezes only runtime, stop, log, Operation and SSE behavior."
+    ],
+    "blocked_when_unfrozen": "Any Script or Executor execution branch, stop path, output path, event path or ownership rule not represented below blocks P12 migration rather than receiving an implicit Go fallback."
+  },
+  "migration_boundary": {
+    "runtime_ownership": {
+      "script_feature_flag": "go_scripts_api",
+      "executor_feature_flag": "go_executors_api",
+      "owner_is_fixed_until_terminal": true,
+      "forbid_cross_runtime_takeover": true,
+      "rule": "The runtime that creates a Script or Executor operation owns its registered process, cancellation and final state until that operation is terminal. A feature-flag change, application restart or a later request cannot move that ownership to the other runtime.",
+      "node_processes_after_go_enable": "A Go feature flag never adopts, restarts, reports as Go-owned or terminates an old Node process.",
+      "go_processes_after_go_disable": "A disabled feature flag never makes Node adopt, restart, report as Node-owned or terminate a Go process."
+    },
+    "feature_switch": {
+      "script": "go_scripts_api controls Script run, stop, run log and Operation/SSE paths as one capability.",
+      "executor": "go_executors_api controls Executor run, action, stop, run log and Operation/SSE paths as one capability.",
+      "legacy_crud": "No P12 switch changes create, update, delete, toggle or import persistence semantics.",
+      "fallback": "A disabled capability may choose the legacy Node implementation only before accepting work. It may not retry an accepted Go operation through Node or vice versa."
+    }
+  },
+  "authorization_boundary": {
+    "accepted_identifiers": {
+      "run_stop": ["project_id", "script_id|executor_id"],
+      "executor_action": ["project_id", "executor_id", "action"],
+      "project_scope_rule": "The project must exist and the persisted Script or Executor definition must be loaded by project_id plus its persisted resource id. MCP label lookup is a server-side lookup constrained to the same project and resolves to that persisted executor id before execution."
+    },
+    "controlled_actions": ["start", "reload", "stop"],
+    "untrusted_client_fields": ["manual", "command", "args", "shell", "cwd", "env", "pid", "operation_id", "trigger", "stage", "plugin_state"],
+    "rule": "Client-supplied run/stop/action fields cannot prove project ownership, process ownership, execution authorization or a resource definition. The service ignores or rejects them and never uses a client pid to kill a process."
+  },
+  "script": {
+    "persistent_definition": {
+      "source": ["inline", "file"],
+      "runtime": ["node", "bash", "ps", "cmd"],
+      "runtime_compatibility_names": {"node": "node", "shell": "bash", "powershell": "ps", "command_shell": "cmd"},
+      "triggers": ["manual", "hook", "schedule"],
+      "hook_stages": ["plan:after", "task:after", "validation:before", "loop:end", "on:fail"],
+      "runtime_fields": ["context_inject", "timeout_seconds", "fail_aborts", "work_dir", "last_status", "last_exit_code", "last_duration_ms", "last_log", "last_run_at"],
+      "source_rule": "inline writes a runtime-owned temporary script file; file resolves the persisted source path. Go must preserve source selection and interpretation semantics while applying its controlled file and process policy.",
+      "work_dir_rule": "${workspace} and ${planDir} placeholders resolve from trusted project context. A client run request does not override persisted work_dir.",
+      "context_inject": {
+        "values": ["env", "stdin", "none"],
+        "legacy_context": ["stage", "workspace", "trigger", "planId", "planFilePath", "taskKey", "taskId", "scopeFiles", "intakeType", "intakeId", "validationCommand", "error", "summary"],
+        "rule": "Context originates from trusted loop execution context. Manual input cannot claim a hook, schedule stage or another resource's context."
+      }
+    },
+    "trigger_behavior": {
+      "manual": "loads one project-owned persisted script and returns the completed legacy ScriptRunResult after its Node operation settles.",
+      "hook": "runs enabled hook scripts matching stage in sort_order then id order. A single failure is recorded; only validation:before with fail_aborts=1 aborts the current hook stage.",
+      "schedule": "accepts only enabled schedule scripts with valid five-field cron. A script runs at most once in the same minute according to last_run_at; invalid cron is skipped and reported by the scheduler path.",
+      "hook_failure": "hook query and execution errors do not leak into a client supplied command or change process ownership."
+    },
+    "run_stop_log": {
+      "node_run_return": ["snapshot", "status", "exitCode", "durationMs", "log", "timedOut", "error"],
+      "node_stop_return": "scripts:stop returns AppSnapshot after requesting cancellation; the legacy stop request does not accept pid, command, env, cwd, trigger or manual ownership proof.",
+      "node_events": ["script.run.succeeded", "script.run.failed", "script.hook.error", "script.schedule.error"],
+      "status_mapping": "exit code 0 is ok; all other returned exit codes are bad. Node cancellation is represented by the runner completion path rather than a separate Script stopped state.",
+      "log": "last_log stores the trailing at most 24000 characters of combined output and error text. Event metadata carries a log file reference when present, not the log tail itself.",
+      "migration_rule": "Go exposes bounded redacted stream metadata and a safe tail summary; raw output, command, env, path and inline source never enter Operation, SSE, snapshots, errors or fixture data."
+    }
+  },
+  "executor": {
+    "persistent_definition": {
+      "types": ["shell", "process", "plugin"],
+      "fields": ["label", "command", "args", "options", "actions", "dependsOn", "dependsOrder", "enabled", "pluginState", "lastStatus", "lastExitCode", "lastDurationMs", "lastLog", "lastRunAt"],
+      "options": ["cwd", "env", "timeoutMs", "timeout_ms"],
+      "depends_order": ["parallel", "sequence"],
+      "normalization": "camelCase and selected snake_case persisted aliases normalize to one definition. Duplicate labels in one project are rejected on create/update; tasks.json import may deterministically deduplicate labels.",
+      "tasks_json": "Only .vscode/tasks.json tasks[] is imported; launch.json debug configuration is ignored and debug-only fields are rejected or skipped."
+    },
+    "dependency_behavior": {
+      "lookup": "Dependencies resolve by persisted label inside the same project.",
+      "parallel": "Dependencies begin together and their result order follows the configured dependency label order.",
+      "sequence": "Dependencies run in configured order and stop at the first non-ok result.",
+      "sharing": "One root execution context memoizes an in-progress and completed dependency by executor id, so a shared dependency runs once for that root execution.",
+      "failures": ["missing dependency", "cycle", "disabled dependency", "dependency failure", "dependency stopped"],
+      "aggregation": "A failed dependency produces a root bad or stopped result with compact dependency results; it does not execute the dependent command."
+    },
+    "plugin_lifecycle": {
+      "actions": ["start", "reload", "stop"],
+      "start": "requires a persisted plugin start command and permits at most one live process for project_id plus executor_id in the owning runtime.",
+      "reload": "uses persisted input or command action only while the owning runtime has a live registered plugin process.",
+      "stop": "uses the persisted stop action when configured, then owner-controlled graceful and forced termination. It never accepts a client pid or plugin state as authority.",
+      "plugin_state": ["running", "pid", "lastAction", "lastActionAt", "startedAt", "exitCode", "error"],
+      "node_events": ["executor.plugin.start", "executor.plugin.reload", "executor.plugin.stopped"]
+    },
+    "run_stop_log": {
+      "node_run_return": ["snapshot", "executorId", "label", "status", "exitCode", "durationMs", "log", "logFile", "timedOut", "error", "dependencyResults", "pid"],
+      "node_stop_return": "executors:stop returns AppSnapshot after requesting a project-owned existing operation or plugin stop. The MCP legacy summary includes only stopped count and a safe snapshot summary.",
+      "node_events": ["executor.run.started", "executor.run.succeeded", "executor.run.failed", "executor.run.stopped"],
+      "status": ["idle", "running", "ok", "bad", "stopped"],
+      "log": "lastLog and plugin log buffer retain the trailing at most 24000 characters. The migration records truncation metadata rather than silently treating a shortened tail as full output."
+    }
+  },
+  "snapshot_live_state": {
+    "scripts": "Snapshot keeps project-owned script rows in sort_order then id order and preserves the legacy snake_case Script fields including last_*.",
+    "executors": "executorFromRow creates camelCase Executor fields. executorSnapshotRow additionally exposes selected snake_case aliases, running, runStatus and activeOperation.",
+    "executor_aliases": ["projectId/project_id", "sortOrder/sort_order", "dependsOrder/depends_order", "lastStatus/last_status", "lastExitCode/last_exit_code", "lastDurationMs/last_duration_ms", "lastLog/last_log", "lastRunAt/last_run_at", "createdAt/created_at", "updatedAt/updated_at"],
+    "live_state_rule": "running and activeOperation reflect only an operation registered by the active runtime for the same project and executor. Persisted plugin_state is not evidence that a process from another runtime is owned or live."
+  },
+  "operation_and_sse": {
+    "accepted_status": "queued",
+    "required_operation_fields": ["operation_id", "project_id", "type", "status", "request_id", "accepted_at", "runtime_owner", "resource_id", "error", "result"],
+    "wire_naming": "HTTP, MCP and SSE operation fields use snake_case. Renderer adapters may add camelCase aliases without changing values, ownership or authorization.",
+    "legacy_to_operation": "Legacy Node IPC returns a completed ScriptRunResult, ExecutorRunResult or AppSnapshot. Once the matching Go capability is enabled, run, stop and executor action return OperationAccepted and snapshots/SSE converge to the same authoritative Operation.",
+    "sse_event_order": ["operation.queued", "operation.running", "operation.succeeded|operation.failed|operation.cancelled", "project.snapshot"],
+    "event_rule": "Each event for an operation carries the same operation_id, project_id and runtime_owner. Reconnect reads the same operation and does not repeat a run, action or stop request.",
+    "terminal_statuses": ["succeeded", "failed", "cancelled", "interrupted"],
+    "output_metadata": ["stdout_bytes", "stderr_bytes", "stdout_lines", "stderr_lines", "stdout_truncated", "stderr_truncated", "exit_code", "duration_ms", "failure_code"],
+    "stable_failure_codes": ["PROJECT_NOT_FOUND", "SCRIPT_NOT_FOUND", "EXECUTOR_NOT_FOUND", "RESOURCE_DISABLED", "ACTION_INVALID", "OPERATION_NOT_FOUND", "OPERATION_NOT_OWNED", "OPERATION_ALREADY_TERMINAL", "RUNTIME_OWNER_MISMATCH", "OPERATION_IN_PROGRESS", "EXECUTOR_DEPENDENCY_MISSING", "EXECUTOR_DEPENDENCY_CYCLE", "EXECUTOR_DEPENDENCY_FAILED", "WORKSPACE_INVALID", "CWD_OUTSIDE_WORKSPACE", "PROCESS_START_FAILED", "RUNTIME_TIMEOUT", "OPERATION_CANCELLED", "OUTPUT_TRUNCATED", "RUNTIME_UNAVAILABLE"]
+  },
+  "runtime_actions": [
+    {"id": "script.run", "resource": "script", "legacy_ipc": "scripts:run", "legacy_return": "ScriptRunResult", "go_command": "script.run", "feature_flag": "go_scripts_api"},
+    {"id": "script.stop", "resource": "script", "legacy_ipc": "scripts:stop", "legacy_return": "AppSnapshot", "go_command": "script.stop", "feature_flag": "go_scripts_api"},
+    {"id": "executor.run", "resource": "executor", "legacy_ipc": "executors:run", "legacy_return": "ExecutorRunResult", "go_command": "executor.run", "feature_flag": "go_executors_api"},
+    {"id": "executor.stop", "resource": "executor", "legacy_ipc": "executors:stop", "legacy_return": "AppSnapshot", "go_command": "executor.stop", "feature_flag": "go_executors_api"},
+    {"id": "executor.action", "resource": "executor", "legacy_ipc": "executors:runAction", "legacy_return": "ExecutorRunResult", "go_command": "executor.action", "feature_flag": "go_executors_api"}
+  ],
+  "inventory": {
+    "source_markers": {
+      "src/loop/scriptHooks.js": ["const TEMP_SCRIPT_DIR", "async function runHookScripts", "async function runScriptManually", "function stopScript", "String(script.source_type || 'inline') === 'file'", "function contextEnvVars", "function dueScheduledScripts"],
+      "src/executors/executorRunner.js": ["const pluginProcesses = new Map()", "async function runExecutor", "async function stopExecutor", "async function runExecutorDependencies", "async function startPluginExecutor", "async function reloadPluginExecutor", "async function stopPluginExecutor", "function forceKillChild"],
+      "src/executors/executorConfig.js": ["const EXECUTOR_TYPES = new Set(['shell', 'process', 'plugin'])", "const PLUGIN_ACTION_NAMES = new Set(['start', 'reload', 'stop'])", "function validateExecutorConfig", "function normalizeTasksJson", "function validatePluginActions", "function normalizeOptions"],
+      "src/executors/executorStore.js": ["const LAST_LOG_MAX_CHARS = 24000", "function updateExecutorRunState", "['lastStatus', 'last_status', 'status']", "['pluginState', 'plugin_state', 'pluginStateJson', 'plugin_state_json']", "function executorFromRow"],
+      "src/loop/snapshots.js": ["'SELECT * FROM scripts WHERE project_id = ? ORDER BY sort_order ASC, id ASC'", "function executorSnapshotRow", "function findExecutorOperation", "running: Boolean(activeSnapshot)", "activeOperation: activeSnapshot"],
+      "src/mcpTools.js": ["RUN_EXECUTOR: 'run_executor'", "STOP_EXECUTOR: 'stop_executor'", "const GO_DATA_CLIENT_TOOL_NAMES", "function runGoDataClientTool", "function validateExecutorActionInput", "assertOnlyKeys(input, ['projectId', 'executorId', 'label'])"],
+      "src/main.js": ["ipcMain.handle('scripts:run'", "ipcMain.handle('scripts:stop'", "ipcMain.handle('executors:run'", "ipcMain.handle('executors:stop'", "ipcMain.handle('executors:runAction'"],
+      "src/preload.js": ["runScript: (input) => ipcRenderer.invoke('scripts:run', input)", "stopScript: (input) => ipcRenderer.invoke('scripts:stop', input)", "runExecutor: (input) => ipcRenderer.invoke('executors:run', input)", "stopExecutor: (input) => ipcRenderer.invoke('executors:stop', input)", "runExecutorAction: (input) => ipcRenderer.invoke('executors:runAction', input)"],
+      "src/renderer/types.ts": ["export interface ScriptRunResult", "export interface ExecutorPluginState", "export interface ExecutorRunResult", "export interface ActiveOperation", "runScript: (input: ScriptIdInput)", "runExecutorAction: (input: RunExecutorPluginActionInput)"]
+    },
+    "drift_rule": "A missing source marker, changed runtime scope, absent ownership flag, unclassified controlled action or weakened identifier-only authorization boundary fails the P12 inventory until this reviewed contract is intentionally updated."
+  }
+}

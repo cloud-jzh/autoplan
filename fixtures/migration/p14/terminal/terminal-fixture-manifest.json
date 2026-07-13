@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "kind": "p14-authorized-terminal-fixture",
+  "authorized_copy": true,
+  "contains_real_userdata": false,
+  "contains_credentials": false,
+  "contains_terminal_transcript": false,
+  "allowed_contents": [
+    "scenario metadata",
+    "synthetic project identifiers",
+    "sanitized expected terminal state"
+  ]
+}

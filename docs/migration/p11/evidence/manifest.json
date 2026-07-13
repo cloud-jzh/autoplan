@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "kind": "p11-evidence-policy",
+  "run_root": "docs/migration/p11/evidence/runs",
+  "immutable_run_directory": true,
+  "required_artifacts": [
+    "summary.json",
+    "evidence-manifest.json",
+    "sanitized command stdout/stderr logs"
+  ],
+  "required_summary_fields": [
+    "run_id",
+    "status",
+    "started_at",
+    "ended_at",
+    "command_results",
+    "source_hashes_start",
+    "source_hashes_end",
+    "fixture",
+    "fixture_artifacts",
+    "operation_event_matrix",
+    "process_cleanup"
+  ],
+  "forbidden_content": [
+    "credential values",
+    "environment values",
+    "prompt bodies",
+    "session credentials",
+    "real Electron userData paths",
+    "raw stdout or stderr from an Agent CLI"
+  ]
+}

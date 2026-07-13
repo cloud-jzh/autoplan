@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "kind": "p15-electron-go-e2e-scenarios",
+  "required_scenarios": [
+    "core_crud",
+    "project_switch",
+    "requirements_feedback_attachments",
+    "plans_acceptance",
+    "loop_tasks",
+    "chat",
+    "mcp",
+    "scripts_executors",
+    "terminal",
+    "sse_resync",
+    "terminal_websocket_backpressure",
+    "sidecar_crash_recovery",
+    "single_writer_lock"
+  ],
+  "required_observations": [
+    "ui_rest_mcp_equivalent",
+    "go_database_write_only",
+    "node_database_write_count_zero",
+    "sidecar_handle_cleaned",
+    "session_revoked",
+    "no_sensitive_evidence"
+  ],
+  "forbidden": [
+    "real_userdata",
+    "node_database_open",
+    "node_database_write",
+    "dual_writer",
+    "session_credential",
+    "absolute_path",
+    "raw_terminal_output"
+  ]
+}

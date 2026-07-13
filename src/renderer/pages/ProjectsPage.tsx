@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Icon } from '../components/icons';
 import type { CreateProjectInput, Project } from '../types';
 import { useSnapshot } from '../hooks/useSnapshot';
+import { useAutoplanClient, useDesktopBridge } from '../lib/api/provider';
 import { planExecutionSummaryLabel, planGenerationSummaryLabel } from '../components/shared';
 import {
   codexReasoningOptionDetails,
@@ -47,6 +48,8 @@ const emptyDraft: Draft = {
 };
 
 export function ProjectsPage() {
+  const client = useAutoplanClient();
+  const desktopBridge = useDesktopBridge();
   const navigate = useNavigate();
   const { snapshot, setSnapshot, error, setError } = useSnapshot(null);
   const projects = snapshot?.projects || [];
@@ -86,7 +89,7 @@ export function ProjectsPage() {
 
   const pickFolder = async () => {
     try {
-      const directory = await window.autoplan.pickDirectory();
+      const directory = await desktopBridge.pickDirectory();
       // 用户取消或无可用窗口时返回 null，保持当前值不变
       if (directory) {
         setDraft((current) => ({ ...current, workspacePath: directory }));
@@ -98,7 +101,7 @@ export function ProjectsPage() {
 
   const openFolder = async (project: Project) => {
     try {
-      const result = await window.autoplan.openProjectFolder({ projectId: project.id });
+      const result = await desktopBridge.openProjectFolder({ projectId: project.id });
       if (!result.ok) {
         window.alert(result.error || '无法打开工作区文件夹');
       }
@@ -114,11 +117,11 @@ export function ProjectsPage() {
       const description = (draft.description || '').trim();
       const projectPayload = projectInputFromDraft(draft, description);
       const next = draft.id
-        ? await window.autoplan.updateProject({
+        ? await client.updateProject({
             id: draft.id,
             ...projectPayload,
           })
-        : await window.autoplan.createProject(projectPayload);
+        : await client.createProject(projectPayload);
       setSnapshot(next);
       setModalOpen(false);
       setError(null);
@@ -141,7 +144,7 @@ export function ProjectsPage() {
   const confirmDelete = async () => {
     if (!deleting) return;
     try {
-      const next = await window.autoplan.deleteProject({ projectId: deleting.id });
+      const next = await client.deleteProject({ projectId: deleting.id });
       setSnapshot(next);
       setDeleting(null);
       setError(null);

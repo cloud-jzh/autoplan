@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "version": "p07-node-plan-golden-v1",
+  "source": "synthetic-node-reference",
+  "normalization": {
+    "timestamp": "<utc-timestamp>",
+    "request_id": "<request-id>",
+    "event_id": "<event-id>"
+  },
+  "scenarios": [
+    {
+      "id": "accept-plan-completed",
+      "action": "accept",
+      "target": "plan",
+      "prestate": { "plan_status": "completed", "accepted_at": null },
+      "response": { "ok": true, "state": "accepted", "mutation": true, "audit_events": 1 }
+    },
+    {
+      "id": "unaccept-plan-completed",
+      "action": "unaccept",
+      "target": "plan",
+      "prestate": { "plan_status": "completed", "accepted_at": "<utc-timestamp>" },
+      "response": { "ok": true, "state": "unaccepted", "mutation": true, "audit_events": 1 }
+    },
+    {
+      "id": "accept-task-done",
+      "action": "accept",
+      "target": "task",
+      "prestate": { "task_status": "done", "accepted_at": null },
+      "response": { "ok": true, "state": "accepted", "mutation": true, "audit_events": 1 }
+    },
+    {
+      "id": "unaccept-task-passed",
+      "action": "unaccept",
+      "target": "task",
+      "prestate": { "task_status": "passed", "accepted_at": "<utc-timestamp>" },
+      "response": { "ok": true, "state": "unaccepted", "mutation": true, "audit_events": 1 }
+    },
+    {
+      "id": "redo-completed-plan-with-completed-tasks",
+      "action": "redo",
+      "target": "plan",
+      "prestate": { "plan_status": "completed", "task_statuses": ["completed", "pending"] },
+      "response": { "ok": true, "state": "pending", "mutation": true, "audit_events": 1 }
+    },
+    {
+      "id": "redo-completed-task",
+      "action": "redo",
+      "target": "task",
+      "prestate": { "plan_status": "completed", "task_status": "completed" },
+      "response": { "ok": true, "state": "pending", "mutation": true, "audit_events": 1 }
+    },
+    {
+      "id": "reorder-complete-project-set",
+      "action": "reorder",
+      "target": "plan-set",
+      "prestate": { "plan_ids": [2, 1], "sort_order": [1, 2] },
+      "response": { "ok": true, "state": "reordered", "mutation": true, "audit_events": 1, "order": [2, 1] }
+    },
+    {
+      "id": "delete-idle-plan-keeps-linked-intakes",
+      "action": "delete",
+      "target": "plan",
+      "prestate": { "plan_status": "completed", "task_statuses": ["completed"], "linked_intakes": 2 },
+      "response": { "ok": true, "state": "deleted", "mutation": true, "audit_events": 1, "linked_intakes_retained": true }
+    },
+    {
+      "id": "accept-pending-plan-rejected",
+      "action": "accept",
+      "target": "plan",
+      "prestate": { "plan_status": "pending", "accepted_at": null },
+      "response": { "ok": false, "error": "invalid_plan", "mutation": false, "audit_events": 0 }
+    },
+    {
+      "id": "accept-running-task-rejected",
+      "action": "accept",
+      "target": "task",
+      "prestate": { "task_status": "running", "accepted_at": null },
+      "response": { "ok": false, "error": "invalid_task", "mutation": false, "audit_events": 0 }
+    },
+    {
+      "id": "duplicate-accept-target-is-idempotent",
+      "action": "accept-batch",
+      "target": "mixed",
+      "prestate": { "targets": ["plan:1", "plan:1", "task:2"] },
+      "response": { "ok": true, "state": "accepted", "mutation": true, "audit_events": 2, "deduplicated": true }
+    },
+    {
+      "id": "cross-project-target-rejected",
+      "action": "accept",
+      "target": "plan",
+      "prestate": { "ownership": "different-project" },
+      "response": { "ok": false, "error": "project_mismatch", "mutation": false, "audit_events": 0 }
+    },
+    {
+      "id": "missing-target-rejected",
+      "action": "delete",
+      "target": "plan",
+      "prestate": { "exists": false },
+      "response": { "ok": false, "error": "not_found", "mutation": false, "audit_events": 0 }
+    },
+    {
+      "id": "stale-reorder-rejected",
+      "action": "reorder",
+      "target": "plan-set",
+      "prestate": { "version": "stale" },
+      "response": { "ok": false, "error": "version_conflict", "mutation": false, "audit_events": 0 }
+    },
+    {
+      "id": "delete-running-plan-protected",
+      "action": "delete",
+      "target": "plan",
+      "prestate": { "plan_status": "running" },
+      "response": { "ok": false, "error": "relation_conflict", "mutation": false, "audit_events": 0 }
+    },
+    {
+      "id": "delete-plan-with-running-task-protected",
+      "action": "delete",
+      "target": "plan",
+      "prestate": { "plan_status": "completed", "task_statuses": ["running"] },
+      "response": { "ok": false, "error": "relation_conflict", "mutation": false, "audit_events": 0 }
+    }
+  ]
+}

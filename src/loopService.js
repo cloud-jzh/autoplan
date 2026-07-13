@@ -1,4 +1,5 @@
 const { EventEmitter } = require('node:events');
+const { assertNodeMutationAllowed } = require('./data/databaseOwnerGuard');
 const fs = require('node:fs');
 const path = require('node:path');
 const { AsyncLocalStorage } = require('node:async_hooks');
@@ -171,6 +172,9 @@ function isOpenCodePlanGenerationOperation(label, operation = {}) {
 class LoopService extends EventEmitter {
   constructor(db) {
     super();
+    // Go owner mode must use GoRuntimeAdapter. Refuse construction before a
+    // legacy service can inspect schema or schedule a sql.js-backed action.
+    assertNodeMutationAllowed();
     this.db = db;
     this.runtimes = new Map();
     // 由 main.js 在持有 mcpServer 句柄后注入：返回 mcpServer?.status?.()，供快照叠加实时运行态。

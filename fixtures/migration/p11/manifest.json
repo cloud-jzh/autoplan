@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "kind": "p11-sanitized-node-runtime-fixture",
+  "generator": "scripts/migration-p11/generate-node-golden.js",
+  "artifacts": [
+    "node-runtime.golden.json"
+  ],
+  "authorization": "Repository-owned sanitized fixture only; no Electron userData, external workspace, real Agent CLI, configuration file or database is an input.",
+  "redaction": {
+    "workspace": "<fixture-workspace>",
+    "last_file": "<last-file>",
+    "session_id": "<session-id>",
+    "environment_values": "never recorded",
+    "prompt_content": "never recorded"
+  }
+}

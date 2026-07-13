@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autoplan.local/schemas/file_policy.schema.json",
+  "title": "File access policy",
+  "$ref": "#/$defs/response",
+  "$defs": {
+    "scope": {
+      "type": "string",
+      "enum": ["project", "workspace", "custom", "all"]
+    },
+    "absolute_root": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "description": "Authenticated local capability root. It is never included in errors or logs."
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "scope", "allow_cross_project", "allowed_roots"],
+      "properties": {
+        "version": { "type": "integer", "format": "int64", "minimum": 1 },
+        "scope": { "$ref": "#/$defs/scope" },
+        "allow_cross_project": { "type": "boolean", "default": false },
+        "allowed_roots": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/absolute_root" }
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "allow_cross_project", "allowed_roots", "version", "high_risk"],
+      "properties": {
+        "scope": { "$ref": "#/$defs/scope" },
+        "allow_cross_project": { "type": "boolean" },
+        "allowed_roots": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/absolute_root" }
+        },
+        "version": { "type": "integer", "format": "int64", "minimum": 1 },
+        "high_risk": {
+          "type": "boolean",
+          "description": "Always true for scope=all; all relaxes general reads only and never controlled writes."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "scope": { "const": "all" } }, "required": ["scope"] },
+          "then": { "properties": { "high_risk": { "const": true } } }
+        }
+      ]
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "read_file", "search_files", "open_file", "attachment", "script",
+        "executor_cwd", "terminal_cwd", "generic_write", "plan_markdown_write",
+        "plan_spec_write", "plan_manifest_write", "progress_log_write"
+      ]
+    },
+    "error_code": {
+      "type": "string",
+      "enum": [
+        "FILE_PATH_INVALID", "FILE_PATH_OUTSIDE_SCOPE", "FILE_PATH_RESOLUTION_FAILED",
+        "FILE_PATH_SYMLINK_ESCAPE", "FILE_PATH_RACE_DETECTED",
+        "FILE_PATH_CONTROLLED_TARGET_INVALID", "FILE_POLICY_INVALID",
+        "FILE_POLICY_VERSION_REQUIRED", "FILE_POLICY_VERSION_CONFLICT"
+      ]
+    }
+  }
+}

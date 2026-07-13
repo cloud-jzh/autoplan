@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autoplan.local/schemas/script-run.schema.json",
+  "title": "Script runtime action contracts",
+  "$ref": "#/$defs/empty_request",
+  "$defs": {
+    "empty_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0,
+      "description": "The persisted Script definition is the sole source of runtime, command, source, workdir, environment and context."
+    },
+    "operation_accepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation_id", "type", "status", "request_id", "accepted_at"],
+      "properties": {
+        "operation_id": { "$ref": "#/$defs/identifier" },
+        "type": { "const": "script.run" },
+        "status": { "enum": ["queued", "running"] },
+        "request_id": { "$ref": "#/$defs/request_id" },
+        "accepted_at": { "$ref": "#/$defs/utc_timestamp" }
+      }
+    },
+    "stop_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stopped", "changed"],
+      "properties": {
+        "operation": {
+          "oneOf": [
+            { "$ref": "#/$defs/operation_reference" },
+            { "type": "null" }
+          ]
+        },
+        "stopped": { "type": "boolean" },
+        "changed": { "type": "boolean" }
+      }
+    },
+    "operation_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation_id", "type", "status", "request_id", "accepted_at"],
+      "properties": {
+        "operation_id": { "$ref": "#/$defs/identifier" },
+        "type": { "const": "script.run" },
+        "status": { "enum": ["queued", "running", "succeeded", "failed", "cancelled", "interrupted"] },
+        "request_id": { "$ref": "#/$defs/request_id" },
+        "accepted_at": { "$ref": "#/$defs/utc_timestamp" }
+      }
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "request_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"
+    },
+    "utc_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    }
+  }
+}

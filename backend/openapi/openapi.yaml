@@ -1,0 +1,2679 @@
+openapi: 3.1.0
+info:
+  title: AutoPlan Loopback Sidecar API
+  version: 0.6.0-runtime-actions
+  description: |
+    Versioned contract for the loopback-only Go sidecar. Project, LoopConfig,
+    Intake, attachment, and Plan persistence operations use shared application
+    services, caller-scoped idempotency, project ownership checks, and safe
+    public DTOs. Runtime operations use one typed bridge shared by REST, MCP,
+    UI and the Node compatibility client. Versioned resource action routes
+    return an Operation reference and never expose process, workspace,
+    session, environment, or secret data; arbitrary SQL and table endpoints
+    are not part of this API.
+servers:
+  - url: http://127.0.0.1:{port}
+    description: Process-local loopback listener
+    variables:
+      port:
+        default: "0"
+        description: Runtime-selected port; 0 is configuration notation only.
+tags:
+  - name: probes
+  - name: projects
+  - name: config
+  - name: intake
+  - name: attachments
+  - name: capabilities
+  - name: plans
+  - name: tasks
+  - name: automation
+  - name: scripts
+  - name: executors
+  - name: chat
+  - name: mcp
+  - name: terminal
+  - name: runtime
+  - name: operations
+  - name: events
+  - name: skeleton
+paths:
+  /healthz:
+    get:
+      tags: [probes]
+      operationId: getHealth
+      summary: Process liveness
+      description: Does not imply dependency readiness and never returns configuration or credentials.
+      responses:
+        "200":
+          description: Process is alive.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProbeResponse"
+  /readyz:
+    get:
+      tags: [probes]
+      operationId: getReadiness
+      summary: Dependency and lifecycle readiness
+      responses:
+        "200":
+          description: The configured bootstrap gates are ready.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProbeResponse"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/projects:
+    get:
+      tags: [projects]
+      operationId: listProjects
+      summary: List projects in deterministic update order
+      description: |
+        Returns projects ordered by updated_at descending with the application
+        service's stable ID tie-break. Repeated, empty, malformed, or unknown
+        query parameters are rejected. Pages beyond the result set return an
+        empty data array with the same total and a null next_page. Responses
+        are Cache-Control: no-store and do not emit validators, so conditional
+        request headers never produce a 304 response.
+      security:
+        - SessionHeader: []
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/ProjectSort"
+        - $ref: "#/components/parameters/ProjectFilter"
+      responses:
+        "200":
+          description: A deterministic page of projects.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectListEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "504":
+          $ref: "#/components/responses/RequestTimeout"
+    post:
+      tags: [projects]
+      operationId: createProject
+      summary: Create a project and return its committed compatibility snapshot
+      security:
+        - SessionHeader: []
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: Project committed and reread from the repository.
+          headers:
+            X-Request-ID: { $ref: "#/components/headers/RequestID" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotEnvelope"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "423": { $ref: "#/components/responses/Locked" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "504": { $ref: "#/components/responses/RequestTimeout" }
+    head:
+      tags: [projects]
+      operationId: headProjects
+      summary: Validate access to the project list representation
+      description: Runs the same validation, authorization, and service read as GET but returns no response body.
+      security:
+        - SessionHeader: []
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/ProjectSort"
+        - $ref: "#/components/parameters/ProjectFilter"
+      responses:
+        "200":
+          description: The project page is available; representation body omitted.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "504":
+          $ref: "#/components/responses/RequestTimeout"
+  /api/v1/projects/{project_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectID"
+    get:
+      tags: [projects]
+      operationId: getProject
+      summary: Get one project
+      description: Returns the shared application Project DTO. The authorized local workspace_path is never available before session, Origin, and Host validation.
+      security:
+        - SessionHeader: []
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      responses:
+        "200":
+          description: The requested project.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "504":
+          $ref: "#/components/responses/RequestTimeout"
+    head:
+      tags: [projects]
+      operationId: headProject
+      summary: Validate access to one project representation
+      description: Runs the same validation, authorization, and service read as GET but returns no response body and never emits a validator.
+      security:
+        - SessionHeader: []
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      responses:
+        "200":
+          description: The project exists; representation body omitted.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "504":
+          $ref: "#/components/responses/RequestTimeout"
+    patch:
+      tags: [projects]
+      operationId: updateProject
+      summary: Update project metadata and return the committed snapshot
+      security:
+        - SessionHeader: []
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectRequest"
+      responses:
+        "200":
+          description: Project update committed and reread.
+          headers:
+            X-Request-ID: { $ref: "#/components/headers/RequestID" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SnapshotEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "423": { $ref: "#/components/responses/Locked" }
+        "428": { $ref: "#/components/responses/PreconditionRequired" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "504": { $ref: "#/components/responses/RequestTimeout" }
+    delete:
+      tags: [projects]
+      operationId: deleteProject
+      summary: Delete a stopped project according to the frozen relation policy
+      security:
+        - SessionHeader: []
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Project deleted; data is the committed project-list snapshot.
+          headers:
+            X-Request-ID: { $ref: "#/components/headers/RequestID" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SnapshotEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "423": { $ref: "#/components/responses/Locked" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "504": { $ref: "#/components/responses/RequestTimeout" }
+  /api/v1/projects/{project_id}/loop-config:
+    parameters:
+      - $ref: "#/components/parameters/ProjectID"
+    get:
+      tags: [config]
+      operationId: getLoopConfig
+      summary: Get the sanitized committed project configuration snapshot
+      security:
+        - SessionHeader: []
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      responses:
+        "200":
+          description: Sanitized configuration snapshot; raw tokens and env values are absent.
+          headers:
+            X-Request-ID: { $ref: "#/components/headers/RequestID" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SnapshotEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "504": { $ref: "#/components/responses/RequestTimeout" }
+    head:
+      tags: [config]
+      operationId: headLoopConfig
+      summary: Validate access to the sanitized configuration representation
+      security:
+        - SessionHeader: []
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      responses:
+        "200": { description: Configuration exists; representation body omitted. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "504": { $ref: "#/components/responses/RequestTimeout" }
+    patch:
+      tags: [config]
+      operationId: configureLoop
+      summary: Replace the versioned LoopConfig target and return the committed snapshot
+      security:
+        - SessionHeader: []
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoopConfigRequest" }
+      responses:
+        "200":
+          description: Versioned configuration committed and reread.
+          headers:
+            X-Request-ID: { $ref: "#/components/headers/RequestID" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SnapshotEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "423": { $ref: "#/components/responses/Locked" }
+        "428": { $ref: "#/components/responses/PreconditionRequired" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "504": { $ref: "#/components/responses/RequestTimeout" }
+    delete:
+      tags: [config]
+      operationId: resetLoopConfig
+      summary: Reset LoopConfig defaults using optimistic version control
+      security:
+        - SessionHeader: []
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResetConfigRequest" }
+      responses:
+        "200":
+          description: Defaults committed and reread.
+          headers:
+            X-Request-ID: { $ref: "#/components/headers/RequestID" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SnapshotEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "423": { $ref: "#/components/responses/Locked" }
+        "428": { $ref: "#/components/responses/PreconditionRequired" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "504": { $ref: "#/components/responses/RequestTimeout" }
+  /api/v1/projects/{project_id}/snapshot:
+    parameters:
+      - $ref: "#/components/parameters/ProjectID"
+    get:
+      tags: [projects]
+      operationId: getProjectSnapshot
+      summary: Get the complete compatibility snapshot for one project
+      description: |
+        Controlled HTTP mapping of the P00 historical snapshot IPC target. The
+        shared application service preserves the complete AppSnapshot shape and
+        rejects a missing explicit project instead of substituting an empty
+        snapshot. Responses are no-store and do not return 304.
+      security:
+        - SessionHeader: []
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      responses:
+        "200":
+          description: Complete compatibility snapshot.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "504":
+          $ref: "#/components/responses/RequestTimeout"
+    head:
+      tags: [projects]
+      operationId: headProjectSnapshot
+      summary: Validate access to one compatibility snapshot
+      description: Runs the same validation, authorization, and service read as GET but returns no response body.
+      security:
+        - SessionHeader: []
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      responses:
+        "200":
+          description: The snapshot is available; representation body omitted.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "504":
+          $ref: "#/components/responses/RequestTimeout"
+  /api/v1/projects/{project_id}/requirements:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    get:
+      tags: [intake]
+      operationId: listRequirements
+      summary: List project requirements
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/Page" }, { $ref: "#/components/parameters/PageSize" }, { $ref: "#/components/parameters/IntakeStatus" }]
+      responses:
+        "200": { $ref: "#/components/responses/IntakeList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+    post:
+      tags: [intake]
+      operationId: createRequirement
+      summary: Create a requirement
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateIntakeRequest" } } } }
+      responses:
+        "201": { $ref: "#/components/responses/IntakeMutation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /api/v1/projects/{project_id}/requirements/{intake_id}:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/IntakeID" }]
+    get:
+      tags: [intake]
+      operationId: getRequirement
+      summary: Get one requirement
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }]
+      responses:
+        "200": { $ref: "#/components/responses/Intake" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [intake]
+      operationId: updateRequirement
+      summary: Patch one requirement under optional timestamp precondition
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateIntakeRequest" } } } }
+      responses:
+        "200": { $ref: "#/components/responses/IntakeMutation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "412": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+    delete:
+      tags: [intake]
+      operationId: deleteRequirement
+      summary: Delete a requirement and schedule associated attachment cleanup
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "200": { $ref: "#/components/responses/IntakeMutation" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "423": { $ref: "#/components/responses/Locked" }
+  /api/v1/projects/{project_id}/requirements/{intake_id}/accept:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/IntakeID" }]
+    post:
+      tags: [intake]
+      operationId: acceptRequirement
+      summary: Mark a requirement accepted
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses: { "200": { $ref: "#/components/responses/IntakeMutation" }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" } }
+    delete:
+      tags: [intake]
+      operationId: unacceptRequirement
+      summary: Clear requirement acceptance
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses: { "200": { $ref: "#/components/responses/IntakeMutation" }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" } }
+  /api/v1/projects/{project_id}/requirements/{intake_id}/plan-links:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/IntakeID" }]
+    get:
+      tags: [intake]
+      operationId: listRequirementPlanLinks
+      summary: List frozen plan links for a requirement
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }]
+      responses: { "200": { $ref: "#/components/responses/PlanLinks" }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" } }
+    put:
+      tags: [intake]
+      operationId: replaceRequirementPlanLinks
+      summary: Atomically replace requirement plan links
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ReplacePlanLinksRequest" } } } }
+      responses: { "200": { $ref: "#/components/responses/IntakeMutation" }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" } }
+  /api/v1/projects/{project_id}/requirements/{intake_id}/attachments:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/IntakeID" }]
+    post:
+      tags: [attachments]
+      operationId: uploadRequirementAttachment
+      summary: Upload one verified requirement attachment
+      description: Exactly one multipart file field named file is accepted. Storage paths, hashes, and recovery records are server-controlled.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, additionalProperties: false, required: [file], properties: { file: { type: string, format: binary } } } } } }
+      responses: { "201": { $ref: "#/components/responses/AttachmentUpload" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "413": { $ref: "#/components/responses/ErrorResponse" }, "415": { $ref: "#/components/responses/ErrorResponse" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "423": { $ref: "#/components/responses/Locked" } }
+  /api/v1/projects/{project_id}/feedback:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    get:
+      tags: [intake]
+      operationId: listFeedback
+      summary: List project feedback
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/Page" }, { $ref: "#/components/parameters/PageSize" }, { $ref: "#/components/parameters/IntakeStatus" }]
+      responses: { "200": { $ref: "#/components/responses/IntakeList" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" } }
+    post:
+      tags: [intake]
+      operationId: createFeedback
+      summary: Create feedback, optionally associated with a requirement
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateIntakeRequest" } } } }
+      responses: { "201": { $ref: "#/components/responses/IntakeMutation" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" } }
+  /api/v1/projects/{project_id}/feedback/{intake_id}:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/IntakeID" }]
+    get:
+      tags: [intake]
+      operationId: getFeedback
+      summary: Get one feedback record
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }]
+      responses: { "200": { $ref: "#/components/responses/Intake" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" } }
+    patch:
+      tags: [intake]
+      operationId: updateFeedback
+      summary: Patch one feedback record
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateIntakeRequest" } } } }
+      responses: { "200": { $ref: "#/components/responses/IntakeMutation" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "412": { $ref: "#/components/responses/ErrorResponse" }, "422": { $ref: "#/components/responses/ErrorResponse" } }
+    delete:
+      tags: [intake]
+      operationId: deleteFeedback
+      summary: Delete feedback and schedule associated attachment cleanup
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses: { "200": { $ref: "#/components/responses/IntakeMutation" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "423": { $ref: "#/components/responses/Locked" } }
+  /api/v1/projects/{project_id}/feedback/{intake_id}/accept:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/IntakeID" }]
+    post:
+      tags: [intake]
+      operationId: acceptFeedback
+      summary: Mark feedback accepted
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses: { "200": { $ref: "#/components/responses/IntakeMutation" }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" } }
+    delete:
+      tags: [intake]
+      operationId: unacceptFeedback
+      summary: Clear feedback acceptance
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses: { "200": { $ref: "#/components/responses/IntakeMutation" }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" } }
+  /api/v1/projects/{project_id}/feedback/{intake_id}/plan-links:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/IntakeID" }]
+    get:
+      tags: [intake]
+      operationId: listFeedbackPlanLinks
+      summary: List frozen plan links for feedback
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }]
+      responses: { "200": { $ref: "#/components/responses/PlanLinks" }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" } }
+    put:
+      tags: [intake]
+      operationId: replaceFeedbackPlanLinks
+      summary: Atomically replace feedback plan links
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ReplacePlanLinksRequest" } } } }
+      responses: { "200": { $ref: "#/components/responses/IntakeMutation" }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" } }
+  /api/v1/projects/{project_id}/feedback/{intake_id}/attachments:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/IntakeID" }]
+    post:
+      tags: [attachments]
+      operationId: uploadFeedbackAttachment
+      summary: Upload one verified feedback attachment
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, additionalProperties: false, required: [file], properties: { file: { type: string, format: binary } } } } } }
+      responses: { "201": { $ref: "#/components/responses/AttachmentUpload" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "413": { $ref: "#/components/responses/ErrorResponse" }, "415": { $ref: "#/components/responses/ErrorResponse" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "423": { $ref: "#/components/responses/Locked" } }
+  /api/v1/attachments/{attachment_id}/content:
+    parameters: [{ $ref: "#/components/parameters/AttachmentID" }]
+    get:
+      tags: [attachments]
+      operationId: downloadAttachment
+      summary: Authorized attachment download
+      description: project_id is mandatory and must match the attachment's project; Range supports one bytes range.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/AttachmentProjectID" }, { name: Range, in: header, required: false, schema: { type: string, pattern: "^bytes=.*$" } }]
+      responses:
+        "200": { description: Attachment bytes, headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" }, Content-Disposition: { schema: { type: string } } }, content: { application/octet-stream: { schema: { type: string, format: binary } } } }
+        "206": { description: Partial attachment bytes, headers: { Content-Range: { schema: { type: string } } }, content: { application/octet-stream: { schema: { type: string, format: binary } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "416": { $ref: "#/components/responses/ErrorResponse" }
+    head:
+      tags: [attachments]
+      operationId: headAttachment
+      summary: Validate attachment download and return headers only
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/AttachmentProjectID" }]
+      responses: { "200": { description: Attachment is available. }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" } }
+  /api/v1/attachments/{attachment_id}:
+    parameters: [{ $ref: "#/components/parameters/AttachmentID" }]
+    delete:
+      tags: [attachments]
+      operationId: deleteAttachment
+      summary: Authorize and delete one attachment
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/AttachmentProjectID" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses: { "200": { $ref: "#/components/responses/AttachmentDelete" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "423": { $ref: "#/components/responses/Locked" }, "507": { $ref: "#/components/responses/ErrorResponse" } }
+  /api/v1/capabilities:
+    get:
+      tags: [capabilities]
+      operationId: listCapabilities
+      summary: Discover the fixed P07 capability surface
+      description: Returns pure persistence capabilities as enabled and every long-running action as disabled. The result is static for this release and cannot be changed by request input or development configuration.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }]
+      responses:
+        "200": { $ref: "#/components/responses/Capabilities" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/plans/actions/run:
+    post:
+      tags: [plans]
+      operationId: runPlan
+      summary: Reserved Plan run action
+      description: The v1 request and future success representation are reserved. This P07 release performs no target lookup or side effect and always returns not_implemented with capability plans.run after transport authorization.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PlanActionRequest" } } } }
+      responses: { "202": { $ref: "#/components/responses/ActionAccepted" }, "501": { $ref: "#/components/responses/NotImplemented" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" } }
+  /api/v1/plans/actions/stop:
+    post:
+      tags: [plans]
+      operationId: stopPlan
+      summary: Reserved Plan stop action
+      description: Disabled in P07; no process is inspected or stopped.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PlanActionRequest" } } } }
+      responses: { "202": { $ref: "#/components/responses/ActionAccepted" }, "501": { $ref: "#/components/responses/NotImplemented" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" } }
+  /api/v1/plans/actions/resume:
+    post:
+      tags: [plans]
+      operationId: resumePlan
+      summary: Reserved Plan resume action
+      description: Disabled in P07; no runtime state is read or changed.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PlanActionRequest" } } } }
+      responses: { "202": { $ref: "#/components/responses/ActionAccepted" }, "501": { $ref: "#/components/responses/NotImplemented" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" } }
+  /api/v1/plans/actions/re-execute:
+    post:
+      tags: [plans]
+      operationId: reexecutePlan
+      summary: Reserved Plan re-execute action
+      description: Disabled in P07; no Plan or Task state is reset.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PlanActionRequest" } } } }
+      responses: { "202": { $ref: "#/components/responses/ActionAccepted" }, "501": { $ref: "#/components/responses/NotImplemented" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" } }
+  /api/v1/plans/actions/recreate:
+    post:
+      tags: [plans]
+      operationId: recreatePlan
+      summary: Reserved Plan recreation action
+      description: Disabled in P07; no intake, file, or Plan generation state is read or changed.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PlanActionRequest" } } } }
+      responses: { "202": { $ref: "#/components/responses/ActionAccepted" }, "501": { $ref: "#/components/responses/NotImplemented" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" } }
+  /api/v1/tasks/actions/run:
+    post:
+      tags: [tasks]
+      operationId: runTask
+      summary: Reserved PlanTask run action
+      description: Disabled in P07; no command, credential, process, or task state is accessed.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TaskActionRequest" } } } }
+      responses: { "202": { $ref: "#/components/responses/ActionAccepted" }, "501": { $ref: "#/components/responses/NotImplemented" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" } }
+  /api/v1/tasks/actions/run-batches:
+    post:
+      tags: [tasks]
+      operationId: runTaskBatches
+      summary: Reserved PlanTask batch run action
+      description: Disabled in P07; batch grouping is contractual only and does not schedule or execute tasks.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RunBatchesRequest" } } } }
+      responses: { "202": { $ref: "#/components/responses/ActionAccepted" }, "501": { $ref: "#/components/responses/NotImplemented" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" } }
+  /api/v1/tasks/actions/stop:
+    post:
+      tags: [tasks]
+      operationId: stopTask
+      summary: Reserved PlanTask stop action
+      description: Disabled in P07; no process is inspected or stopped.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TaskActionRequest" } } } }
+      responses: { "202": { $ref: "#/components/responses/ActionAccepted" }, "501": { $ref: "#/components/responses/NotImplemented" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" } }
+  /api/v1/runtime/commands:
+    post:
+      tags: [runtime]
+      operationId: executeRuntimeCommand
+      summary: Execute one versioned Loop, Plan, Task, Chat, automation, or runtime configuration command
+      description: |
+        The command DTO is closed and uses snake_case. It never accepts SQL,
+        table identifiers, process arguments, or an environment map. Typed
+        terminal settings are write-only intent and require runtime policy.
+        The same application bridge is used by REST, MCP,
+        UI, and the Node compatibility client. A success requires a real
+        operation reference; unavailable dispatchers fail without local replay.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/ActionIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeCommand"
+      responses:
+        "202":
+          description: Command accepted by the Go runtime owner.
+          headers:
+            X-Request-ID: { $ref: "#/components/headers/RequestID" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeCommandEnvelope"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "504": { $ref: "#/components/responses/RequestTimeout" }
+  /api/v1/skeleton/rest:
+    post:
+      tags: [skeleton]
+      operationId: invokeRestSkeleton
+      summary: Authenticated REST boundary placeholder
+      description: Validates the shared session, exact Origin, and idempotency-key shape before returning not_implemented.
+      security:
+        - SessionHeader: []
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/skeleton/sse:
+    get:
+      tags: [skeleton]
+      operationId: openSseSkeleton
+      summary: Authenticated SSE handshake placeholder
+      description: Performs shared transport authorization but does not start a production event stream.
+      security:
+        - SessionHeader: []
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - name: Accept
+          in: header
+          required: true
+          schema:
+            type: string
+            const: text/event-stream
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/projects/{project_id}/scripts:
+    get:
+      tags: [automation]
+      operationId: listScripts
+      summary: List static script metadata for one project
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/AutomationLimit"}, {$ref: "#/components/parameters/AutomationOffset"}]
+      responses: {"200": {$ref: "#/components/responses/AutomationScripts"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}}
+    post:
+      tags: [automation]
+      operationId: createScript
+      summary: Persist static script metadata
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+      responses: {"201": {$ref: "#/components/responses/AutomationScript"}, "422": {$ref: "#/components/responses/ErrorResponse"}}
+  /api/v1/projects/{project_id}/scripts/{script_id}:
+    get:
+      tags: [automation]
+      operationId: getScript
+      summary: Get safe static script metadata
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ScriptID"}]
+      responses: {"200": {$ref: "#/components/responses/AutomationScript"}, "404": {$ref: "#/components/responses/NotFound"}}
+    patch:
+      tags: [automation]
+      operationId: updateScript
+      summary: Update static script metadata with a body version
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ScriptID"}]
+      responses: {"200": {$ref: "#/components/responses/AutomationScript"}, "412": {$ref: "#/components/responses/PreconditionRequired"}}
+    delete:
+      tags: [automation]
+      operationId: deleteScript
+      summary: Delete static script metadata using a version query parameter
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ScriptID"}, {$ref: "#/components/parameters/Version"}]
+      responses: {"200": {$ref: "#/components/responses/AutomationScript"}, "412": {$ref: "#/components/responses/PreconditionRequired"}}
+  /api/v1/projects/{project_id}/executors:
+    get:
+      tags: [automation]
+      operationId: listExecutors
+      summary: List static executor metadata for one project
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/AutomationLimit"}, {$ref: "#/components/parameters/AutomationOffset"}]
+      responses: {"200": {$ref: "#/components/responses/AutomationExecutors"}}
+    post:
+      tags: [automation]
+      operationId: createExecutor
+      summary: Persist static executor metadata without running it
+      parameters: [{$ref: "#/components/parameters/ProjectID"}]
+      responses: {"201": {$ref: "#/components/responses/AutomationExecutor"}, "422": {$ref: "#/components/responses/ErrorResponse"}}
+  /api/v1/projects/{project_id}/executors/{executor_id}:
+    get:
+      tags: [automation]
+      operationId: getExecutor
+      summary: Get safe static executor metadata
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ExecutorID"}]
+      responses: {"200": {$ref: "#/components/responses/AutomationExecutor"}, "404": {$ref: "#/components/responses/NotFound"}}
+    patch:
+      tags: [automation]
+      operationId: updateExecutor
+      summary: Update static executor metadata with a body version
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ExecutorID"}]
+      responses: {"200": {$ref: "#/components/responses/AutomationExecutor"}, "412": {$ref: "#/components/responses/PreconditionRequired"}}
+    delete:
+      tags: [automation]
+      operationId: deleteExecutor
+      summary: Delete static executor metadata using a version query parameter
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ExecutorID"}, {$ref: "#/components/parameters/Version"}]
+      responses: {"200": {$ref: "#/components/responses/AutomationExecutor"}}
+  /api/v1/projects/{project_id}/scripts/{script_id}/toggle:
+    post:
+      tags: [automation]
+      operationId: toggleScript
+      summary: Persist the inverse enabled state without running a script
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ScriptID"}]
+      responses: {"200": {$ref: "#/components/responses/AutomationScript"}}
+  /api/v1/projects/{project_id}/executors/{executor_id}/toggle:
+    post:
+      tags: [automation]
+      operationId: toggleExecutor
+      summary: Persist the inverse enabled state without running an executor
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ExecutorID"}]
+      responses: {"200": {$ref: "#/components/responses/AutomationExecutor"}}
+  /api/v1/projects/{project_id}/scripts/{script_id}/actions/run:
+    post:
+      tags: [scripts]
+      operationId: runScript
+      summary: Run one persisted manual Script through the shared application service
+      description: The request body is deliberately empty. Trigger mode, runtime, source, workdir, context injection and timeout are loaded only from the project-scoped persisted Script.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/Origin"}, {$ref: "#/components/parameters/ActionIdempotencyKey"}, {$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ScriptID"}]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/script-run.schema.json#/$defs/empty_request" } } } }
+      responses: {"202": {$ref: "#/components/responses/ScriptRunAccepted"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "404": {$ref: "#/components/responses/NotFound"}, "409": {$ref: "#/components/responses/Conflict"}, "422": {$ref: "#/components/responses/ErrorResponse"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}, "504": {$ref: "#/components/responses/RequestTimeout"}}
+  /api/v1/projects/{project_id}/scripts/{script_id}/actions/stop:
+    post:
+      tags: [scripts]
+      operationId: stopScript
+      summary: Stop only the current Go-owned Script run
+      description: No client PID or operation selector is accepted; an absent local owner returns a bounded stopped=false result.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/Origin"}, {$ref: "#/components/parameters/ActionIdempotencyKey"}, {$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ScriptID"}]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/script-run.schema.json#/$defs/empty_request" } } } }
+      responses: {"202": {$ref: "#/components/responses/ScriptStopAccepted"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "404": {$ref: "#/components/responses/NotFound"}, "409": {$ref: "#/components/responses/Conflict"}, "422": {$ref: "#/components/responses/ErrorResponse"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}, "504": {$ref: "#/components/responses/RequestTimeout"}}
+  /api/v1/projects/{project_id}/executors/{executor_id}/actions/run:
+    post:
+      tags: [executors]
+      operationId: runExecutor
+      summary: Run one persisted Executor through the shared application service
+      description: The body cannot override command, args, shell, cwd, environment, PID, dependency or plugin state.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/Origin"}, {$ref: "#/components/parameters/ActionIdempotencyKey"}, {$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ExecutorID"}]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/executor-run.schema.json#/$defs/empty_request" } } } }
+      responses: {"202": {$ref: "#/components/responses/ExecutorRunAccepted"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "404": {$ref: "#/components/responses/NotFound"}, "409": {$ref: "#/components/responses/Conflict"}, "422": {$ref: "#/components/responses/ErrorResponse"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}, "504": {$ref: "#/components/responses/RequestTimeout"}}
+  /api/v1/projects/{project_id}/executors/{executor_id}/actions/stop:
+    post:
+      tags: [executors]
+      operationId: stopExecutor
+      summary: Stop only the current Go-owned Executor run
+      description: A caller cannot adopt a legacy process, PID, operation id or plugin state by supplying it to this route.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/Origin"}, {$ref: "#/components/parameters/ActionIdempotencyKey"}, {$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ExecutorID"}]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/executor-run.schema.json#/$defs/empty_request" } } } }
+      responses: {"202": {$ref: "#/components/responses/ExecutorStopAccepted"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "404": {$ref: "#/components/responses/NotFound"}, "409": {$ref: "#/components/responses/Conflict"}, "422": {$ref: "#/components/responses/ErrorResponse"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}, "504": {$ref: "#/components/responses/RequestTimeout"}}
+  /api/v1/projects/{project_id}/executors/{executor_id}/actions/{action}:
+    post:
+      tags: [executors]
+      operationId: runExecutorPluginAction
+      summary: Run a persisted plugin start or reload action
+      description: Only start and reload are accepted here. Stop is routed through the Go-owned Executor stop endpoint so it cannot bypass cancellation ownership.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/Origin"}, {$ref: "#/components/parameters/ActionIdempotencyKey"}, {$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ExecutorID"}, {$ref: "#/components/parameters/ExecutorPluginAction"}]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/executor-run.schema.json#/$defs/empty_request" } } } }
+      responses: {"202": {$ref: "#/components/responses/ExecutorRunAccepted"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "404": {$ref: "#/components/responses/NotFound"}, "409": {$ref: "#/components/responses/Conflict"}, "422": {$ref: "#/components/responses/ErrorResponse"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}, "504": {$ref: "#/components/responses/RequestTimeout"}}
+  /api/v1/projects/{project_id}/scripts/reorder:
+    post:
+      tags: [automation]
+      operationId: reorderScripts
+      summary: Reorder static scripts with one expected version per id
+      parameters: [{$ref: "#/components/parameters/ProjectID"}]
+      responses: {"200": {$ref: "#/components/responses/AutomationScripts"}}
+  /api/v1/projects/{project_id}/executors/reorder:
+    post:
+      tags: [automation]
+      operationId: reorderExecutors
+      summary: Reorder static executors with one expected version per id
+      parameters: [{$ref: "#/components/parameters/ProjectID"}]
+      responses: {"200": {$ref: "#/components/responses/AutomationExecutors"}}
+  /api/v1/projects/{project_id}/executors/import:
+    post:
+      tags: [automation]
+      operationId: importExecutors
+      summary: Persist a prevalidated executor batch without starting it
+      parameters: [{$ref: "#/components/parameters/ProjectID"}]
+      responses: {"201": {$ref: "#/components/responses/AutomationExecutors"}}
+  /api/v1/projects/{project_id}/conversations:
+    get:
+      tags: [chat]
+      operationId: listConversations
+      summary: List project conversations with a stable cursor
+      description: P13A frozen compatibility route. The response preserves the complete Conversation snake_case/camelCase projection and deterministic pinned/updated/id ordering.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ConversationCursor"}, {$ref: "#/components/parameters/AutomationLimit"}, {$ref: "#/components/parameters/Origin"}]
+      responses: {"200": {$ref: "#/components/responses/ConversationPage"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}}
+    post:
+      tags: [chat]
+      operationId: createConversation
+      summary: Create a project-scoped conversation
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/Origin"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/ConversationRequest"}}}}
+      responses: {"201": {$ref: "#/components/responses/Conversation"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "409": {$ref: "#/components/responses/Conflict"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}}
+  /api/v1/projects/{project_id}/conversations/{conversation_id}:
+    get:
+      tags: [chat]
+      operationId: getConversation
+      summary: Get one project-scoped conversation
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ConversationID"}, {$ref: "#/components/parameters/Origin"}]
+      responses: {"200": {$ref: "#/components/responses/Conversation"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "404": {$ref: "#/components/responses/NotFound"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}}
+    patch:
+      tags: [chat]
+      operationId: updateConversation
+      summary: Update frozen conversation metadata
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ConversationID"}, {$ref: "#/components/parameters/Origin"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/ConversationPatchRequest"}}}}
+      responses: {"200": {$ref: "#/components/responses/Conversation"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "404": {$ref: "#/components/responses/NotFound"}, "409": {$ref: "#/components/responses/Conflict"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}}
+    delete:
+      tags: [chat]
+      operationId: deleteConversation
+      summary: Delete a conversation and its stored messages
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ConversationID"}, {$ref: "#/components/parameters/Origin"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+      responses: {"200": {$ref: "#/components/responses/Conversation"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "404": {$ref: "#/components/responses/NotFound"}, "409": {$ref: "#/components/responses/Conflict"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}}
+  /api/v1/projects/{project_id}/conversations/{conversation_id}/messages:
+    get:
+      tags: [chat]
+      operationId: listConversationMessages
+      summary: List project-scoped full message history with a stable cursor
+      description: Returns the frozen ChatMessage projection. The service redacts and bounds tool data before the DTO is created; this endpoint never returns provider secrets, env_vars, raw process output, or unauthorized paths.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ConversationID"}, {$ref: "#/components/parameters/ConversationCursor"}, {$ref: "#/components/parameters/AutomationLimit"}, {$ref: "#/components/parameters/Origin"}]
+      responses: {"200": {$ref: "#/components/responses/ChatMessagePage"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "404": {$ref: "#/components/responses/NotFound"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}}
+    post:
+      tags: [chat]
+      operationId: sendConversationMessage
+      summary: Persist and enqueue one Chat turn
+      description: The selected runtime is fixed before persistence. A duplicate idempotency key returns the original admission; a different request digest returns conflict and no provider request is replayed.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ConversationID"}, {$ref: "#/components/parameters/Origin"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/ChatSendRequest"}}}}
+      responses: {"202": {$ref: "#/components/responses/ChatSendAccepted"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "404": {$ref: "#/components/responses/NotFound"}, "409": {$ref: "#/components/responses/Conflict"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}, "504": {$ref: "#/components/responses/RequestTimeout"}}
+    delete:
+      tags: [chat]
+      operationId: clearConversationMessages
+      summary: Clear stored history without adopting an in-flight turn
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ConversationID"}, {$ref: "#/components/parameters/Origin"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+      responses: {"200": {$ref: "#/components/responses/ChatClear"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "404": {$ref: "#/components/responses/NotFound"}, "409": {$ref: "#/components/responses/Conflict"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}}
+  /api/v1/projects/{project_id}/conversations/{conversation_id}/queue:
+    get:
+      tags: [chat]
+      operationId: getConversationQueue
+      summary: Read the authoritative FIFO queue snapshot
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ConversationID"}, {$ref: "#/components/parameters/Origin"}]
+      responses: {"200": {$ref: "#/components/responses/ChatQueue"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "404": {$ref: "#/components/responses/NotFound"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}}
+    delete:
+      tags: [chat]
+      operationId: clearConversationQueue
+      summary: Remove queued entries only; the current processing turn remains owned by its creator
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ConversationID"}, {$ref: "#/components/parameters/Origin"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+      responses: {"200": {$ref: "#/components/responses/ChatBooleanResult"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "404": {$ref: "#/components/responses/NotFound"}, "409": {$ref: "#/components/responses/Conflict"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}}
+  /api/v1/projects/{project_id}/conversations/{conversation_id}/queue/{message_id}:
+    patch:
+      tags: [chat]
+      operationId: editConversationQueueItem
+      summary: Edit one queued entry only
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ConversationID"}, {name: message_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}, {$ref: "#/components/parameters/Origin"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/ChatQueueEditRequest"}}}}
+      responses: {"200": {$ref: "#/components/responses/ChatBooleanResult"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "404": {$ref: "#/components/responses/NotFound"}, "409": {$ref: "#/components/responses/Conflict"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}}
+    delete:
+      tags: [chat]
+      operationId: cancelConversationQueueItem
+      summary: Cancel one queued entry only
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ConversationID"}, {name: message_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}, {$ref: "#/components/parameters/Origin"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+      responses: {"200": {$ref: "#/components/responses/ChatBooleanResult"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "404": {$ref: "#/components/responses/NotFound"}, "409": {$ref: "#/components/responses/Conflict"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}}
+  /api/v1/projects/{project_id}/conversations/{conversation_id}:stop:
+    post:
+      tags: [chat]
+      operationId: stopConversationTurn
+      summary: Request cancellation of the active Chat turn without cross-runtime takeover
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ConversationID"}, {$ref: "#/components/parameters/Origin"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+      responses: {"200": {$ref: "#/components/responses/ChatStop"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "404": {$ref: "#/components/responses/NotFound"}, "409": {$ref: "#/components/responses/Conflict"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}}
+  /api/v1/projects/{project_id}/conversations/{conversation_id}/events:
+    get:
+      tags: [events, chat]
+      operationId: subscribeConversationChatEvents
+      summary: Replay and follow ordered Chat SSE events
+      description: Persistent chat_chunk, chat_queue and chat_done events use the P10 event_id as SSE id. Last-Event-ID replays only committed events for this project/conversation; a history watermark, gap or slow consumer receives resync_required and never re-executes a provider turn.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/ProjectID"}, {$ref: "#/components/parameters/ConversationID"}, {$ref: "#/components/parameters/Origin"}, {$ref: "#/components/parameters/SSEAccept"}, {$ref: "#/components/parameters/LastEventID"}]
+      responses: {"200": {$ref: "#/components/responses/ChatEventStream"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "404": {$ref: "#/components/responses/NotFound"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}}
+  /api/v1/ai-configs:
+    get:
+      tags: [config]
+      operationId: listAIConfigs
+      summary: List masked AI configuration metadata
+      responses: {"200": {$ref: "#/components/responses/AIConfigs"}}
+    post:
+      tags: [config]
+      operationId: createAIConfig
+      summary: Create a static AI configuration without accepting a raw secret
+      responses: {"201": {$ref: "#/components/responses/AIConfig"}}
+  /api/v1/ai-configs/{ai_config_id}:
+    get:
+      tags: [config]
+      operationId: getAIConfig
+      summary: Get masked AI configuration metadata
+      parameters: [{name: ai_config_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}]
+      responses: {"200": {$ref: "#/components/responses/AIConfig"}, "404": {$ref: "#/components/responses/NotFound"}}
+    patch:
+      tags: [config]
+      operationId: updateAIConfig
+      summary: Update static AI configuration with a body version and no raw secret field
+      parameters: [{name: ai_config_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}]
+      responses: {"200": {$ref: "#/components/responses/AIConfig"}, "412": {$ref: "#/components/responses/PreconditionRequired"}}
+    delete:
+      tags: [config]
+      operationId: deleteAIConfig
+      summary: Delete static AI configuration using a version query parameter
+      parameters: [{name: ai_config_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}, {$ref: "#/components/parameters/Version"}]
+      responses: {"200": {$ref: "#/components/responses/AIConfig"}}
+  /api/v1/claude-cli-configs:
+    get:
+      tags: [config]
+      operationId: listClaudeCLIConfigs
+      summary: List masked Claude CLI configuration metadata
+      responses: {"200": {$ref: "#/components/responses/ClaudeConfigs"}}
+    post:
+      tags: [config]
+      operationId: createClaudeCLIConfig
+      summary: Create static Claude CLI configuration without a raw credential field
+      responses: {"201": {$ref: "#/components/responses/ClaudeConfig"}}
+  /api/v1/claude-cli-configs/{claude_config_id}:
+    get:
+      tags: [config]
+      operationId: getClaudeCLIConfig
+      summary: Get masked Claude CLI configuration metadata
+      parameters: [{name: claude_config_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}]
+      responses: {"200": {$ref: "#/components/responses/ClaudeConfig"}, "404": {$ref: "#/components/responses/NotFound"}}
+    patch:
+      tags: [config]
+      operationId: updateClaudeCLIConfig
+      summary: Update static Claude CLI configuration with a body version
+      parameters: [{name: claude_config_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}]
+      responses: {"200": {$ref: "#/components/responses/ClaudeConfig"}}
+    delete:
+      tags: [config]
+      operationId: deleteClaudeCLIConfig
+      summary: Delete static Claude CLI configuration using a version query parameter
+      parameters: [{name: claude_config_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}, {$ref: "#/components/parameters/Version"}]
+      responses: {"200": {$ref: "#/components/responses/ClaudeConfig"}}
+  /api/v1/claude-cli-configs/{claude_config_id}/default:
+    post:
+      tags: [config]
+      operationId: setDefaultClaudeCLIConfig
+      summary: Atomically select the default Claude CLI configuration with a body version
+      parameters: [{name: claude_config_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}]
+      responses: {"200": {$ref: "#/components/responses/ClaudeConfig"}}
+  /api/v1/mcp-config:
+    get:
+      tags: [config]
+      operationId: getMCPConfig
+      summary: Get static MCP configuration without starting a transport
+      responses: {"200": {$ref: "#/components/responses/MCPConfig"}}
+    patch:
+      tags: [config]
+      operationId: saveMCPConfig
+      summary: Save static MCP configuration without raw credential fields or listener side effects
+      responses: {"200": {$ref: "#/components/responses/MCPConfig"}}
+  /api/v1/mcp/status:
+    get:
+      tags: [mcp]
+      operationId: getMCPStatus
+      summary: Get the sanitized MCP lifecycle and catalog snapshot
+      description: Reads status only. It never starts a listener, reveals an auth token, or substitutes an unapproved MCP runtime.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/Origin"}]
+      responses: {"200": {$ref: "#/components/responses/MCPStatus"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}}
+  /api/v1/mcp/tools:
+    get:
+      tags: [mcp]
+      operationId: listMCPTools
+      summary: List the frozen MCP tool catalog without opening a transport
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/Origin"}]
+      responses: {"200": {$ref: "#/components/responses/MCPToolCatalog"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}}
+  /api/v1/mcp:start:
+    post:
+      tags: [mcp]
+      operationId: startMCPTransport
+      summary: Start the configured P13B transport when its independent gate is enabled
+      description: HTTP and stdio start only after the P13B gate passes. A failed start does not launch a Node fallback listener.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/Origin"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+      responses: {"200": {$ref: "#/components/responses/MCPStatus"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "409": {$ref: "#/components/responses/Conflict"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}}
+  /api/v1/mcp:stop:
+    post:
+      tags: [mcp]
+      operationId: stopMCPTransport
+      summary: Stop the configured P13B listener without taking over in-flight work
+      description: Stops only the target runtime's listener. Accepted mutations and stdio/HTTP sessions are not replayed by another runtime.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{$ref: "#/components/parameters/Origin"}, {$ref: "#/components/parameters/IdempotencyKey"}]
+      responses: {"200": {$ref: "#/components/responses/MCPStatus"}, "400": {$ref: "#/components/responses/BadRequest"}, "401": {$ref: "#/components/responses/Unauthorized"}, "403": {$ref: "#/components/responses/Forbidden"}, "409": {$ref: "#/components/responses/Conflict"}, "503": {$ref: "#/components/responses/ServiceUnavailable"}}
+  /api/v1/operations/{operation_id}:
+    get:
+      tags: [operations]
+      operationId: getOperation
+      summary: Get one project-scoped Operation
+      description: The required project_id query is the project ownership proof; operation_id alone never authorizes or enumerates a record.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/OperationID"
+        - $ref: "#/components/parameters/OperationProjectID"
+        - $ref: "#/components/parameters/Origin"
+      responses:
+        "200": { $ref: "#/components/responses/Operation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "504": { $ref: "#/components/responses/RequestTimeout" }
+  /api/v1/operations/{operation_id}/actions/cancel:
+    post:
+      tags: [operations]
+      operationId: requestOperationCancel
+      summary: Record an idempotent cancellation request for one Operation
+      description: The terminal winner is determined by the shared Operation version/state machine; no runner or local fallback is invoked by this endpoint.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/OperationID"
+        - $ref: "#/components/parameters/OperationProjectID"
+        - $ref: "#/components/parameters/Origin"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CancelOperationRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Operation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "504": { $ref: "#/components/responses/RequestTimeout" }
+  /api/v1/projects/{project_id}/events:
+    get:
+      tags: [events]
+      operationId: subscribeProjectEvents
+      summary: Replay and follow committed project events
+      description: Replays durable committed outbox records after Last-Event-ID, then continues live without a replay/live gap. Control resync_required and heartbeat entries do not allocate event_id or project_revision.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/SSEAccept"
+        - $ref: "#/components/parameters/LastEventID"
+      responses:
+        "200": { $ref: "#/components/responses/EventStream" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /api/v1/projects/{project_id}/terminals:
+    get:
+      tags: [terminal]
+      operationId: listTerminalSessions
+      summary: List metadata for authorized project terminal sessions
+      description: P14 control-plane contract. It returns bounded session metadata only; it never returns raw PTY output, input, PID, handles or environment values.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/Origin" }]
+      responses: { "200": { $ref: "#/components/responses/TerminalSessions" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "503": { $ref: "#/components/responses/ServiceUnavailable" } }
+    post:
+      tags: [terminal]
+      operationId: createTerminalSession
+      summary: Create one PTY session when the atomic P14 gate is enabled
+      description: The same go_terminal_api decision covers this REST admission and its WebSocket data channel. A disabled or platform-blocked gate fails closed and never falls back to Node in this request.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TerminalCreateRequest" } } } }
+      responses: { "201": { $ref: "#/components/responses/TerminalSession" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "429": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" } }
+  /api/v1/terminals/{id}:
+    delete:
+      tags: [terminal]
+      operationId: deleteTerminalSession
+      summary: Close one terminal session and its process tree
+      description: Compatibility delete is the idempotent close action. The session id is not authorization; project ownership and caller authorization are checked before revealing whether it exists.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/TerminalID" }, { $ref: "#/components/parameters/TerminalProjectID" }, { $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses: { "200": { $ref: "#/components/responses/TerminalSession" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "503": { $ref: "#/components/responses/ServiceUnavailable" } }
+  /api/v1/terminals/{id}/actions/write:
+    post:
+      tags: [terminal]
+      operationId: writeTerminalSession
+      summary: Write bounded UTF-8 terminal input
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/TerminalID" }, { $ref: "#/components/parameters/TerminalProjectID" }, { $ref: "#/components/parameters/Origin" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TerminalWriteRequest" } } } }
+      responses: { "200": { $ref: "#/components/responses/TerminalSession" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "429": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" } }
+  /api/v1/terminals/{id}/actions/resize:
+    post:
+      tags: [terminal]
+      operationId: resizeTerminalSession
+      summary: Resize one running terminal session
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/TerminalID" }, { $ref: "#/components/parameters/TerminalProjectID" }, { $ref: "#/components/parameters/Origin" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TerminalResizeRequest" } } } }
+      responses: { "200": { $ref: "#/components/responses/TerminalSession" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "429": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" } }
+  /api/v1/terminals/{id}/actions/kill:
+    post:
+      tags: [terminal]
+      operationId: killTerminalSession
+      summary: Kill one terminal process tree without cross-runtime adoption
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/TerminalID" }, { $ref: "#/components/parameters/TerminalProjectID" }, { $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TerminalEmptyRequest" } } } }
+      responses: { "200": { $ref: "#/components/responses/TerminalSession" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "503": { $ref: "#/components/responses/ServiceUnavailable" } }
+  /api/v1/terminals/{id}/actions/close:
+    post:
+      tags: [terminal]
+      operationId: closeTerminalSession
+      summary: Explicit compatibility close action
+      description: Semantically identical to DELETE /api/v1/terminals/{id}; neither form can adopt a Node-owned handle.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/TerminalID" }, { $ref: "#/components/parameters/TerminalProjectID" }, { $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TerminalEmptyRequest" } } } }
+      responses: { "200": { $ref: "#/components/responses/TerminalSession" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "503": { $ref: "#/components/responses/ServiceUnavailable" } }
+  /api/v1/terminals/{id}/actions/rename:
+    post:
+      tags: [terminal]
+      operationId: renameTerminalSession
+      summary: Rename one terminal session
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/TerminalID" }, { $ref: "#/components/parameters/TerminalProjectID" }, { $ref: "#/components/parameters/Origin" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TerminalRenameRequest" } } } }
+      responses: { "200": { $ref: "#/components/responses/TerminalSession" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "503": { $ref: "#/components/responses/ServiceUnavailable" } }
+  /api/v1/terminals/{id}/replay:
+    get:
+      tags: [terminal]
+      operationId: replayTerminalSession
+      summary: Replay bounded in-memory output after a terminal sequence cursor
+      description: A cursor older than the replay watermark returns terminal_replay_gap/terminal_cursor_too_old. Output is not recovered from SSE, SQLite, snapshot, outbox, logs or evidence.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/TerminalID" }, { $ref: "#/components/parameters/TerminalProjectID" }, { $ref: "#/components/parameters/TerminalLastSeq" }, { $ref: "#/components/parameters/Origin" }]
+      responses: { "200": { $ref: "#/components/responses/TerminalReplay" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "503": { $ref: "#/components/responses/ServiceUnavailable" } }
+  /api/v1/terminals/{id}/actions/clear:
+    post:
+      tags: [terminal]
+      operationId: clearTerminalReplay
+      summary: Clear only bounded in-memory replay without resetting output sequence
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/TerminalID" }, { $ref: "#/components/parameters/TerminalProjectID" }, { $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TerminalEmptyRequest" } } } }
+      responses: { "200": { $ref: "#/components/responses/TerminalSession" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "503": { $ref: "#/components/responses/ServiceUnavailable" } }
+  /api/v1/terminals/{id}/ws:
+    get:
+      tags: [terminal]
+      operationId: openTerminalWebSocket
+      summary: Open the authorized independent Terminal WebSocket data channel
+      description: Raw terminal output is available only after this exact authenticated Origin-checked upgrade. It is separate from project SSE and carries finite replay followed by live output, then exactly one exit and final status/closed events.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TerminalID"
+        - $ref: "#/components/parameters/TerminalProjectID"
+        - $ref: "#/components/parameters/TerminalLastSeq"
+        - $ref: "#/components/parameters/Origin"
+        - name: Upgrade
+          in: header
+          required: true
+          schema: { type: string, const: websocket }
+        - name: Connection
+          in: header
+          required: true
+          schema: { type: string }
+        - name: Sec-WebSocket-Version
+          in: header
+          required: true
+          schema: { type: string, const: "13" }
+        - name: Sec-WebSocket-Key
+          in: header
+          required: true
+          schema: { type: string }
+      responses:
+        "101": { $ref: "#/components/responses/TerminalWebSocket" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /api/v1/operations/{operation_id}/events:
+    get:
+      tags: [events]
+      operationId: subscribeOperationEvents
+      summary: Replay and follow committed events for one Operation
+      description: Both project_id and operation_id are authorized before subscription. A project cursor, local host, or Last-Event-ID never substitutes for resource authorization.
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/OperationID"
+        - $ref: "#/components/parameters/OperationProjectID"
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/SSEAccept"
+        - $ref: "#/components/parameters/LastEventID"
+      responses:
+        "200": { $ref: "#/components/responses/EventStream" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /api/v1/skeleton/websocket:
+    get:
+      tags: [skeleton]
+      operationId: openWebSocketSkeleton
+      summary: Authenticated WebSocket handshake placeholder
+      description: Validates the standard WebSocket handshake and shared security policy, then returns not_implemented.
+      security:
+        - SessionHeader: []
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - name: Upgrade
+          in: header
+          required: true
+          schema:
+            type: string
+            const: websocket
+        - name: Connection
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: Sec-WebSocket-Version
+          in: header
+          required: true
+          schema:
+            type: string
+            const: "13"
+        - name: Sec-WebSocket-Key
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/projects/{project_id}/loop/actions/start:
+    post:
+      tags: [runtime]
+      operationId: startLoop
+      summary: Start one project Loop and schedule its first cycle
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/runtime-action.schema.json#/$defs/empty" } } } }
+      responses: { "202": { $ref: "#/components/responses/RuntimeActionAccepted" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" }, "504": { $ref: "#/components/responses/RequestTimeout" } }
+  /api/v1/projects/{project_id}/loop/actions/stop:
+    post:
+      tags: [runtime]
+      operationId: stopLoop
+      summary: Stop one project Loop and cancel active Loop work
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/runtime-action.schema.json#/$defs/empty" } } } }
+      responses: { "202": { $ref: "#/components/responses/RuntimeActionAccepted" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" }, "504": { $ref: "#/components/responses/RequestTimeout" } }
+  /api/v1/projects/{project_id}/loop/actions/run-once:
+    post:
+      tags: [runtime]
+      operationId: runLoopOnce
+      summary: Queue one non-reentrant project Loop cycle
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/runtime-action.schema.json#/$defs/empty" } } } }
+      responses: { "202": { $ref: "#/components/responses/RuntimeActionAccepted" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" }, "504": { $ref: "#/components/responses/RequestTimeout" } }
+  /api/v1/projects/{project_id}/plans/{plan_id}/actions/stop:
+    post:
+      tags: [runtime]
+      operationId: stopPlanRuntime
+      summary: Stop an active plan through the shared runtime owner
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/RuntimePlanID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/runtime-action.schema.json#/$defs/empty" } } } }
+      responses: { "202": { $ref: "#/components/responses/RuntimeActionAccepted" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" }, "504": { $ref: "#/components/responses/RequestTimeout" } }
+  /api/v1/projects/{project_id}/plans/{plan_id}/actions/resume:
+    post:
+      tags: [runtime]
+      operationId: resumePlanRuntime
+      summary: Resume a plan through the shared runtime owner
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/RuntimePlanID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/runtime-action.schema.json#/$defs/empty" } } } }
+      responses: { "202": { $ref: "#/components/responses/RuntimeActionAccepted" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" }, "504": { $ref: "#/components/responses/RequestTimeout" } }
+  /api/v1/projects/{project_id}/plans/{plan_id}/actions/re-execute:
+    post:
+      tags: [runtime]
+      operationId: reexecutePlanRuntime
+      summary: Re-execute a completed plan through the shared runtime owner
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/RuntimePlanID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/runtime-action.schema.json#/$defs/empty" } } } }
+      responses: { "202": { $ref: "#/components/responses/RuntimeActionAccepted" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" }, "504": { $ref: "#/components/responses/RequestTimeout" } }
+  /api/v1/projects/{project_id}/plans/{plan_id}/actions/recreate:
+    post:
+      tags: [runtime]
+      operationId: recreatePlanRuntime
+      summary: Recreate a plan from its linked intake through the shared runtime owner
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/RuntimePlanID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/runtime-action.schema.json#/$defs/empty" } } } }
+      responses: { "202": { $ref: "#/components/responses/RuntimeActionAccepted" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" }, "504": { $ref: "#/components/responses/RequestTimeout" } }
+  /api/v1/projects/{project_id}/plans/{plan_id}/actions/run-batches:
+    post:
+      tags: [runtime]
+      operationId: runTaskBatches
+      summary: Queue validated task batches for one plan
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/RuntimePlanID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/runtime-action.schema.json#/$defs/batch" } } } }
+      responses: { "202": { $ref: "#/components/responses/RuntimeActionAccepted" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" }, "504": { $ref: "#/components/responses/RequestTimeout" } }
+  /api/v1/projects/{project_id}/tasks/{task_id}/actions/run:
+    post:
+      tags: [runtime]
+      operationId: runTask
+      summary: Queue one task through the shared runtime owner
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/RuntimeTaskID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/runtime-action.schema.json#/$defs/task" } } } }
+      responses: { "202": { $ref: "#/components/responses/RuntimeActionAccepted" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" }, "504": { $ref: "#/components/responses/RequestTimeout" } }
+  /api/v1/projects/{project_id}/tasks/{task_id}/actions/stop:
+    post:
+      tags: [runtime]
+      operationId: stopTask
+      summary: Request task cancellation through the shared runtime owner
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/RuntimeTaskID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/runtime-action.schema.json#/$defs/task" } } } }
+      responses: { "202": { $ref: "#/components/responses/RuntimeActionAccepted" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" }, "504": { $ref: "#/components/responses/RequestTimeout" } }
+  /api/v1/projects/{project_id}/acceptance/actions/accept:
+    post:
+      tags: [runtime]
+      operationId: acceptRuntimeTarget
+      summary: Accept one completed plan or task
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/runtime-action.schema.json#/$defs/acceptance_target" } } } }
+      responses: { "202": { $ref: "#/components/responses/RuntimeActionAccepted" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" }, "504": { $ref: "#/components/responses/RequestTimeout" } }
+  /api/v1/projects/{project_id}/acceptance/actions/unaccept:
+    post:
+      tags: [runtime]
+      operationId: unacceptRuntimeTarget
+      summary: Clear acceptance on one plan or task
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/runtime-action.schema.json#/$defs/acceptance_target" } } } }
+      responses: { "202": { $ref: "#/components/responses/RuntimeActionAccepted" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" }, "504": { $ref: "#/components/responses/RequestTimeout" } }
+  /api/v1/projects/{project_id}/acceptance/actions/redo:
+    post:
+      tags: [runtime]
+      operationId: redoRuntimeTarget
+      summary: Redo one accepted or completed plan or task
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/runtime-action.schema.json#/$defs/acceptance_target" } } } }
+      responses: { "202": { $ref: "#/components/responses/RuntimeActionAccepted" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" }, "504": { $ref: "#/components/responses/RequestTimeout" } }
+  /api/v1/projects/{project_id}/acceptance/actions/accept-batch:
+    post:
+      tags: [runtime]
+      operationId: acceptRuntimeTargets
+      summary: Accept an ordered batch of completed targets
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/runtime-action.schema.json#/$defs/acceptance_batch" } } } }
+      responses: { "202": { $ref: "#/components/responses/RuntimeActionAccepted" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" }, "504": { $ref: "#/components/responses/RequestTimeout" } }
+  /api/v1/projects/{project_id}/acceptance/actions/unaccept-batch:
+    post:
+      tags: [runtime]
+      operationId: unacceptRuntimeTargets
+      summary: Clear acceptance on an ordered batch of targets
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/runtime-action.schema.json#/$defs/acceptance_batch" } } } }
+      responses: { "202": { $ref: "#/components/responses/RuntimeActionAccepted" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" }, "504": { $ref: "#/components/responses/RequestTimeout" } }
+  /api/v1/projects/{project_id}/intake/{intake_type}/{intake_id}/actions/retry-plan-generation:
+    post:
+      tags: [runtime]
+      operationId: retryIntakePlanGeneration
+      summary: Retry plan generation for one intake
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/RuntimeIntakeType" }, { $ref: "#/components/parameters/IntakeID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/runtime-action.schema.json#/$defs/empty" } } } }
+      responses: { "202": { $ref: "#/components/responses/RuntimeActionAccepted" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" }, "504": { $ref: "#/components/responses/RequestTimeout" } }
+components:
+  securitySchemes:
+    SessionHeader:
+      type: apiKey
+      in: header
+      name: X-Autoplan-Session
+      description: Ephemeral process-local credential; never place it in URLs, logs, fixtures, or persistent storage.
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: autoplan_session
+      description: Host-only HttpOnly SameSite=Strict alternative to the session header.
+  parameters:
+    Origin:
+      name: Origin
+      in: header
+      required: true
+      description: Exact configured loopback renderer origin; wildcard and missing origins are rejected.
+      schema:
+        type: string
+        format: uri
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Caller-selected replay identity. Retries of one user intent reuse the same key; keys never belong in URLs or logs.
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    ActionIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Stable user-intent identity. Retries reuse it, while an already accepted Operation is observed through its operation_id rather than submitted again. It is never put in a URL or log.
+      schema:
+        $ref: "./schemas/action.schema.json#/$defs/idempotency_key"
+    ProjectID:
+      name: project_id
+      in: path
+      required: true
+      description: Canonical base-10 positive 64-bit project identifier; signs and leading zeroes are rejected.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    RuntimePlanID:
+      name: plan_id
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    RuntimeTaskID:
+      name: task_id
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    RuntimeIntakeType:
+      name: intake_type
+      in: path
+      required: true
+      schema: { type: string, enum: [requirement, feedback] }
+    OperationID:
+      name: operation_id
+      in: path
+      required: true
+      description: Opaque Operation identifier. It never authorizes a request without the mandatory project_id scope.
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    TerminalID:
+      name: id
+      in: path
+      required: true
+      description: Opaque string terminal session identifier. It is not an authorization grant and is never interchangeable across runtimes.
+      schema:
+        type: string
+        pattern: "^term_[a-z0-9][a-z0-9_-]{5,}$"
+        maxLength: 160
+    TerminalProjectID:
+      name: project_id
+      in: query
+      required: true
+      description: Canonical project scope required for a session action. It does not authorize access by itself; the shared Terminal service verifies it against the authenticated caller and session owner before revealing state.
+      schema: { type: integer, format: int64, minimum: 1 }
+    TerminalLastSeq:
+      name: last_seq
+      in: query
+      required: false
+      description: Last strictly applied output sequence for this authorized session. Omit or use 0 for replay from the current retained watermark; an expired cursor receives a stable replay gap error.
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 9007199254740991
+    OperationProjectID:
+      name: project_id
+      in: query
+      required: true
+      description: Canonical project ownership scope required for Operation REST and Operation SSE routes.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    SSEAccept:
+      name: Accept
+      in: header
+      required: true
+      schema:
+        type: string
+        description: Must include text/event-stream.
+    LastEventID:
+      name: Last-Event-ID
+      in: header
+      required: false
+      description: Opaque decimal cursor from a previous event in the same authorized stream. Invalid, future, expired, or unprovable cursors receive resync_required.
+      schema:
+        type: string
+        maxLength: 19
+    IntakeID:
+      name: intake_id
+      in: path
+      required: true
+      description: Canonical base-10 positive 64-bit requirement or feedback identifier.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    AttachmentID:
+      name: attachment_id
+      in: path
+      required: true
+      description: Canonical base-10 positive 64-bit attachment identifier.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    ScriptID:
+      name: script_id
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    ExecutorID:
+      name: executor_id
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    ExecutorPluginAction:
+      name: action
+      in: path
+      required: true
+      description: Persisted plugin lifecycle action. The generic stop route is the only stop admission path.
+      schema: { type: string, enum: [start, reload] }
+    ConversationID:
+      name: conversation_id
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    AutomationLimit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    AutomationOffset:
+      name: offset
+      in: query
+      required: false
+      schema: { type: integer, minimum: 0, default: 0 }
+    ConversationCursor:
+      name: cursor
+      in: query
+      required: false
+      schema: { type: string, minLength: 1, maxLength: 512 }
+    Version:
+      name: version
+      in: query
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    AttachmentProjectID:
+      name: project_id
+      in: query
+      required: true
+      description: Mandatory ownership scope for direct attachment content and deletion routes.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    Page:
+      name: page
+      in: query
+      required: false
+      description: One-based page number. Omitted independently defaults to 1; repeated or non-canonical values are rejected.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      description: Page capacity. Omitted independently defaults to 50; repeated values are rejected.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    ProjectSort:
+      name: sort
+      in: query
+      required: false
+      description: Whitelisted ordering. Every order uses project id in the same direction as a deterministic tie-breaker.
+      schema:
+        type: string
+        enum: [updated_at_desc, updated_at_asc, name_asc, name_desc, id_asc, id_desc]
+        default: updated_at_desc
+    ProjectFilter:
+      name: filter
+      in: query
+      required: false
+      description: Case-insensitive project-name substring, applied before sorting and pagination.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
+    IntakeStatus:
+      name: status
+      in: query
+      required: false
+      description: Exact Intake lifecycle state filter.
+      schema:
+        type: string
+        enum: [draft, open, completed, closed]
+  headers:
+    RequestID:
+      description: Correlation identifier for this request.
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"
+  schemas:
+    Project:
+      $ref: "./schemas/project.schema.json"
+    CreateProjectRequest:
+      $ref: "./schemas/project.schema.json#/$defs/create_request"
+    UpdateProjectRequest:
+      $ref: "./schemas/project.schema.json#/$defs/update_request"
+    LoopConfigRequest:
+      $ref: "./schemas/config.schema.json#/$defs/loop_config_request"
+    ResetConfigRequest:
+      $ref: "./schemas/config.schema.json#/$defs/reset_request"
+    Intake:
+      $ref: "./schemas/intake.schema.json"
+    CreateIntakeRequest:
+      $ref: "./schemas/intake.schema.json#/$defs/create_request"
+    UpdateIntakeRequest:
+      $ref: "./schemas/intake.schema.json#/$defs/update_request"
+    ReplacePlanLinksRequest:
+      $ref: "./schemas/intake.schema.json#/$defs/replace_links_request"
+    PlanLink:
+      $ref: "./schemas/intake.schema.json#/$defs/plan_link"
+    Attachment:
+      $ref: "./schemas/attachment.schema.json"
+    CapabilityResponse:
+      $ref: "./schemas/capability.schema.json"
+    AutomationScript:
+      $ref: "./schemas/automation.schema.json#/$defs/script"
+    AutomationExecutor:
+      $ref: "./schemas/automation.schema.json#/$defs/executor"
+    ScriptRunAccepted:
+      $ref: "./schemas/script-run.schema.json#/$defs/operation_accepted"
+    ScriptStopResult:
+      $ref: "./schemas/script-run.schema.json#/$defs/stop_result"
+    ExecutorRunAccepted:
+      $ref: "./schemas/executor-run.schema.json#/$defs/operation_accepted"
+    ExecutorStopResult:
+      $ref: "./schemas/executor-run.schema.json#/$defs/stop_result"
+    Conversation:
+      $ref: "./schemas/chat.schema.json#/$defs/conversation"
+    ChatMessageMetadata:
+      $ref: "./schemas/chat.schema.json#/$defs/message_metadata"
+    ChatMessage:
+      $ref: "./schemas/chat.schema.json#/$defs/chat_message"
+    LegacyChatMessage:
+      $ref: "./schemas/chat.schema.json#/$defs/legacy_chat_message"
+    ChatQueue:
+      $ref: "./schemas/chat.schema.json#/$defs/chat_queue"
+    LegacyChatQueue:
+      $ref: "./schemas/chat.schema.json#/$defs/legacy_chat_queue"
+    ChatDone:
+      $ref: "./schemas/chat.schema.json#/$defs/chat_done"
+    LegacyChatDone:
+      $ref: "./schemas/chat.schema.json#/$defs/legacy_chat_done"
+    ChatChunk:
+      $ref: "./schemas/chat.schema.json#/$defs/chat_chunk"
+    ChatEventEnvelope:
+      $ref: "./schemas/chat.schema.json#/$defs/chat_event_envelope"
+    ConversationRequest:
+      $ref: "./schemas/chat.schema.json#/$defs/conversation_request"
+    ConversationPatchRequest:
+      $ref: "./schemas/chat.schema.json#/$defs/conversation_patch_request"
+    ChatSendRequest:
+      $ref: "./schemas/chat.schema.json#/$defs/send_request"
+    ChatSendAccepted:
+      $ref: "./schemas/chat.schema.json#/$defs/send_accepted"
+    ChatQueueEditRequest:
+      $ref: "./schemas/chat.schema.json#/$defs/queue_edit_request"
+    ChatBooleanResult:
+      $ref: "./schemas/chat.schema.json#/$defs/boolean_result"
+    ChatStopResult:
+      $ref: "./schemas/chat.schema.json#/$defs/stop_result"
+    ChatClearResult:
+      $ref: "./schemas/chat.schema.json#/$defs/clear_result"
+    AIConfig:
+      $ref: "./schemas/config.schema.json#/$defs/ai_config"
+    ClaudeCLIConfig:
+      $ref: "./schemas/config.schema.json#/$defs/claude_config"
+    MCPConfig:
+      $ref: "./schemas/mcp.schema.json#/$defs/mcp_config"
+    MCPStatus:
+      $ref: "./schemas/mcp.schema.json#/$defs/mcp_status"
+    MCPToolDoc:
+      $ref: "./schemas/mcp.schema.json#/$defs/tool_doc"
+    MCPToolCall:
+      $ref: "./schemas/mcp.schema.json#/$defs/tool_call"
+    MCPToolResult:
+      $ref: "./schemas/mcp.schema.json#/$defs/tool_result"
+    MCPToolError:
+      $ref: "./schemas/mcp.schema.json#/$defs/tool_error"
+    PlanActionRequest:
+      $ref: "./schemas/action.schema.json#/$defs/plan_action_request"
+    TaskActionRequest:
+      $ref: "./schemas/action.schema.json#/$defs/task_action_request"
+    RunBatchesRequest:
+      $ref: "./schemas/action.schema.json#/$defs/run_batches_request"
+    ActionAccepted:
+      $ref: "./schemas/action.schema.json#/$defs/action_accepted"
+    RuntimeCommand:
+      $ref: "./schemas/runtime_bridge.schema.json#/$defs/command"
+    AppSnapshot:
+      $ref: "./schemas/snapshot.schema.json"
+    AuthorizedProject:
+      allOf:
+        - $ref: "#/components/schemas/Project"
+        - type: object
+          required: [workspace_path]
+          properties:
+            workspace_path:
+              type: string
+              maxLength: 4096
+    AuthorizedAppSnapshot:
+      allOf:
+        - $ref: "#/components/schemas/AppSnapshot"
+        - type: object
+          properties:
+            activeProjectId:
+              type: integer
+              format: int64
+              minimum: 1
+            activeProject:
+              $ref: "#/components/schemas/AuthorizedProject"
+            projects:
+              type: array
+              items:
+                $ref: "#/components/schemas/AuthorizedProject"
+            state:
+              $ref: "./schemas/snapshot.schema.json#/$defs/safe_object"
+    ProjectEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data:
+          $ref: "#/components/schemas/AuthorizedProject"
+        request_id:
+          $ref: "#/components/schemas/RequestIDValue"
+    AutomationScriptEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/AutomationScript" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    AutomationExecutorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/AutomationExecutor" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    AutomationScriptsEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/AutomationScript" } }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    AutomationExecutorsEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/AutomationExecutor" } }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    ScriptRunAcceptedEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/ScriptRunAccepted" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    ScriptStopEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/ScriptStopResult" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    ExecutorRunAcceptedEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/ExecutorRunAccepted" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    ExecutorStopEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/ExecutorStopResult" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    ConversationEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/Conversation" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    ConversationPageEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, next_cursor, request_id]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/Conversation" } }
+        next_cursor: { type: string }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    MessagePageEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, next_cursor, request_id]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/ChatMessageMetadata" } }
+        next_cursor: { type: string }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    ChatMessagePageEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, next_cursor, request_id]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/ChatMessage" } }
+        next_cursor: { type: string, maxLength: 512 }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    ChatQueueEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/ChatQueue" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    ChatSendAcceptedEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/ChatSendAccepted" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    ChatBooleanResultEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/ChatBooleanResult" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    ChatStopEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/ChatStopResult" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    ChatClearEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/ChatClearResult" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    AIConfigEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/AIConfig" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    AIConfigsEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/AIConfig" } }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    ClaudeConfigEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/ClaudeCLIConfig" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    ClaudeConfigsEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/ClaudeCLIConfig" } }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    MCPConfigEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/MCPConfig" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    MCPStatusEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/MCPStatus" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    MCPToolCatalogEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { type: array, maxItems: 28, items: { $ref: "#/components/schemas/MCPToolDoc" } }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    CapabilitiesEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/CapabilityResponse" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    ActionAcceptedEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/ActionAccepted" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    RuntimeActionEnvelope:
+      $ref: "./schemas/runtime-action.schema.json#/$defs/envelope"
+    RuntimeCommandEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data:
+          $ref: "./schemas/runtime_bridge.schema.json#/$defs/result"
+        request_id:
+          $ref: "#/components/schemas/RequestIDValue"
+    SnapshotEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data:
+          $ref: "#/components/schemas/AuthorizedAppSnapshot"
+        request_id:
+          $ref: "#/components/schemas/RequestIDValue"
+    ProjectListEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, pagination, request_id]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthorizedProject"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+        request_id:
+          $ref: "#/components/schemas/RequestIDValue"
+    IntakeEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/Intake" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    IntakeListEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, pagination, request_id]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Intake" }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    IntakeMutationEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [snapshot]
+          properties:
+            snapshot: { $ref: "#/components/schemas/AuthorizedAppSnapshot" }
+            cleanup:
+              type: object
+              additionalProperties: false
+              required: [status, total, deleted, missing, pending]
+              properties:
+                status: { type: string, enum: [complete, not_required, recovery_required] }
+                total: { type: integer, format: int64, minimum: 0 }
+                deleted: { type: integer, format: int64, minimum: 0 }
+                missing: { type: integer, format: int64, minimum: 0 }
+                pending: { type: integer, format: int64, minimum: 0 }
+                code: { type: string, maxLength: 128 }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    PlanLinksEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/PlanLink" } }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    AttachmentUploadEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "./schemas/attachment.schema.json#/$defs/upload_result" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    AttachmentDeleteEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "./schemas/attachment.schema.json#/$defs/delete_result" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    Pagination:
+      type: object
+      additionalProperties: false
+      required: [page, page_size, total, next_page]
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          minimum: 0
+        next_page:
+          oneOf:
+            - type: integer
+              minimum: 2
+            - type: "null"
+    RequestIDValue:
+      type: string
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"
+    Error:
+      $ref: "./schemas/error.schema.json"
+      description: >-
+        Stable codes include invalid_json, body_too_large, unsupported_media_type,
+        invalid_idempotency_key, invalid_pagination, invalid_project_id,
+        invalid_project, invalid_config, invalid_intake, invalid_attachment,
+        invalid_automation, invalid_conversation, invalid_cursor,
+        project_not_found, intake_not_found, attachment_not_found, automation_not_found,
+        conversation_not_found, config_not_found,
+        version_required, version_conflict, precondition_failed, project_running,
+        relation_conflict, duplicate_intake, attachment_recovery_required,
+        range_not_satisfiable, insufficient_storage, idempotency_key_reused, request_in_progress, repository_busy,
+        repository_schema_drift, repository_unavailable, request_timeout, invalid_runtime_command,
+        unauthorized, origin_forbidden, method_not_allowed, invalid_operation,
+        operation_not_found, operation_version_conflict, operation_state_conflict,
+        not_implemented, service_unavailable, shutting_down, and internal_error. The not_implemented detail capability is an opaque
+        advertised action name and never identifies a resource or command.
+    OperationAccepted:
+      $ref: "./schemas/operation.schema.json#/$defs/OperationAccepted"
+    Operation:
+      $ref: "./schemas/operation.schema.json#/$defs/Operation"
+    OperationEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/Operation" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    CancelOperationRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: { type: integer, format: int64, minimum: 1 }
+    Event:
+      $ref: "./schemas/event.schema.json#/$defs/EventEnvelope"
+    EventEnvelopeV1:
+      $ref: "./schemas/event.schema.json#/$defs/EventEnvelope"
+    SSEEnvelopeV1:
+      $ref: "./schemas/sse-envelope-v1.schema.json"
+    WSEnvelopeV1:
+      $ref: "./schemas/ws-envelope-v1.schema.json"
+    TerminalSession:
+      $ref: "./schemas/terminal.schema.json#/$defs/terminal_session"
+    TerminalCreateRequest:
+      $ref: "./schemas/terminal.schema.json#/$defs/terminal_create_request"
+    TerminalWriteRequest:
+      $ref: "./schemas/terminal.schema.json#/$defs/terminal_write_request"
+    TerminalResizeRequest:
+      $ref: "./schemas/terminal.schema.json#/$defs/terminal_resize_request"
+    TerminalRenameRequest:
+      $ref: "./schemas/terminal.schema.json#/$defs/terminal_rename_request"
+    TerminalEmptyRequest:
+      $ref: "./schemas/terminal.schema.json#/$defs/terminal_empty_request"
+    TerminalReplay:
+      $ref: "./schemas/terminal.schema.json#/$defs/terminal_replay"
+    TerminalErrorResult:
+      $ref: "./schemas/terminal.schema.json#/$defs/terminal_error_result"
+    TerminalEnvelope:
+      $ref: "./schemas/terminal.schema.json#/$defs/terminal_envelope"
+    TerminalWebSocketClient:
+      $ref: "./schemas/terminal.schema.json#/$defs/terminal_ws_client"
+    TerminalWebSocketServer:
+      $ref: "./schemas/terminal.schema.json#/$defs/terminal_ws_server"
+    TerminalSessionEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/TerminalSession" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    TerminalSessionsEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data:
+          type: array
+          maxItems: 32
+          items: { $ref: "#/components/schemas/TerminalSession" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    TerminalReplayEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: "#/components/schemas/TerminalReplay" }
+        request_id: { $ref: "#/components/schemas/RequestIDValue" }
+    ProbeResponse:
+      type: object
+      additionalProperties: false
+      required: [status, request_id]
+      properties:
+        status:
+          type: string
+          enum: [ok, ready]
+        request_id:
+          type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"
+  responses:
+    Operation:
+      description: Safe Operation DTO with no raw runner output.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/OperationEnvelope" } } }
+    EventStream:
+      description: Authenticated SSE stream. The initial retry directive is 3000 milliseconds and heartbeat is emitted every 15 seconds. Each data line is the frozen EventEnvelopeV1; persistent entries use SSE id equal to event_id, while heartbeat and resync_required omit it.
+      headers:
+        X-Request-ID: { $ref: "#/components/headers/RequestID" }
+        Cache-Control: { schema: { type: string, const: no-store } }
+      content:
+        text/event-stream:
+          schema: { $ref: "#/components/schemas/EventEnvelopeV1" }
+    AutomationScript:
+      description: Safe static script metadata.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/AutomationScriptEnvelope" } } }
+    AutomationScripts:
+      description: Project-scoped safe script metadata.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/AutomationScriptsEnvelope" } } }
+    AutomationExecutor:
+      description: Safe static executor metadata.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/AutomationExecutorEnvelope" } } }
+    AutomationExecutors:
+      description: Project-scoped safe executor metadata.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/AutomationExecutorsEnvelope" } } }
+    ScriptRunAccepted:
+      description: Script run admitted by the shared application service. Follow operation_id through Operation and SSE; no command, source, environment or output stream is returned.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/ScriptRunAcceptedEnvelope" } } }
+    ScriptStopAccepted:
+      description: Script stop applied only to a current Go-owned operation, or reports stopped=false without adopting a process.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/ScriptStopEnvelope" } } }
+    ExecutorRunAccepted:
+      description: Executor run or plugin action admitted by the shared application service. Output remains available only as bounded redacted operation/resource metadata.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/ExecutorRunAcceptedEnvelope" } } }
+    ExecutorStopAccepted:
+      description: Executor stop applied only to a current Go-owned operation, or reports stopped=false without process adoption.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/ExecutorStopEnvelope" } } }
+    Conversation:
+      description: Safe conversation metadata.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/ConversationEnvelope" } } }
+    ConversationPage:
+      description: Cursor page of safe conversations.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/ConversationPageEnvelope" } } }
+    MessagePage:
+      description: Cursor page of message metadata without bodies or tool data.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/MessagePageEnvelope" } } }
+    ChatMessagePage:
+      description: Cursor page of frozen full ChatMessage history for one authorized conversation.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/ChatMessagePageEnvelope" } } }
+    ChatQueue:
+      description: Authoritative complete FIFO queue snapshot for one authorized conversation.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/ChatQueueEnvelope" } } }
+    ChatSendAccepted:
+      description: Chat turn was durably admitted. Follow its turn_id and optional operation_id through the chat SSE stream; transport loss must not replay the request.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/ChatSendAcceptedEnvelope" } } }
+    ChatBooleanResult:
+      description: Frozen legacy-compatible queue mutation result.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/ChatBooleanResultEnvelope" } } }
+    ChatStop:
+      description: Chat stop result. It can request cancellation only from the runtime that owns the accepted turn.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/ChatStopEnvelope" } } }
+    ChatClear:
+      description: Frozen clear-history result. It does not transfer ownership of a running turn.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/ChatClearEnvelope" } } }
+    ChatEventStream:
+      description: Authenticated P13A SSE stream. Durable chat_chunk, chat_queue and chat_done records use SSE id equal to event_id. Every turn has monotonically sequenced chunks followed by exactly one chat_done; control heartbeat/resync_required entries omit a durable id.
+      headers:
+        X-Request-ID: { $ref: "#/components/headers/RequestID" }
+        Cache-Control: { schema: { type: string, const: no-store } }
+      content:
+        text/event-stream:
+          schema: { $ref: "#/components/schemas/ChatEventEnvelope" }
+    AIConfig:
+      description: Masked AI configuration metadata.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/AIConfigEnvelope" } } }
+    AIConfigs:
+      description: Masked AI configuration list.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/AIConfigsEnvelope" } } }
+    ClaudeConfigs:
+      description: Masked Claude CLI configuration list.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/ClaudeConfigsEnvelope" } } }
+    ClaudeConfig:
+      description: Masked Claude CLI configuration metadata.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/ClaudeConfigEnvelope" } } }
+    MCPConfig:
+      description: Static MCP configuration; no listener is started.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/MCPConfigEnvelope" } } }
+    MCPStatus:
+      description: Sanitized MCP status and current immutable catalog projection.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/MCPStatusEnvelope" } } }
+    MCPToolCatalog:
+      description: Frozen MCP tool documentation catalog. Listing it has no transport or mutation side effect.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/MCPToolCatalogEnvelope" } } }
+    TerminalSession:
+      description: Frozen TerminalSession metadata for one authorized Go-owned session. It contains no raw terminal stream or environment values.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/TerminalSessionEnvelope" } } }
+    TerminalSessions:
+      description: Project-scoped list of frozen TerminalSession metadata. The resource lookup does not reveal sessions outside the authorized project.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/TerminalSessionsEnvelope" } } }
+    TerminalReplay:
+      description: Bounded memory-only terminal replay. A gap is an explicit error, never synthesized output.
+      headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/TerminalReplayEnvelope" } } }
+    TerminalWebSocket:
+      description: Successful P14 WebSocket upgrade. Client frames conform to TerminalWebSocketClient and server frames conform to TerminalWebSocketServer; no terminal frame enters project SSE.
+      headers:
+        X-Request-ID: { $ref: "#/components/headers/RequestID" }
+        Cache-Control: { schema: { type: string, const: no-store } }
+    ErrorResponse:
+      description: Stable error envelope.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BadRequest:
+      $ref: "#/components/responses/ErrorResponse"
+    Unauthorized:
+      $ref: "#/components/responses/ErrorResponse"
+    Forbidden:
+      $ref: "#/components/responses/ErrorResponse"
+    NotFound:
+      $ref: "#/components/responses/ErrorResponse"
+    MethodNotAllowed:
+      description: The method is not registered for the matched route.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+        Allow:
+          description: Deterministically sorted methods accepted by the matched route.
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      $ref: "#/components/responses/ErrorResponse"
+    NotImplemented:
+      $ref: "#/components/responses/ErrorResponse"
+    ServiceUnavailable:
+      $ref: "#/components/responses/ErrorResponse"
+    RequestTimeout:
+      $ref: "#/components/responses/ErrorResponse"
+    Conflict:
+      $ref: "#/components/responses/ErrorResponse"
+    Locked:
+      $ref: "#/components/responses/ErrorResponse"
+    PreconditionRequired:
+      $ref: "#/components/responses/ErrorResponse"
+    Intake:
+      description: Safe requirement or feedback representation.
+      headers:
+        X-Request-ID: { $ref: "#/components/headers/RequestID" }
+      content:
+        application/json: { schema: { $ref: "#/components/schemas/IntakeEnvelope" } }
+    IntakeList:
+      description: Intake page.
+      headers:
+        X-Request-ID: { $ref: "#/components/headers/RequestID" }
+      content:
+        application/json: { schema: { $ref: "#/components/schemas/IntakeListEnvelope" } }
+    IntakeMutation:
+      description: Committed intake mutation with the compatibility snapshot reread from persistent state.
+      headers:
+        X-Request-ID: { $ref: "#/components/headers/RequestID" }
+      content:
+        application/json: { schema: { $ref: "#/components/schemas/IntakeMutationEnvelope" } }
+    PlanLinks:
+      description: Ordered plan links for one Intake record.
+      headers:
+        X-Request-ID: { $ref: "#/components/headers/RequestID" }
+      content:
+        application/json: { schema: { $ref: "#/components/schemas/PlanLinksEnvelope" } }
+    AttachmentUpload:
+      description: Attachment was staged, committed, and promoted or has durable recovery state.
+      headers:
+        X-Request-ID: { $ref: "#/components/headers/RequestID" }
+      content:
+        application/json: { schema: { $ref: "#/components/schemas/AttachmentUploadEnvelope" } }
+    AttachmentDelete:
+      description: Attachment deletion was committed or requires durable recovery.
+      headers:
+        X-Request-ID: { $ref: "#/components/headers/RequestID" }
+      content:
+        application/json: { schema: { $ref: "#/components/schemas/AttachmentDeleteEnvelope" } }
+    ActionAccepted:
+      description: Reserved future action-acceptance representation. P003 disabled actions never produce this response.
+      headers:
+        X-Request-ID: { $ref: "#/components/headers/RequestID" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ActionAcceptedEnvelope" }
+    RuntimeActionAccepted:
+      description: Runtime action was accepted by the shared Go application service. Follow its operation_id through the Operation and SSE endpoints; do not resubmit after transport loss.
+      headers:
+        X-Request-ID: { $ref: "#/components/headers/RequestID" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RuntimeActionEnvelope" }
+    Capabilities:
+      description: Static P07 capability discovery response.
+      headers:
+        X-Request-ID: { $ref: "#/components/headers/RequestID" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CapabilitiesEnvelope" }

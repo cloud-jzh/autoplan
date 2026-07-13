@@ -1,0 +1,155 @@
+{
+  "title": "P01：Renderer 统一 AutoplanClient 与 IPC 兼容适配层",
+  "summary": "在 P00 已完成且 IPC/renderer/事件能力矩阵不存在未分类项的前提下，依据 D:\\docs\\autoplan-go-backend-separation-plan.md v1.0（2026-07-11），为现有 React renderer 建立唯一的 AutoplanClient 与 DesktopBridge 依赖边界。业务组件和 Hook 通过注入的统一客户端访问项目、snapshot/patch、Loop、Intake、计划/任务/验收、脚本/执行器、Terminal、Chat、配置和 MCP；默认及单一配置回退均继续使用完整封装现有 window.autoplan 的 IpcAutoplanClient。Electron 原生目录/文件选择、打开文件/目录/外链、版本/更新及未来 Go sidecar 生命周期单独归 DesktopBridge。迁移保持现有 DTO、snake_case、AppSnapshot、错误、事件顺序、状态机、UI 和 Node 业务语义不变，不删除 preload、不接触数据库或真实 Electron userData，并通过订阅生命周期测试、直接调用白名单守卫和相对 P00 的失败基线比较证明无重复订阅、监听器泄漏或新增失败；若 P00 门禁不满足则阶段明确 blocked，不跨阶段实现。",
+  "tasks": [
+    {
+      "title": "建立 AutoplanClient 契约、事件类型、Provider 与单一传输配置",
+      "scope": [
+        "src/renderer/lib/api/client.ts",
+        "src/renderer/lib/api/events.ts",
+        "src/renderer/lib/api/provider.tsx",
+        "src/renderer/lib/api/transport.ts",
+        "src/renderer/main.tsx",
+        "src/renderer/types.ts",
+        "docs/migration/p01/client-boundary.md"
+      ],
+      "acceptance": [
+        "P00 能力矩阵和漂移门禁是创建客户端契约的硬前置；108 项能力、12 类事件或其后续受控版本中出现未分类、重复归属、缺失 handler/preload 映射时，本阶段标记 blocked，后续迁移不继续。",
+        "AutoplanClient 覆盖 P00 归属为 go-api 的全部当前业务调用，并复用现有 src/renderer/types.ts DTO，输入、输出、Promise rejection、snake_case、nullability、AppSnapshot 返回和业务语义不被改名或重新建模。",
+        "事件类型统一表达 snapshot、patch、Chat、配置和 Terminal 等当前事件载荷与 unsubscribe 契约，保留现有项目隔离、全量 snapshot 覆盖增量 patch、事件顺序和终态语义。",
+        "Provider 在 renderer 根部注入稳定的客户端与桌面桥实例，组件可通过 Hook 获取依赖；React StrictMode 重复挂载不会重复创建 transport 或遗留全局监听器。",
+        "全应用只有一个 transport 配置来源，默认值为 IPC；关闭或回退该配置时明确选择 IpcAutoplanClient，不在组件内散布域级 feature flag，也不在本阶段实现 HTTP/SSE/WebSocket transport。",
+        "边界文档记录业务 API、DesktopBridge、临时 IPC 回退及未来 Go transport 的唯一归属，并明确本阶段不改 UI、状态管理、preload、数据库、Node 业务实现或 Electron userData。"
+      ]
+    },
+    {
+      "title": "实现覆盖全部业务调用与事件的 IpcAutoplanClient",
+      "scope": [
+        "src/renderer/lib/api/ipcClient.ts",
+        "src/renderer/lib/api/ipcClient.test.js",
+        "src/renderer/lib/api/events.ts",
+        "src/renderer/types.ts"
+      ],
+      "acceptance": [
+        "IpcAutoplanClient 是业务层唯一获准访问 window.autoplan 的适配器，完整封装 P00 标记为 go-api 的项目、Loop、MCP、计划/任务/验收、Intake、脚本/执行器、Terminal、Chat、AI/Claude 配置、会话和文件访问策略调用，不夹带 DesktopBridge 能力。",
+        "每个方法把原输入原样映射到现有 preload 方法并透传返回值与异常，不吞错、不转换 DTO、不改变 mutation 返回 AppSnapshot、Chat accepted/done、Terminal session 或配置脱敏语义。",
+        "snapshot、patch、Chat chunk/done/queue、AI/Claude 配置变更和 Terminal data/status/exit/closed 的适配保持 P00 记录的到达顺序、项目/会话归属与终态；适配器不把密钥、token、env_vars 或绝对路径写入日志或事件。",
+        "每次订阅都返回可重复调用且只释放自身资源的 unsubscribe；相同消费者重复订阅、先后取消、回调内取消、底层订阅抛错和 adapter 销毁场景不会遗留 preload listener 或误删其他消费者。",
+        "自动化覆盖全部业务方法映射、同步/异步错误透传、事件顺序、订阅去重与幂等释放，新增 preload 能力未进入 P00 分类或未进入客户端映射时明确失败。"
+      ]
+    },
+    {
+      "title": "定义并实现仅承载 Electron 原生能力的 DesktopBridge",
+      "scope": [
+        "src/renderer/lib/desktop/bridge.ts",
+        "src/renderer/lib/desktop/ipcBridge.ts",
+        "src/renderer/lib/desktop/ipcBridge.test.js",
+        "src/renderer/lib/api/provider.tsx",
+        "src/renderer/types.ts"
+      ],
+      "acceptance": [
+        "DesktopBridge 只包含 P00 归属为 desktop-bridge 的项目目录、脚本文件和 tasks.json 选择，打开项目目录、工作区文件和系统外链，拖入文件路径与受控文件 URL，应用版本/更新，以及未来 sidecar 生命周期边界。",
+        "现有 Electron 原生能力由 IPC DesktopBridge 适配器封装并保持取消选择、打开失败、更新状态推送、安装器结果和路径安全策略不变；未存在的应用版本或 sidecar 生命周期调用只定义清晰扩展边界，不伪造可用能力或改动 preload/main。",
+        "DesktopBridge 不暴露 snapshot、数据库读写、Loop、Intake、计划、任务、验收、脚本/执行器运行、Chat、MCP、Terminal 或配置等业务 API，也不成为绕过 AutoplanClient 的通用 IPC 容器。",
+        "目录/文件和外链适配继续依赖主进程既有校验，不回传未授权绝对路径，不记录本地路径、token、密钥或更新凭据；原生能力不可用时按现有安全失败语义返回。",
+        "自动化覆盖原生方法映射、选择取消、异常透传、更新事件订阅与幂等 unsubscribe，并断言任何业务方法加入 DesktopBridge 都会失败。"
+      ]
+    },
+    {
+      "title": "迁移 snapshot、Chat、Terminal 与更新 Hook 并加固订阅生命周期",
+      "scope": [
+        "src/renderer/hooks/useSnapshot.ts",
+        "src/renderer/hooks/useSnapshot.test.ts",
+        "src/renderer/hooks/useChat.ts",
+        "src/renderer/hooks/useChatQueue.ts",
+        "src/renderer/hooks/useTerminalSessions.ts",
+        "src/renderer/hooks/useTerminalSessions.test.ts",
+        "src/renderer/hooks/useUpdateStatus.ts",
+        "src/renderer/lib/api/provider.tsx",
+        "src/renderer/lib/api/subscriptions.test.js"
+      ],
+      "acceptance": [
+        "useSnapshot、useChat、useChatQueue 和 useTerminalSessions 只从注入的 AutoplanClient 调用业务方法和订阅事件，useUpdateStatus 只从 DesktopBridge 读取更新能力，Hook 对外返回结构和页面状态管理保持不变。",
+        "首次挂载、React StrictMode 挂载-卸载-再挂载、相同项目重复挂载、项目切换、会话切换和组件销毁均只保留当前有效订阅；旧项目、旧会话和已销毁组件不接收或提交迟到响应。",
+        "snapshot 与 patch 继续按当前 requestAnimationFrame 批处理、全量覆盖、项目列表保护和轻量字段合并规则执行；项目快速切换时旧 snapshot/patch 不覆盖新项目状态。",
+        "Chat chunk 必须先于对应 done，queue 和配置事件保持会话/全局隔离；Terminal data/status/exit/closed 保持 session 顺序、closed tombstone 和数据订阅释放语义；更新状态仍以最新完整状态替换。",
+        "自动化覆盖重复订阅去重、每个 unsubscribe 恰好释放一次、最后消费者销毁后底层 listener 清零、初始化 Promise 迟到、项目/会话快速切换和事件回调期间卸载等场景。"
+      ]
+    },
+    {
+      "title": "迁移项目、Intake、计划任务与验收页面到统一客户端",
+      "scope": [
+        "src/renderer/pages/ProjectsPage.tsx",
+        "src/renderer/pages/WorkspacePage.tsx",
+        "src/renderer/hooks/useWorkspaceController.ts",
+        "src/renderer/components/IntakePanel.tsx",
+        "src/renderer/components/workspace/AcceptanceView.tsx",
+        "src/renderer/pages/WorkspacePage.projectId.test.js",
+        "src/renderer/pages/WorkspacePage.test.tsx",
+        "src/renderer/types.syntax.test.js"
+      ],
+      "acceptance": [
+        "项目创建/更新/删除、Loop 启停、需求/反馈、计划读写与排序、任务执行/停止、批次执行和验收动作全部经注入的 AutoplanClient；目录选择、打开项目目录和工作区文件经 DesktopBridge。",
+        "页面和 controller 不再直接访问 window.autoplan，现有组件 props、路由、交互、加载/错误提示、乐观更新、runLoopAction 快照同步和项目 ID 传递保持兼容。",
+        "所有调用继续携带当前要求的 projectId、planId、taskId、intake type/id 与操作选项，项目切换期间旧调用结果不会污染当前工作区。",
+        "返回值、拒绝错误、事件触发后的页面刷新顺序与 P00 IPC 基线一致，不引入 UI 重排、DTO 转换、状态机调整或 Node 业务逻辑副本。",
+        "既有源码契约断言改为验证统一客户端/DesktopBridge 边界和原业务参数，而不是继续固定 window.autoplan 实现细节。"
+      ]
+    },
+    {
+      "title": "迁移自动化、配置、MCP 与其余组件到客户端和桌面桥",
+      "scope": [
+        "src/renderer/components/workspace/ScriptEditorModal.tsx",
+        "src/renderer/components/workspace/ExecutorEditorModal.tsx",
+        "src/renderer/components/workspace/WorkspaceExecutorsView.tsx",
+        "src/renderer/components/workspace/WorkspaceExecutorsView.test.tsx",
+        "src/renderer/components/workspace/WorkspaceSettingsView.tsx",
+        "src/renderer/components/workspace/WorkspaceSidebar.tsx",
+        "src/renderer/components/workspace/McpControlPanel.tsx",
+        "src/renderer/components/UpdateNotice.tsx",
+        "src/renderer/components/shared.tsx",
+        "src/renderer/pages/WorkspacePage.test.tsx"
+      ],
+      "acceptance": [
+        "脚本与执行器 CRUD、启停、plugin action、tasks.json 导入、MCP、文件访问策略、Chat/AI/Claude 配置和会话更新全部经 AutoplanClient，原参数、快照同步、错误处理与按钮 busy 状态保持一致。",
+        "脚本/tasks.json 选择、项目目录/工作区文件/外链打开、拖入文件路径、文件 URL 和更新操作全部经 DesktopBridge，其余组件不得因便利向 DesktopBridge 添加业务方法。",
+        "配置读取和变更事件继续使用脱敏 DTO；api_key、auth_token、MCP token、env_vars、命令参数和未授权绝对路径不会被新适配层日志、测试 fixture 或事件捕获。",
+        "Terminal 页面剩余的列表和状态订阅经统一客户端复用同一生命周期语义，不与 useTerminalSessions 形成无法释放的重复 listener。",
+        "MCP 工具元数据、设置页、侧栏、更新提示和附件展示在 IPC 默认模式下保持现有 UI、返回值、错误文案和交互顺序，不顺手重构组件或状态管理。"
+      ]
+    },
+    {
+      "title": "落地 renderer 直连白名单守卫、P01 阶段验证入口与迁移说明",
+      "scope": [
+        "scripts/migration-p01/check-renderer-boundary.js",
+        "scripts/migration-p01/check-renderer-boundary.test.js",
+        "scripts/migration-p01/verify.js",
+        "package.json",
+        "scripts/migration-baseline/inventory-ipc.js",
+        "scripts/migration-baseline/inventory-ipc.test.js",
+        "docs/migration/p01/README.md",
+        "docs/migration/p01/evidence/README.md"
+      ],
+      "acceptance": [
+        "静态守卫递归扫描 renderer 源码并只允许批准的 src/renderer/lib/api/ipcClient.ts 与 src/renderer/lib/desktop/ipcBridge.ts 访问 window.autoplan；组件、Hook、页面或新文件出现直接业务调用、动态属性访问或别名绕过时非零失败。",
+        "P00 inventory 在调用入口集中到适配器后仍双向校验 AutoplanApi、preload、handler、renderer 使用和事件生产者，新增、删除、改名或未分类能力继续失败，不通过放宽清单掩盖漂移。",
+        "migration:p01:verify 先确认 P00 完成且契约/IPC 矩阵无未分类项，再覆盖边界守卫、客户端/桌面桥专项测试、相关 renderer/契约测试、check、test 和 build；P00 门禁失败时输出 blocked 并停止后续阶段步骤。",
+        "验证入口按 P00 冻结签名比较 npm.cmd run check 与 npm.cmd test，只允许继承的已知失败且任何新增失败、本阶段相关失败、退出码丢失、skip/only 或吞错都使 P01 失败；build 和 P01 专项检查必须成功。",
+        "阶段说明记录单一 transport 配置、IPC 默认与回退步骤、适配器白名单、DesktopBridge 边界、受影响文件和剩余风险；证据目录只接收命令、真实退出码、脱敏日志和哈希，不读取或修改真实 Electron userData。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm.cmd run migration:p01:verify",
+    "criteria": [
+      "验证开始时 P00 已完成，能力/事件矩阵覆盖当前源码且无未分类、重复归属、缺 handler 或缺 preload 映射；否则结果明确为 blocked，未跨阶段执行 P01 实现验收。",
+      "AutoplanClient 覆盖全部业务调用和 snapshot/patch、Chat、配置、Terminal 事件，DesktopBridge 仅包含批准的 Electron 原生能力；window.autoplan 只出现在 IpcAutoplanClient 与 IPC DesktopBridge 适配器白名单中。",
+      "IPC 是默认 transport，单一配置可回退到原 IPC；相对 P00 的方法参数、返回值、Promise 错误、DTO/snake_case、AppSnapshot、状态机、事件顺序和页面行为一致，未改 UI、数据库、Node 业务实现或 preload。",
+      "重复挂载、StrictMode 重挂载、项目/会话切换、初始化响应迟到、销毁、重复订阅和多次 unsubscribe 的自动化场景通过，最后消费者释放后无残留监听器、重复事件或跨项目状态污染。",
+      "npm.cmd run check 与 npm.cmd test 相对 P00 精确冻结结果无新增失败且本阶段相关前端/契约测试通过；npm.cmd run build、renderer 边界守卫、P00 inventory 漂移检查和 IpcAutoplanClient/DesktopBridge 专项测试成功，所有子命令保留真实退出码。",
+      "验证只使用脱敏 fixture、内存 mock 或系统临时目录，不启动真实 Electron userData、不访问生产数据库、不形成 Node/sql.js 与 Go 同库写入；API、日志、事件、fixture 和证据不含密钥、token、env_vars 或未授权绝对路径。",
+      "证据产物包含实际命令、起止时间、退出码、脱敏 stdout/stderr、受影响文件、证据哈希和剩余风险；不得伪造通过、吞掉既有失败或以放宽守卫/断言代替修复。",
+      "最终 git status 仅新增或修改本阶段预期的 renderer 适配层、调用方、测试、守卫、package script 与迁移文档，现有未跟踪 .claude/、docs/migration/、上一阶段计划、scripts/migration-baseline/ 及所有无关用户改动保持原样。"
+    ]
+  }
+}

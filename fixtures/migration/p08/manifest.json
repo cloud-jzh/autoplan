@@ -1,0 +1,116 @@
+{
+  "artifacts": [
+    {
+      "name": "node-static.golden.json",
+      "sha256": "1eb007b66399d28342814843aecedf95417601727d79167c904fcb8de12298cc"
+    }
+  ],
+  "fixture_set": "autoplan-p08-static-contract",
+  "forbiddenPublicClasses": [
+    "raw API key",
+    "raw Claude token",
+    "raw MCP token",
+    "env vars",
+    "secret ref or provider locator",
+    "command arguments",
+    "message content",
+    "tool data",
+    "codex session id",
+    "real userData/workspace path"
+  ],
+  "generator": "scripts/migration-p08/generate-node-golden.js",
+  "generatorSha256": "d8df1e37c1f357eb243fffa845d19d7eedbf295cc485768b37b4b549155a9e1f",
+  "inventory": {
+    "path": "scripts/migration-p08/inventory-static-contract.js",
+    "sha256": "8dacdab036de5dd15f4f175c807c437d193e26626e94e835af4d2e71ac2c650a"
+  },
+  "normalization": {
+    "placeholders": {
+      "command": "<redacted-command>",
+      "content": "<redacted-content>",
+      "env": "<redacted-env>",
+      "fixtureRoot": "<fixture-root>",
+      "maskedSecret": "<masked-secret>",
+      "path": "<redacted-path>",
+      "redacted": "<redacted>",
+      "session": "<redacted-session-id>",
+      "toolData": "<redacted-tool-data>",
+      "utc": "<utc>"
+    },
+    "version": "p08-node-static-normalization-v1"
+  },
+  "prerequisites": {
+    "staticContract": {
+      "path": "docs/migration/p08/static-contract.json",
+      "sha256": "ba60648b9d6eddf04ef08351c2943a5c2414b966232e5a29e709340bdc2526ad"
+    },
+    "upstream": [
+      {
+        "path": "docs/migration/p06/intake-contract.json",
+        "sha256": "227b97372e981e99a2884aaa76b408599e209ad84dd009999498b15e69ce4c15"
+      },
+      {
+        "path": "fixtures/migration/p06/manifest.json",
+        "sha256": "0fd8793990c82ef513084b832ee7021eb2b19fa885973cba445a0b7209ce0f74"
+      },
+      {
+        "path": "docs/migration/p07/README.md",
+        "sha256": "ce0dd35143ea17c09de5566a0943db1a935cf878e7f0426b7a03ddd8fc4c323c"
+      },
+      {
+        "path": "docs/migration/p07/runbook.md",
+        "sha256": "40695445edc740dd1f0e0d9715d536fe7cecaff6eed48fc0a3c5c107bb767473"
+      },
+      {
+        "path": "fixtures/migration/p07/expected-errors.json",
+        "sha256": "57bccadafadfd6072ad3a4fe4dced8f86e3c73482ec9723b25d83f760dbad81f"
+      },
+      {
+        "path": "backend/migrations/0001_schema_v1.sql",
+        "sha256": "f9ac8dd921e0bdf8bc3e6e78ce3489c77b02eca4d3a5df9f45551d5f8bf5b934"
+      }
+    ]
+  },
+  "scenarios": [
+    "automation-static",
+    "chat-static",
+    "config-static",
+    "mcp-static",
+    "snapshot-static",
+    "secret-redaction"
+  ],
+  "schemaVersion": 1,
+  "source": {
+    "databaseAfterSha256": "2c4be19a784c7b68eb0a0c68534e4ad4528aa6e7de56a8fe8e1a9ae3da883ea2",
+    "databaseBeforeSha256": "ca89087beae4c4630b6234d27a15397e5ab77f4b2b4a6400692c61d2ee87c13d",
+    "databaseCopy": "generator-owned OS temporary database; never Electron userData or production autoplan.sqlite",
+    "execution": "Node scenarios are serial; no external process, Chat stream, queue pump or MCP listener is started",
+    "fixtureRecipeSha256": "fbc80d748dc9a1cfef91494d6e9ea58c4d28b8115a57e6009ba56e6fa98d1509",
+    "rowCounts": {
+      "ai_configs": 1,
+      "chat_messages": 4,
+      "claude_cli_configs": 1,
+      "conversations": 2,
+      "executors": 2,
+      "project_states": 2,
+      "scripts": 1,
+      "settings": 42
+    },
+    "schemaSha256": "3c0dbb9dddf27bf35484ea59254166875c6ec0140dddd602de634f4a0406ef0e",
+    "syntheticOnly": true
+  },
+  "version": "p08-node-static-golden-v1",
+  "writerHandoff": {
+    "nodeClosedBeforeArtifactCommit": true,
+    "sameCopyConcurrentWritersAllowed": false,
+    "sequence": [
+      "P06/P07 prerequisites and frozen P08 contract are checked",
+      "Node opens a fresh generator-owned temporary database",
+      "Node executes static persistence scenarios serially",
+      "Node captures schema, row counts and database hashes",
+      "Node closes sql.js and releases database ownership",
+      "artifacts are staged and committed",
+      "Go may later open only a separately reset copy"
+    ]
+  }
+}

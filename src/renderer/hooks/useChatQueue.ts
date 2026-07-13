@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useAutoplanClient, useHttpChatOperations } from '../lib/api/provider';
 import type { ChatQueueItem } from '../types';
 
 export interface UseChatQueueResult {
@@ -16,6 +17,8 @@ export interface UseChatQueueResult {
  * - 暴露取消/编辑/清空动作：乐观更新本地快照 + IPC 落盘，onChatQueue 广播保证最终一致
  */
 export function useChatQueue(projectId: number, activeConversationId: number | null): UseChatQueueResult {
+  const client = useAutoplanClient();
+  const chatHttp = useHttpChatOperations();
   const [items, setItems] = useState<ChatQueueItem[]>([]);
 
   useEffect(() => {
@@ -24,36 +27,54 @@ export function useChatQueue(projectId: number, activeConversationId: number | n
       return;
     }
     const cid = activeConversationId;
-    let cancelled = false;
-    window.autoplan
+    let active = true;
+    client
       .chatQueueList({ projectId, conversationId: cid })
       .then((list) => {
-        if (!cancelled) setItems(Array.isArray(list) ? list : []);
+        if (active) setItems(Array.isArray(list) ? list : []);
       })
       .catch(() => {
         /* 拉取失败保留空快照 */
       });
-    const unsubscribe = window.autoplan.onChatQueue((snapshot) => {
+    const onQueue = (snapshot: { conversationId: number; items: ChatQueueItem[]; count: number }) => {
+      if (!active) return;
       if (snapshot.conversationId !== cid) return; // 会话隔离
       setItems(Array.isArray(snapshot.items) ? snapshot.items : []);
-    });
+    };
+    if (chatHttp) {
+      let stream: ReturnType<typeof chatHttp.connectChatEvents> | null = null;
+      stream = chatHttp.connectChatEvents(projectId, cid, {
+        onQueue,
+        onResync: () => {
+          client.chatQueueList({ projectId, conversationId: cid })
+            .then((list) => { if (active) setItems(Array.isArray(list) ? list : []); })
+            .catch(() => undefined)
+            .finally(() => stream?.completeResync());
+        },
+      });
+      return () => {
+        active = false;
+        stream?.();
+      };
+    }
+    const unsubscribe = client.onChatQueue(onQueue);
     return () => {
-      cancelled = true;
+      active = false;
       unsubscribe();
     };
-  }, [projectId, activeConversationId]);
+  }, [activeConversationId, chatHttp, client, projectId]);
 
   const cancelQueueItem = useCallback(
     async (id: number) => {
       if (!projectId || !activeConversationId) return;
       setItems((cur) => cur.filter((it) => it.id !== id));
       try {
-        await window.autoplan.chatQueueCancel({ projectId, conversationId: activeConversationId, id });
+        await client.chatQueueCancel({ projectId, conversationId: activeConversationId, id });
       } catch {
         /* 失败经 onChatQueue 广播修正 */
       }
     },
-    [projectId, activeConversationId],
+    [activeConversationId, client, projectId],
   );
 
   const editQueueItem = useCallback(
@@ -62,12 +83,12 @@ export function useChatQueue(projectId: number, activeConversationId: number | n
       if (!projectId || !activeConversationId || !content) return;
       setItems((cur) => cur.map((it) => (it.id === id ? { ...it, content } : it)));
       try {
-        await window.autoplan.chatQueueEdit({ projectId, conversationId: activeConversationId, id, message: content });
+        await client.chatQueueEdit({ projectId, conversationId: activeConversationId, id, message: content });
       } catch {
         /* 失败经 onChatQueue 广播修正 */
       }
     },
-    [projectId, activeConversationId],
+    [activeConversationId, client, projectId],
   );
 
   const clearQueue = useCallback(
@@ -75,12 +96,12 @@ export function useChatQueue(projectId: number, activeConversationId: number | n
       if (!projectId || !activeConversationId) return;
       setItems([]);
       try {
-        await window.autoplan.chatQueueClear({ projectId, conversationId: activeConversationId });
+        await client.chatQueueClear({ projectId, conversationId: activeConversationId });
       } catch {
         /* 失败经 onChatQueue 广播修正 */
       }
     },
-    [projectId, activeConversationId],
+    [activeConversationId, client, projectId],
   );
 
   return { items, count: items.length, cancelQueueItem, editQueueItem, clearQueue };

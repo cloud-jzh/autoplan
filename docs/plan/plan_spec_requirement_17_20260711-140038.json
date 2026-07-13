@@ -1,0 +1,203 @@
+{
+  "title": "P10：统一异步 Operation 与可恢复 SSE 事件协议",
+  "summary": "在 P09 代码与数据库副本切换演练门禁通过后，依据 D:\\docs\\autoplan-go-backend-separation-plan.md v1.0，在脱敏 fixture、临时库或调用方明确副本上建立供后续 Loop、计划生成、任务、脚本、执行器与 Chat 长任务复用的 Operation、事务 outbox 和实时事件基础设施。阶段实现 queued/running/succeeded/failed/cancelled/interrupted 状态机、请求幂等与稳定冲突、确定性取消竞争、每项目 revision、可清理重放的递增事件、鉴权与 Origin 一致的项目/Operation SSE，以及 renderer 重连、去重、缺口检测、合批和 snapshot resync；REST、MCP 与 UI adapter 统一调用 application service。保持既有 DTO、snake_case、snapshot 和业务规则，不重写 UI，不迁移具体长任务执行器，不切换或自动访问真实 Electron userData，并确保 stdout/stderr 有界、截断、脱敏且终端原始输出不进入项目 SSE。交付自动测试、协议与恢复文档、真实命令/退出码、脱敏证据、文件清单和风险；P09 或安全门禁失败时必须 blocked，P00 既有红灯不得新增且 P10 专项测试必须通过。",
+  "tasks": [
+    {
+      "title": "冻结 Operation、事件信封与恢复策略契约",
+      "scope": [
+        "backend/internal/domain/operation",
+        "backend/internal/domain/events",
+        "backend/openapi/openapi.yaml",
+        "backend/openapi/schemas/operation.schema.json",
+        "backend/openapi/schemas/event.schema.json",
+        "docs/migration/p10/protocol.md"
+      ],
+      "acceptance": [
+        "Operation 契约完整定义 queued、running、succeeded、failed、cancelled、interrupted，项目归属、操作类型、幂等键、规范化请求摘要、取消请求、创建/开始/结束时间、稳定错误码和脱敏错误摘要，并保持 snake_case、UTC RFC 3339、request_id 与现有 DTO 兼容。",
+        "状态迁移表列出全部合法与非法转换，明确重复开始/完成/取消的幂等语义以及完成与取消并发时基于事务提交顺序或版本前置的唯一确定终态，不允许终态回退或双终态。",
+        "事件信封冻结递增 event_id、project_id、project revision、event type、operation_id、occurred_at 和脱敏 payload，区分持久业务事件、Operation 事件、心跳与 resync_required 控制事件。",
+        "启动恢复策略明确 running 一律转 interrupted；queued 默认不自动执行，仅能由对应业务恢复器按原 operation 认领，无法认领或超过策略期限时转 interrupted，避免重启后在缺少执行所有权时重复副作用。",
+        "协议明确 stdout/stderr 的分块、字节/行数上限、截断标记和脱敏规则，禁止密钥、token、env_vars、命令环境、真实 userData、未授权路径与终端原始输出进入响应、日志、事件、fixture 或无界持久化。"
+      ]
+    },
+    {
+      "title": "实现 Operation 与 event_outbox 的 SQLite 迁移和原子仓储",
+      "scope": [
+        "backend/migrations",
+        "backend/internal/repository/sqlite/operations.go",
+        "backend/internal/repository/sqlite/event_outbox.go",
+        "backend/internal/repository/sqlite/project_revisions.go",
+        "backend/internal/repository/sqlite/operations_test.go",
+        "backend/internal/repository/sqlite/event_outbox_test.go"
+      ],
+      "acceptance": [
+        "迁移建立 operations、event_outbox、项目 revision 及必要索引/唯一约束，支持按项目、operation、状态、递增 event_id 和 revision 查询，并能在 P09 迁移后的明确副本上重复执行而不漂移 schema。",
+        "创建或转换 Operation、记录取消请求、分配项目 revision 和追加对应 outbox 事件在同一 SQLite 事务提交；任一写点、commit 或 context 失败都完整回滚，不能出现有状态无事件或有事件无状态。",
+        "相同项目/操作域的同一幂等键与相同规范化请求摘要始终返回原 operation，包含并发双提交和重试；同键不同请求稳定返回 IDEMPOTENCY_CONFLICT，且不创建第二 operation、不执行副作用、不泄露原请求内容。",
+        "event_id 严格递增且单个项目 revision 连续递增；并发事务、回滚和重试不会产生可见重复 revision、乱序事件或跨项目归属，历史查询具有稳定边界。",
+        "保留策略同时支持最大年龄、全局/每项目数量上限、批量清理和安全水位，清理不会删除仍需投递的事务记录，并保留足够元数据判断 Last-Event-ID 已断档而要求 resync。",
+        "仓储只保存有上限且已脱敏的错误/输出摘要；超限内容带确定性 truncated 元数据，原始秘密、环境变量、未授权路径和终端数据不会写入数据库。"
+      ]
+    },
+    {
+      "title": "实现共享 Operation application service、幂等取消与启动恢复",
+      "scope": [
+        "backend/internal/application/operations/service.go",
+        "backend/internal/application/operations/state_machine.go",
+        "backend/internal/application/operations/recovery.go",
+        "backend/internal/application/operations/output_policy.go",
+        "backend/internal/application/operations/service_test.go",
+        "backend/internal/bootstrap/dependencies.go",
+        "backend/internal/bootstrap/lifecycle.go"
+      ],
+      "acceptance": [
+        "application service 提供创建/复用、查询、认领开始、成功、失败、取消请求、确认取消和中断恢复用例，所有入口校验调用方、项目归属、期望版本和合法状态，不向 transport 暴露 repository 或任意状态写接口。",
+        "REST、后续 MCP/UI adapter 与未来长任务 runner 可复用同一 service、事务、幂等、授权和错误映射；缺失 handler/capability 时默认安全拒绝，不产生假 operation、假成功 snapshot 或本地降级执行。",
+        "取消 queued operation 可确定地进入 cancelled，取消 running operation 记录请求并驱动上下文取消；取消与 succeeded/failed 竞争、重复取消、取消后迟到完成及进程已退出场景均只有一个文档化终态且事件与查询一致。",
+        "服务启动时在单事务中把遗留 running 标记 interrupted 并发布恢复事件；queued 只由匹配类型和请求摘要的恢复器显式认领，未注册、过期、跨项目或状态漂移均保持不执行并按策略中断。",
+        "错误摘要和 stdout/stderr 经过统一大小限制、UTF-8 安全截断与秘密/路径脱敏，输出上限在重试和并发写入下仍成立；超限或脱敏失败时保守丢弃内容并保留稳定诊断码。"
+      ]
+    },
+    {
+      "title": "实现可恢复 event bus、outbox 分发与背压清理",
+      "scope": [
+        "backend/internal/runtime/eventbus/bus.go",
+        "backend/internal/runtime/eventbus/outbox_dispatcher.go",
+        "backend/internal/runtime/eventbus/subscription.go",
+        "backend/internal/runtime/eventbus/retention.go",
+        "backend/internal/runtime/eventbus/eventbus_test.go",
+        "backend/internal/bootstrap/dependencies.go",
+        "backend/internal/config/events.go"
+      ],
+      "acceptance": [
+        "event bus 以已提交 outbox 为权威来源，支持按项目和 operation 订阅、从 event_id 重放及实时续接，重放与 live 交界不会丢失或重复最终状态。",
+        "分发器按递增 event_id 发布并允许客户端以 event_id 去重；进程在读取、发布、确认任一点崩溃后可恢复重放，但不得重新执行产生事件的业务 mutation。",
+        "每项目 revision 在 snapshot、patch、operation 和配置类事件间保持一致语义；检测到 revision 跳跃、Last-Event-ID 早于清理水位或事件归属无法证明时发送 resync_required，而不是猜测或补造 patch。",
+        "保留任务按配置的年龄、条数和批量上限清理，清理与新写入并发时不破坏水位判断；配置缺失、非法或清理失败时采用有界且失败关闭的默认值并留下脱敏告警。",
+        "每个订阅拥有有界缓冲和明确慢客户端策略，溢出时断开或要求 resync，不阻塞业务事务、不无限占用内存，也不为追赶客户端丢弃唯一终态事件后继续伪装连续。"
+      ]
+    },
+    {
+      "title": "提供鉴权一致的 Operation REST 与项目/Operation SSE",
+      "scope": [
+        "backend/internal/httpapi/operations.go",
+        "backend/internal/httpapi/events.go",
+        "backend/internal/httpapi/sse.go",
+        "backend/internal/httpapi/router.go",
+        "backend/internal/httpapi/middleware.go",
+        "backend/internal/httpapi/errors.go",
+        "backend/internal/httpapi/operations_test.go",
+        "backend/internal/httpapi/sse_test.go",
+        "backend/openapi/openapi.yaml"
+      ],
+      "acceptance": [
+        "GET /api/v1/operations/{operation_id} 和 POST /api/v1/operations/{operation_id}/actions/cancel 通过共享 application service 返回稳定 snake_case DTO、request_id 与错误码，并拒绝未知、跨项目、未授权和非法状态请求且无副作用。",
+        "GET /api/v1/projects/{project_id}/events 与 GET /api/v1/operations/{operation_id}/events 执行与 REST 相同的 session、Host、Origin、项目归属和资源授权检查；localhost、operation_id 或 Last-Event-ID 都不能替代授权。",
+        "SSE 正确解析 Header Last-Event-ID，按 event_id 重放后无缝接续 live 事件；无效/未来 ID、已清理历史、revision 缺口和项目不匹配返回稳定错误或 resync_required，不跨项目枚举事件。",
+        "SSE 信封、事件名、retry/心跳间隔和连接关闭语义符合冻结协议；心跳不占持久 event_id/revision，服务关闭、客户端取消、写超时和慢客户端能及时释放订阅与 goroutine。",
+        "高频事件可在不改变 revision 与终态语义的前提下服务端合批，Operation 最终状态必须单独可观察或成为不可丢失的批次尾状态；终端原始输出绝不进入项目 SSE。",
+        "响应、错误、访问日志和 SSE payload 不包含 session、密钥、token、env_vars、完整命令输出、内部请求摘要、真实路径或其他项目详情。"
+      ]
+    },
+    {
+      "title": "实现 renderer SSE 重连、去重、合批与 Snapshot Resync",
+      "scope": [
+        "src/renderer/lib/api/client.ts",
+        "src/renderer/lib/api/httpClient.ts",
+        "src/renderer/lib/api/events.ts",
+        "src/renderer/lib/api/eventStream.ts",
+        "src/renderer/lib/api/eventStream.test.ts",
+        "src/renderer/hooks/useSnapshot.ts",
+        "src/renderer/hooks/useSnapshot.test.ts",
+        "src/renderer/types.ts"
+      ],
+      "acceptance": [
+        "HttpAutoplanClient 通过既有统一 client 边界订阅项目和 Operation 事件，携带最后已应用 event_id 并以有界指数退避重连；组件不新增直接 EventSource/fetch/window.autoplan 调用，也不顺手改写 UI。",
+        "客户端按 event_id 去重，拒绝倒序陈旧事件，跟踪每项目 revision；重复、乱序、跨项目、未知事件、revision 跳跃和 resync_required 不会覆盖较新 snapshot，而会触发单飞的权威 snapshot 重取。",
+        "高频 patch 在确定性时间窗内合批并保持字段/列表更新顺序，full snapshot 继续遵守现有优先语义；Operation succeeded/failed/cancelled/interrupted 等最终状态在合批、重连和 resync 竞争中不会丢失。",
+        "snapshot resync 成功后原子替换缓存并更新 event/revision 水位，再接纳后续事件；resync 失败、连接持续失败或响应不可信时保留失败状态并重试，不清空为假默认值、不静默切换到可能重复 mutation 的传输。",
+        "退避计时器、AbortController、订阅和批处理队列在项目切换、卸载、StrictMode 重挂载及 transport 关闭时完整清理，不形成重复连接、跨项目事件或无界内存增长。",
+        "renderer 日志与错误 UI 只暴露稳定脱敏信息，不保存或展示会话凭据、env_vars、内部请求摘要、未授权路径或终端原始输出。"
+      ]
+    },
+    {
+      "title": "建立 Operation、Outbox、SSE 与前端恢复的端到端故障矩阵",
+      "scope": [
+        "backend/internal/application/operations/integration_test.go",
+        "backend/internal/runtime/eventbus/recovery_test.go",
+        "backend/internal/httpapi/sse_integration_test.go",
+        "src/renderer/lib/api/eventStream.contract.test.ts",
+        "scripts/migration-p10/protocol-contract.test.js",
+        "fixtures/migration/p10/operation-cases.json",
+        "fixtures/migration/p10/event-streams.json",
+        "fixtures/migration/p10/README.md"
+      ],
+      "acceptance": [
+        "状态矩阵覆盖所有合法/非法转换、重复命令、取消竞争、迟到完成、启动中断、queued 认领/拒绝/过期和终态幂等；非法场景断言 operation、outbox 与项目 revision 哈希不变。",
+        "幂等矩阵覆盖同键同请求串行/并发/断连重试返回同一 operation，同键不同规范化请求稳定冲突，并证明业务执行器至多启动一次且敏感原请求不进入冲突详情。",
+        "SSE 矩阵覆盖初次连接、断线续传、重放/live 交界、重复/乱序、未来 ID、历史清理、revision 缺口、resync_required、心跳、慢客户端、服务关闭和最终状态送达。",
+        "前端 fake clock/stream 测试覆盖指数退避、Last-Event-ID、水位持久期、去重、合批窗口、snapshot 单飞 resync、项目切换、StrictMode 和 resync 与最终状态竞争，证明缓存最终与权威 snapshot 一致。",
+        "事务和崩溃故障注入覆盖 Operation/outbox 每个写点、commit、分发、清理及恢复，结果只能完整提交或完整回滚，重放不重复业务副作用且清理水位仍能准确触发 resync。",
+        "输出压力与敏感扫描覆盖超大 stdout/stderr、分块 UTF-8、秘密/token/env_vars/路径模式和终端原始数据，验证存储、API、SSE、日志、fixture 与 diff 均有界且脱敏。"
+      ]
+    },
+    {
+      "title": "固化 P10 前置门禁、验证编排、运行手册与脱敏证据",
+      "scope": [
+        "scripts/migration-p10/check-prerequisites.js",
+        "scripts/migration-p10/check-prerequisites.test.js",
+        "scripts/migration-p10/check-safety.js",
+        "scripts/migration-p10/check-safety.test.js",
+        "scripts/migration-p10/verify.js",
+        "scripts/migration-p10/verify.test.js",
+        "package.json",
+        "docs/migration/p10/README.md",
+        "docs/migration/p10/runbook.md",
+        "docs/migration/p10/evidence/README.md",
+        "docs/migration/p10/evidence/manifest.json"
+      ],
+      "acceptance": [
+        "migration:p10:verify 首先真实执行并核验 P09 代码与副本演练证据、P00 红灯签名、唯一 Go owner、显式副本授权和真实 userData 拒绝门禁；任一前置缺失或非零时记录 blocked 与原始退出码并停止 P10 写入、服务和事件测试。",
+        "验证编排只在系统临时目录、脱敏 fixture 或调用方明确副本上执行 Go domain/repository/application/eventbus/httpapi、renderer、OpenAPI、故障注入、输出上限与敏感扫描，禁止 Node/sql.js 与 Go 写同一库。",
+        "每个子命令记录实际命令、起止时间、真实退出码、脱敏 stdout/stderr、fixture/schema/事件哈希、清理结果和受影响文件；汇总命令不吞掉非零退出码、不自动更新黄金、不以重试掩盖首次失败。",
+        "runbook 记录状态迁移、幂等作用域、取消裁决、queued/running 恢复、revision/event_id、保留与清理、Last-Event-ID、心跳、慢客户端、resync、输出截断、feature flag、回退点和剩余风险。",
+        "回退仅停止 P10 创建的订阅/dispatcher、关闭 go_operation_api/go_operation_events 并丢弃测试副本；不接管活动任务、不把 Go 写过的库热交给 Node、不触碰真实 Electron userData。",
+        "npm.cmd run check 与 npm.cmd test 相对 P00 冻结签名不得新增、隐藏、跳过或重命名红灯；P10 专项测试全部零退出码，验证前后 git status 保留 .claude/ 和所有无关用户改动。"
+      ]
+    },
+    {
+      "title": "完整验收",
+      "scope": [
+        "validation"
+      ],
+      "acceptance": [
+        "P09 代码与副本演练、P00 红灯签名、显式脱敏副本、唯一 writer 和真实 userData 拒绝门禁首先通过；任一失败以 blocked 结束且未执行 P10 数据库写入、启动事件服务或切换生产 flag。",
+        "Operation 六态迁移表完整，非法转换拒绝且无状态/outbox/revision 副作用；查询、开始/结束、错误摘要、项目归属、重复取消、取消竞争、迟到完成和重启恢复均得到唯一确定终态。",
+        "相同幂等键和相同请求在串行、并发与断连重试下返回同一 operation 且至多执行一次，同键不同请求返回稳定冲突；Operation 状态、项目 revision 和 event_outbox 始终同事务提交。",
+        "遗留 running 启动时转 interrupted，queued 默认不自动执行并只由匹配恢复器安全认领；无法认领、过期或状态漂移不会触发未知副作用。",
+        "event bus/outbox 的递增 event_id、每项目 revision、重放/live 衔接、保留上限、批量清理、水位和崩溃恢复正确，重复投递不重复业务 mutation，历史断档稳定触发 resync_required。",
+        "项目与 Operation SSE 具有和 REST 一致的鉴权、Host/Origin 与归属校验，Last-Event-ID 断线续传、去重、心跳、慢客户端和关闭清理通过，跨项目和未授权访问不泄露存在性或事件。",
+        "renderer 在重复、乱序、revision 缺口、历史清理、合批、重连和 snapshot resync 场景最终收敛到权威状态，Operation 最终 succeeded/failed/cancelled/interrupted 不丢失且没有重复连接或无界队列。",
+        "stdout/stderr 具备确定性上限、UTF-8 安全截断、truncated 标记和脱敏，终端原始输出不进入项目 SSE；密钥、token、env_vars、会话、真实 userData 和未授权路径未进入响应、日志、事件、fixture、diff 或证据。",
+        "P10 专项 Go/Node/renderer/OpenAPI、事务、并发、SSE、故障恢复和安全测试全部零退出码，npm check/test 相对 P00 无新增红灯；证据包含真实命令与退出码、脱敏日志、哈希、文件清单、风险和回退点。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm.cmd run migration:p10:verify",
+    "criteria": [
+      "验证器先核验 P09 代码与副本演练证据、P00 红灯签名、唯一 Go owner、显式脱敏副本和真实 userData 拒绝门禁；任一失败必须真实非零退出并标记 blocked，且不执行 P10 写入或事件服务。",
+      "Operation queued/running/succeeded/failed/cancelled/interrupted 状态机、项目归属、查询、认领、结束、错误摘要、取消请求和恢复策略完整；非法转换、重复命令、取消竞争与迟到完成具有稳定唯一终态且无部分副作用。",
+      "相同幂等键与相同规范化请求在串行、并发和重试下返回同一 operation 并至多执行一次，同键不同请求返回稳定 IDEMPOTENCY_CONFLICT；敏感请求内容不进入存储、错误或证据。",
+      "Operation 状态转换、取消标记、项目 revision 和 event_outbox 在同一事务提交，写点/commit/context 故障完整回滚；递增 event_id、每项目 revision 和并发顺序无重复、跳跃或跨项目污染。",
+      "启动将遗留 running 原子标为 interrupted 并发布事件，queued 默认不自动执行且仅由匹配恢复器认领；无法认领、过期、未知类型与跨项目数据保持失败关闭。",
+      "outbox 分发、重放/live 衔接、崩溃恢复、按年龄/数量保留、批量清理和安全水位通过；已清理历史、Last-Event-ID 异常或 revision 缺口稳定产生 resync_required，重放不重复业务 mutation。",
+      "Operation REST、项目 SSE 与 Operation SSE 复用共享 application service，并执行一致的 session、Host、Origin、项目归属和资源授权；未授权、跨项目、枚举 ID 和慢客户端稳定拒绝或断开且无信息泄露。",
+      "SSE 的 Last-Event-ID 断线续传、重复/乱序去重、心跳、写超时、慢客户端背压、服务关闭和最终状态投递全部通过，重放与实时切换不丢事件，终端原始输出不进入项目 SSE。",
+      "renderer 通过统一 AutoplanClient 实现有界退避重连、event_id 去重、revision 缺口检测、确定性合批和单飞 snapshot resync；项目切换、StrictMode、断线和 resync 竞争后最终与权威 snapshot 一致且终态不丢。",
+      "stdout/stderr 在内存、数据库、API、SSE、日志和证据中均受字节/行数上限、UTF-8 安全截断和脱敏策略约束；密钥、token、env_vars、会话、真实 userData、未授权路径与终端原始输出未泄露。",
+      "P10 专项 Go repository/application/eventbus/httpapi、renderer transport、OpenAPI、事务并发、故障恢复、输出压力与安全扫描测试全部零退出码；npm.cmd run check 与 npm.cmd test 相对 P00 冻结基线无新增、隐藏、跳过或重命名失败。",
+      "所有验证只使用脱敏 fixture、系统临时库或调用方明确副本，Node/sql.js 与 Go 写入时间线不重叠且不自动发现、读取或修改真实 Electron userData；证据保留实际命令、真实退出码、脱敏 stdout/stderr、哈希、文件清单、风险、回退点和最终 git status。"
+    ]
+  }
+}

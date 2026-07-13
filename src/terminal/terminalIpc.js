@@ -5,14 +5,16 @@ const {
   TERMINAL_ERROR_CODES,
   TERMINAL_LIMITS,
   terminalError,
+  terminalLegacyAdmissionDisabledError,
 } = require('./terminalTypes');
 
-function registerTerminalIpc({ ipcMain, terminalService, getProject, sendToRenderer }) {
+function registerTerminalIpc({ ipcMain, terminalService, getProject, sendToRenderer, legacyAdmission }) {
   if (!ipcMain || !terminalService || typeof getProject !== 'function') {
     throw new Error('终端 IPC 注册参数不完整');
   }
 
   const send = typeof sendToRenderer === 'function' ? sendToRenderer : () => {};
+  const nodeAdmission = normalizeLegacyAdmission(legacyAdmission, terminalService);
 
   terminalService.on(TERMINAL_CHANNELS.DATA, (event) => send(TERMINAL_CHANNELS.DATA, safeTerminalEvent(event)));
   terminalService.on(TERMINAL_CHANNELS.EXIT, (event) => send(TERMINAL_CHANNELS.EXIT, safeTerminalEvent(event)));
@@ -20,6 +22,12 @@ function registerTerminalIpc({ ipcMain, terminalService, getProject, sendToRende
   terminalService.on(TERMINAL_CHANNELS.CLOSED, (event) => send(TERMINAL_CHANNELS.CLOSED, safeTerminalEvent(event)));
 
   ipcMain.handle(TERMINAL_CHANNELS.CREATE, (_event, input = {}) => withTerminalError(() => {
+    // Keep the compatibility channel registered while Node sessions can be
+    // drained. Only creation closes after accepted platform evidence; list,
+    // mutation and event routes remain bound to their original Node handles.
+    if (!nodeAdmission.allowNewNodeSessions) {
+      return terminalLegacyAdmissionDisabledError(nodeAdmission.reason);
+    }
     const payload = createPayload(input);
     if (!payload.ok) return payload.error;
     const project = getProject(payload.value.projectId);
@@ -78,6 +86,14 @@ function registerTerminalIpc({ ipcMain, terminalService, getProject, sendToRende
     found.session.scrollback = [];
     return { ok: true, session: safeTerminalSession(found.session) };
   }));
+}
+
+function normalizeLegacyAdmission(value, terminalService) {
+  const source = value && typeof value === 'object' ? value : terminalService?.legacyAdmission;
+  return {
+    allowNewNodeSessions: source?.allowNewNodeSessions !== false,
+    reason: String(source?.reason || 'platform_evidence_missing'),
+  };
 }
 
 function withTerminalError(fn) {
@@ -230,6 +246,7 @@ function safeTerminalEvent(event = {}) {
     session: safeTerminalSession(event.session),
   };
   if (event.data !== undefined) payload.data = String(event.data ?? '');
+  if (Number.isSafeInteger(event.seq) && event.seq > 0) payload.seq = event.seq;
   if (Object.prototype.hasOwnProperty.call(event, 'exitCode')) payload.exitCode = event.exitCode ?? null;
   if (Object.prototype.hasOwnProperty.call(event, 'signal')) payload.signal = event.signal ?? null;
   if (Object.prototype.hasOwnProperty.call(event, 'closed')) payload.closed = event.closed === true;
@@ -251,6 +268,7 @@ function safeTerminalSession(session = {}) {
     cols: Number.isInteger(source.cols) ? source.cols : null,
     rows: Number.isInteger(source.rows) ? source.rows : null,
     profile: safeTerminalProfile(source.profile),
+    runtime: source.runtime === 'go' ? 'go' : 'node',
   };
   if (Object.prototype.hasOwnProperty.call(source, 'closed')) payload.closed = source.closed === true;
   return payload;

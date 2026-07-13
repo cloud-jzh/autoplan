@@ -1,0 +1,220 @@
+{
+  "title": "P08：剩余静态持久化、Secrets 抽象与稳定 API",
+  "summary": "在 P07 已有真实通过证据且 schema、数据库 owner、显式副本和安全门禁均满足的前提下，依据 D:\\docs\\autoplan-go-backend-separation-plan.md v1.0，将 scripts/executors 元数据、conversations/chat_messages、ai_configs、claude_cli_configs 与实际 MCP 配置迁入本机 Go sidecar 的 domain/repository/application 分层，保持现有 DTO、snake_case、字段存在性、null、排序、项目归属、AppSnapshot 和业务错误兼容，不顺手重写 UI。本阶段只提供静态 CRUD、分页、关联、事务与 snapshot：scripts/executors 的 run/stop/action/import-and-run、Chat send/stop/queue/stream、MCP start/stop/listener 等运行时能力默认安全关闭，并以稳定非 2xx NOT_IMPLEMENTED/能力关闭错误响应，绝不启动外部进程、建立 Chat 流、写运行态或伪造成功。HTTP、MCP 和 UI transport 复用同一 application service；秘密只以 secret_refs 进入业务库，平台 secrets 优先 OS 凭据库、测试可注入 fake，无可用凭据库时使用安装级密钥与受认证加密 fallback。旧明文秘密仅在脱敏 fixture、系统临时库或调用方明确副本上演练迁移、恢复和不可逆清理，Node/sql.js 与 Go 绝不同写同库，也不自动发现或操作真实 Electron userData。任何 P07/P00 基线、安全或副本前置失败均标记 blocked 并停止；交付代码、文档、自动测试、真实命令及退出码、脱敏证据、文件清单和剩余风险。",
+  "tasks": [
+    {
+      "title": "冻结 Automation、Chat、配置、MCP 与秘密字段的 Node 兼容契约和脱敏黄金基线",
+      "scope": [
+        "src/database.js",
+        "src/main.js",
+        "src/loop/snapshots.js",
+        "src/executors/executorConfig.js",
+        "src/executors/executorStore.js",
+        "src/chat/chatController.js",
+        "src/chat/aiConfigService.js",
+        "src/chat/claudeCliConfigService.js",
+        "src/mcpConfig.js",
+        "src/renderer/types.ts",
+        "scripts/migration-p08/inventory-static-contract.js",
+        "scripts/migration-p08/generate-node-golden.js",
+        "fixtures/migration/p08/manifest.json",
+        "fixtures/migration/p08/node-static.golden.json",
+        "docs/migration/p08/static-contract.json"
+      ],
+      "acceptance": [
+        "从现有实现和测试逐字段冻结 scripts、executors、conversations、chat_messages、ai_configs、claude_cli_configs 与 mcp.* settings 的列、snake_case DTO、字段存在性、null/空串、默认值、枚举、JSON 列、ID、时间、稳定排序、分页边界、关联和 AppSnapshot 语义，不通过修改 Node 行为简化迁移。",
+        "冻结 scripts 的名称、路径、runtime、body、trigger/hook/schedule、enabled、work_dir、timeout、fail_aborts、context_inject、sort_order 与只读 last_run 元数据，以及 executors 的唯一 label、type/command/args/actions/options/group/presentation/problemMatcher/dependsOn/enabled/sort_order 和日志上限等校验；env、cwd 和路径样例只使用脱敏占位符。",
+        "冻结会话按项目隔离、置顶优先再按 updated_at/id 倒序、全局 AI/Claude 配置关联、默认配置切换、删除配置时会话解绑、消息角色/status/tool 字段、历史顺序与 snapshot 兼容；明确 codex_session_id、正文和 tool data 的公开边界，任何不应公开的内容不得进入黄金摘要。",
+        "盘点所有明文来源与消费者，包括 ai_configs.api_key、claude_cli_configs.auth_token、mcp.authToken、project_states/requirements/feedback/plans 中的 Claude token、env_vars 及兼容 settings，并为每类定义 secret kind、owner scope、空值、替换、清除、masked/has_xxx 和不可明文回读契约。",
+        "Node 黄金生成器只串行操作脱敏临时数据库或调用方明确副本，记录输入、schema、输出、行数和前后哈希；关闭 sql.js 后才允许 Go 打开独立重置副本，命中真实 userData、未授权路径、疑似真实凭据或非脱敏正文时立即安全失败。"
+      ]
+    },
+    {
+      "title": "实现 Scripts 与 Executors 元数据 domain、repository、application CRUD 和项目归属校验",
+      "scope": [
+        "backend/internal/domain/automation",
+        "backend/internal/repository/repository.go",
+        "backend/internal/repository/sqlite/scripts.go",
+        "backend/internal/repository/sqlite/executors.go",
+        "backend/internal/repository/sqlite/automation_transactions.go",
+        "backend/internal/application/automation",
+        "backend/migrations"
+      ],
+      "acceptance": [
+        "domain 与 repository 精确承载冻结的 script/executor 元数据、JSON 结构、null、默认值、运行结果只读兼容列和 version；所有按 ID 的读取、更新、toggle、删除、排序及关联查询都同时验证 project_id，跨项目、悬空项目和伪造 ID 返回稳定错误且不泄露资源存在性。",
+        "application service 提供列表、详情、创建、更新、删除、启停和仅持久化的批量导入/排序能力，复用现有 executorConfig 与 script 表单规则，包括 label 冲突、plugin actions、depends_on、cron/hook、timeout、日志截断和完整批量预校验；任一无效项或写入故障时整批回滚。",
+        "并发更新使用 version/If-Match 等冻结前置，重复 toggle、并发排序、创建同名 executor、删除与更新竞争产生确定的 409/412 类冲突，无丢失更新、重复 sort_order、半批导入或跨项目写入。",
+        "run、stop、runAction、plugin process、script hook/schedule 执行和任何导入后自动运行不在本任务实现；application capability 默认 disabled，直接调用返回稳定 NOT_IMPLEMENTED/能力关闭错误，数据库、事件、operation、日志文件和进程均无副作用。",
+        "repository 只在 Go 持有副本 owner 锁时写入；前置、context、commit 或 owner 检查失败均完整回滚，且不把 command、args、options.env、work_dir、last_log 或未授权路径写入响应、错误、审计事件和普通日志。"
+      ]
+    },
+    {
+      "title": "实现 Conversations、ChatMessages、AI/Claude 与 MCP 静态配置的事务型持久化和 snapshot 兼容",
+      "scope": [
+        "backend/internal/domain/chat",
+        "backend/internal/domain/config",
+        "backend/internal/repository/repository.go",
+        "backend/internal/repository/sqlite/conversations.go",
+        "backend/internal/repository/sqlite/chat_messages.go",
+        "backend/internal/repository/sqlite/ai_configs.go",
+        "backend/internal/repository/sqlite/claude_cli_configs.go",
+        "backend/internal/repository/sqlite/mcp_config.go",
+        "backend/internal/repository/sqlite/chat_transactions.go",
+        "backend/internal/application/chat",
+        "backend/internal/application/config",
+        "backend/internal/application/snapshot",
+        "backend/migrations"
+      ],
+      "acceptance": [
+        "conversation/message repository 支持项目作用域的稳定游标分页、详情、创建/改名/置顶/解绑/删除、历史读取与必要的静态消息持久化，排序在同时间戳下以 ID 确定；conversation_id 与 project_id 双重约束，删除会话和消息、更新会话时间及关联变更在单事务中提交或回滚。",
+        "AI 与 Claude CLI 配置支持冻结的 CRUD、provider/model/thinking/temperature 校验、全局作用域、唯一默认配置原子切换和删除后 conversation.ai_config_id 解绑；秘密通过引用解析但普通 domain DTO 与 snapshot 只含 has_api_key/masked_api_key、has_auth_token/masked_auth_token 等脱敏状态。",
+        "实际 MCP enabled/transport/host/port/path、显式端口标志和 auth secret 引用进入配置 repository/application，保持 env 覆盖优先级和默认值；保存配置不启动、停止或重启 MCP listener，MCP runtime action 明确能力关闭。",
+        "AppSnapshot 对 scripts、executors、conversations、aiConfigs、Claude 配置和 MCP 静态状态保持现有字段、null、排序与默认值兼容，运行态只能显示 unavailable/disabled 等真实状态，不从历史事件推断虚假 running，也不包含 secret ref、密钥、token、env_vars、消息正文、tool data、session ID 或未授权绝对路径。",
+        "Chat send/stop/queue/pump/title generation、LLM/Codex/Claude 调用、tool 执行与 chunk/done/queue/config SSE 均不在本阶段启动；对应 API 默认非 2xx NOT_IMPLEMENTED/能力关闭且零消息、会话时间、事件、operation、网络和进程副作用。"
+      ]
+    },
+    {
+      "title": "实现 secret_refs 与可注入的平台 SecretsProvider，并提供 OS 凭据库优先和 AEAD fallback",
+      "scope": [
+        "backend/internal/domain/secrets",
+        "backend/internal/repository/sqlite/secret_refs.go",
+        "backend/internal/application/secrets",
+        "backend/internal/platform/secrets/provider.go",
+        "backend/internal/platform/secrets/keyring",
+        "backend/internal/platform/secrets/encryptedfile",
+        "backend/internal/platform/secrets/fake",
+        "backend/migrations"
+      ],
+      "acceptance": [
+        "secret_refs 仅保存稳定 opaque ref、kind、owner scope、provider、version 和审计时间，不保存秘密明文、可逆密文、安装密钥或凭据库 locator；引用创建、替换、删除与业务配置更新遵循事务/补偿协议，不留下已提交业务行指向缺失秘密或无主秘密。",
+        "SecretsProvider 接口支持 put/get/delete/exists 和能力探测，生产优先使用当前平台 OS 凭据库，测试可显式注入确定性 fake；凭据库 locked、denied、corrupt 或暂时不可用时不得静默把明文降级到数据库、日志、env 或 fixture。",
+        "仅在平台凭据库确实不可用且策略允许时启用 fallback：随机安装级主密钥独立于业务库并施加平台可用的最小文件权限，每个秘密使用随机 nonce 的版本化 AEAD envelope，将 secret kind、ref、owner 与版本作为认证上下文；篡改、复制到其他安装、密钥缺失和错误版本均安全失败。",
+        "普通 list/get/create/update/delete 结果、错误、结构化日志、事件、snapshot、OpenAPI 示例与审计记录永不包含明文或可用于定位秘密存储的内部信息，只暴露稳定 has_xxx/masked_xxx；内部明文读取只允许受授权的未来运行时 service 使用，且本阶段没有运行时消费者。",
+        "秘密替换和删除具备并发控制、幂等补偿和故障注入覆盖；数据库 rollback、凭据库失败、进程中断或 context cancel 后不会出现旧秘密被提前删除、新秘密孤儿化、ref 指错 owner 或 API 假成功。"
+      ]
+    },
+    {
+      "title": "实现旧明文秘密的副本迁移、恢复演练与不可逆清理策略",
+      "scope": [
+        "backend/cmd/autoplan-migrate-secrets",
+        "backend/internal/migration/secrets",
+        "scripts/migration-p08/prepare-secret-copy.js",
+        "scripts/migration-p08/scan-sensitive-output.js",
+        "fixtures/migration/p08/secrets",
+        "docs/migration/p08/secret-migration-runbook.md"
+      ],
+      "acceptance": [
+        "迁移器必须接收调用方显式指定且通过安全检查的数据库副本和秘密存储根；拒绝默认路径、活动数据库、真实 Electron userData、符号链接逃逸、缺失备份、owner 不明、疑似双 writer 或非脱敏 fixture，绝不自行扫描用户目录寻找数据库。",
+        "副本演练覆盖所有已盘点的 api_key、Claude/MCP token、env_vars 和兼容明文来源：先创建不可变备份并校验哈希/integrity，再写平台秘密、验证可解析性、原子写 secret_refs，最后才按列清理明文；任何阶段失败均保留原明文副本并补偿未提交秘密。",
+        "dry-run 只输出脱敏计数、kind、表/列标识和计划动作；执行、恢复与重试均幂等，不把明文、末四位之外的值、原始 env、用户正文或绝对 userData 路径写入 stdout/stderr、日志、manifest、fixture、错误或证据。",
+        "runbook 明确备份保留点、恢复验证、Go 首次正式写入前可回退范围，以及清空旧明文/删除备份的独立批准和不可逆点；Go 已写新结构后不得让 Node/sql.js 热开该库，也不得用 feature flag 绕过所有权规则。",
+        "恢复演练从不可变备份生成新的独立副本并核对 schema、行数、关系、snapshot 和 secret 可用性，不覆盖演练源；迁移前后均通过敏感扫描和完整性检查，原副本、恢复副本与秘密存储的哈希/状态证据可追溯。"
+      ]
+    },
+    {
+      "title": "扩展静态持久化 REST、OpenAPI、MCP/UI 共享适配与 HttpAutoplanClient",
+      "scope": [
+        "backend/internal/httpapi/router.go",
+        "backend/internal/httpapi/automation.go",
+        "backend/internal/httpapi/chat_history.go",
+        "backend/internal/httpapi/config.go",
+        "backend/internal/httpapi/errors.go",
+        "backend/internal/mcp/static_tools.go",
+        "backend/openapi/openapi.yaml",
+        "backend/openapi/schemas/automation.schema.json",
+        "backend/openapi/schemas/chat.schema.json",
+        "backend/openapi/schemas/config.schema.json",
+        "src/renderer/lib/api/client.ts",
+        "src/renderer/lib/api/httpClient.ts",
+        "src/renderer/lib/api/ipcClient.ts",
+        "src/renderer/lib/api/transport.ts",
+        "src/renderer/types.ts"
+      ],
+      "acceptance": [
+        "REST 提供项目作用域的 scripts/executors 静态 CRUD、toggle/排序/仅持久化导入、conversations/messages 历史分页与 AI/Claude/MCP 静态配置 CRUD；所有 handler 在 application service 前完成本机会话、Origin/Host、严格 JSON、请求大小和项目授权校验，不直接访问 SQL、凭据库、文件或进程。",
+        "OpenAPI 精确描述 snake_case DTO、字段存在性、null、分页 cursor/limit、关联、version/If-Match、masked/has-secret 字段、稳定错误与 capability；schema 和示例禁止 api_key、auth_token、mcp token、env_vars、secret_ref、命令环境、消息正文、tool data 和未授权路径。",
+        "Go MCP 只为已授权的静态查询/变更注册工具并调用同一 application service、授权和错误 mapper，不直接访问 repository/secrets/files/process；若本阶段前置要求不允许启动 MCP transport，则以 adapter 单元/契约方式交付且 go_mcp_api 保持关闭，不形成隐藏管理入口。",
+        "AutoplanClient/HttpAutoplanClient 按具体方法和 capability 路由已迁移的静态能力，保持 renderer 现有输入输出与 snapshot 行为且不重写 UI；HTTP 非 2xx、冲突、超时和断连保留错误，不自动回退 IPC 重放 mutation。",
+        "scripts/executors run/stop/action、Chat send/stop/queue/stream 和 MCP start/stop 始终留给既有 owner 或明确 disabled，HttpAutoplanClient 不因路由存在提前切换；Go 端调用均为稳定非 2xx 且零数据库、事件、文件、网络、秘密读取和进程副作用。"
+      ]
+    },
+    {
+      "title": "建立 Node/Go 黄金、分页关联、事务并发、Secrets 故障与敏感数据自动化覆盖",
+      "scope": [
+        "backend/internal/repository/sqlite/automation_test.go",
+        "backend/internal/repository/sqlite/chat_config_test.go",
+        "backend/internal/application/automation/golden_test.go",
+        "backend/internal/application/chat/golden_test.go",
+        "backend/internal/application/secrets/secrets_test.go",
+        "backend/internal/platform/secrets/provider_test.go",
+        "backend/internal/httpapi/static_contract_test.go",
+        "backend/internal/mcp/static_tools_test.go",
+        "src/renderer/lib/api/httpClient.test.js",
+        "src/renderer/lib/api/staticTransport.contract.test.js",
+        "scripts/migration-p08/compare-static-golden.js",
+        "scripts/migration-p08/compare-static-golden.test.js",
+        "fixtures/migration/p08/pagination-cases.json",
+        "fixtures/migration/p08/expected-errors.json"
+      ],
+      "acceptance": [
+        "Node 与 Go 在同一脱敏来源的独立重置副本上严格比较所有静态实体的字段存在性、snake_case、类型、null、默认值、时间规范化、JSON、排序、关联、删除结果、snapshot 和稳定错误，不使用宽松子集或自动更新黄金掩盖漂移。",
+        "分页矩阵覆盖空集、边界 limit、同时间戳、置顶会话、游标缺失/伪造/跨项目、分页期间插入删除和大数据量；断言无重复、遗漏、跨项目记录或不确定顺序，并核对 config 删除解绑和 conversation/message 级联。",
+        "事务故障注入覆盖批量 executor 导入/排序、会话删除、消息与 updated_at、默认 Claude 切换、配置解绑、secret put/ref/明文清理的每个写点、commit 失败与 context cancel，结果只能完整提交或完整回滚。",
+        "并发矩阵覆盖同名 executor、双更新/删除/toggle/排序、会话置顶/删除、消息分页写入、默认配置切换和秘密替换/删除，断言确定冲突、无丢失更新、半事务、重复默认值、悬空 ref、孤儿秘密或跨 owner 读取。",
+        "运行时关闭矩阵覆盖 scripts/executors run/stop/actions、Chat send/stream/stop/queue 和 MCP start/stop，断言非 2xx NOT_IMPLEMENTED/能力关闭且没有外部进程、网络 listener、stream、operation、事件、文件或数据库 mutation。",
+        "敏感扫描覆盖 HTTP/MCP/UI 响应、错误、日志、事件、snapshot、OpenAPI 示例、fixture、golden diff、迁移 stdout/stderr 与证据；任何 API key、token、env_vars、secret ref/locator、正文、tool data、session ID、真实 userData/workspace 或未授权绝对路径均使测试失败。"
+      ]
+    },
+    {
+      "title": "固化 P08 前置门禁、验证编排、回退手册与脱敏证据",
+      "scope": [
+        "scripts/migration-p08/verify.js",
+        "scripts/migration-p08/verify.test.js",
+        "scripts/migration-p08/check-safety.js",
+        "scripts/migration-p08/check-safety.test.js",
+        "package.json",
+        "docs/migration/p08/README.md",
+        "docs/migration/p08/runbook.md",
+        "docs/migration/p08/evidence/README.md"
+      ],
+      "acceptance": [
+        "migration:p08:verify 首先真实执行并核验 P07 完成证据、P00 冻结红灯签名、schema/checksum、Go owner 锁、显式副本授权、秘密存储隔离和安全门禁；任一缺失或非零即记录 blocked 与原始退出码并停止，不建立 Go 写连接、不迁移秘密且不跨阶段。",
+        "验证编排仅在系统临时目录创建脱敏库、秘密根与独立副本，串行关闭 Node/sql.js 后再运行 Go repository/application/httpapi/MCP adapter/client、OpenAPI、golden、分页、并发、回滚、secret provider、迁移恢复、capability 关闭和敏感扫描；每个子命令保留实际命令、起止时间、脱敏 stdout/stderr 和真实退出码。",
+        "安全守卫证明 Node/sql.js 与 Go 写入时间线不重叠、Go 持有 owner 锁、OS 凭据 fake/fallback 与业务库隔离、真实 Electron userData/生产库/真实 workspace/未授权路径未被发现或操作，且测试未启动外部进程、Chat 流或 MCP listener。",
+        "runbook 记录静态 capability 与既有 runtime owner 映射、feature flag 默认关闭、secret provider/fallback、明文副本迁移/恢复/不可逆清理、事务补偿、冲突、回滚和证据收集；回退只关闭 P08 静态路由并丢弃测试副本，绝不把 Go 写过的库热交还 Node。",
+        "证据汇总包含受影响文件、真实命令与退出码、fixture/schema/golden/备份哈希、分页/关联/并发/回滚矩阵、明文迁移恢复、运行能力非 2xx、双 writer 阻断、敏感扫描和剩余风险；npm check/test 相对 P00 既有红灯不得新增、隐藏或重命名失败，P08 专项测试必须全部零退出码。"
+      ]
+    },
+    {
+      "title": "完整验收",
+      "scope": [
+        "validation"
+      ],
+      "acceptance": [
+        "先验证 P07、P00 红灯签名、schema/owner/显式副本/秘密存储和安全前置，再由 migration:p08:verify 完成静态持久化、secrets、API/client、黄金、迁移恢复与文档证据全量验收；前置失败必须 blocked 且不跨阶段。",
+        "Scripts/Executors、Conversations/ChatMessages、AI/Claude/MCP 配置的 domain/repository/application、REST/MCP/UI 共享 service、分页、关联、项目隔离、事务、并发和 AppSnapshot 与 Node 黄金一致。",
+        "scripts/executors 运行、Chat send/queue/stream 和 MCP 启停能力默认关闭并稳定返回非 2xx，未启动任何外部进程、Chat 流或 listener，也未产生数据库、事件、operation、文件、网络或秘密读取副作用。",
+        "秘密仅以 secret_refs 关联，OS 凭据库优先、fake 可注入、安装级密钥 AEAD fallback 防篡改且与业务库隔离；普通 API/日志/错误/事件/snapshot/fixture/OpenAPI/证据均只出现 has_xxx/masked_xxx，不含 API key、token、env_vars、内部 ref/locator 或未授权路径。",
+        "旧明文迁移、清理和恢复只在脱敏 fixture、临时库或调用方明确副本上完成，备份、完整性、哈希、补偿、恢复点和不可逆清理策略有真实证据；Node/sql.js 与 Go 未同写同库，真实 Electron userData 未被自动发现或操作。",
+        "P08 专项命令全部零退出码，npm check/test 相对 P00 冻结基线无新增红灯；交付记录包含真实命令与退出码、脱敏日志和证据、文件清单、回退点及剩余风险。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm.cmd run migration:p08:verify",
+    "criteria": [
+      "P07 完成证据、P00 冻结红灯签名、schema/checksum、数据库 owner 锁、显式副本授权、秘密存储隔离和全部安全门禁真实通过；任一失败时结果明确为 blocked，未建立 Go 写连接、未执行秘密迁移且未跨阶段。",
+      "Scripts 与 Executors 元数据的 domain/repository/application CRUD、校验、项目归属、toggle、排序和仅持久化批量导入保持 Node 字段、JSON、null、默认值、日志上限、稳定排序、snapshot 和错误兼容。",
+      "Conversations、ChatMessages、AI/Claude 配置与实际 MCP 静态配置支持稳定分页、关联、默认配置切换、解绑/级联、事务和 snapshot；跨项目、伪造游标、悬空关联和未知字段按稳定错误拒绝。",
+      "HTTP、MCP adapter 与 UI transport 对相同输入调用同一 application service，具有一致的授权、业务结果、冲突和错误；OpenAPI 与 HttpAutoplanClient 完整覆盖本阶段静态能力且未重写现有 UI。",
+      "scripts/executors run/stop/action、Chat send/stop/queue/stream 与 MCP start/stop/listener 全部默认 disabled，直接调用返回非 2xx NOT_IMPLEMENTED/能力关闭，不伪造成功且数据库、事件、operation、文件、网络、stream、外部进程和秘密读取均无副作用。",
+      "secret_refs 不含明文或可逆密文，SecretsProvider 优先 OS 凭据库并可注入 fake；允许的 fallback 使用独立安装级密钥、随机 nonce、版本化 AEAD 与认证上下文，篡改、跨安装复制、密钥缺失和错误版本均安全失败。",
+      "普通 API、MCP/UI 响应、错误、结构化日志、事件、snapshot、OpenAPI 示例、fixture、golden diff、迁移输出和证据只返回 has_xxx/masked_xxx，不含 API key、Claude/MCP token、env_vars、secret ref/locator、消息正文、tool data、session ID、真实 userData/workspace 或未授权绝对路径。",
+      "旧明文秘密的 dry-run、迁移、补偿、清理与恢复只在脱敏 fixture、系统临时库或调用方明确副本上执行，具备不可变备份、integrity/行数/关系/snapshot/哈希核对、幂等恢复和不可逆点策略；真实 Electron userData 未被扫描、打开或修改。",
+      "事务故障和并发矩阵覆盖批量 automation、会话消息、配置默认/解绑与 secret put/ref/delete 的所有写点，结果只有完整提交或完整回滚，无丢失更新、半批、重复默认、悬空 ref、孤儿秘密、跨项目读取或重复副作用。",
+      "Node 黄金完成后 sql.js 已关闭，Go 仅打开独立重置副本并持有 owner 锁，Node/sql.js 与 Go 写入时间线不重叠；Go 写过的副本未被交给 Node 热开，生产数据库和真实 workspace 未被操作。",
+      "P08 repository/application/httpapi/MCP adapter/client/OpenAPI/golden/分页/关联/并发/回滚/secrets/迁移恢复/capability/safety 专项测试全部零退出码；npm.cmd run check 与 npm.cmd test 相对 P00 冻结集合没有新增、隐藏、跳过或重命名失败。",
+      "证据包含每个真实命令、起止时间、真实退出码、脱敏 stdout/stderr、fixture/schema/golden/备份哈希、owner 与进程/网络零副作用证明、敏感扫描、受影响文件、回退点和剩余风险，最终 git status 保留既有 package.json、.claude/、docs/migration、fixtures、既有计划和其他用户改动。"
+    ]
+  }
+}

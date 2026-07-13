@@ -21,6 +21,7 @@ import type {
 import { useChat } from '../hooks/useChat';
 import { useSidebarResize } from '../hooks/useSidebarResize';
 import { useWorkspaceController } from '../hooks/useWorkspaceController';
+import { useAutoplanClient } from '../lib/api/provider';
 import { ComposerCliSelectionProvider, type ComposerSubmitPayload } from '../components/Composer';
 import { IntakePanel } from '../components/IntakePanel';
 import { EventList, PlanList, TaskList } from '../components/PlanLists';
@@ -76,6 +77,7 @@ const WorkspaceTaskList = TaskList as ComponentType<WorkspaceTaskListProps>;
 type PendingIntakeTarget = { tab: WorkspaceTab; id: number; anchorId: string };
 
 export function WorkspacePage() {
+  const client = useAutoplanClient();
   const {
     acceptIntake,
     acceptItem,
@@ -157,6 +159,7 @@ export function WorkspacePage() {
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const searchPopupRef = useRef<HTMLDivElement>(null);
   const terminalProjectIdRef = useRef(projectId);
+  const terminalRequestRef = useRef(0);
   const closedTerminalSessionKeysRef = useRef(new Set<string>());
   terminalProjectIdRef.current = projectId;
   // 锚点视口坐标，供 SearchResults 的 Portal(fixed) 弹层定位使用。
@@ -172,6 +175,8 @@ export function WorkspacePage() {
   const selectedPlan = activeSnapshot?.plans.find((plan) => plan.id === selectedPlanId && plan.project_id === projectId) || null;
 
   const refreshTerminalSessions = useCallback(async () => {
+    const requestId = terminalRequestRef.current + 1;
+    terminalRequestRef.current = requestId;
     const requestProjectId = projectId;
     if (!Number.isInteger(projectId) || projectId <= 0) {
       if (terminalProjectIdRef.current === requestProjectId) {
@@ -181,8 +186,8 @@ export function WorkspacePage() {
       return;
     }
     try {
-      const result = await window.autoplan.listTerminals({ projectId });
-      if (terminalProjectIdRef.current === requestProjectId) {
+      const result = await client.listTerminals({ projectId });
+      if (terminalRequestRef.current === requestId && terminalProjectIdRef.current === requestProjectId) {
         if (result.ok) {
           rememberClosedTerminalSessions(result.sessions, requestProjectId, closedTerminalSessionKeysRef.current);
           setTerminalSessions(normalizeTerminalSessions(
@@ -195,11 +200,11 @@ export function WorkspacePage() {
         }
       }
     } catch {
-      if (terminalProjectIdRef.current === requestProjectId) setTerminalSessions([]);
+      if (terminalRequestRef.current === requestId && terminalProjectIdRef.current === requestProjectId) setTerminalSessions([]);
     } finally {
-      if (terminalProjectIdRef.current === requestProjectId) setTerminalListLoaded(true);
+      if (terminalRequestRef.current === requestId && terminalProjectIdRef.current === requestProjectId) setTerminalListLoaded(true);
     }
-  }, [projectId]);
+  }, [client, projectId]);
 
   const planSelectionState: WorkspacePlanSelectionState = {
     selectedPlanId,
@@ -238,10 +243,15 @@ export function WorkspacePage() {
     setTerminalSessions([]);
     setTerminalListLoaded(false);
     void refreshTerminalSessions();
+    return () => {
+      terminalRequestRef.current += 1;
+    };
   }, [refreshTerminalSessions]);
 
   useEffect(() => {
+    let active = true;
     const applyTerminalEvent = (event: TerminalEvent) => {
+      if (!active) return;
       if (!terminalEventBelongsToProject(event, projectId)) return;
       const sessionId = terminalEventSessionId(event);
       if (terminalEventClosed(event, projectId, closedTerminalSessionKeysRef.current)) {
@@ -268,15 +278,16 @@ export function WorkspacePage() {
         closedTerminalSessionKeysRef.current,
       ));
     };
-    const unsubscribeStatus = window.autoplan.onTerminalStatus(applyTerminalEvent);
-    const unsubscribeExit = window.autoplan.onTerminalExit(applyTerminalEvent);
-    const unsubscribeClosed = window.autoplan.onTerminalClosed(applyTerminalEvent);
+    const unsubscribeStatus = client.onTerminalStatus(applyTerminalEvent);
+    const unsubscribeExit = client.onTerminalExit(applyTerminalEvent);
+    const unsubscribeClosed = client.onTerminalClosed(applyTerminalEvent);
     return () => {
+      active = false;
       unsubscribeStatus();
       unsubscribeExit();
       unsubscribeClosed();
     };
-  }, [projectId]);
+  }, [client, projectId]);
 
   useEffect(() => {
     const tabParam = new URLSearchParams(window.location.search).get('tab');
@@ -447,7 +458,7 @@ export function WorkspacePage() {
   // 脚本模块：列表启用开关即时落库；详情弹窗（P005）由视图自管打开/新建态。
   // 运行/保存/删除后经 onSync 回灌最新 snapshot，使列表卡片状态与导航徽标数量同步刷新。
   const toggleScript = (script: Script) => {
-    runLoopAction(() => window.autoplan.toggleScript({ projectId, scriptId: script.id }));
+    runLoopAction(() => client.toggleScript({ projectId, scriptId: script.id }));
   };
   // 卡片「启动执行」按钮：按 last_status 决定运行/停止，成功后经 runLoopAction 回灌快照刷新卡片。
   // 运行与启停正交——禁用脚本仍可手动运行（沿用弹窗「运行」语义）。
@@ -455,9 +466,9 @@ export function WorkspacePage() {
     const running = (script.last_status ?? script.lastStatus) === 'running';
     runLoopAction(async () => {
       if (running) {
-        return window.autoplan.stopScript({ projectId, scriptId: script.id });
+        return client.stopScript({ projectId, scriptId: script.id });
       }
-      const result = await window.autoplan.runScript({ projectId, scriptId: script.id });
+      const result = await client.runScript({ projectId, scriptId: script.id });
       return result.snapshot;
     });
   };
@@ -530,8 +541,8 @@ export function WorkspacePage() {
               onClick={() =>
                 runLoopAction(() =>
                   state?.running
-                    ? window.autoplan.stopLoop({ projectId, manual: true })
-                    : window.autoplan.startLoop({ projectId, manual: true }),
+                    ? client.stopLoop({ projectId, manual: true })
+                    : client.startLoop({ projectId, manual: true }),
                 )
               }
             >
@@ -670,18 +681,11 @@ export function WorkspacePage() {
                     onResumePlan={resumePlan}
                     onRunParallel={({ plan, batches }) =>
                       runLoopAction(() =>
-                        (window.autoplan as typeof window.autoplan & {
-                          runTaskBatches: (input: {
-                            projectId: number;
-                            planId: number;
-                            batches: Array<{ taskIds: number[] }>;
-                            manual: true;
-                          }) => Promise<AppSnapshot>;
-                        }).runTaskBatches({ projectId, planId: plan.id, batches, manual: true }),
+                        client.runTaskBatches({ projectId, planId: plan.id, batches, manual: true }),
                       )
                     }
                     onRunDraft={(plan, task) =>
-                      runLoopAction(() => window.autoplan.runTask({ projectId: plan.project_id || projectId, taskId: task.id }))
+                      runLoopAction(() => client.runTask({ projectId: plan.project_id || projectId, taskId: task.id }))
                     }
                     onRefreshReader={refreshPlanReader}
                     onSelectPlan={planSelectionState.selectPlan}
@@ -712,8 +716,8 @@ export function WorkspacePage() {
                     tasks={taskListTasks}
                     onOpenScopeFile={openScopeFile}
                     onOpenPlan={openTaskPlanReader}
-                    onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
-                    onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+                    onRun={(task) => runLoopAction(() => client.runTask({ projectId, taskId: task.id }))}
+                    onStop={(task) => runLoopAction(() => client.stopTask({ projectId, taskId: task.id }))}
                   />
                 </section>
               </div>
@@ -751,8 +755,8 @@ export function WorkspacePage() {
               onToggleRun={() =>
                 runLoopAction(() =>
                   state?.running
-                    ? window.autoplan.stopLoop({ projectId, manual: true })
-                    : window.autoplan.startLoop({ projectId, manual: true }),
+                    ? client.stopLoop({ projectId, manual: true })
+                    : client.startLoop({ projectId, manual: true }),
                 )
               }
               running={Boolean(state?.running)}

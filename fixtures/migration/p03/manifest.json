@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "version": "p03-node-golden-v1",
+  "generator": "scripts/migration-p03/generate-node-golden.js",
+  "source": {
+    "recipe": "fixtures/migration/p00/manifest.json",
+    "recipeSha256": "9b5d2d81d0954e947e69e4020a6d8a6b9afb547e20a75e1b4a7244557d867319",
+    "fixture": "p00-createEmptyFixture+p03-project-seed-v1",
+    "baseDatabaseSha256": "3c022d10c9b6a8e6e1774cca126071bfa17851d9fa8ac7cf606fde66e3e4cb7e",
+    "databaseSha256": "1ba7ac0ea0fa81d2cdea35987b7f6aeac7c1e884ab8f37b032b44079f00e1198",
+    "syntheticOnly": true
+  },
+  "prerequisites": {
+    "policy": "latest immutable evidence and frozen sources must validate before generation",
+    "stages": [
+      "p00",
+      "p01",
+      "p02"
+    ]
+  },
+  "normalization": {
+    "version": "p03-node-contract-v1",
+    "placeholders": {
+      "fixtureRoot": "<fixture-root>",
+      "fixtureWorkspace": "<fixture-workspace>",
+      "redacted": "<redacted>",
+      "redactedEnvVars": "<redacted-env-vars>"
+    },
+    "idMaps": {
+      "projects": {
+        "1": 1,
+        "2": 2,
+        "3": 3
+      }
+    },
+    "source": "scripts/migration-p03/normalize-contract.js",
+    "sourceSha256": "ae6bb771ac21b82d7e8339f76cb2196d28f326489bb8c903de7fdf66674644c6"
+  },
+  "scenarios": {
+    "projects": "LoopService.projects()",
+    "snapshotEmpty": "LoopService.snapshot()",
+    "snapshotProject": "LoopService.snapshot(1)",
+    "snapshotMissing": "structurally identical to snapshot-empty.golden.json"
+  },
+  "artifacts": [
+    {
+      "name": "projects.golden.json",
+      "sha256": "ec4f83bb171a0dc300ed26ebfcacc114851879a3978fb21050239dd62da8dcca"
+    },
+    {
+      "name": "snapshot-empty.golden.json",
+      "sha256": "e19708120b400923b8e0375c02129fba11b7e86e87e48a9aef6bb51f6002a776"
+    },
+    {
+      "name": "snapshot-project.golden.json",
+      "sha256": "fd30a4052aaef4b85ba1b1de07b2b1acca079aa0fc1535cf8af6d7bd1be2f846"
+    }
+  ]
+}

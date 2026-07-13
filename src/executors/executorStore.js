@@ -1,4 +1,5 @@
 const { nowIso } = require('../database');
+const { assertNodeMutationAllowed } = require('../data/databaseOwnerGuard');
 const {
   normalizeExecutorConfig,
   normalizeTasksJson,
@@ -25,6 +26,7 @@ const LAST_LOG_MAX_CHARS = 24000;
 
 class ExecutorStore {
   constructor(db) {
+    assertNodeMutationAllowed();
     this.db = db;
   }
 

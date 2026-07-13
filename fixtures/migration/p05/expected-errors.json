@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "version": "p05-stable-errors-v1",
+  "fixturePolicy": {
+    "syntheticOnly": true,
+    "messagesCompared": false,
+    "detailsCompared": false
+  },
+  "scenarios": {
+    "missing-update": {
+      "canonical": "PROJECT_NOT_FOUND",
+      "node": ["PROJECT_NOT_FOUND"],
+      "go": ["PROJECT_NOT_FOUND", "project_not_found"],
+      "httpStatus": 404
+    },
+    "missing-delete": {
+      "canonical": "PROJECT_NOT_FOUND",
+      "node": ["PROJECT_NOT_FOUND"],
+      "go": ["PROJECT_NOT_FOUND", "project_not_found"],
+      "httpStatus": 404
+    },
+    "running-delete": {
+      "canonical": "PROJECT_RUNNING",
+      "node": ["PROJECT_RUNNING"],
+      "go": ["PROJECT_RUNNING", "project_running"],
+      "httpStatus": 423
+    },
+    "duplicate-delete": {
+      "canonical": "PROJECT_NOT_FOUND",
+      "node": ["PROJECT_NOT_FOUND"],
+      "go": ["PROJECT_NOT_FOUND", "project_not_found"],
+      "httpStatus": 404
+    }
+  },
+  "httpCatalog": [
+    { "code": "invalid_json", "status": 400, "retryable": false },
+    { "code": "unauthorized", "status": 401, "retryable": false },
+    { "code": "origin_forbidden", "status": 403, "retryable": false },
+    { "code": "project_not_found", "status": 404, "retryable": false },
+    { "code": "method_not_allowed", "status": 405, "retryable": false },
+    { "code": "version_conflict", "status": 409, "retryable": false },
+    { "code": "idempotency_key_reused", "status": 409, "retryable": false },
+    { "code": "version_required", "status": 428, "retryable": false },
+    { "code": "project_running", "status": 423, "retryable": false },
+    { "code": "relation_conflict", "status": 409, "retryable": false },
+    { "code": "repository_busy", "status": 423, "retryable": true },
+    { "code": "repository_schema_drift", "status": 500, "retryable": false },
+    { "code": "request_timeout", "status": 504, "retryable": true }
+  ],
+  "versionTrace": {
+    "create": 2,
+    "duplicate-create": 2,
+    "delete-duplicate-create": null,
+    "update": 2,
+    "configure": 3,
+    "duplicate-configure": 3,
+    "delete": null
+  }
+}

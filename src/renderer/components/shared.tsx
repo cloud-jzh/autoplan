@@ -1,10 +1,13 @@
 import type { Attachment } from '../types';
+import { getDefaultDesktopBridge } from '../lib/desktop/ipcBridge';
 
 export function getFilePath(file: File) {
   try {
-    return window.autoplan.getDroppedFilePath(file) || (file as File & { path?: string }).path || '';
+    // IPC compatibility obtains a path only through the preload boundary.
+    // HTTP Intake uploads consume File/Blob bytes and never inspect File.path.
+    return getDefaultDesktopBridge().getDroppedFilePath(file) || '';
   } catch {
-    return (file as File & { path?: string }).path || '';
+    return '';
   }
 }
 
@@ -12,7 +15,7 @@ export function toSafeFileUrl(filePath?: string | null) {
   const path = String(filePath || '').trim();
   if (!path) return '';
   try {
-    return window.autoplan.toFileUrl(path);
+    return getDefaultDesktopBridge().toFileUrl(path);
   } catch {
     return '';
   }
@@ -195,9 +198,38 @@ export function AttachmentGrid({ attachments }: { attachments: Attachment[] }) {
   );
 }
 
+const CONTROLLED_ATTACHMENT_PATH = /^\/api\/v1\/attachments\/([1-9][0-9]*)\/content(?:\?project_id=([1-9][0-9]*))?$/;
+
+/**
+ * Accept only the loopback endpoint shape issued by P06. HTTP-mode attachment
+ * cards never recover a filesystem location; IPC records keep their legacy
+ * fallback only while the IPC transport remains selected.
+ */
+export function controlledAttachmentUrl(value?: string | null, attachmentId?: number): string {
+  const candidate = String(value || '').trim();
+  if (!candidate) return '';
+  if (controlledAttachmentPath(candidate, attachmentId)) return candidate;
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== 'http:' || parsed.hostname !== '127.0.0.1' || !parsed.port ||
+        parsed.username || parsed.password || parsed.hash ||
+        !controlledAttachmentPath(`${parsed.pathname}${parsed.search}`, attachmentId)) {
+      return '';
+    }
+    return parsed.toString();
+  } catch {
+    return '';
+  }
+}
+
+function controlledAttachmentPath(value: string, attachmentId?: number): boolean {
+  const match = value.match(CONTROLLED_ATTACHMENT_PATH);
+  return Boolean(match) && (attachmentId === undefined || Number(match[1]) === attachmentId);
+}
+
 function AttachmentView({ attachment }: { attachment: Attachment }) {
-  const url = toSafeFileUrl(attachment.stored_path);
-  const name = attachment.original_name || attachment.stored_path;
+  const url = controlledAttachmentUrl(attachment.download_url, attachment.id) || toSafeFileUrl(attachment.stored_path);
+  const name = attachment.display_name || attachment.original_name || '附件';
   if (url && String(attachment.mime_type || '').startsWith('image/')) {
     return (
       <a className="attachment-thumb" href={url} target="_blank" rel="noreferrer" title={name}>

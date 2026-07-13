@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "kind": "p15-ipc-allowlist",
+  "phase": "frozen_target_after_p15_p005",
+  "default_action": "deny",
+  "compatibility_rule": "P001 inventories legacy IPC but does not authorize it; P005 may remove only after its evidence gates pass.",
+  "channels": [
+    {
+      "channel": "projects:pickDirectory",
+      "direction": "renderer_to_main",
+      "category": "native_bridge",
+      "callers": ["src/preload.js", "src/renderer/lib/desktop/ipcBridge.ts"],
+      "authorization": { "source_validation": "required", "schema_validation": "required", "capability": "native_directory_picker" },
+      "max_input_bytes": 0,
+      "max_output_bytes": 4096,
+      "secret_policy": "deny"
+    },
+    {
+      "channel": "projects:openFolder",
+      "direction": "renderer_to_main",
+      "category": "native_bridge",
+      "callers": ["src/preload.js", "src/renderer/lib/desktop/ipcBridge.ts"],
+      "authorization": { "source_validation": "required", "schema_validation": "required", "capability": "authorized_project_folder" },
+      "max_input_bytes": 4096,
+      "max_output_bytes": 1024,
+      "secret_policy": "deny"
+    },
+    {
+      "channel": "workspace:openFile",
+      "direction": "renderer_to_main",
+      "category": "native_bridge",
+      "callers": ["src/preload.js", "src/renderer/lib/desktop/ipcBridge.ts"],
+      "authorization": { "source_validation": "required", "schema_validation": "required", "capability": "authorized_workspace_file" },
+      "max_input_bytes": 4096,
+      "max_output_bytes": 1024,
+      "secret_policy": "deny"
+    },
+    {
+      "channel": "scripts:pickFile",
+      "direction": "renderer_to_main",
+      "category": "native_bridge",
+      "callers": ["src/preload.js", "src/renderer/lib/desktop/ipcBridge.ts"],
+      "authorization": { "source_validation": "required", "schema_validation": "required", "capability": "native_script_file_picker" },
+      "max_input_bytes": 0,
+      "max_output_bytes": 4096,
+      "secret_policy": "deny"
+    },
+    {
+      "channel": "executors:pickTasksJson",
+      "direction": "renderer_to_main",
+      "category": "native_bridge",
+      "callers": ["src/preload.js", "src/renderer/lib/desktop/ipcBridge.ts"],
+      "authorization": { "source_validation": "required", "schema_validation": "required", "capability": "native_tasks_file_picker" },
+      "max_input_bytes": 0,
+      "max_output_bytes": 4096,
+      "secret_policy": "deny"
+    },
+    {
+      "channel": "shell:openExternal",
+      "direction": "renderer_to_main",
+      "category": "native_bridge",
+      "callers": ["src/preload.js", "src/renderer/lib/desktop/ipcBridge.ts"],
+      "authorization": { "source_validation": "required", "schema_validation": "required", "capability": "approved_external_url" },
+      "max_input_bytes": 2048,
+      "max_output_bytes": 1024,
+      "secret_policy": "deny"
+    },
+    {
+      "channel": "updates:status",
+      "direction": "renderer_to_main",
+      "category": "updates",
+      "callers": ["src/preload.js", "src/renderer/lib/desktop/ipcBridge.ts"],
+      "authorization": { "source_validation": "required", "schema_validation": "required", "capability": "read_update_status" },
+      "max_input_bytes": 0,
+      "max_output_bytes": 16384,
+      "secret_policy": "deny"
+    },
+    {
+      "channel": "updates:status",
+      "direction": "main_to_renderer",
+      "category": "updates",
+      "callers": ["src/main.js", "src/preload.js", "src/renderer/lib/desktop/ipcBridge.ts"],
+      "authorization": { "source_validation": "required", "schema_validation": "required", "capability": "bounded_update_status_event" },
+      "max_input_bytes": 0,
+      "max_output_bytes": 16384,
+      "secret_policy": "deny"
+    },
+    {
+      "channel": "updates:check",
+      "direction": "renderer_to_main",
+      "category": "updates",
+      "callers": ["src/preload.js", "src/renderer/lib/desktop/ipcBridge.ts"],
+      "authorization": { "source_validation": "required", "schema_validation": "required", "capability": "check_update" },
+      "max_input_bytes": 0,
+      "max_output_bytes": 16384,
+      "secret_policy": "deny"
+    },
+    {
+      "channel": "updates:dismiss",
+      "direction": "renderer_to_main",
+      "category": "updates",
+      "callers": ["src/preload.js", "src/renderer/lib/desktop/ipcBridge.ts"],
+      "authorization": { "source_validation": "required", "schema_validation": "required", "capability": "dismiss_update_notice" },
+      "max_input_bytes": 1024,
+      "max_output_bytes": 16384,
+      "secret_policy": "deny"
+    },
+    {
+      "channel": "updates:setAutoCheck",
+      "direction": "renderer_to_main",
+      "category": "updates",
+      "callers": ["src/preload.js", "src/renderer/lib/desktop/ipcBridge.ts"],
+      "authorization": { "source_validation": "required", "schema_validation": "required", "capability": "set_update_preference" },
+      "max_input_bytes": 256,
+      "max_output_bytes": 16384,
+      "secret_policy": "deny"
+    },
+    {
+      "channel": "updates:openInstaller",
+      "direction": "renderer_to_main",
+      "category": "updates",
+      "callers": ["src/preload.js", "src/renderer/lib/desktop/ipcBridge.ts"],
+      "authorization": { "source_validation": "required", "schema_validation": "required", "capability": "launch_verified_installer" },
+      "max_input_bytes": 0,
+      "max_output_bytes": 1024,
+      "secret_policy": "deny"
+    },
+    {
+      "channel": "runtime:rendererConfig",
+      "direction": "renderer_to_main_sync",
+      "category": "go_lifecycle",
+      "callers": ["src/preload.js"],
+      "authorization": { "source_validation": "required", "schema_validation": "required", "capability": "bounded_sidecar_connection_descriptor" },
+      "max_input_bytes": 0,
+      "max_output_bytes": 4096,
+      "secret_policy": "deny"
+    },
+    {
+      "channel": "daemon:status",
+      "direction": "renderer_to_main",
+      "category": "go_lifecycle",
+      "callers": ["src/preload.js"],
+      "authorization": { "source_validation": "required", "schema_validation": "required", "capability": "read_sidecar_lifecycle_status" },
+      "max_input_bytes": 0,
+      "max_output_bytes": 4096,
+      "secret_policy": "deny"
+    },
+    {
+      "channel": "daemon:status",
+      "direction": "main_to_renderer",
+      "category": "go_lifecycle",
+      "callers": ["src/main.js", "src/preload.js"],
+      "authorization": { "source_validation": "required", "schema_validation": "required", "capability": "bounded_sidecar_lifecycle_event" },
+      "max_input_bytes": 0,
+      "max_output_bytes": 4096,
+      "secret_policy": "deny"
+    },
+    {
+      "channel": "maintenance:status",
+      "direction": "renderer_to_main",
+      "category": "go_lifecycle",
+      "callers": ["src/preload.js"],
+      "authorization": { "source_validation": "required", "schema_validation": "required", "capability": "read_migration_maintenance_state" },
+      "max_input_bytes": 0,
+      "max_output_bytes": 2048,
+      "secret_policy": "deny"
+    }
+  ]
+}

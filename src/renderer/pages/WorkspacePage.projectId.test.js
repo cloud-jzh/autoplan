@@ -47,8 +47,8 @@ describe('Workspace chat project boundary regression', () => {
   it('loads project conversations separately from global AI configs', () => {
     const hook = source('src', 'renderer', 'hooks', 'useChat.ts');
 
-    expectIncludes(hook, 'window.autoplan.conversationList({ projectId })', 'useChat should list conversations by project');
-    expectIncludes(hook, 'window.autoplan.aiConfigList().catch(() => [] as AiConfig[])', 'useChat should list global AI configs without projectId');
+    expectIncludes(hook, 'client.conversationList({ projectId })', 'useChat should list conversations by project');
+    expectIncludes(hook, 'client.aiConfigList().catch(() => [] as AiConfig[])', 'useChat should list global AI configs without projectId');
     expectIncludes(hook, 'normalizeConversationAiConfigBindings(convs, cfgs)', 'conversation bindings should resolve against the global config list');
     expectNotIncludes(hook, 'aiConfigList({ projectId', 'AI config list should not be project-scoped');
     expectNotIncludes(hook, '.chatGetConfig(', 'chat availability should not fall back to legacy global chat config');
@@ -58,14 +58,14 @@ describe('Workspace chat project boundary regression', () => {
     const hook = source('src', 'renderer', 'hooks', 'useChat.ts');
     const sidebar = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSidebar.tsx');
 
-    expectIncludes(hook, 'window.autoplan.chatHistory({ projectId: loadingProjectId, conversationId: cid })', 'history load should include projectId');
+    expectIncludes(hook, 'client.chatHistory({ projectId: loadingProjectId, conversationId: cid })', 'history load should include projectId');
     expectIncludes(hook, '.chatHistory({ projectId: historyProjectId, conversationId: cid })', 'done refresh should keep projectId');
-    expectIncludes(hook, 'await window.autoplan.chatSend({\n          projectId,\n          conversationId: cid,', 'chat send should include projectId');
-    expectIncludes(hook, 'await window.autoplan.chatStop({ projectId: pid, conversationId: cid });', 'manual stop should include projectId');
-    expectIncludes(hook, 'await window.autoplan.chatClear({ projectId: pid, conversationId: cid });', 'clear should include projectId');
-    expectIncludes(hook, 'await window.autoplan.conversationDelete({ projectId, conversationId: cid });', 'delete should include projectId');
-    expectIncludes(hook, 'await window.autoplan.conversationUpdate({ projectId, conversationId: cid, title });', 'rename should include projectId');
-    expectIncludes(hook, 'const updated = await window.autoplan.conversationUpdate({\n      projectId,\n      conversationId: cid,\n      aiConfigId: configId,', 'AI config binding should update the project-scoped conversation');
+    expectIncludes(hook, 'await client.chatSend({\n          projectId,\n          conversationId: cid,', 'chat send should include projectId');
+    expectIncludes(hook, 'await client.chatStop({ projectId: pid, conversationId: cid });', 'manual stop should include projectId');
+    expectIncludes(hook, 'await client.chatClear({ projectId: pid, conversationId: cid });', 'clear should include projectId');
+    expectIncludes(hook, 'await client.conversationDelete({ projectId, conversationId: cid });', 'delete should include projectId');
+    expectIncludes(hook, 'await client.conversationUpdate({ projectId, conversationId: cid, title });', 'rename should include projectId');
+    expectIncludes(hook, 'const updated = await client.conversationUpdate({\n      projectId,\n      conversationId: cid,\n      aiConfigId: configId,', 'AI config binding should update the project-scoped conversation');
     expectIncludes(sidebar, 'readConversationProjectId(conversation) === projectId', 'sidebar should filter visible conversations by project');
     expectIncludes(sidebar, 'await window.autoplan.conversationUpdate({\n        projectId,\n        conversationId: conversation.id,\n        pinned: nextPinned,', 'pinning should include projectId');
   });

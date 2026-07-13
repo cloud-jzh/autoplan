@@ -1,0 +1,1043 @@
+{
+  "schemaVersion": 1,
+  "version": "p05-project-config-write-contract-v1",
+  "status": "frozen-with-explicit-p04-delete-blockers",
+  "purpose": "Project/Config Node write behavior and post-mutation AppSnapshot compatibility contract for the P05 Go migration",
+  "evidence": [
+    {
+      "path": "src/main.js",
+      "sha256": "432751231d009808fcb2c03bc3ba922a13f304e6116b91ab2dc55820ae861f31",
+      "anchors": [
+        {
+          "marker": "ipcMain.handle('projects:create'",
+          "line": 365
+        },
+        {
+          "marker": "ipcMain.handle('projects:update'",
+          "line": 369
+        },
+        {
+          "marker": "ipcMain.handle('projects:delete'",
+          "line": 390
+        },
+        {
+          "marker": "ipcMain.handle('loop:configure'",
+          "line": 414
+        },
+        {
+          "marker": "return loop.snapshot(projectId)",
+          "line": 387
+        }
+      ]
+    },
+    {
+      "path": "src/intakeService.js",
+      "sha256": "4138a055691b68a9ccbe8970ab36e0d7f8f7acb181895ec67a2a82d78ab9da77",
+      "anchors": [
+        {
+          "marker": "createProject(input = {})",
+          "line": 12
+        },
+        {
+          "marker": "INSERT INTO projects (name, workspace_path, description, created_at, updated_at)",
+          "line": 17
+        },
+        {
+          "marker": "this.loop.ensureProjectState(id)",
+          "line": 21
+        },
+        {
+          "marker": "return this.loop.snapshot(id)",
+          "line": 26
+        }
+      ]
+    },
+    {
+      "path": "src/loopService.js",
+      "sha256": "d910eec18fbe21920efb67c4247a32b5b7d56615c82bcb89e5713a29eff560ac",
+      "anchors": [
+        {
+          "marker": "SELECT * FROM projects ORDER BY updated_at DESC, id DESC",
+          "line": 203
+        },
+        {
+          "marker": "ensureProjectState(projectId)",
+          "line": 227
+        },
+        {
+          "marker": "hasRuntimeConfigInput(input = {})",
+          "line": 238
+        },
+        {
+          "marker": "configure(projectId, config = {})",
+          "line": 258
+        },
+        {
+          "marker": "UPDATE project_states",
+          "line": 301
+        },
+        {
+          "marker": "snapshot(projectId = null)",
+          "line": 2023
+        }
+      ]
+    },
+    {
+      "path": "src/loop/snapshots.js",
+      "sha256": "0988bb1364affd3da03a6aa237a770925e4a08096d5577820720968e25b380ac",
+      "anchors": [
+        {
+          "marker": "function snapshot(service, helpers, projectId = null)",
+          "line": 56
+        },
+        {
+          "marker": "function emptySnapshot(projects, mcp = null)",
+          "line": 652
+        },
+        {
+          "marker": "ORDER BY plans.sort_order ASC, plans.created_at ASC, plans.id ASC",
+          "line": 80
+        },
+        {
+          "marker": "ORDER BY created_at DESC, id DESC",
+          "line": 149
+        }
+      ]
+    },
+    {
+      "path": "src/database.js",
+      "sha256": "57553f76ccb27d606270df70dedd5bb46b1240f9cc22f43e63261734a97b994f",
+      "anchors": [
+        {
+          "marker": "CREATE TABLE IF NOT EXISTS settings",
+          "line": 102
+        },
+        {
+          "marker": "CREATE TABLE IF NOT EXISTS projects",
+          "line": 107
+        },
+        {
+          "marker": "CREATE TABLE IF NOT EXISTS project_states",
+          "line": 119
+        },
+        {
+          "marker": "setSetting(key, value)",
+          "line": 892
+        },
+        {
+          "marker": "getSettings(prefix = '')",
+          "line": 896
+        }
+      ]
+    }
+  ],
+  "prerequisites": {
+    "policy": "P04 schema/checksum/audit/owner gates must pass before any writer opens a fixture copy",
+    "artifacts": [
+      {
+        "path": "docs/migration/p04/schema-inventory.json",
+        "sha256": "642eedad23c01b3c0fc6a54150e2354e87fe92d4e5a8fc8f9e8cf13d420c6e64"
+      },
+      {
+        "path": "fixtures/migration/p04/manifest.json",
+        "sha256": "4a8f33581653230271189b31cde2e092f38751cf025dc9dc270fdbc2c5cf6900"
+      }
+    ],
+    "ownerRule": "Node/sql.js and Go must never hold the same database copy concurrently; Node must close before handoff"
+  },
+  "mutationAtomicity": {
+    "target": "one top-level transaction per create/update/configure/reset/delete; commit before snapshot reread",
+    "observedNodeLimitation": "legacy AppDatabase persists each statement; create/update/configure/delete are multi-statement and not atomic",
+    "migrationRule": "preserve values/errors/snapshot semantics while strengthening atomicity; never publish a snapshot or event before commit"
+  },
+  "mutations": [
+    {
+      "id": "projects:create",
+      "projectIdInput": "server-generated integer",
+      "inputs": {
+        "name": "String(input.name || \"\").trim(); empty falls back to first non-empty workspacePath line (trimmed, max 80), then 未命名项目",
+        "workspace_path": "workspacePath only; falsy becomes empty string",
+        "description": "falsy becomes empty string",
+        "autoRun": "strict boolean true starts runtime after persistence",
+        "runtimeConfig": "any frozen project-state input alias invokes configure after the default state row is created"
+      },
+      "writes": [
+        "projects INSERT",
+        "project_states INSERT OR IGNORE",
+        "optional projects UPDATE",
+        "optional project_states UPDATE"
+      ],
+      "timestamps": "created_at and updated_at are UTC ISO strings; configure obtains independent UTC values",
+      "businessIdempotency": "none in Node: repeating the same payload creates another project; Go requires Idempotency-Key replay protection and must not deduplicate by name alone",
+      "success": "commit, reread LoopService.snapshot(new id), return the complete AppSnapshot directly"
+    },
+    {
+      "id": "projects:update",
+      "projectIdAliases": [
+        "projectId",
+        "id"
+      ],
+      "inputs": {
+        "name": "String(input.name || current.name).trim(); empty/falsy preserves current name",
+        "workspace_path": "workspacePath ?? current.workspace_path; explicit empty string clears",
+        "description": "description ?? current.description; explicit empty string clears; null preserves",
+        "runtimeConfig": "if present, configure runs before the final projects UPDATE"
+      },
+      "writes": [
+        "optional configure writes",
+        "projects name/workspace_path/description/updated_at UPDATE"
+      ],
+      "businessIdempotency": "same values still update updated_at in Node; transport retry must use Idempotency-Key to avoid a second logical mutation",
+      "success": "commit, reread complete snapshot for project id"
+    },
+    {
+      "id": "loop:configure",
+      "projectIdAliases": [
+        "projectId",
+        "id"
+      ],
+      "inputs": {
+        "workspace_path": "workspacePath ?? current workspace_path",
+        "interval_seconds": "Number(intervalSeconds || current.interval_seconds || 5); zero/falsy preserves current",
+        "mcp": "only explicitly present aliases are normalized and written as strings; explicit port also sets mcp.portExplicit=true",
+        "projectState": "see configFields; omitted fields preserve current values"
+      },
+      "writes": [
+        "optional settings INSERT OR REPLACE",
+        "projects workspace_path/updated_at UPDATE",
+        "project_states selected fields/updated_at UPDATE",
+        "optional unfinished plan execution config synchronization"
+      ],
+      "businessIdempotency": "same payload is not a no-op in Node because updated_at changes; Go replay uses Idempotency-Key, while a fresh request with the same normalized target may return a reread without incrementing version",
+      "success": "commit, reread complete snapshot for project id; MCP restart scheduling is outside the database transaction and not part of the snapshot contract"
+    },
+    {
+      "id": "projects:delete",
+      "projectIdAliases": [
+        "projectId",
+        "id"
+      ],
+      "preconditions": [
+        "project exists",
+        "runtime state is not running",
+        "all RESTRICT relations have zero rows",
+        "database owner/schema gates remain valid"
+      ],
+      "runningError": {
+        "code": "PROJECT_RUNNING",
+        "legacyMessage": "请先停止该项目循环再删除"
+      },
+      "relationError": {
+        "code": "PROJECT_RELATION_CONFLICT",
+        "rule": "include relation field names/count categories only; never row data, paths, commands, env or secrets"
+      },
+      "missingBehavior": {
+        "code": "PROJECT_NOT_FOUND",
+        "legacyMessage": "项目不存在",
+        "repeatedDelete": "same Idempotency-Key replays original success; otherwise PROJECT_NOT_FOUND"
+      },
+      "writes": [
+        "dispose runtime/terminal",
+        "transactional CASCADE relations",
+        "project_states/projects delete"
+      ],
+      "success": "commit, reread LoopService.snapshot(null); activeProjectId/activeProject/state are null and projects remain sorted",
+      "compatibilityBlocker": "legacy Node omits several P04 relations and can leave orphans; Go must follow relationPolicies rather than copying the omission"
+    }
+  ],
+  "configFields": {
+    "versionContract": {
+      "initial": 1,
+      "participants": [
+        "settings.version",
+        "project_states.version"
+      ],
+      "compareAndSwap": "expected version is mandatory for Go mutations; exactly one increment on a fresh successful logical mutation",
+      "replay": "Idempotency-Key replay returns the original committed result/version without increment",
+      "sameTargetFreshRequest": "may be treated as business-idempotent and return the current reread without increment",
+      "errors": {
+        "missing": "VERSION_REQUIRED",
+        "stale": "VERSION_CONFLICT",
+        "future": "VERSION_CONFLICT"
+      },
+      "note": "version columns are P04 schema-v1 additions and are absent from the legacy Node snapshot unless the row source contains them"
+    },
+    "settingsStorageContract": {
+      "readOne": "getSetting(key, fallback=null) returns the stored string or the caller fallback without coercing the fallback",
+      "readMany": "getSettings(prefix) returns an object built from key/value rows ordered by key ASC",
+      "write": "setSetting uses INSERT OR REPLACE and String(value); arbitrary setting keys are not exposed by P05 APIs",
+      "allowlist": [
+        "mcp.enabled",
+        "mcp.transport",
+        "mcp.host",
+        "mcp.port",
+        "mcp.path",
+        "mcp.authToken",
+        "mcp.portExplicit"
+      ]
+    },
+    "projectState": [
+      {
+        "column": "interval_seconds",
+        "inputAliases": [
+          "intervalSeconds"
+        ],
+        "type": "number",
+        "default": 5,
+        "emptyRule": "fallback-on-falsy",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:interval_seconds:<normalized-value>",
+        "returnPolicy": "return-in-compatible-snapshot",
+        "sensitivity": "public"
+      },
+      {
+        "column": "validation_command",
+        "inputAliases": [
+          "validationCommand",
+          "validation_command"
+        ],
+        "type": "string",
+        "default": "",
+        "emptyRule": "explicit-null-clears",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:validation_command:<normalized-value>",
+        "returnPolicy": "authorized-project-snapshot-only; redact from fixtures/logs/errors",
+        "sensitivity": "command-sensitive"
+      },
+      {
+        "column": "project_prompt",
+        "inputAliases": [
+          "projectPrompt",
+          "project_prompt",
+          "prompt"
+        ],
+        "type": "string",
+        "default": "",
+        "emptyRule": "explicit-null-clears",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:project_prompt:<normalized-value>",
+        "returnPolicy": "authorized-project-snapshot-only",
+        "sensitivity": "user-content"
+      },
+      {
+        "column": "agent_cli_provider",
+        "inputAliases": [
+          "agentCliProvider",
+          "agent_cli_provider",
+          "cliProvider",
+          "cli_provider",
+          "cliBackend",
+          "cli_backend"
+        ],
+        "type": "string",
+        "default": "codex",
+        "emptyRule": "trim-lower-invalid-to-codex",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:agent_cli_provider:<normalized-value>",
+        "returnPolicy": "return-in-compatible-snapshot",
+        "sensitivity": "public"
+      },
+      {
+        "column": "agent_cli_command",
+        "inputAliases": [
+          "agentCliCommand",
+          "agent_cli_command",
+          "cliCommand",
+          "cli_command",
+          "cliPath",
+          "cli_path"
+        ],
+        "type": "string",
+        "default": "",
+        "emptyRule": "trim-empty-allowed",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:agent_cli_command:<normalized-value>",
+        "returnPolicy": "authorized-project-snapshot-only; redact from fixtures/logs/errors",
+        "sensitivity": "command-sensitive"
+      },
+      {
+        "column": "codex_reasoning_effort",
+        "inputAliases": [
+          "codexReasoningEffort",
+          "codex_reasoning_effort",
+          "codexThinkingDepth",
+          "codex_thinking_depth",
+          "reasoningEffort",
+          "reasoning_effort",
+          "thinkingDepth",
+          "thinking_depth"
+        ],
+        "type": "nullable-string",
+        "default": "medium",
+        "emptyRule": "low-medium-high-xhigh; invalid-to-medium; null outside codex",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:codex_reasoning_effort:<normalized-value>",
+        "returnPolicy": "return-in-compatible-snapshot",
+        "sensitivity": "public"
+      },
+      {
+        "column": "plan_generation_strategy",
+        "inputAliases": [
+          "planGenerationStrategy",
+          "plan_generation_strategy"
+        ],
+        "type": "string",
+        "default": "external-cli-markdown",
+        "emptyRule": "normalized-enum",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:plan_generation_strategy:<normalized-value>",
+        "returnPolicy": "return-in-compatible-snapshot",
+        "sensitivity": "public"
+      },
+      {
+        "column": "plan_generation_provider",
+        "inputAliases": [
+          "planGenerationProvider",
+          "plan_generation_provider"
+        ],
+        "type": "nullable-string",
+        "default": null,
+        "emptyRule": "normalized-provider",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:plan_generation_provider:<normalized-value>",
+        "returnPolicy": "return-in-compatible-snapshot",
+        "sensitivity": "public"
+      },
+      {
+        "column": "plan_generation_command",
+        "inputAliases": [
+          "planGenerationCommand",
+          "plan_generation_command"
+        ],
+        "type": "string",
+        "default": "",
+        "emptyRule": "trim-empty-allowed",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:plan_generation_command:<normalized-value>",
+        "returnPolicy": "authorized-project-snapshot-only; redact from fixtures/logs/errors",
+        "sensitivity": "command-sensitive"
+      },
+      {
+        "column": "plan_generation_model",
+        "inputAliases": [
+          "planGenerationModel",
+          "plan_generation_model"
+        ],
+        "type": "string",
+        "default": "",
+        "emptyRule": "trim-empty-allowed",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:plan_generation_model:<normalized-value>",
+        "returnPolicy": "authorized-project-snapshot-only; redact from fixtures/logs/errors",
+        "sensitivity": "configuration-sensitive"
+      },
+      {
+        "column": "plan_generation_codex_reasoning_effort",
+        "inputAliases": [
+          "planGenerationCodexReasoningEffort",
+          "plan_generation_codex_reasoning_effort"
+        ],
+        "type": "nullable-string",
+        "default": null,
+        "emptyRule": "normalized-enum",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:plan_generation_codex_reasoning_effort:<normalized-value>",
+        "returnPolicy": "return-in-compatible-snapshot",
+        "sensitivity": "public"
+      },
+      {
+        "column": "plan_generation_claude_base_url",
+        "inputAliases": [
+          "planGenerationClaudeBaseUrl",
+          "plan_generation_claude_base_url"
+        ],
+        "type": "string",
+        "default": "",
+        "emptyRule": "trim-empty-allowed",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:plan_generation_claude_base_url:<normalized-value>",
+        "returnPolicy": "authorized-project-snapshot-only; redact from fixtures/logs/errors",
+        "sensitivity": "endpoint-sensitive"
+      },
+      {
+        "column": "plan_generation_claude_auth_token",
+        "inputAliases": [
+          "planGenerationClaudeAuthToken",
+          "plan_generation_claude_auth_token"
+        ],
+        "type": "string",
+        "default": "",
+        "emptyRule": "empty-clears",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:plan_generation_claude_auth_token:<normalized-value>",
+        "returnPolicy": "never-return-raw; presence/mask only",
+        "sensitivity": "secret"
+      },
+      {
+        "column": "plan_generation_claude_model",
+        "inputAliases": [
+          "planGenerationClaudeModel",
+          "plan_generation_claude_model"
+        ],
+        "type": "string",
+        "default": "",
+        "emptyRule": "trim-empty-allowed",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:plan_generation_claude_model:<normalized-value>",
+        "returnPolicy": "authorized-project-snapshot-only; redact from fixtures/logs/errors",
+        "sensitivity": "configuration-sensitive"
+      },
+      {
+        "column": "plan_generation_claude_config_id",
+        "inputAliases": [
+          "planGenerationClaudeConfigId",
+          "plan_generation_claude_config_id"
+        ],
+        "type": "integer",
+        "default": 0,
+        "emptyRule": "non-positive-to-zero",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:plan_generation_claude_config_id:<normalized-value>",
+        "returnPolicy": "authorized-project-snapshot-only; redact from fixtures/logs/errors",
+        "sensitivity": "reference-sensitive"
+      },
+      {
+        "column": "plan_execution_strategy",
+        "inputAliases": [
+          "planExecutionStrategy",
+          "plan_execution_strategy"
+        ],
+        "type": "string",
+        "default": "external-cli",
+        "emptyRule": "normalized-enum",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:plan_execution_strategy:<normalized-value>",
+        "returnPolicy": "return-in-compatible-snapshot",
+        "sensitivity": "public"
+      },
+      {
+        "column": "plan_execution_provider",
+        "inputAliases": [
+          "planExecutionProvider",
+          "plan_execution_provider"
+        ],
+        "type": "nullable-string",
+        "default": null,
+        "emptyRule": "normalized-provider",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:plan_execution_provider:<normalized-value>",
+        "returnPolicy": "return-in-compatible-snapshot",
+        "sensitivity": "public"
+      },
+      {
+        "column": "plan_execution_command",
+        "inputAliases": [
+          "planExecutionCommand",
+          "plan_execution_command"
+        ],
+        "type": "string",
+        "default": "",
+        "emptyRule": "trim-empty-allowed",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:plan_execution_command:<normalized-value>",
+        "returnPolicy": "authorized-project-snapshot-only; redact from fixtures/logs/errors",
+        "sensitivity": "command-sensitive"
+      },
+      {
+        "column": "plan_execution_model",
+        "inputAliases": [
+          "planExecutionModel",
+          "plan_execution_model"
+        ],
+        "type": "string",
+        "default": "",
+        "emptyRule": "trim-empty-allowed",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:plan_execution_model:<normalized-value>",
+        "returnPolicy": "authorized-project-snapshot-only; redact from fixtures/logs/errors",
+        "sensitivity": "configuration-sensitive"
+      },
+      {
+        "column": "plan_execution_codex_reasoning_effort",
+        "inputAliases": [
+          "planExecutionCodexReasoningEffort",
+          "plan_execution_codex_reasoning_effort"
+        ],
+        "type": "nullable-string",
+        "default": null,
+        "emptyRule": "normalized-enum",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:plan_execution_codex_reasoning_effort:<normalized-value>",
+        "returnPolicy": "return-in-compatible-snapshot",
+        "sensitivity": "public"
+      },
+      {
+        "column": "plan_execution_claude_base_url",
+        "inputAliases": [
+          "planExecutionClaudeBaseUrl",
+          "plan_execution_claude_base_url"
+        ],
+        "type": "string",
+        "default": "",
+        "emptyRule": "trim-empty-allowed",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:plan_execution_claude_base_url:<normalized-value>",
+        "returnPolicy": "authorized-project-snapshot-only; redact from fixtures/logs/errors",
+        "sensitivity": "endpoint-sensitive"
+      },
+      {
+        "column": "plan_execution_claude_auth_token",
+        "inputAliases": [
+          "planExecutionClaudeAuthToken",
+          "plan_execution_claude_auth_token"
+        ],
+        "type": "string",
+        "default": "",
+        "emptyRule": "empty-clears",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:plan_execution_claude_auth_token:<normalized-value>",
+        "returnPolicy": "never-return-raw; presence/mask only",
+        "sensitivity": "secret"
+      },
+      {
+        "column": "plan_execution_claude_model",
+        "inputAliases": [
+          "planExecutionClaudeModel",
+          "plan_execution_claude_model"
+        ],
+        "type": "string",
+        "default": "",
+        "emptyRule": "trim-empty-allowed",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:plan_execution_claude_model:<normalized-value>",
+        "returnPolicy": "authorized-project-snapshot-only; redact from fixtures/logs/errors",
+        "sensitivity": "configuration-sensitive"
+      },
+      {
+        "column": "plan_execution_claude_config_id",
+        "inputAliases": [
+          "planExecutionClaudeConfigId",
+          "plan_execution_claude_config_id"
+        ],
+        "type": "integer",
+        "default": 0,
+        "emptyRule": "non-positive-to-zero",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:plan_execution_claude_config_id:<normalized-value>",
+        "returnPolicy": "authorized-project-snapshot-only; redact from fixtures/logs/errors",
+        "sensitivity": "reference-sensitive"
+      },
+      {
+        "column": "env_vars",
+        "inputAliases": [
+          "envVars"
+        ],
+        "type": "json-array",
+        "default": "",
+        "emptyRule": "only-array-writes; names-trimmed; empty-names-dropped",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "project:<project_id>:project_state:env_vars:<normalized-value>",
+        "returnPolicy": "never-return-raw; presence/mask only",
+        "sensitivity": "secret"
+      }
+    ],
+    "settings": [
+      {
+        "key": "mcp.enabled",
+        "inputAliases": [
+          "enabled",
+          "mcpEnabled",
+          "mcp_enabled"
+        ],
+        "type": "boolean-string",
+        "default": "true",
+        "storage": "String(value)",
+        "emptyRule": "explicit empty is normalized to the field default; omitted retains",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "session:settings:mcp.enabled:<normalized-value>",
+        "returnPolicy": "return-in-compatible-snapshot",
+        "sensitivity": "public"
+      },
+      {
+        "key": "mcp.transport",
+        "inputAliases": [
+          "transport",
+          "mcpTransport",
+          "mcp_transport"
+        ],
+        "type": "string",
+        "default": "http",
+        "storage": "String(value)",
+        "emptyRule": "explicit empty is normalized to the field default; omitted retains",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "session:settings:mcp.transport:<normalized-value>",
+        "returnPolicy": "return-in-compatible-snapshot",
+        "sensitivity": "public"
+      },
+      {
+        "key": "mcp.host",
+        "inputAliases": [
+          "host",
+          "mcpHost",
+          "mcp_host"
+        ],
+        "type": "string",
+        "default": "127.0.0.1",
+        "storage": "String(value)",
+        "emptyRule": "explicit empty is normalized to the field default; omitted retains",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "session:settings:mcp.host:<normalized-value>",
+        "returnPolicy": "authorized-project-snapshot-only; redact from fixtures/logs/errors",
+        "sensitivity": "endpoint-sensitive"
+      },
+      {
+        "key": "mcp.port",
+        "inputAliases": [
+          "port",
+          "mcpPort",
+          "mcp_port"
+        ],
+        "type": "integer-string",
+        "default": "43847",
+        "storage": "String(value)",
+        "emptyRule": "explicit empty is normalized to the field default; omitted retains",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "session:settings:mcp.port:<normalized-value>",
+        "returnPolicy": "return-in-compatible-snapshot",
+        "sensitivity": "public"
+      },
+      {
+        "key": "mcp.path",
+        "inputAliases": [
+          "path",
+          "mcpPath",
+          "mcp_path"
+        ],
+        "type": "string",
+        "default": "/mcp",
+        "storage": "String(value)",
+        "emptyRule": "explicit empty is normalized to the field default; omitted retains",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "session:settings:mcp.path:<normalized-value>",
+        "returnPolicy": "return-in-compatible-snapshot",
+        "sensitivity": "public"
+      },
+      {
+        "key": "mcp.authToken",
+        "inputAliases": [
+          "mcpAuthToken",
+          "mcp_auth_token",
+          "authToken"
+        ],
+        "type": "string",
+        "default": "<generated-secret>",
+        "storage": "String(value)",
+        "emptyRule": "explicit empty clears; omitted retains",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "session:settings:mcp.authToken:<normalized-value>",
+        "returnPolicy": "never-return-raw; presence/mask only",
+        "sensitivity": "secret"
+      },
+      {
+        "key": "mcp.portExplicit",
+        "inputAliases": [],
+        "type": "boolean-string",
+        "default": "false",
+        "storage": "String(value)",
+        "emptyRule": "explicit empty is normalized to the field default; omitted retains",
+        "versionParticipant": true,
+        "businessIdempotencyKey": "session:settings:mcp.portExplicit:<normalized-value>",
+        "returnPolicy": "not-in-public-dto",
+        "sensitivity": "internal"
+      }
+    ]
+  },
+  "relationPolicies": [
+    {
+      "table": "project_states",
+      "key": "project_id",
+      "decision": "cascade",
+      "rationale": "one-to-one owned state",
+      "compatibility": "Node explicitly deletes; P04 FK CASCADE"
+    },
+    {
+      "table": "requirements",
+      "key": "project_id",
+      "decision": "managed-cascade",
+      "rationale": "delete explicitly after attachment/link checks and before the project; FK RESTRICT prevents accidental implicit loss",
+      "compatibility": "Node explicitly deletes; P04 FK RESTRICT requires child-first application coordination"
+    },
+    {
+      "table": "feedback",
+      "key": "project_id",
+      "decision": "managed-cascade",
+      "rationale": "delete explicitly after attachment/link checks and before requirements/project",
+      "compatibility": "Node explicitly deletes; P04 FK RESTRICT requires child-first application coordination"
+    },
+    {
+      "table": "attachments",
+      "key": "project_id",
+      "decision": "restrict",
+      "rationale": "external file cleanup cannot be represented by a database cascade",
+      "compatibility": "Node deletes only rows; P04 FK RESTRICT"
+    },
+    {
+      "table": "intake_plan_links",
+      "key": "project_id/plan_id",
+      "decision": "cascade-via-plan; restrict-unexplained-orphan",
+      "rationale": "valid links follow the explicitly deleted plan; invalid or cross-project history blocks deletion",
+      "compatibility": "Node omits this table; P04 project FK RESTRICT and plan FK CASCADE"
+    },
+    {
+      "table": "plans",
+      "key": "project_id",
+      "decision": "managed-cascade",
+      "rationale": "delete explicitly after link audit; plan files remain subject to the file policy",
+      "compatibility": "Node deletes tasks then plans; P04 FK RESTRICT requires child-first application coordination"
+    },
+    {
+      "table": "plan_tasks",
+      "key": "plan_id",
+      "decision": "cascade-via-plan",
+      "rationale": "task is owned by its plan",
+      "compatibility": "Node explicit child-first delete; P04 FK CASCADE"
+    },
+    {
+      "table": "events",
+      "key": "project_id",
+      "decision": "cascade",
+      "rationale": "derived project history",
+      "compatibility": "Node explicit delete; P04 FK CASCADE"
+    },
+    {
+      "table": "scan_files",
+      "key": "project_id",
+      "decision": "cascade",
+      "rationale": "derived scan cache",
+      "compatibility": "Node explicit delete; P04 FK CASCADE"
+    },
+    {
+      "table": "scripts",
+      "key": "project_id",
+      "decision": "restrict",
+      "rationale": "script body/path/process configuration is external-effect capable",
+      "compatibility": "Node omits this table; P04 FK RESTRICT"
+    },
+    {
+      "table": "executors",
+      "key": "project_id",
+      "decision": "restrict",
+      "rationale": "executor process configuration is external-effect capable",
+      "compatibility": "Node omits this table; P04 FK RESTRICT"
+    },
+    {
+      "table": "conversations",
+      "key": "project_id",
+      "decision": "cascade",
+      "rationale": "project-owned conversation",
+      "compatibility": "Node omits this table; P04 FK CASCADE"
+    },
+    {
+      "table": "chat_messages",
+      "key": "project_id/conversation_id",
+      "decision": "cascade",
+      "rationale": "message is owned by project conversation",
+      "compatibility": "Node omits this table; P04 FK CASCADE"
+    },
+    {
+      "table": "operations",
+      "key": "project_id",
+      "decision": "restrict",
+      "rationale": "active or historical operation must remain referentially valid",
+      "compatibility": "P04 schema extension; deletion requires no referencing operation"
+    },
+    {
+      "table": "terminal/runtime",
+      "key": "project_id",
+      "decision": "dispose-before-commit",
+      "rationale": "in-memory/external process state must be stopped before database deletion",
+      "compatibility": "Node disposes terminal and stops loop before row deletion"
+    },
+    {
+      "table": "settings",
+      "key": "global key",
+      "decision": "retain",
+      "rationale": "settings are global rather than project-owned",
+      "compatibility": "never delete settings during project deletion"
+    },
+    {
+      "table": "ai_configs/claude_cli_configs",
+      "key": "nullable project_id",
+      "decision": "retain-global-restrict-scoped",
+      "rationale": "global configuration survives; historical scoped rows must be audited",
+      "compatibility": "P04 defers global scope semantics"
+    }
+  ],
+  "snapshot": {
+    "assembler": "LoopService.snapshot -> loop/snapshots.snapshot",
+    "commitRule": "always query repository again after commit; never assemble success from request values or stale in-memory rows",
+    "missingProject": "same complete empty snapshot shape as snapshot(null), with the current sorted project list",
+    "topLevelFields": [
+      "activeProjectId",
+      "activeProject",
+      "projects",
+      "mcp",
+      "state",
+      "requirements",
+      "feedback",
+      "attachments",
+      "plans",
+      "tasks",
+      "events",
+      "scans",
+      "scanSummary",
+      "scripts",
+      "executors",
+      "terminals",
+      "activeOperation",
+      "activeOperations",
+      "lastOperation"
+    ],
+    "naming": "top-level historical camelCase is retained; database/domain rows remain snake_case",
+    "nullability": "null and missing are distinct; empty collections remain present; unknown fields fail golden comparison",
+    "projectOrder": [
+      "updated_at DESC",
+      "id DESC"
+    ],
+    "collectionOrder": {
+      "requirements": [
+        "updated_at DESC"
+      ],
+      "feedback": [
+        "updated_at DESC"
+      ],
+      "attachments": [
+        "created_at DESC",
+        "id DESC"
+      ],
+      "plans": [
+        "sort_order ASC",
+        "created_at ASC",
+        "id ASC"
+      ],
+      "tasks": [
+        "plan order",
+        "sort_order ASC",
+        "id ASC"
+      ],
+      "events": [
+        "id DESC",
+        "LIMIT 80"
+      ],
+      "scripts": [
+        "sort_order ASC",
+        "id ASC"
+      ],
+      "executors": [
+        "sort_order ASC",
+        "id ASC"
+      ]
+    },
+    "scalarRules": [
+      "SQLite integer booleans stay numeric where Node returns rows",
+      "runtime running is normalized to 0/1",
+      "nullable backend fields remain explicit null",
+      "UTC values use RFC3339/ISO-8601 Z form"
+    ]
+  },
+  "errors": [
+    {
+      "code": "PROJECT_NOT_FOUND",
+      "legacyMessage": "项目不存在",
+      "mutations": [
+        "update",
+        "configure",
+        "delete"
+      ]
+    },
+    {
+      "code": "PROJECT_RUNNING",
+      "legacyMessage": "请先停止该项目循环再删除",
+      "mutations": [
+        "delete"
+      ]
+    },
+    {
+      "code": "WORKSPACE_IN_USE",
+      "legacyMessagePattern": "工作区正在被项目「…」使用，请先停止对应循环",
+      "mutations": [
+        "configure",
+        "update"
+      ]
+    },
+    {
+      "code": "PROJECT_RELATION_CONFLICT",
+      "legacyMessage": null,
+      "mutations": [
+        "delete"
+      ],
+      "note": "stable Go error introduced to fail closed against P04 RESTRICT relations"
+    },
+    {
+      "code": "VERSION_REQUIRED",
+      "legacyMessage": null,
+      "mutations": [
+        "configure",
+        "update"
+      ]
+    },
+    {
+      "code": "VERSION_CONFLICT",
+      "legacyMessage": null,
+      "mutations": [
+        "configure",
+        "update"
+      ]
+    },
+    {
+      "code": "IDEMPOTENCY_KEY_REUSED",
+      "legacyMessage": null,
+      "mutations": [
+        "create",
+        "update",
+        "configure",
+        "delete"
+      ]
+    }
+  ],
+  "sensitiveData": {
+    "neverReturnRaw": [
+      "Claude auth tokens",
+      "MCP auth token",
+      "API tokens",
+      "env_vars values",
+      "secret_refs",
+      "command environment"
+    ],
+    "fixturesAndLogs": "store field names and deterministic redaction placeholders only; no raw command, token, env value, userData path, database row, or unauthorized absolute path",
+    "compatibleMasks": [
+      "*_has_claude_auth_token boolean",
+      "legacy ····suffix masks may be read from Node but golden normalization replaces the suffix",
+      "mcp.hasAuthToken boolean"
+    ]
+  },
+  "golden": {
+    "generator": "scripts/migration-p05/generate-node-golden.js",
+    "scenarios": [
+      "create",
+      "duplicate-create",
+      "delete-duplicate-create",
+      "update",
+      "configure",
+      "duplicate-configure",
+      "missing-update",
+      "missing-delete",
+      "running-delete",
+      "delete",
+      "duplicate-delete"
+    ],
+    "normalization": "only generator-owned temporary root, UTC timestamps, auto IDs and sensitive values are replaced; references share one mapping",
+    "comparison": "deep strict comparison of every key/type/null/missing/value/order; no ignored or unknown fields",
+    "handoff": "close sql.js and release the owner lock before Go opens an independently reset copy"
+  }
+}

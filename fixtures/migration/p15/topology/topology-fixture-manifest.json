@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "kind": "p15-authorized-topology-fixture",
+  "authorized_copy": true,
+  "real_userdata": false,
+  "contents": ["trace-scenarios.json"],
+  "data_policy": "synthetic topology assertions only; traces must be generated in an isolated temporary environment and must not include payloads, paths, credentials, raw output, database contents, PIDs, or commands."
+}

@@ -1,0 +1,164 @@
+{
+  "title": "P02：默认安全的 Go sidecar 骨架与跨语言契约",
+  "summary": "在 P00 基线已完成、P01 Renderer 统一客户端边界已完成且二者门禁均通过后，依据 D:\\docs\\autoplan-go-backend-separation-plan.md v1.0（2026-07-11），建立可独立启动和测试的本机 Go 模块化单体 sidecar。阶段交付包含 autoplan-server/autoplan-migrate 入口、配置与依赖装配、结构化脱敏日志、稳定 HTTP 错误与 request_id、health/ready、真实启动依赖门禁、随机 loopback 监听、信号与优雅关闭、REST/SSE/WebSocket 共用的随机会话鉴权和精确 Origin 防护，以及兼容现有 Project/AppSnapshot/Error/Operation 的 OpenAPI 与版本化事件信封契约。Node 与 Go 使用同一批脱敏 JSON fixture 做双向契约验证；本阶段不接入生产业务写入、不打开真实 Electron userData、不允许 Node/sql.js 与 Go 同写数据库、不实现微服务或顺手重构 UI/状态管理。若前置门禁、安全条件或冻结失败基线不满足，阶段必须报告 blocked，不能跨阶段实现。",
+  "tasks": [
+    {
+      "title": "建立 Go 模块化单体目录、命令入口与共享应用服务边界",
+      "scope": [
+        "backend/go.mod",
+        "backend/cmd/autoplan-server",
+        "backend/cmd/autoplan-migrate",
+        "backend/internal/bootstrap",
+        "backend/internal/application",
+        "backend/internal/domain",
+        "backend/internal/repository",
+        "backend/internal/runtime",
+        "backend/internal/platform",
+        "backend/migrations",
+        "backend/openapi",
+        "docs/migration/p02/architecture.md"
+      ],
+      "acceptance": [
+        "以 github.com/lyming99/autoplan/backend 为独立 Go module，创建 autoplan-server、autoplan-migrate 以及 bootstrap、config、httpapi、application、domain、repository、runtime、platform、migrations、openapi 目标结构；两个命令均为可编译的薄入口，依赖装配和行为留在 internal 包。",
+        "模块边界固定为本机 Go sidecar 与 Electron 薄壳下的模块化单体，不引入微服务；REST、未来 MCP 与未来 UI transport 只能调用同一 application service，不在 handler、transport 或命令入口复制业务规则。",
+        "autoplan-migrate 只提供显式目标、dry-run/状态检查和后续 migration 注册边界；本阶段没有生产业务 migration 或写入路径，未显式提供脱敏 fixture、临时目录或数据库副本时安全拒绝。",
+        "启动前验证 P00 与 P01 完成标记、契约/能力矩阵及 renderer 边界门禁；缺失、漂移或未通过时输出不含秘密的 blocked 结果并停止，不创建后端运行数据或越过阶段实现持久化业务。",
+        "架构说明记录包职责、依赖方向、共享 application service、REST/JSON + SSE + WebSocket 分工、单数据库 writer 禁令和本阶段非目标，保持现有 DTO、snake_case、snapshot、状态机及业务语义兼容。"
+      ]
+    },
+    {
+      "title": "实现安全默认的配置模型与可替换依赖装配",
+      "scope": [
+        "backend/internal/config",
+        "backend/internal/bootstrap/config.go",
+        "backend/internal/bootstrap/dependencies.go",
+        "backend/internal/application/services.go",
+        "backend/internal/repository/repository.go",
+        "backend/internal/runtime/runtime.go",
+        "backend/cmd/autoplan-server/main.go",
+        "backend/cmd/autoplan-migrate/main.go"
+      ],
+      "acceptance": [
+        "配置具有明确来源和优先级、严格类型/范围校验及安全默认值：默认监听 127.0.0.1:0，不能通过缺省值、空值或解析回退隐式绑定 0.0.0.0、IPv6 任意地址或非 loopback 主机。",
+        "监听地址、允许 Origin、body 上限、读/写/空闲/关闭超时、运行目录和日志级别集中配置；未知配置、通配 Origin、非法持续时间、非正上限或未经显式授权的外部路径均启动失败。",
+        "会话密钥不接受命令行参数或 URL 配置；高强度随机值由进程启动时生成并只经受控内存/标准输入或未来 Electron 进程通道交付，不写 localStorage、配置快照或环境回显。",
+        "依赖以接口和显式构造函数装配，测试可注入 fake clock、readiness gate、repository、event sink 和 logger；HTTP handler 仅依赖 application service，repository/runtime/platform 不反向依赖 httpapi。",
+        "默认运行模式不发现、不推断也不打开真实 Electron userData 或现有 autoplan.sqlite；只有显式脱敏 fixture、系统临时目录或数据库副本能成为本阶段运行目标。"
+      ]
+    },
+    {
+      "title": "构建带稳定错误、request_id 与脱敏日志的受限 HTTP 基座",
+      "scope": [
+        "backend/internal/httpapi/router.go",
+        "backend/internal/httpapi/middleware.go",
+        "backend/internal/httpapi/errors.go",
+        "backend/internal/httpapi/response.go",
+        "backend/internal/platform/logging",
+        "backend/internal/platform/redaction",
+        "backend/internal/config/http.go"
+      ],
+      "acceptance": [
+        "中间件为每个请求接受合法调用方 request_id 或生成不可预测 request_id，并在响应头、稳定 snake_case JSON 错误和结构化日志中关联；非法或超长 request_id 被替换而不是原样反射。",
+        "统一错误信封至少包含 code、message、request_id、retryable 和可选安全 details，未知路由、方法错误、无效 JSON、body 超限、鉴权/Origin 拒绝、内部错误和 panic 均有稳定状态码与关闭失败语义。",
+        "panic recovery 只返回通用内部错误且服务保持可用；请求体采用硬上限并拒绝多余 JSON、未知字段和尾随内容，HTTP server 设置非零 read_header、read、write、idle 与 graceful shutdown 超时。",
+        "结构化日志对白名单字段建模并统一脱敏，Authorization、Cookie、session、api_key、token、env_vars、请求正文、未授权绝对路径和 panic 细节不得进入 API、日志或事件；日志扫描覆盖大小写、嵌套字段、查询串和错误链。",
+        "时间字段与契约样本统一为 UTC RFC3339，JSON 字段保持 snake_case；可重试属性、request_id 传播和幂等键占位约定有 httptest 自动化覆盖且不改变既有业务状态机。"
+      ]
+    },
+    {
+      "title": "实现 health/ready、真实启动门禁、随机端口就绪消息与优雅关闭",
+      "scope": [
+        "backend/internal/httpapi/health.go",
+        "backend/internal/bootstrap/server.go",
+        "backend/internal/bootstrap/readiness.go",
+        "backend/internal/runtime/lifecycle",
+        "backend/internal/platform/instance",
+        "backend/migrations/registry.go",
+        "backend/cmd/autoplan-server/main.go"
+      ],
+      "acceptance": [
+        "/healthz 只反映进程与 HTTP event loop 存活，不因 repository、migration、实例锁或核心 application service 未就绪而伪装 ready；/readyz 仅在配置校验、唯一实例锁、允许的 migration 状态和核心服务实际完成初始化后成功。",
+        "每个 readiness 依赖具有 pending/ready/failed 状态、稳定非敏感原因和单向聚合规则；任何依赖失败或关闭开始后 /readyz 立即非成功，测试覆盖初始化延迟、失败、恢复、关闭竞态以及 health/ready 严格区分。",
+        "服务器先在 127.0.0.1 的随机端口完成监听，再且仅再输出一条有版本、pid、host、port 和 ready 状态的可解析 JSON readiness 消息；标准输出无其他非协议文本，消息不含会话凭据、路径、环境变量或日志内容。",
+        "处理 Windows 控制事件及 SIGINT/SIGTERM 等可用信号，停止接收新请求、标记 not ready、按上限排空连接并逆序释放依赖；重复关闭幂等，超时有非零退出与可审计但脱敏的结果。",
+        "实例锁和 migration gate 只作用于显式临时运行目录或数据库副本，不连接正在运行的 sql.js 数据库、不修改业务表；服务独立启动/关闭及端口冲突、锁冲突和中途取消场景有进程级自动化覆盖。"
+      ]
+    },
+    {
+      "title": "实现 REST、SSE 与 WebSocket 共用的随机会话和精确 Origin 安全骨架",
+      "scope": [
+        "backend/internal/platform/session",
+        "backend/internal/httpapi/security.go",
+        "backend/internal/httpapi/rest.go",
+        "backend/internal/httpapi/sse.go",
+        "backend/internal/httpapi/websocket.go",
+        "backend/internal/bootstrap/dependencies.go",
+        "backend/internal/config/origins.go"
+      ],
+      "acceptance": [
+        "每次服务启动使用密码学安全随机源生成独立会话，采用 HttpOnly、SameSite=Strict、Secure 条件正确的 host-only Cookie 或等价受控头通道；凭据不出现在命令行、URL/query、readiness 消息、localStorage、日志、错误或 fixture。",
+        "Origin 采用 scheme、host 和显式端口的规范化精确匹配，只允许配置中的可信 Electron/Vite Origin；拒绝通配符、前后缀欺骗、userinfo、null、默认端口混淆、大小写/Unicode 主机歧义及 Origin/Host 不一致的浏览器请求。",
+        "REST、SSE 握手和 WebSocket upgrade 复用同一认证、Origin、request_id、日志脱敏与拒绝策略，不为长连接建立绕过路径；无凭据、错误凭据、缺失或非法 Origin 均在调用 application service 前拒绝。",
+        "healthz 可按明确策略保持无秘密的存活探针，readyz 与所有受保护 API 的暴露规则有文档和自动化断言；任何调试或开发配置都不能默认关闭鉴权或放宽到 0.0.0.0。",
+        "本阶段 SSE/WS 仅交付经过安全中间件的版本化握手与未实现/占位 application service 边界，不实现生产事件流、Terminal 或业务 mutation，也不复制 MCP/UI 的授权逻辑。"
+      ]
+    },
+    {
+      "title": "冻结 Project、Snapshot、Error、Operation 与事件信封的版本化契约",
+      "scope": [
+        "backend/openapi/openapi.yaml",
+        "backend/openapi/schemas/project.schema.json",
+        "backend/openapi/schemas/snapshot.schema.json",
+        "backend/openapi/schemas/error.schema.json",
+        "backend/openapi/schemas/operation.schema.json",
+        "backend/openapi/schemas/sse-envelope-v1.schema.json",
+        "backend/openapi/schemas/ws-envelope-v1.schema.json",
+        "backend/internal/domain/contracts",
+        "docs/migration/p02/contracts.md"
+      ],
+      "acceptance": [
+        "OpenAPI 最小契约定义 /healthz、/readyz 和版本化 /api/v1 边界，并冻结 Project、兼容 AppSnapshot、稳定 Error 与 OperationAccepted/Operation 状态；字段、nullability、ID、默认值和枚举以 P00 contract-baseline 与 src/renderer/types.ts 为依据。",
+        "API JSON 保持既有 snake_case 兼容策略，时间统一 UTC RFC3339；Operation 明确 operation_id、queued/running/succeeded/failed/cancelled/interrupted 状态、幂等键与终态约束，但本阶段不实现业务 operation 执行或持久化。",
+        "SSE 与 WebSocket 使用含 schema_version、event_id/type、request_id/operation_id、occurred_at 和 data 的版本化信封 JSON Schema；未知版本、缺失必填字段、非法终态和非 UTC 时间有明确拒绝规则。",
+        "Project/Snapshot schema 不暴露 workspace_path 等未授权绝对路径，也不允许 api_key、auth_token、token、env_vars、会话凭据或原始秘密；需要兼容的敏感配置只允许 has_*、masked_* 等脱敏表示。",
+        "契约文档说明 REST/JSON、SSE、WebSocket 的职责、错误码、幂等语义、版本演进和共享 application service 约束，并明确当前 skeleton endpoint 不代表生产业务可用或可写。"
+      ]
+    },
+    {
+      "title": "建立 Node/Go 共用脱敏 fixture、契约漂移守卫与 P02 验证入口",
+      "scope": [
+        "fixtures/contracts/p02",
+        "backend/internal/httpapi/contract_test.go",
+        "backend/internal/httpapi/security_test.go",
+        "backend/internal/bootstrap/lifecycle_test.go",
+        "backend/internal/domain/contracts/fixtures_test.go",
+        "scripts/migration-p02/contract-fixtures.test.js",
+        "scripts/migration-p02/verify.js",
+        "package.json",
+        "docs/migration/p02/README.md",
+        "docs/migration/p02/evidence/README.md"
+      ],
+      "acceptance": [
+        "共享 fixture 覆盖 Project、空/最小/完整 Snapshot、各类 Error、Operation 全状态、SSE/WS 合法与非法信封、UTC RFC3339、幂等键和 snake_case；样本来自合成数据，不含真实用户名、userData、workspace、密钥、token、env_vars 或可用凭据。",
+        "Go 测试对 fixture 执行严格解码、schema/结构、重编码语义和负例校验；Node 测试从同一路径验证与 P00 TypeScript/contract-baseline 的字段、nullability、枚举和敏感字段禁令，任一侧单独维护副本或发生契约漂移均失败。",
+        "migration:p02:verify 先检查 P00/P01 门禁，再在 backend 执行 go test ./...，执行 Node/Go fixture 契约、HTTP/安全、独立启动/关闭与日志秘密扫描，并记录每个实际命令、退出码、脱敏日志、受影响文件、证据哈希和剩余风险。",
+        "验证入口相对 P00 冻结签名执行 npm.cmd run check 与 npm.cmd test 的无新增失败比较；既有失败可按冻结基线保留，但任何新增失败、本阶段相关失败、skip/only、退出码吞没或伪造成功均使 P02 失败，P15 仍负责清零或逐项明确处置。",
+        "验证全过程只使用系统临时目录、脱敏 fixture 或显式数据库副本，不自动操作 Electron userData、不与 Node/sql.js 同写数据库；安全前置不足时记录 blocked 并停止高风险步骤，同时保留原始非零退出码。",
+        "阶段说明包含独立启动方式、受控会话传递、唯一 readiness 消息格式、health/ready 语义、OpenAPI/Schema 路径、默认拒绝策略、回退/清理方式及未实现生产业务读写的剩余风险。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm.cmd run migration:p02:verify",
+    "criteria": [
+      "P00 与 P01 门禁、能力/契约漂移和 renderer 客户端边界全部通过；任一前置不满足时结果明确为 blocked 且没有跨阶段创建生产数据写入、HTTP transport 切换或业务实现。",
+      "backend 独立 Go module 的 autoplan-server 与 autoplan-migrate 可编译，go test ./... 退出码为 0；服务能在 127.0.0.1 随机端口独立启动和优雅关闭，未显式配置时绝不绑定 0.0.0.0 或任意非 loopback 地址。",
+      "/healthz 仅表达存活，/readyz 受配置、唯一实例锁、允许的 migration 状态和核心 application service 真实门禁控制；启动仅输出一条可解析 readiness JSON，关闭开始后 ready 立即失败且重复关闭幂等。",
+      "无会话、错误会话、缺失或非法 Origin 的 REST、SSE 和 WebSocket 请求均在 application service 前被拒；三种传输复用相同安全中间件，凭据未进入命令行、URL、readiness、localStorage、API、日志、事件或 fixture。",
+      "HTTP 错误均为稳定 snake_case JSON 并包含 request_id，panic、body 超限、非法 JSON、超时和未知路由安全失败；时间为 UTC RFC3339，幂等约定有自动化覆盖，脱敏扫描未发现 api_key、token、env_vars、真实用户数据或未授权绝对路径。",
+      "OpenAPI 与版本化 SSE/WS JSON Schema 覆盖 Project、兼容 Snapshot、Error、Operation 和事件信封，Node 与 Go 对同一组合成 fixture 的字段、nullability、枚举、状态、时间和负例判断一致，且未实现生产业务写入。",
+      "npm.cmd run check 与 npm.cmd test 相对 P00 冻结基线没有新增失败，本阶段专项测试和进程级 smoke 全部通过；证据包含实际命令、真实退出码、脱敏日志、哈希、受影响文件和剩余风险，P15 遗留红灯处置要求仍被保留。",
+      "最终 git 状态只包含 P02 预期的 backend、契约 fixture、验证脚本、package 脚本和迁移文档变更；现有未跟踪 .claude/、P00/P01 交付及所有无关用户改动保持原样，未读取或修改真实 Electron userData。"
+    ]
+  }
+}

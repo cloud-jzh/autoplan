@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "kind": "p13-legacy-removal-policy",
+  "status": "blocked_until_independent_evidence",
+  "database_owner": "go_after_first_go_write",
+  "removal_authorization": "none",
+  "gates": {
+    "p13a_chat": {
+      "feature": "go_chat_api",
+      "requires": [
+        "independent stable P13A verification evidence",
+        "zero legacy Chat IPC usage",
+        "no active Chat turn or queue item",
+        "independent rollback exercise",
+        "zero-reference inventory"
+      ],
+      "candidates": [
+        "chat turn/history/queue IPC handlers",
+        "conversation IPC handlers",
+        "preload Chat turn/history/queue and conversation bridges",
+        "chatController business entry",
+        "chatQueue business entry"
+      ],
+      "current_disposition": "retained_as_disabled_compatibility_adapter"
+    },
+    "p13b_mcp": {
+      "feature": "go_mcp_api",
+      "requires": [
+        "independent stable P13B verification evidence",
+        "zero legacy MCP listener and call usage",
+        "no active MCP listener, connection, or mutation",
+        "independent rollback exercise",
+        "zero-reference inventory"
+      ],
+      "candidates": [
+        "MCP IPC lifecycle handlers",
+        "Node MCP HTTP and stdio server",
+        "Node MCP tool catalog and handlers"
+      ],
+      "current_disposition": "retained_as_disabled_compatibility_adapter"
+    }
+  },
+  "forbidden_rollbacks": [
+    "restart Node or sql.js as a database writer",
+    "start a second MCP listener",
+    "transfer an in-flight Chat turn or MCP mutation",
+    "replay provider or non-idempotent MCP work",
+    "transfer credentials, call context, or partial stdio frames"
+  ]
+}

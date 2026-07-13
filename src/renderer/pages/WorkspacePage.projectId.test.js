@@ -104,7 +104,7 @@ describe('Feedback #36 project switch focus regression', () => {
     expectIncludes(hook, 'requirements: [],', 'stale snapshot fallback should clear requirement records');
     expectIncludes(hook, 'feedback: [],', 'stale snapshot fallback should clear feedback records');
 
-    expectIncludes(page, 'const activeSnapshot = isWorkspaceSnapshotForProject(snapshot, projectId) ? snapshot : null;', 'WorkspacePage should derive a route-matched active snapshot');
+    expectIncludes(page, 'const activeSnapshot = isWorkspaceSnapshotForProject(deferredSnapshot, projectId) ? deferredSnapshot : null;', 'WorkspacePage should derive a route-matched deferred snapshot');
     expectIncludes(page, '&& Number(snapshot?.activeProjectId) === Number(projectId)', 'WorkspacePage snapshot guard should compare activeProjectId with the route projectId');
     expectIncludes(page, 'if (!activeSnapshot) {', 'WorkspacePage should render a loading boundary while the route snapshot is unavailable');
     expectIncludes(page, '<div className="empty">加载中...</div>', 'WorkspacePage should show loading instead of stale workspace content');
@@ -123,10 +123,10 @@ describe('Workspace global AI config boundary regression', () => {
       'workspaceForms should define aiConfigInputFromForm',
     );
 
-    expectIncludes(settingsView, 'const list = await window.autoplan.aiConfigList();', 'settings should load global AI configs');
-    expectIncludes(settingsView, 'await window.autoplan.aiConfigCreate(payload);', 'AI config create should send the global payload directly');
-    expectIncludes(settingsView, 'await window.autoplan.aiConfigUpdate({\n          configId: editingConfigId,', 'AI config update should target only configId');
-    expectIncludes(settingsView, 'await window.autoplan.aiConfigDelete({ configId: id });', 'AI config delete should target only configId');
+    expectIncludes(settingsView, 'const list = await client.aiConfigList();', 'settings should load global AI configs');
+    expectIncludes(settingsView, 'await client.aiConfigCreate(payload);', 'AI config create should send the global payload directly');
+    expectIncludes(settingsView, 'await client.aiConfigUpdate({\n          configId: editingConfigId,', 'AI config update should target only configId');
+    expectIncludes(settingsView, 'await client.aiConfigDelete({ configId: id });', 'AI config delete should target only configId');
     expectNotIncludes(settingsView, 'aiConfigList({ projectId', 'settings should not pass projectId to AI config list');
     expectNotIncludes(settingsView, 'aiConfigCreate({ projectId', 'settings should not pass projectId to AI config create');
     expectNotIncludes(settingsView, 'hasValidProjectContext', 'global AI config creation should not be blocked by project context');
@@ -134,21 +134,10 @@ describe('Workspace global AI config boundary regression', () => {
     expectNotIncludes(aiConfigInputBody, 'projectId', 'AI config form serialization should not include projectId');
   });
 
-  it('keeps preload and renderer types aligned with global AI config IPC', () => {
+  it('keeps the native-only preload and renderer business client boundary aligned', () => {
     const preload = source('src', 'preload.js');
+    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
     const types = source('src', 'renderer', 'types.ts');
-    const preloadCreatePayload = sliceBetween(
-      preload,
-      'function aiConfigCreatePayload',
-      'function aiConfigUpdatePayload',
-      'preload should define aiConfigCreatePayload',
-    );
-    const preloadUpdatePayload = sliceBetween(
-      preload,
-      'function aiConfigUpdatePayload',
-      'function aiConfigIdPayload',
-      'preload should define aiConfigUpdatePayload',
-    );
     const aiConfigCreateInput = sliceBetween(
       types,
       'export interface AiConfigCreateInput',
@@ -168,10 +157,11 @@ describe('Workspace global AI config boundary regression', () => {
       'types should define AiConfigDeleteInput',
     );
 
-    expectIncludes(preload, "aiConfigList: () => ipcRenderer.invoke('ai-config:list')", 'preload should expose global aiConfigList without input');
-    expectIncludes(preload, "aiConfigCreate: (payload) => ipcRenderer.invoke('ai-config:create', aiConfigCreatePayload(payload))", 'preload create should sanitize only AI config fields');
-    expectNotIncludes(preloadCreatePayload, 'projectId', 'preload create sanitizer should not pass projectId');
-    expectNotIncludes(preloadUpdatePayload, 'projectId', 'preload update sanitizer should not pass projectId');
+    expectNotIncludes(preload, 'aiConfigList:', 'native-only preload should not expose business config operations');
+    expectNotIncludes(preload, "ipcRenderer.invoke('ai-config:", 'native-only preload should not route AI config IPC');
+    expectIncludes(settingsView, 'const client = useAutoplanClient();', 'settings should obtain the injected business client');
+    expectIncludes(settingsView, 'const list = await client.aiConfigList();', 'settings should load configs through the business client');
+    expectNotIncludes(settingsView, 'window.autoplan.aiConfig', 'settings should not bypass the business client through preload');
     expectIncludes(types, 'export type AiConfigListInput = void;', 'types should model AI config list as global');
     expectIncludes(types, 'aiConfigList: () => Promise<AiConfig[]>;', 'AutoplanApi should expose global aiConfigList');
     expectNotIncludes(aiConfigCreateInput, 'projectId', 'AI config create input should not include projectId');

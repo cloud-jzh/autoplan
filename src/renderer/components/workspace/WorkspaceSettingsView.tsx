@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type Dispatch, type FormEvent, type S
 import { AUTOPLAN_RELEASES_URL, type AiConfig, type ClaudeCliConfigListItem, type McpStatus, type UpdateStatus } from '../../types';
 import { useTheme, type ThemeMode } from '../../hooks/useTheme';
 import { useUpdateStatus } from '../../hooks/useUpdateStatus';
+import { useAutoplanClient, useDesktopBridge } from '../../lib/api/provider';
 import { formatChinaDateTime } from '../../utils/time';
 import {
   aiConfigFormForProviderChange,
@@ -140,6 +141,8 @@ export function WorkspaceSettingsView({
   running: boolean;
   projectId: number;
 }) {
+  const client = useAutoplanClient();
+  const desktopBridge = useDesktopBridge();
   const [activePane, setActivePane] = useState<SettingsPane>('loop');
   const hasCodexBackend = isCodexPlanBackendProvider(loopForm.planGenerationProvider)
     || isCodexPlanBackendProvider(loopForm.planExecutionProvider);
@@ -180,20 +183,20 @@ export function WorkspaceSettingsView({
 
   const loadFileAccess = useCallback(async () => {
     try {
-      const settings = await window.autoplan.fileAccess.get();
+      const settings = await client.fileAccess.get();
       const form = fileAccessFormFromSettings(settings);
       setFileAccessForm(form);
       setFileAccessSaved(form);
     } catch {
       /* 取配置失败保持默认值 */
     }
-  }, []);
+  }, [client]);
 
   const saveFileAccess = useCallback(async () => {
     setFileAccessSaving(true);
     setFileAccessMessage(null);
     try {
-      const result = await window.autoplan.fileAccess.save({
+      const result = await client.fileAccess.save({
         scope: fileAccessForm.scope,
         allowCrossProject: fileAccessForm.allowCrossProject,
         allowedRoots: fileAccessForm.allowedRoots,
@@ -209,15 +212,15 @@ export function WorkspaceSettingsView({
     } finally {
       setFileAccessSaving(false);
     }
-  }, [fileAccessForm]);
+  }, [client, fileAccessForm]);
 
   const addAllowedRoot = useCallback(async () => {
-    const dir = await window.autoplan.pickDirectory();
+    const dir = await desktopBridge.pickDirectory();
     if (!dir) return;
     setFileAccessForm((current) =>
       current.allowedRoots.includes(dir) ? current : { ...current, allowedRoots: [...current.allowedRoots, dir] },
     );
-  }, []);
+  }, [desktopBridge]);
 
   const removeAllowedRoot = useCallback((root: string) => {
     setFileAccessForm((current) => ({
@@ -228,7 +231,7 @@ export function WorkspaceSettingsView({
 
   const loadChatConfig = useCallback(async () => {
     try {
-      const cfg = await window.autoplan.chatGetConfig();
+      const cfg = await client.chatGetConfig();
       const form = createDefaultChatConfigForm(cfg);
       setChatConfigForm(form);
       setChatConfigSaved(form);
@@ -236,25 +239,25 @@ export function WorkspaceSettingsView({
     } catch {
       /* 取配置失败保持默认值 */
     }
-  }, []);
+  }, [client]);
 
   const loadAiConfigs = useCallback(async () => {
     try {
-      const list = await window.autoplan.aiConfigList();
+      const list = await client.aiConfigList();
       setAiConfigs(list);
     } catch {
       /* 加载失败忽略 */
     }
-  }, []);
+  }, [client]);
 
   const loadClaudeCliConfigs = useCallback(async () => {
     try {
-      const list = await window.autoplan.claudeCliConfigList();
+      const list = await client.claudeCliConfigList();
       setClaudeCliConfigs(Array.isArray(list) ? list : []);
     } catch {
       /* 加载失败忽略 */
     }
-  }, []);
+  }, [client]);
 
   useEffect(() => {
     void loadChatConfig();
@@ -265,25 +268,25 @@ export function WorkspaceSettingsView({
 
   // 订阅 Claude CLI 配置变更广播（增删改/设默认后自动刷新下拉选项与摘要）。
   useEffect(() => {
-    const unsubscribe = window.autoplan.onClaudeCliConfigChanged(() => {
+    const unsubscribe = client.onClaudeCliConfigChanged(() => {
       void loadClaudeCliConfigs();
     });
     return unsubscribe;
-  }, [loadClaudeCliConfigs]);
+  }, [client, loadClaudeCliConfigs]);
 
   const chatConfigDirty = !chatConfigFormsEqual(chatConfigForm, chatConfigSaved, hasExistingApiKey);
 
   const saveChatConfig = useCallback(async () => {
     setChatConfigSaving(true);
     try {
-      await window.autoplan.chatSaveConfig({
+      await client.chatSaveConfig({
         provider: chatConfigForm.provider,
         baseUrl: chatConfigForm.baseUrl,
         apiKey: chatConfigForm.apiKey,
         model: chatConfigForm.model,
         temperature: chatConfigForm.temperature,
       });
-      const cfg = await window.autoplan.chatGetConfig();
+      const cfg = await client.chatGetConfig();
       const form = createDefaultChatConfigForm(cfg);
       setChatConfigForm(form);
       setChatConfigSaved(form);
@@ -294,7 +297,7 @@ export function WorkspaceSettingsView({
     } finally {
       setChatConfigSaving(false);
     }
-  }, [chatConfigForm, loadAiConfigs]);
+  }, [chatConfigForm, client, loadAiConfigs]);
 
   const startNewAiConfig = useCallback(() => {
     setEditingConfigId(0);
@@ -342,7 +345,7 @@ export function WorkspaceSettingsView({
       const preserveEmptyApiKey = Boolean(editingConfigId && editingConfigId > 0);
       const payload = aiConfigInputFromForm(name, aiConfigForm, { preserveEmptyApiKey });
       if (editingConfigId && editingConfigId > 0) {
-        await window.autoplan.aiConfigUpdate({
+        await client.aiConfigUpdate({
           configId: editingConfigId,
           name: payload.name,
           provider: payload.provider,
@@ -354,7 +357,7 @@ export function WorkspaceSettingsView({
           ...(payload.apiKey !== undefined ? { apiKey: payload.apiKey } : {}),
         });
       } else {
-        await window.autoplan.aiConfigCreate(payload);
+        await client.aiConfigCreate(payload);
       }
       cancelEditAiConfig();
       await loadAiConfigs();
@@ -364,18 +367,18 @@ export function WorkspaceSettingsView({
     } finally {
       setAiConfigSaving(false);
     }
-  }, [aiConfigName, aiConfigForm, editingConfigId, cancelEditAiConfig, loadAiConfigs, loadChatConfig]);
+  }, [aiConfigName, aiConfigForm, editingConfigId, cancelEditAiConfig, client, loadAiConfigs, loadChatConfig]);
 
   const deleteAiConfig = useCallback(async (id: number) => {
     try {
-      await window.autoplan.aiConfigDelete({ configId: id });
+      await client.aiConfigDelete({ configId: id });
       if (editingConfigId != null && editingConfigId === id) cancelEditAiConfig();
       await loadAiConfigs();
       await loadChatConfig();
     } catch {
       /* 删除失败忽略 */
     }
-  }, [editingConfigId, cancelEditAiConfig, loadAiConfigs, loadChatConfig]);
+  }, [editingConfigId, cancelEditAiConfig, client, loadAiConfigs, loadChatConfig]);
 
   /* ---------------- Claude CLI 配置管理（需求 #93）---------------- */
 
@@ -420,7 +423,7 @@ export function WorkspaceSettingsView({
       const model = claudeConfigForm.model.trim();
       if (editingClaudeConfigId && editingClaudeConfigId > 0) {
         // 编辑：authToken 仅在填写新值时下发，留空保持原值。
-        await window.autoplan.claudeCliConfigUpdate({
+        await client.claudeCliConfigUpdate({
           configId: editingClaudeConfigId,
           name,
           baseUrl,
@@ -428,7 +431,7 @@ export function WorkspaceSettingsView({
           ...(authToken ? { authToken } : {}),
         });
       } else {
-        await window.autoplan.claudeCliConfigCreate({ name, baseUrl, authToken, model });
+        await client.claudeCliConfigCreate({ name, baseUrl, authToken, model });
       }
       cancelEditClaudeConfig();
       await loadClaudeCliConfigs();
@@ -437,16 +440,16 @@ export function WorkspaceSettingsView({
     } finally {
       setClaudeConfigSaving(false);
     }
-  }, [claudeConfigName, claudeConfigForm, editingClaudeConfigId, cancelEditClaudeConfig, loadClaudeCliConfigs]);
+  }, [claudeConfigName, claudeConfigForm, editingClaudeConfigId, cancelEditClaudeConfig, client, loadClaudeCliConfigs]);
 
   const setDefaultClaudeConfig = useCallback(async (id: number) => {
     try {
-      await window.autoplan.claudeCliConfigSetDefault({ configId: id });
+      await client.claudeCliConfigSetDefault({ configId: id });
       await loadClaudeCliConfigs();
     } catch {
       /* 设默认失败忽略 */
     }
-  }, [loadClaudeCliConfigs]);
+  }, [client, loadClaudeCliConfigs]);
 
   const deleteClaudeConfig = useCallback(async (id: number) => {
     // 删除当前被本项目计划引用的配置时给出明确提示，并在删除后回退到默认/空。
@@ -457,7 +460,7 @@ export function WorkspaceSettingsView({
       : '确认删除该 Claude CLI 配置？';
     if (typeof window !== 'undefined' && !window.confirm(message)) return;
     try {
-      await window.autoplan.claudeCliConfigDelete({ configId: id });
+      await client.claudeCliConfigDelete({ configId: id });
       if (editingClaudeConfigId != null && editingClaudeConfigId === id) cancelEditClaudeConfig();
       if (referenced) {
         setLoopForm((current) => ({
@@ -486,7 +489,7 @@ export function WorkspaceSettingsView({
     } catch {
       /* 删除失败忽略 */
     }
-  }, [loopForm, editingClaudeConfigId, cancelEditClaudeConfig, loadClaudeCliConfigs, setLoopForm]);
+  }, [loopForm, editingClaudeConfigId, cancelEditClaudeConfig, client, loadClaudeCliConfigs, setLoopForm]);
 
   const isClaudeConfigEditing = editingClaudeConfigId !== null;
 
@@ -1805,6 +1808,7 @@ function formatBytes(value: unknown) {
 }
 
 function AboutPane() {
+  const desktopBridge = useDesktopBridge();
   const { status, check, checking, openInstaller, openingInstaller, installerOpenError } = useUpdateStatus();
   const latestLabel = status.latestVersion ? `v${status.latestVersion}` : '';
   const lastCheckedLabel = status.lastCheckedAt ? formatChinaDateTime(status.lastCheckedAt) : '尚未检查';
@@ -1851,7 +1855,7 @@ function AboutPane() {
               className={`btn btn-sm${status.autoCheck ? ' btn-primary' : ''}`}
               aria-pressed={status.autoCheck}
               onClick={() => {
-                void window.autoplan.setAutoUpdateCheck(!status.autoCheck);
+                void desktopBridge.setAutoUpdateCheck(!status.autoCheck);
               }}
             >
               {status.autoCheck ? '已开启' : '已关闭'}
@@ -1925,7 +1929,7 @@ function AboutPane() {
                 type="button"
                 className={`btn btn-sm${canOpenInstaller ? '' : ' btn-primary'}`}
                 onClick={() => {
-                  void window.autoplan.openExternal(releaseUrl);
+                  void desktopBridge.openExternal(releaseUrl);
                 }}
               >
                 <Icon name="open" size={14} aria-hidden="true" />

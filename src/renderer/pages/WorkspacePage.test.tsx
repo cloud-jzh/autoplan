@@ -425,7 +425,7 @@ describe('Workspace AI config creation regression', () => {
     expectIncludes(settingsView, 'const [aiConfigError, setAiConfigError] = useState<string | null>(null);', 'AI config form should keep a visible error state');
     expectIncludes(settingsView, '<div className="ai-config-error" role="alert">', 'AI config save errors should render inside the settings panel');
     expectIncludes(settingsView, "setAiConfigError(getErrorMessage(error, 'AI 配置保存失败'));", 'AI config save failures should preserve and display Error.message');
-    expectIncludes(settingsView, 'await window.autoplan.aiConfigCreate(payload);', 'new AI configs should call the create IPC bridge');
+    expectIncludes(settingsView, 'await client.aiConfigCreate(payload);', 'new AI configs should call the injected business client');
     expectIncludes(settingsView, 'cancelEditAiConfig();\n      await loadAiConfigs();', 'successful saves should close the form and refresh the config list');
     expectIncludes(settingsView, "setAiConfigError('配置名称不能为空');", 'empty AI config names should fail with a readable inline message');
   });
@@ -439,10 +439,10 @@ describe('Workspace AI config creation regression', () => {
     );
 
     expectIncludes(settingsView, 'aiConfigFormForProviderChange(current, option.value)', 'provider switching should use the shared field cleanup helper');
-    expectIncludes(settingsView, 'const list = await window.autoplan.aiConfigList();', 'AI config list should load global configs without a projectId payload');
+    expectIncludes(settingsView, 'const list = await client.aiConfigList();', 'AI config list should load global configs without a projectId payload');
     expectIncludes(settingsView, 'const payload = aiConfigInputFromForm(name, aiConfigForm, { preserveEmptyApiKey });', 'AI config saves should serialize through the shared global payload helper');
     expectIncludes(settingsView, '...(payload.apiKey !== undefined ? { apiKey: payload.apiKey } : {})', 'editing with an empty API key should omit apiKey and keep the saved secret');
-    expectIncludes(settingsView, 'await window.autoplan.aiConfigDelete({ configId: id });', 'AI config delete should only require the global config id');
+    expectIncludes(settingsView, 'await client.aiConfigDelete({ configId: id });', 'AI config delete should only require the global config id');
     expect(aiConfigInputBody.length > 0, 'should locate aiConfigInputFromForm');
     expect(!aiConfigInputBody.includes('projectId'), 'aiConfigInputFromForm should not include a projectId in global AI config payloads');
     expectIncludes(forms, 'thinkingDepth: providerSupportsThinkingDepth(provider) ? form.thinkingDepth : \'\',', 'provider switching should clear unsupported thinking depth values');

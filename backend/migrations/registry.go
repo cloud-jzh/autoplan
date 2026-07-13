@@ -81,22 +81,31 @@ func NewRegistry(catalog Catalog) Registry {
 			{
 				Version: SchemaV1Version, Name: SchemaV1Name,
 				Checksum: SchemaV1Checksum, TargetUserVersion: SchemaV1UserVersion,
-				SQL: schemaV1SQL,
+				SQL: canonicalMigrationSQL(schemaV1SQL),
 			},
 			{
 				Version: SchemaV2Version, Name: SchemaV2Name,
 				Checksum: SchemaV2Checksum, TargetUserVersion: SchemaV2UserVersion,
-				SQL: schemaV2SQL,
+				SQL: canonicalMigrationSQL(schemaV2SQL),
 			},
 			{
 				Version: SchemaV3Version, Name: SchemaV3Name,
 				Checksum: SchemaV3Checksum, TargetUserVersion: SchemaV3UserVersion,
-				SQL: schemaV3SQL,
+				SQL: canonicalMigrationSQL(schemaV3SQL),
 			},
 		},
 	}
 	registry.err = validateMigrations(registry.migrations)
 	return registry
+}
+
+// canonicalMigrationSQL preserves the byte representation used by the
+// immutable migration checksums. go:embed keeps checkout line endings, so a
+// Windows CRLF checkout and a GitHub Actions LF checkout must be normalized
+// before validation and execution.
+func canonicalMigrationSQL(value string) string {
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+	return strings.ReplaceAll(value, "\r", "\n")
 }
 
 func (registry Registry) Migrations() []Migration {

@@ -366,7 +366,22 @@ if (isPrimaryInstance) {
     if (!isPrimaryInstanceNotification(additionalData)) return;
     focusExistingWindow();
   });
-  app.whenReady().then(() => createApp().catch((error) => console.error('[app] startup failed', startupFailureCode(error))));
+  app.whenReady().then(async () => {
+    try {
+      await createApp();
+    } catch (error) {
+      const code = startupFailureCode(error);
+      console.error('[app] startup failed', code);
+      try {
+        dialog.showErrorBox(
+          'AutoPlan failed to start',
+          `The background service could not start (${code}). Reinstall the app or check the release notes.`,
+        );
+      } finally {
+        app.quit();
+      }
+    }
+  });
 }
 
 app.on('window-all-closed', () => {

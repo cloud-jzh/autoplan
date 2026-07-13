@@ -129,7 +129,7 @@ async function notarizeMac(context) {
 
   const mode = releaseMode();
   if (mode === 'unsigned-test') {
-    console.log('[notarize] status=blocked reason=unsigned-test-mode');
+    console.log('[notarize] status=skipped reason=unsigned-test-mode');
     return;
   }
   if (isEnabled('SKIP_NOTARIZE', 'MAC_NOTARIZE_SKIP')) {

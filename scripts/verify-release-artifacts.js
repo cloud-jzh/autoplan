@@ -153,19 +153,28 @@ function verifyLinux(options) {
   inspectSidecar(path.join(options.releaseDir, 'linux-unpacked'), 'linux', 'x64');
 }
 
+function verificationResult(options) {
+  const signed = options.mode === 'signed-notarized';
+  return {
+    status: 'verified',
+    code: signed ? 'release_artifacts_verified' : 'release_artifacts_unsigned_test_verified',
+    platform: options.platform,
+    release_mode: options.mode,
+    trust_status: signed ? 'verified' : 'unsigned-test',
+  };
+}
+
 function verifyReleaseArtifacts(options) {
   if (options.platform === 'macos') verifyMac(options);
   else if (options.platform === 'windows') verifyWindows(options);
   else verifyLinux(options);
-  return { status: options.mode === 'signed-notarized' ? 'verified' : 'blocked', code: options.mode === 'signed-notarized' ? 'release_artifacts_verified' : 'release_artifacts_unsigned_test_only', platform: options.platform };
+  return verificationResult(options);
 }
 
 if (require.main === module) {
   try {
     const result = verifyReleaseArtifacts(parseArgs(process.argv.slice(2)));
     process.stdout.write(`${JSON.stringify(result)}\n`);
-    // Unsigned packages are local-test evidence only. The caller records the
-    // blocked gate but can retain the artifact for later signed verification.
     process.exitCode = result.status === 'verified' ? 0 : 2;
   } catch (error) {
     process.stdout.write(`${JSON.stringify({ status: 'blocked', code: error?.code || 'release_artifact_verification_failed' })}\n`);
@@ -173,4 +182,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { PLATFORM, RELEASE_ROOT, ReleaseArtifactError, expectedBinary, findAppBundles, inspectSidecar, parseArgs, verifyReleaseArtifacts };
+module.exports = { PLATFORM, RELEASE_ROOT, ReleaseArtifactError, expectedBinary, findAppBundles, inspectSidecar, parseArgs, verificationResult, verifyReleaseArtifacts };

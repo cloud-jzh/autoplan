@@ -147,7 +147,7 @@ jobs:
 
           echo "::notice title=macOS release mode::${release_mode}; signing=${signing_source}; notarization=${notarization_source}"
           if [[ "${release_mode}" != "signed-notarized" ]]; then
-            echo "::warning title=macOS unsigned test package::Configure complete signing and notarization secrets to publish a Gatekeeper-ready macOS package."
+            echo "::warning title=macOS unsigned test package::This workflow will publish an unsigned test package. Gatekeeper may block it; configure complete signing and notarization secrets for a Gatekeeper-ready package."
           fi
 
       - name: Import macOS signing certificate

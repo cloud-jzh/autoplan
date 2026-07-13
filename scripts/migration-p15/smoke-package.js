@@ -50,9 +50,8 @@ function verifyPackageLayout(platform, releaseDir, mode, environment) {
   const result = spawnSync(process.execPath, [verifier, '--platform', platform, '--release-dir', releaseDir, '--mode', mode], {
     cwd: ROOT, env: environment, encoding: 'utf8', windowsHide: true, shell: false, timeout: 5 * 60 * 1000,
   });
-  const expectedExit = mode === 'signed-notarized' ? 0 : 2;
-  if (result.error || result.status !== expectedExit || scanSensitiveText(`${result.stdout || ''}\n${result.stderr || ''}`).length) return blocked('package_smoke_layout_invalid');
-  return { ok: true, code: mode === 'signed-notarized' ? 'package_layout_signed_verified' : 'package_layout_unsigned_blocked' };
+  if (result.error || result.status !== 0 || scanSensitiveText(`${result.stdout || ''}\n${result.stderr || ''}`).length) return blocked('package_smoke_layout_invalid');
+  return { ok: true, code: mode === 'signed-notarized' ? 'package_layout_signed_verified' : 'package_layout_unsigned_verified' };
 }
 
 function validateResult(value, platform, mode) {

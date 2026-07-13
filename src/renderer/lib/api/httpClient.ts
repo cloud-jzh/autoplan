@@ -2612,7 +2612,9 @@ function blobFromPendingAttachment(value: Record<string, unknown>): Blob {
   if (typeof value.dataUrl === 'string') return blobFromDataURL(value.dataUrl, value.type);
   if (Array.isArray(value.bytes)) return blobFromByteArray(value.bytes, value.type);
   if (value.bytes instanceof ArrayBuffer) return new Blob([value.bytes], { type: stringValue(value.type) });
-  if (value.bytes instanceof Uint8Array) return new Blob([value.bytes], { type: stringValue(value.type) });
+  if (value.bytes instanceof Uint8Array) {
+    return new Blob([Uint8Array.from(value.bytes)], { type: stringValue(value.type) });
+  }
   throw new HttpClientError('invalid_attachment');
 }
 
@@ -2655,13 +2657,12 @@ function latestIntakeFromSnapshot(snapshot: AppSnapshot, type: IntakeType, proje
 }
 
 function controlledAttachmentURL(value: unknown, projectId: number, baseUrl: string): string {
-  const match = typeof value === 'string'
-    ? value.match(/^\/api\/v1\/attachments\/([1-9][0-9]*)\/content$/)
-    : null;
+  const path = typeof value === 'string' ? value : '';
+  const match = path.match(/^\/api\/v1\/attachments\/([1-9][0-9]*)\/content$/);
   if (!match) {
     throw new HttpClientError('invalid_response');
   }
-  const parsed = new URL(value, baseUrl);
+  const parsed = new URL(path, baseUrl);
   if (parsed.origin !== baseUrl || parsed.search || parsed.hash) throw new HttpClientError('invalid_response');
   parsed.searchParams.set('project_id', String(projectId));
   return parsed.toString();
@@ -3042,7 +3043,7 @@ function validateAIConfig(value: unknown): AiConfig {
   if (!positiveSafeInteger(object.id) || !nullablePositiveInteger(object.project_id) || object.projectId !== object.project_id || typeof object.name !== 'string' ||
       typeof object.provider !== 'string' || typeof object.base_url !== 'string' || object.baseUrl !== object.base_url || typeof object.has_api_key !== 'boolean' || object.hasApiKey !== object.has_api_key ||
       typeof object.masked_key !== 'string' || object.maskedKey !== object.masked_key || typeof object.model !== 'string' || typeof object.temperature !== 'string' ||
-      !nullableStringValue(object.thinking_depth) || object.thinkingDepth !== object.thinking_depth || !nullableNonNegativeInteger(object.thinking_budget_tokens) || object.thinkingBudgetTokens !== object.thinking_budget_tokens ||
+      !nullableThinkingDepth(object.thinking_depth) || object.thinkingDepth !== object.thinking_depth || !nullableNonNegativeInteger(object.thinking_budget_tokens) || object.thinkingBudgetTokens !== object.thinking_budget_tokens ||
       !validUTC(object.created_at) || object.createdAt !== object.created_at || !validUTC(object.updated_at) || object.updatedAt !== object.updated_at || !positiveSafeInteger(object.version)) throw new HttpClientError('invalid_response');
   return { id: object.id, projectId: object.project_id, name: object.name, provider: object.provider, baseUrl: object.base_url, hasApiKey: object.has_api_key, maskedKey: object.masked_key, model: object.model, temperature: object.temperature, thinkingDepth: object.thinking_depth, thinkingBudgetTokens: object.thinking_budget_tokens, createdAt: object.created_at, updatedAt: object.updated_at, version: object.version };
 }
@@ -3073,6 +3074,9 @@ function nonNegativeIntegerValue(value: unknown): value is number { return safeI
 function nullablePositiveInteger(value: unknown): value is number | null { return value === null || positiveSafeInteger(value); }
 function nullableNonNegativeInteger(value: unknown): value is number | null { return value === null || nonNegativeIntegerValue(value); }
 function nullableStringValue(value: unknown): value is string | null { return value === null || typeof value === 'string'; }
+function nullableThinkingDepth(value: unknown): value is AiConfig['thinkingDepth'] {
+  return value === null || value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh';
+}
 
 function validateProbe(value: unknown): ProbeResult {
   const object = exactObject(value, ['status', 'request_id']);
@@ -3538,7 +3542,7 @@ function validateSnapshot(value: unknown): AppSnapshot {
     'scripts', 'executors', 'terminals', 'activeOperation', 'activeOperations', 'lastOperation',
   ];
   const object = exactObject(value, required);
-  if (!Array.isArray(object.projects) || !isRecord(object.mcp) ||
+  if (!Array.isArray(object.projects) || !Array.isArray(object.attachments) || !isRecord(object.mcp) ||
       !required.filter((key) => [
         'projects', 'mcp', 'activeProjectId', 'activeProject', 'state', 'scanSummary',
         'activeOperation', 'lastOperation',
@@ -3546,7 +3550,7 @@ function validateSnapshot(value: unknown): AppSnapshot {
     throw new HttpClientError('invalid_response');
   }
   for (const key of [
-    'requirements', 'feedback', 'attachments', 'plans', 'tasks', 'events', 'scans',
+    'requirements', 'feedback', 'plans', 'tasks', 'events', 'scans',
     'scripts', 'executors', 'terminals', 'activeOperations',
   ]) {
     if (!Array.isArray(object[key])) throw new HttpClientError('invalid_response');

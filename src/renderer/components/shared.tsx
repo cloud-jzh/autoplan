@@ -224,7 +224,8 @@ export function controlledAttachmentUrl(value?: string | null, attachmentId?: nu
 
 function controlledAttachmentPath(value: string, attachmentId?: number): boolean {
   const match = value.match(CONTROLLED_ATTACHMENT_PATH);
-  return Boolean(match) && (attachmentId === undefined || Number(match[1]) === attachmentId);
+  if (!match) return false;
+  return attachmentId === undefined || Number(match[1]) === attachmentId;
 }
 
 function AttachmentView({ attachment }: { attachment: Attachment }) {

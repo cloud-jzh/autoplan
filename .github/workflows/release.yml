@@ -206,7 +206,7 @@ jobs:
           echo "Release mode: ${MACOS_RELEASE_MODE}"
           echo "Signing source: ${MACOS_SIGNING_SOURCE}"
           echo "Notarization source: ${MACOS_NOTARIZATION_SOURCE}"
-          npm run ${{ matrix.package_script }} -- --publish never
+          npm run ${{ matrix.package_script }}
           echo "::endgroup::"
 
       - name: Verify macOS release artifacts
@@ -216,7 +216,7 @@ jobs:
 
       - name: Package ${{ matrix.platform }}
         if: matrix.platform != 'macos'
-        run: npm run ${{ matrix.package_script }} -- --publish never
+        run: npm run ${{ matrix.package_script }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 

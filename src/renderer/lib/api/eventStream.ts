@@ -289,16 +289,16 @@ function parseChatFrame(frame: SSEFrame): ParsedChatFrame {
   } catch {
     // Persistent P13A events have a different, frozen envelope.
   }
-  if (!isRecord(frame.data)) return { kind: 'invalid' };
-  const required = ['schema_version', 'event_id', 'project_id', 'project_revision', 'request_id', 'occurred_at', 'type', 'data'];
-  if (Object.keys(frame.data).length !== required.length || required.some((key) => !(key in frame.data))) return { kind: 'invalid' };
   const value = frame.data;
+  if (!isRecord(value)) return { kind: 'invalid' };
+  const required = ['schema_version', 'event_id', 'project_id', 'project_revision', 'request_id', 'occurred_at', 'type', 'data'];
+  if (Object.keys(value).length !== required.length || required.some((key) => !(key in value))) return { kind: 'invalid' };
   if (value.schema_version !== 1 || typeof value.event_id !== 'string' || !/^[1-9][0-9]{0,18}$/.test(value.event_id) ||
       !positiveSafeInteger(value.project_id) || !positiveSafeInteger(value.project_revision) || typeof value.request_id !== 'string' ||
       !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(value.request_id) || typeof value.occurred_at !== 'string' ||
       !validUTC(value.occurred_at) || (value.type !== 'chat_chunk' && value.type !== 'chat_queue' && value.type !== 'chat_done') ||
       !isSafeChatData(value.data)) return { kind: 'invalid' };
-  return { kind: 'event', event: value as ChatSSEEventEnvelope };
+  return { kind: 'event', event: value as unknown as ChatSSEEventEnvelope };
 }
 
 function positiveSafeInteger(value: unknown): value is number {

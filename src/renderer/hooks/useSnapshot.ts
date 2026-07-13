@@ -1,7 +1,4 @@
-<<<<<<< Updated upstream
 import { startTransition, useCallback, useEffect, useRef, useState, type SetStateAction } from 'react';
-=======
-import { useCallback, useEffect, useRef, useState, type SetStateAction } from 'react';
 import { useAutoplanClient } from '../lib/api/provider';
 import type { HttpReadonlyOperations } from '../lib/api/client';
 import {
@@ -9,7 +6,6 @@ import {
   type ProjectEventDelivery,
   type ResumableEventSubscription,
 } from '../lib/api/events';
->>>>>>> Stashed changes
 import type { AppSnapshot, WorkspaceSnapshotPatch } from '../types';
 
 const EMPTY_SCAN_SUMMARY = {

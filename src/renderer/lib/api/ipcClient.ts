@@ -1,9 +1,8 @@
 import {
   AUTOPLAN_CLIENT_OPERATION_KEYS,
   type AutoplanClient,
-  type AutoplanClientEventKey,
 } from './client';
-import type { EventHandler, Unsubscribe } from './events';
+import type { AutoplanClientEventKey, EventHandler, Unsubscribe } from './events';
 
 type ForwardedTarget = Record<PropertyKey, unknown>;
 

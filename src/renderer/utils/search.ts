@@ -487,6 +487,7 @@ function createAttachmentLookup(attachments: readonly AttachmentRecord[]) {
   const lookup = new Map<string, AttachmentRecord[]>();
 
   attachments.forEach((attachment) => {
+    if (!attachment.owner_type || attachment.owner_id === undefined) return;
     const key = createAttachmentLookupKey(attachment.owner_type, attachment.owner_id);
     const ownerAttachments = lookup.get(key);
     if (ownerAttachments) {

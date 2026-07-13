@@ -27,6 +27,7 @@ import type {
   Plan,
   PlanIdInput,
   PlanTask,
+  Project,
   Conversation,
   ReorderPlansInput,
   Requirement,
@@ -330,8 +331,8 @@ export interface HttpIntakeOperations {
     options?: HttpMutationOptions,
   ) => Promise<AttachmentDeleteResult>;
   getAttachmentDownloadUrl: (projectId: number, attachmentId: number) => string;
-  acceptIntake: (input: IntakeAcceptanceInput, options?: HttpMutationOptions) => Promise<AppSnapshot>;
-  unacceptIntake: (input: IntakeAcceptanceInput, options?: HttpMutationOptions) => Promise<AppSnapshot>;
+  acceptIntake: AutoplanClientOperations['acceptIntake'];
+  unacceptIntake: AutoplanClientOperations['unacceptIntake'];
 }
 
 export interface HttpIntakeAutoplanClient extends HttpCapableAutoplanClient, HttpIntakeOperations {}

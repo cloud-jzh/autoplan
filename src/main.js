@@ -1,10 +1,18 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const { spawn } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } = require('electron');
 const { saveAttachments } = require('./attachments');
 const { AppDatabase, nowIso } = require('./database');
+const { DATABASE_OWNERS, selectProcessDatabaseOwner } = require('./data/databaseOwnerGuard');
+const { GoDataClient, GoDataClientError } = require('./data/goDataClient');
+const { migrateLegacyDatabase, isLegacyMigrationCompleted, markLegacyMigrationCompleted } = require('./data/migrateLegacyDatabase');
+const { readLegacyProjects, restoreLegacyProjects } = require('./data/legacyProjectRestore');
+const { GoDaemonSupervisor } = require('./daemon/supervisor');
+const { resolveDaemonBinary } = require('./daemon/binaryPath');
+const { GoRuntimeAdapter } = require('./loop/goRuntimeAdapter');
 const { createIntakeService, titleFromBody } = require('./intakeService');
 const { LoopService, nextIntakeAgentCliConfig, nextIntakePlanGenerationConfig } = require('./loopService');
 const intakePlanLinks = require('./loop/intakePlanLinks');
@@ -14,6 +22,7 @@ const { mcpServerConfig, saveMcpSettings } = require('./mcpConfig');
 const { createMcpServer } = require('./mcpServer');
 const { registerTerminalIpc } = require('./terminal/terminalIpc');
 const { TerminalService } = require('./terminal/terminalService');
+const { terminalLegacyAdmissionForPlatform } = require('./terminal/terminalTypes');
 const { createUpdateChecker } = require('./updateChecker');
 const { createLlmClient } = require('./chat/llmClient');
 const { getChatToolDefinitions } = require('./chat/chatTools');
@@ -58,6 +67,13 @@ if (protocol?.registerSchemesAsPrivileged) {
   ]);
 }
 
+configureDevelopmentSessionData();
+configurePackagedGoRuntime();
+
+const PRIMARY_INSTANCE_DATA = Object.freeze({ version: 1, type: 'autoplan_primary_instance' });
+const isPrimaryInstance = app.requestSingleInstanceLock(PRIMARY_INSTANCE_DATA);
+if (!isPrimaryInstance) app.quit();
+
 let mainWindow;
 let db;
 let loop;
@@ -65,26 +81,233 @@ let mcpServer;
 let updateChecker;
 let chatControllers;
 let terminalService;
+let databaseOwner;
+let goDataClient;
+let daemonSupervisor;
+let daemonQuitPending = false;
 let fileProtocolRegistered = false;
+let maintenanceState = Object.freeze({
+  operationId: null,
+  mode: 'ready',
+  stage: 'idle',
+  code: '',
+  mutationsBlocked: false,
+});
 const UPDATE_REPO = 'lyming99/autoplan';
+
+function configureDevelopmentSessionData() {
+  if (app.isPackaged) return;
+  const configured = String(process.env.AUTOPLAN_ELECTRON_SESSION_DATA_DIR || '').trim();
+  if (!configured || !path.isAbsolute(configured)) return;
+  try {
+    fs.mkdirSync(configured, { recursive: true });
+    app.setPath('sessionData', configured);
+  } catch {
+    // Session data is a best-effort development cache isolation. Startup and
+    // the persistent Go-owned database must not depend on it.
+  }
+}
+
+// Packaged launches have no launcher script to inject the Go runtime
+// environment that scripts/dev.js sets in development. Default the owner,
+// the non-routable ownership marker (the real authority comes from the
+// supervisor's readiness handshake), and a temp-resident data directory
+// before the owner guard and supervisor run.
+function configurePackagedGoRuntime() {
+  if (!app.isPackaged) return;
+  if (process.env.AUTOPLAN_DATABASE_OWNER) return;
+  const dataDir = path.join(os.tmpdir(), 'autoplan-sidecar');
+  try {
+    fs.mkdirSync(dataDir, { recursive: true });
+  } catch {
+    // The owner guard and supervisor validation surface a precise error if the
+    // directory is unusable; nothing else to do here.
+  }
+  process.env.AUTOPLAN_DATABASE_OWNER = 'go';
+  process.env.AUTOPLAN_GO_API_URL = 'http://127.0.0.1:1';
+  process.env.AUTOPLAN_GO_DATA_DIR = dataDir;
+}
+
+// On a packaged Go-mode launch the sidecar opens a fresh temp-resident
+// database. Before the owner guard selects Go, copy the legacy Node database
+// (in userData) into that temp directory so the user's projects, plans and
+// tasks survive the upgrade. The migration is idempotent: a sentinel file
+// prevents re-running it on subsequent launches. Failures are logged but do
+// not block startup — the Go sidecar still boots with an empty database.
+async function migrateLegacyDatabaseIfNeeded() {
+  if (!app.isPackaged || process.env.AUTOPLAN_DATABASE_OWNER !== 'go') return;
+  const dataDir = process.env.AUTOPLAN_GO_DATA_DIR;
+  if (!dataDir || !path.isAbsolute(dataDir)) return;
+  if (isLegacyMigrationCompleted(dataDir)) return;
+  const sourceDbPath = path.join(app.getPath('userData'), 'data', 'autoplan.sqlite');
+  if (!fs.existsSync(sourceDbPath)) return;
+  const targetDbPath = path.join(dataDir, 'autoplan.sqlite');
+  const sourceAttachmentsDir = path.join(app.getPath('userData'), 'data', 'attachments');
+  const targetAttachmentsDir = path.join(dataDir, 'attachments');
+  try {
+    const result = await migrateLegacyDatabase({
+      sourceDbPath,
+      targetDbPath,
+      sourceAttachmentsDir,
+      targetAttachmentsDir,
+      initSqlJs: require('sql.js'),
+      sqlJsOptions: { locateFile: (file) => path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', file) },
+    });
+    markLegacyMigrationCompleted(dataDir);
+    console.log('[autoplan] legacy database migrated:', JSON.stringify(result.tables));
+  } catch (error) {
+    console.error('[autoplan] legacy database migration failed:', error?.code || error?.message || 'unknown');
+  }
+}
+
+// All IPC handlers are registered through Electron's one registry.  Install a
+// single gate before the registrations below so new writer handlers cannot
+// accidentally bypass maintenance mode.  Read-only status/snapshot routes
+// remain available for a fail-closed UI.
+const MAINTENANCE_READ_ONLY_CHANNELS = new Set([
+  'snapshot', 'daemon:status', 'maintenance:status', 'updates:status',
+  'plans:read', 'workspace:openFile', 'projects:openFolder', 'mcp:status',
+  'mcp:readAuthToken', 'chat:history', 'chat:queueList', 'chat:getConfig',
+  'file-access:get', 'ai-config:list', 'ai-config:get', 'claude-cli-config:list',
+  'claude-cli-config:get', 'conversation:list', 'scripts:pickFile',
+  'executors:pickTasksJson', 'projects:pickDirectory',
+]);
+const maintenanceIpcGates = new WeakSet();
+
+function installMaintenanceIpcGate() {
+  if (!ipcMain || typeof ipcMain.handle !== 'function' || maintenanceIpcGates.has(ipcMain)) return;
+  const register = ipcMain.handle.bind(ipcMain);
+  maintenanceIpcGates.add(ipcMain);
+  ipcMain.handle = (channel, handler) => register(channel, async (...args) => {
+    if (maintenanceState.mutationsBlocked && !MAINTENANCE_READ_ONLY_CHANNELS.has(channel)) {
+      throw new Error('maintenance_mode');
+    }
+    return handler(...args);
+  });
+}
+
+installMaintenanceIpcGate();
+
+// Preload may request only a bounded, credential-free loopback descriptor.
+// Session material stays in Electron main and never enters renderer IPC.
+if (typeof ipcMain?.on === 'function') {
+  ipcMain.on('runtime:rendererConfig', (event) => {
+    event.returnValue = isGoRuntimeMode() ? rendererRuntimeConfig() : null;
+  });
+}
 
 function updateDownloadsRoot() {
   return path.join(app.getPath('userData'), 'updates', 'downloads');
 }
 
+function isPrimaryInstanceNotification(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value) &&
+    Object.keys(value).length === 2 && value.version === 1 && value.type === 'autoplan_primary_instance');
+}
+
+function focusExistingWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized?.()) mainWindow.restore();
+  mainWindow.show?.();
+  mainWindow.focus?.();
+}
+
+function startupFailureCode(error) {
+  const code = String(error?.code || error?.message || 'startup_failed');
+  return /^[a-z0-9_]{1,96}$/i.test(code) ? code : 'startup_failed';
+}
+
+function rendererEntryURL() {
+  const devServerUrl = String(process.env.ELECTRON_RENDERER_URL || '').trim();
+  if (devServerUrl) return devServerUrl;
+  return pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html')).toString();
+}
+
+function assertRendererLaunchConfiguration() {
+  const devServerUrl = String(process.env.ELECTRON_RENDERER_URL || '').trim();
+  if (app.isPackaged === true) {
+    if (devServerUrl) throw startupConfigurationError('renderer_development_url_forbidden');
+    return;
+  }
+  try {
+    const parsed = new URL(devServerUrl);
+    if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || !parsed.hostname || parsed.username || parsed.password) {
+      throw new Error('invalid');
+    }
+  } catch {
+    throw startupConfigurationError('renderer_development_url_required');
+  }
+}
+
+function startupConfigurationError(code) {
+  const error = new Error(code);
+  error.code = code;
+  return error;
+}
+
+function isTrustedRendererURL(rawUrl) {
+  try {
+    const expected = new URL(rendererEntryURL());
+    const actual = new URL(rawUrl);
+    if (expected.protocol === 'file:') return actual.toString() === expected.toString();
+    return actual.protocol === expected.protocol && actual.origin === expected.origin;
+  } catch {
+    return false;
+  }
+}
+
+function isTrustedRendererContents(webContents) {
+  try { return isTrustedRendererURL(webContents?.getURL?.() || ''); } catch { return false; }
+}
+
+function installTrustedRendererNavigation(webContents) {
+  if (!webContents) return;
+  webContents.setWindowOpenHandler?.(() => ({ action: 'deny' }));
+  webContents.on?.('will-navigate', (event, rawUrl) => {
+    if (!isTrustedRendererURL(rawUrl)) event.preventDefault();
+  });
+}
+
 async function createApp() {
+  assertRendererLaunchConfiguration();
   Menu.setApplicationMenu(null);
-  db = new AppDatabase(path.join(app.getPath('userData'), 'data', 'autoplan.sqlite'));
-  await db.init();
+  await migrateLegacyDatabaseIfNeeded();
+  // Writer ownership is selected once, before any sql.js construction,
+  // schema work, or persisted snapshot read. Missing/conflicting launch
+  // configuration is rejected by the owner guard rather than guessed.
+  databaseOwner = selectProcessDatabaseOwner({ env: process.env });
+  if (databaseOwner.owner === DATABASE_OWNERS.GO) {
+    daemonSupervisor = new GoDaemonSupervisor(goDaemonLaunchOptions());
+    await daemonSupervisor.start();
+    databaseOwner.assertGoDataClientFallbackAllowed();
+    goDataClient = new GoDataClient(daemonSupervisor.clientOptions());
+    await restoreDevelopmentLegacyProjects();
+    db = createGoModeDatabaseBlocker();
+    loop = new GoRuntimeAdapter(goDataClient);
+    daemonSupervisor.on('failed', broadcastDaemonStatus);
+    daemonSupervisor.on('stopped', broadcastDaemonStatus);
+    daemonSupervisor.on('maintenance', () => {
+      enterMaintenanceMode({ stage: 'daemon_release', code: 'daemon_released' }).catch(() => undefined);
+      broadcastDaemonStatus();
+    });
+  } else {
+    db = new AppDatabase(path.join(app.getPath('userData'), 'data', 'autoplan.sqlite'), { ownerGuard: databaseOwner });
+    await db.init();
+    loop = new LoopService(db);
+  }
   registerFileProtocol();
-  loop = new LoopService(db);
   chatControllers = new Map();
-  terminalService = new TerminalService();
+  // P008 freezes legacy Node PTY admission at packaged-app startup. The
+  // decision comes from hash-bound release evidence in source, never a
+  // renderer request or mutable process environment.
+  const terminalLegacyAdmission = terminalLegacyAdmissionForPlatform(process.platform);
+  terminalService = new TerminalService({ legacyAdmission: terminalLegacyAdmission });
   registerTerminalIpc({
     ipcMain,
     terminalService,
     getProject: (projectId) => loop.project(projectId),
     sendToRenderer: sendToRendererWindow,
+    legacyAdmission: terminalLegacyAdmission,
   });
   loop.on('update', (snapshot) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -98,16 +321,18 @@ async function createApp() {
   });
   // 模块级 mcpServer 在启停过程中被重新赋值，故以闭包懒读取其最新状态注入快照。
   loop.setMcpStatusProvider(() => mcpServer?.status?.());
-  loop.startScheduler();
+  if (!isGoRuntimeMode()) loop.startScheduler();
   // 更新检查器：检查完成后经 onCheck 向渲染进程推送 updates:status；安装包只下载到 userData 受控目录。
-  updateChecker = createUpdateChecker({
-    app,
-    net,
-    db,
-    repo: UPDATE_REPO,
-    downloadDir: updateDownloadsRoot(),
-    onCheck: broadcastUpdateStatus,
-  });
+  if (!isGoRuntimeMode()) {
+    updateChecker = createUpdateChecker({
+      app,
+      net,
+      db,
+      repo: UPDATE_REPO,
+      downloadDir: updateDownloadsRoot(),
+      onCheck: broadcastUpdateStatus,
+    });
+  }
 
   mainWindow = new BrowserWindow({
     width: 1220,
@@ -122,18 +347,41 @@ async function createApp() {
       nodeIntegration: false,
     },
   });
+  installTrustedRendererNavigation(mainWindow.webContents);
+  installSidecarRequestAuthentication(mainWindow.webContents);
+  if (!app.isPackaged) {
+    mainWindow.webContents.on('console-message', (_event, _level, message) => {
+      if (typeof message === 'string' && message.startsWith('[autoplan]')) console.error(message);
+    });
+  }
   await loadRenderer(mainWindow);
-  scheduleMcpServerStart();
-  scheduleUpdateCheck();
+  if (!isGoRuntimeMode()) {
+    scheduleMcpServerStart();
+    scheduleUpdateCheck();
+  }
 }
 
-app.whenReady().then(() => createApp().catch((error) => console.error('[app] startup failed', error)));
+if (isPrimaryInstance) {
+  app.on('second-instance', (_event, _commandLine, _workingDirectory, additionalData) => {
+    if (!isPrimaryInstanceNotification(additionalData)) return;
+    focusExistingWindow();
+  });
+  app.whenReady().then(() => createApp().catch((error) => console.error('[app] startup failed', startupFailureCode(error))));
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  if (daemonSupervisor && !daemonQuitPending) {
+    event.preventDefault();
+    daemonQuitPending = true;
+    daemonSupervisor.stop()
+      .catch(() => undefined)
+      .finally(() => app.quit());
+    return;
+  }
   if (mcpServer) mcpServer.stop().catch((error) => console.error('[mcp] stop failed', error));
   if (terminalService) terminalService.disposeAll();
   if (loop) {
@@ -142,6 +390,360 @@ app.on('before-quit', () => {
   }
   if (updateChecker) updateChecker.stop();
 });
+
+function isGoRuntimeMode() {
+  return databaseOwner?.owner === DATABASE_OWNERS.GO;
+}
+
+function goDaemonLaunchOptions() {
+  const binary = resolveDaemonBinary({
+    isPackaged: app.isPackaged === true,
+    resourcesPath: process.resourcesPath,
+    developmentPath: process.env.AUTOPLAN_GO_DAEMON_PATH,
+    platform: process.platform,
+    arch: process.arch,
+  });
+  return {
+    executablePath: binary.path,
+    dataDir: process.env.AUTOPLAN_GO_DATA_DIR,
+    runtimeFeatureEnvironment: daemonRuntimeFeatureEnvironment(process.env),
+  };
+}
+
+const RUNTIME_FEATURE_ENV = Object.freeze({
+  go_loop_actions: 'AUTOPLAN_SIDECAR_GO_LOOP_ACTIONS',
+  go_plan_actions: 'AUTOPLAN_SIDECAR_GO_PLAN_ACTIONS',
+  go_task_actions: 'AUTOPLAN_SIDECAR_GO_TASK_ACTIONS',
+  go_acceptance_retry_actions: 'AUTOPLAN_SIDECAR_GO_ACCEPTANCE_RETRY_ACTIONS',
+  go_scripts_api: 'AUTOPLAN_SIDECAR_GO_SCRIPTS_API',
+  go_executors_api: 'AUTOPLAN_SIDECAR_GO_EXECUTORS_API',
+  go_chat_api: 'AUTOPLAN_SIDECAR_GO_CHAT_API',
+  go_terminal_api: 'AUTOPLAN_SIDECAR_GO_TERMINAL_API',
+  go_agent_cli_runtime: 'AUTOPLAN_SIDECAR_GO_AGENT_CLI_RUNTIME',
+});
+
+function rendererRuntimeConfig() {
+  if (!isGoRuntimeMode()) return null;
+  const client = daemonSupervisor?.clientOptions?.();
+  if (!client?.baseUrl || !client?.sessionToken) throw new GoDataClientError('service_unavailable');
+  return Object.freeze({
+    baseUrl: client.baseUrl,
+    credentialMode: 'cookie',
+    runtimeFeatures: runtimeFeatureFlags(process.env),
+  });
+}
+
+async function restoreDevelopmentLegacyProjects() {
+  if (app.isPackaged || !daemonSupervisor) return;
+  const databasePath = path.join(app.getPath('userData'), 'data', 'autoplan.sqlite');
+  const legacyProjects = await readLegacyProjects(databasePath, require('sql.js'), {
+    locateFile: (file) => path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', file),
+  });
+  if (!legacyProjects.length) return;
+  const client = daemonSupervisor.clientOptions();
+  const existingProjects = await sidecarProjectRequest(client, '/api/v1/projects?page=1&page_size=200&sort=updated_at_desc', 'GET');
+  await restoreLegacyProjects({
+    legacyProjects,
+    existingProjects: Array.isArray(existingProjects?.data) ? existingProjects.data : [],
+    createProject: (project) => sidecarProjectRequest(client, '/api/v1/projects', 'POST', {
+      name: project.name, workspace_path: project.workspace_path, description: project.description,
+    }, `legacy-project-${project.id}`),
+  });
+}
+
+async function sidecarProjectRequest(client, route, method, body, idempotencyKey) {
+  const headers = {
+    Accept: 'application/json', Origin: client.origin,
+    'X-Autoplan-Session': client.sessionToken,
+  };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+  const response = await globalThis.fetch(`${client.baseUrl}${route}`, {
+    method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const value = await response.json().catch(() => null);
+  if (!response.ok || !value || typeof value !== 'object') throw new GoDataClientError('service_unavailable');
+  return value;
+}
+
+function runtimeFeatureFlags(env) {
+  const result = {};
+  for (const [feature, name] of Object.entries(RUNTIME_FEATURE_ENV)) {
+    const value = env?.[name];
+    if (value === undefined || value === 'false') {
+      result[feature] = false;
+    } else if (value === 'true') {
+      result[feature] = true;
+    } else {
+      // Runtime feature parsing is fail-closed. A malformed launch value must
+      // leave every P12 process route on its existing owner, rather than
+      // partially enabling an HTTP route with uncertain ownership.
+      for (const key of Object.keys(RUNTIME_FEATURE_ENV)) result[key] = false;
+      return Object.freeze(result);
+    }
+  }
+  return Object.freeze(result);
+}
+
+function daemonRuntimeFeatureEnvironment(env) {
+  const features = runtimeFeatureFlags(env);
+  const result = Object.fromEntries(Object.entries(RUNTIME_FEATURE_ENV)
+    .map(([feature, name]) => [name, features[feature] === true]));
+  // MCP has no renderer transport flag, but it is still an independently
+  // fail-closed sidecar feature and must not inherit arbitrary parent env.
+  result.AUTOPLAN_SIDECAR_GO_MCP_API = env?.AUTOPLAN_SIDECAR_GO_MCP_API === 'true';
+  return Object.freeze(result);
+}
+
+function isGoChatHTTPEnabled() {
+  return isGoRuntimeMode() && runtimeFeatureFlags(process.env).go_chat_api === true;
+}
+
+// Session material never reaches renderer JavaScript. This privileged request
+// hook attaches it only to the ready daemon's exact random loopback authority
+// for REST, SSE and Terminal WebSocket traffic; all other URLs retain their
+// original headers. Development keeps the browser's Vite Origin so CORS
+// preflight and the subsequent request have one identity; packaged file
+// renderers retain the synthetic loopback origin.
+function installSidecarRequestAuthentication(webContents) {
+  const request = webContents?.session?.webRequest;
+  if (!request || typeof request.onBeforeSendHeaders !== 'function') return;
+  request.onBeforeSendHeaders({ urls: ['http://127.0.0.1/*', 'ws://127.0.0.1/*'] }, (details, callback) => {
+    const client = daemonSupervisor?.clientOptions?.();
+    const rejection = sidecarRequestRejection(details, webContents, client, { requireSession: true });
+    if (rejection) {
+      callback({ cancel: false, requestHeaders: details.requestHeaders });
+      return;
+    }
+    const requestHeaders = { ...(details.requestHeaders || {}) };
+    for (const name of Object.keys(requestHeaders)) {
+      if (name.toLowerCase() === 'x-autoplan-session') delete requestHeaders[name];
+      if (app.isPackaged && name.toLowerCase() === 'origin') delete requestHeaders[name];
+    }
+    requestHeaders['X-Autoplan-Session'] = client.sessionToken;
+    if (app.isPackaged) requestHeaders.Origin = client.origin;
+    callback({ cancel: false, requestHeaders });
+  });
+  request.onHeadersReceived({ urls: ['http://127.0.0.1/*'] }, (details, callback) => {
+    const client = daemonSupervisor?.clientOptions?.();
+    const rejection = sidecarRequestRejection(details, webContents, client, { requireSession: false });
+    if (rejection) {
+      callback({ cancel: false, responseHeaders: details.responseHeaders });
+      return;
+    }
+    let rendererOrigin;
+    try { rendererOrigin = new URL(rendererEntryURL()).origin; } catch { rendererOrigin = ''; }
+    if (!rendererOrigin || rendererOrigin === 'null') {
+      callback({ cancel: false, responseHeaders: details.responseHeaders });
+      return;
+    }
+    const responseHeaders = { ...(details.responseHeaders || {}) };
+    responseHeaders['Access-Control-Allow-Origin'] = [rendererOrigin];
+    responseHeaders['Access-Control-Allow-Credentials'] = ['true'];
+    // The renderer validates that the response envelope and transport header
+    // carry the same request id. CORS hides non-safelisted headers unless this
+    // explicit exposure is present, even though the HTTP request succeeded.
+    responseHeaders['Access-Control-Expose-Headers'] = ['X-Request-ID'];
+    callback({ cancel: false, responseHeaders });
+  });
+  if (!app.isPackaged && typeof request.onErrorOccurred === 'function') {
+    request.onErrorOccurred({ urls: ['http://127.0.0.1/*'] }, (details) => {
+      if (details?.webContentsId !== webContents.id || !isLoopbackAPIPath(details?.url)) return;
+      // React refreshes and explicit AbortControllers intentionally cancel a
+      // stale request; Chromium reports that as ERR_ABORTED.
+      if (details.error === 'net::ERR_ABORTED') return;
+      console.error(`[autoplan] sidecar request failed: ${String(details.error || 'unknown_error')}`);
+    });
+  }
+}
+
+function sidecarRequestRejection(details, webContents, client, { requireSession }) {
+  if (!client?.baseUrl) return 'client_unavailable';
+  if (requireSession && !client.sessionToken) return 'session_unavailable';
+  if (details?.webContentsId !== webContents?.id) return 'webcontents_mismatch';
+  // installTrustedRendererNavigation already prevents this window from
+  // leaving the configured renderer origin. Re-evaluating getURL() in the
+  // network callback is racy around CORS preflights and can drop the private
+  // session header for an otherwise valid POST.
+  if (!isSidecarRequest(details?.url, client.baseUrl)) return 'authority_or_route_mismatch';
+  return '';
+}
+
+function isLoopbackAPIPath(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.hostname === '127.0.0.1' &&
+      (parsed.pathname === '/api/v1' || parsed.pathname.startsWith('/api/v1/'));
+  } catch {
+    return false;
+  }
+}
+
+// Retain the P14 helper name as a narrow predicate for source-level terminal
+// contracts. The P002 interceptor also covers the matching REST/SSE routes.
+function isTerminalWebSocketRequest(rawUrl, baseUrl) {
+  try {
+    const requestUrl = new URL(rawUrl);
+    const daemonUrl = new URL(baseUrl);
+    return requestUrl.protocol === 'ws:' && daemonUrl.protocol === 'http:' &&
+      requestUrl.hostname === '127.0.0.1' && requestUrl.host === daemonUrl.host &&
+      /^\/api\/v1\/terminals\/term_[a-z0-9][a-z0-9_-]{5,}\/ws$/.test(requestUrl.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function isSidecarRequest(rawUrl, baseUrl) {
+  try {
+    const requestUrl = new URL(rawUrl);
+    const daemonUrl = new URL(baseUrl);
+    if ((requestUrl.protocol !== 'http:' && requestUrl.protocol !== 'ws:') || daemonUrl.protocol !== 'http:' ||
+        requestUrl.hostname !== '127.0.0.1' || requestUrl.host !== daemonUrl.host) return false;
+    return requestUrl.pathname === '/healthz' || requestUrl.pathname === '/readyz' ||
+      requestUrl.pathname === '/api/v1' || requestUrl.pathname.startsWith('/api/v1/');
+  } catch {
+    return false;
+  }
+}
+
+function isGoMcpTransportEnabled() {
+  // P13B has no renderer business route. Keep its listener gate out of the
+  // renderer runtime document so an MCP rollout cannot alter Chat transport.
+  return isGoRuntimeMode() && process.env.AUTOPLAN_SIDECAR_GO_MCP_API === 'true';
+}
+
+function assertLegacyChatAdapterEnabled() {
+  if (isGoChatHTTPEnabled()) throw new GoDataClientError('legacy_adapter_disabled');
+}
+
+function assertLegacyMcpAdapterEnabled() {
+  if (isGoMcpTransportEnabled()) throw new GoDataClientError('legacy_adapter_disabled');
+}
+
+function daemonStatus() {
+  return daemonSupervisor?.status?.() || { state: 'unavailable', ready: false, host: null, port: null, baseUrl: null, origin: null };
+}
+
+function maintenanceStatus() {
+  return { ...maintenanceState };
+}
+
+function updateMaintenanceState({ operationId = maintenanceState.operationId, mode = maintenanceState.mode, stage = maintenanceState.stage, code = maintenanceState.code, mutationsBlocked = maintenanceState.mutationsBlocked } = {}) {
+  const normalizedOperationId = operationId == null ? null : normalizeMaintenanceLabel(operationId, 'electron-cutover');
+  maintenanceState = Object.freeze({
+    operationId: normalizedOperationId,
+    mode: normalizeMaintenanceLabel(mode, 'maintenance'),
+    stage: normalizeMaintenanceLabel(stage, 'failed'),
+    code: code ? normalizeMaintenanceLabel(code, 'maintenance_failed') : '',
+    mutationsBlocked: Boolean(mutationsBlocked),
+  });
+  sendToRendererWindow('maintenance:status', maintenanceStatus());
+  return maintenanceStatus();
+}
+
+function normalizeMaintenanceLabel(value, fallback) {
+  const label = String(value || '').trim().toLowerCase();
+  return /^[a-z0-9_-]{1,128}$/.test(label) ? label : fallback;
+}
+
+// This trusted main-process primitive is the Node half of maintenance
+// handoff.  It freezes all renderer mutations first, drains local workers,
+// performs a final sql.js persist, and only then releases the legacy owner.
+// Any error leaves maintenanceState locked; callers must never reopen writes
+// as a recovery shortcut.
+async function enterMaintenanceMode({ operationId = 'electron-cutover', stage = 'freeze', code = 'maintenance_active' } = {}) {
+  if (maintenanceState.mutationsBlocked) return maintenanceStatus();
+  updateMaintenanceState({ operationId, mode: 'maintenance', stage, code, mutationsBlocked: true });
+  try {
+    if (updateChecker) updateChecker.stop();
+    if (mcpServer) await stopMcpServer();
+    if (loop) {
+      loop.stopScheduler?.();
+      await loop.stop?.();
+    }
+    for (const controller of chatControllers?.values?.() || []) {
+      controller.clearQueue?.();
+      controller.stop?.();
+    }
+    terminalService?.disposeAll?.();
+    if (isGoRuntimeMode()) {
+      await daemonSupervisor?.prepareCutover?.();
+    } else if (db) {
+      db.persist?.();
+      if (db.lastPersistError) throw new Error('node_persist_failed');
+      db.close?.();
+    }
+    return updateMaintenanceState({ mode: 'maintenance', stage: 'node_release', code: 'node_released', mutationsBlocked: true });
+  } catch {
+    return updateMaintenanceState({ mode: 'maintenance', stage: 'failed', code: 'node_release_failed', mutationsBlocked: true });
+  }
+}
+
+function broadcastDaemonStatus() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('daemon:status', daemonStatus());
+  }
+}
+
+function createGoModeDatabaseBlocker() {
+  const fail = () => {
+    // Keep the database-owner error at this boundary. A missed legacy IPC
+    // port must never look like a transient Go runtime failure and therefore
+    // must not tempt a caller to recreate sql.js or retry a mutation locally.
+    databaseOwner?.assertNodeMutationAllowed?.();
+    throw new GoDataClientError('service_unavailable');
+  };
+  // This sentinel is never a database adapter. It exists solely to turn an
+  // unported legacy call into a stable, side-effect-free failure before SQL,
+  // persistence, export, mirror, or backup code can execute.
+  return new Proxy(Object.freeze({}), {
+    get(_target, key) {
+      if (key === 'then') return undefined;
+      return fail;
+    },
+  });
+}
+
+async function goDataSnapshot(projectId, command) {
+  const result = await command();
+  return result?.snapshot || loop.snapshot(projectId);
+}
+
+// IPC compatibility callers retain their historical completed-result shape
+// while Go owns data and process admission. These adapters derive only bounded
+// persisted snapshot fields; command text, PID, environment and raw output are
+// never reconstructed in Electron.
+function processScriptRunResult(result, scriptId) {
+  const snapshot = result?.snapshot;
+  const script = Array.isArray(snapshot?.scripts)
+    ? snapshot.scripts.find((item) => Number(item?.id) === Number(scriptId))
+    : null;
+  return {
+    snapshot,
+    status: script?.last_status ?? script?.lastStatus ?? 'running',
+    exitCode: script?.last_exit_code ?? script?.lastExitCode ?? null,
+    durationMs: script?.last_duration_ms ?? script?.lastDurationMs ?? null,
+    log: script?.last_log ?? script?.lastLog ?? null,
+    ...(result?.operation ? { operation: result.operation } : {}),
+  };
+}
+
+function processExecutorRunResult(result, executorId) {
+  const snapshot = result?.snapshot;
+  const executor = Array.isArray(snapshot?.executors)
+    ? snapshot.executors.find((item) => Number(item?.id) === Number(executorId))
+    : null;
+  return {
+    snapshot,
+    executorId,
+    label: executor?.label || '',
+    status: executor?.last_status ?? executor?.lastStatus ?? 'running',
+    exitCode: executor?.last_exit_code ?? executor?.lastExitCode ?? null,
+    durationMs: executor?.last_duration_ms ?? executor?.lastDurationMs ?? null,
+    log: executor?.last_log ?? executor?.lastLog ?? null,
+    ...(result?.operation ? { operation: result.operation } : {}),
+  };
+}
 
 ipcMain.handle('updates:status', () => (updateChecker ? updateChecker.status() : defaultUpdateStatus()));
 
@@ -301,6 +903,8 @@ function scheduleUpdateCheck() {
 }
 
 ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+ipcMain.handle('daemon:status', () => daemonStatus());
+ipcMain.handle('maintenance:status', () => maintenanceStatus());
 
 ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
 
@@ -310,12 +914,12 @@ ipcMain.handle('plans:reorder', (_event, input = {}) => {
   return loop.reorderPlans(projectId, planIds);
 });
 
-ipcMain.handle('plans:stop', (_event, input = {}) => {
+ipcMain.handle('plans:stop', async (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   return loop.stopPlan(projectId, requiredRecordId(input, 'planId'));
 });
 
-ipcMain.handle('plans:resume', (_event, input = {}) => {
+ipcMain.handle('plans:resume', async (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   return loop.resumePlan(projectId, requiredRecordId(input, 'planId'));
 });
@@ -329,7 +933,7 @@ ipcMain.handle('plans:updateExecutionConfig', (_event, input = {}) => {
   });
 });
 
-ipcMain.handle('plans:reExecute', (_event, input = {}) => {
+ipcMain.handle('plans:reExecute', async (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   return loop.reExecutePlan(projectId, requiredRecordId(input, 'planId'));
 });
@@ -412,6 +1016,7 @@ ipcMain.handle('projects:pickDirectory', async () => (await dialog.showOpenDialo
 ipcMain.handle('projects:openFolder', (_event, input = {}) => openProjectFolder(input));
 
 ipcMain.handle('loop:configure', (_event, config = {}) => {
+  if (isGoRuntimeMode()) throw new GoDataClientError('service_unavailable');
   const projectId = requiredProjectId(config);
   const mcpConfigChanged = saveMcpSettings(db, config);
   loop.configure(projectId, config);
@@ -419,17 +1024,17 @@ ipcMain.handle('loop:configure', (_event, config = {}) => {
   return loop.snapshot(projectId);
 });
 
-ipcMain.handle('loop:start', (_event, input = {}) => {
+ipcMain.handle('loop:start', async (_event, input = {}) => {
   requireManualAction(input, '启动循环');
   const projectId = requiredProjectId(input);
-  loop.start(projectId);
-  return loop.snapshot(projectId);
+  const snapshot = await loop.start(projectId);
+  return snapshot || loop.snapshot(projectId);
 });
 
-ipcMain.handle('loop:stop', (_event, input = {}) => {
+ipcMain.handle('loop:stop', async (_event, input = {}) => {
   const projectId = requiredProjectId(input);
-  loop.stop(projectId);
-  return loop.snapshot(projectId);
+  const snapshot = await loop.stop(projectId);
+  return snapshot || loop.snapshot(projectId);
 });
 
 ipcMain.handle('loop:runOnce', async (_event, input = {}) => {
@@ -455,6 +1060,7 @@ ipcMain.handle('mcp:status', (_event, input = {}) => loop.snapshot(input.project
 ipcMain.handle('mcp:readAuthToken', () => readSavedMcpAuthToken());
 
 ipcMain.handle('mcp:saveConfig', (_event, config = {}) => {
+  if (isGoRuntimeMode()) throw new GoDataClientError('service_unavailable');
   const projectId = config.projectId || null;
   const mcpConfigChanged = saveMcpSettings(db, config);
   if (mcpConfigChanged) scheduleMcpServerRestart();
@@ -463,7 +1069,9 @@ ipcMain.handle('mcp:saveConfig', (_event, config = {}) => {
 
 ipcMain.handle('tasks:run', async (_event, input = {}) => {
   const projectId = requiredProjectId(input);
-  await loop.runTask(projectId, requiredRecordId(input, 'taskId'));
+  await loop.runTask(projectId, requiredRecordId(input, 'taskId'), {
+    planId: input.planId ?? input.plan_id,
+  });
   return loop.snapshot(projectId);
 });
 
@@ -474,25 +1082,43 @@ ipcMain.handle('tasks:runParallel', async (_event, input = {}) => {
   return loop.snapshot(projectId);
 });
 
-ipcMain.handle('tasks:stop', (_event, input = {}) => {
+ipcMain.handle('tasks:stop', async (_event, input = {}) => {
   const projectId = requiredProjectId(input);
-  loop.stopTask(projectId, requiredRecordId(input, 'taskId')); return loop.snapshot(projectId);
+  const snapshot = await loop.stopTask(projectId, requiredRecordId(input, 'taskId'), {
+    planId: input.planId ?? input.plan_id,
+  });
+  return snapshot || loop.snapshot(projectId);
 });
 
-ipcMain.handle('acceptance:accept', (_event, input = {}) => {
+ipcMain.handle('acceptance:accept', async (_event, input = {}) => {
   const projectId = requiredProjectId(input);
+  if (isGoRuntimeMode()) {
+    return goDataSnapshot(projectId, () => goDataClient.acceptItem(
+      projectId, normalizeAcceptanceTargetType(input.targetType), requiredRecordId(input),
+    ));
+  }
   loop.acceptItem(projectId, { targetType: input.targetType, id: requiredRecordId(input) });
   return loop.snapshot(projectId);
 });
 
-ipcMain.handle('acceptance:unaccept', (_event, input = {}) => {
+ipcMain.handle('acceptance:unaccept', async (_event, input = {}) => {
   const projectId = requiredProjectId(input);
+  if (isGoRuntimeMode()) {
+    return goDataSnapshot(projectId, () => goDataClient.unacceptItem(
+      projectId, normalizeAcceptanceTargetType(input.targetType), requiredRecordId(input),
+    ));
+  }
   loop.unacceptItem(projectId, { targetType: input.targetType, id: requiredRecordId(input) });
   return loop.snapshot(projectId);
 });
 
-ipcMain.handle('acceptance:redo', (_event, input = {}) => {
+ipcMain.handle('acceptance:redo', async (_event, input = {}) => {
   const projectId = requiredProjectId(input);
+  if (isGoRuntimeMode()) {
+    return goDataSnapshot(projectId, () => goDataClient.redoAcceptanceItem(
+      projectId, normalizeAcceptanceTargetType(input.targetType), requiredRecordId(input),
+    ));
+  }
   loop.redoAcceptanceItem(projectId, {
     targetType: normalizeAcceptanceTargetType(input.targetType),
     id: requiredRecordId(input),
@@ -503,6 +1129,7 @@ ipcMain.handle('acceptance:redo', (_event, input = {}) => {
 
 ipcMain.handle('acceptance:acceptBatch', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
+  if (isGoRuntimeMode()) return goDataSnapshot(projectId, () => goDataClient.acceptItems(projectId));
   const targets = normalizeAcceptanceBatchTargets(input.targets, '批量验收目标列表为空');
   loop.acceptItems(projectId, targets);
   return loop.snapshot(projectId);
@@ -510,6 +1137,7 @@ ipcMain.handle('acceptance:acceptBatch', (_event, input = {}) => {
 
 ipcMain.handle('acceptance:unacceptBatch', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
+  if (isGoRuntimeMode()) return goDataSnapshot(projectId, () => goDataClient.unacceptItems(projectId));
   const targets = normalizeAcceptanceBatchTargets(input.targets, '批量取消验收目标列表为空');
   loop.unacceptItems(projectId, targets);
   return loop.snapshot(projectId);
@@ -666,6 +1294,11 @@ ipcMain.handle('intake:appendTask', (_event, input = {}) => {
 
 ipcMain.handle('intake:retryGeneratePlan', async (_event, input = {}) => {
   const projectId = requiredProjectId(input);
+  if (isGoRuntimeMode()) {
+    return goDataSnapshot(projectId, () => goDataClient.retryIntakePlanGeneration(
+      projectId, normalizeIntakeType(input.type), requiredRecordId(input),
+    ));
+  }
   await loop.retryIntakePlanGeneration(projectId, normalizeIntakeType(input.type), requiredRecordId(input), input);
   return loop.snapshot(projectId);
 });
@@ -781,14 +1414,22 @@ ipcMain.handle('scripts:toggle', (_event, input = {}) => {
 ipcMain.handle('scripts:run', async (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   const scriptId = requiredRecordId(input, 'scriptId');
+  if (isGoRuntimeMode()) {
+    const result = await goDataClient.runScript(projectId, scriptId);
+    return processScriptRunResult(result, scriptId);
+  }
   return loop.runScriptManually(projectId, scriptId);
 });
 
-ipcMain.handle('scripts:stop', (_event, input = {}) => {
+ipcMain.handle('scripts:stop', async (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   const scriptId = requiredRecordId(input, 'scriptId');
-  loop.stopScript(projectId, scriptId);
-  return loop.snapshot(projectId);
+  if (isGoRuntimeMode()) {
+    const result = await goDataClient.stopScript(projectId, scriptId);
+    return result.snapshot;
+  }
+  const snapshot = await loop.stopScript(projectId, scriptId);
+  return snapshot || loop.snapshot(projectId);
 });
 
 ipcMain.handle('executors:pickTasksJson', async () => (await dialog.showOpenDialog(mainWindow, {
@@ -825,18 +1466,30 @@ ipcMain.handle('executors:toggle', (_event, input = {}) => {
 
 ipcMain.handle('executors:run', async (_event, input = {}) => {
   const projectId = requiredProjectId(input);
-  return loop.runExecutor(projectId, requiredRecordId(input, 'executorId'));
+  const executorId = requiredRecordId(input, 'executorId');
+  if (isGoRuntimeMode()) {
+    return processExecutorRunResult(await goDataClient.runExecutor(projectId, executorId), executorId);
+  }
+  return loop.runExecutor(projectId, executorId);
 });
 
 ipcMain.handle('executors:stop', async (_event, input = {}) => {
   const projectId = requiredProjectId(input);
-  await loop.stopExecutor(projectId, requiredRecordId(input, 'executorId'));
+  const executorId = requiredRecordId(input, 'executorId');
+  if (isGoRuntimeMode()) {
+    return (await goDataClient.stopExecutor(projectId, executorId)).snapshot;
+  }
+  await loop.stopExecutor(projectId, executorId);
   return loop.snapshot(projectId);
 });
 
 ipcMain.handle('executors:runAction', async (_event, input = {}) => {
   const projectId = requiredProjectId(input);
-  return loop.runExecutorAction(projectId, requiredRecordId(input, 'executorId'), input && input.action);
+  const executorId = requiredRecordId(input, 'executorId');
+  if (isGoRuntimeMode()) {
+    return processExecutorRunResult(await goDataClient.runExecutorAction(projectId, executorId, input && input.action), executorId);
+  }
+  return loop.runExecutorAction(projectId, executorId, input && input.action);
 });
 
 ipcMain.handle('executors:importTasksJson', async (_event, input = {}) => {
@@ -848,10 +1501,17 @@ ipcMain.handle('executors:importTasksJson', async (_event, input = {}) => {
 
 // ------------------------------------------------------- chat:* IPC（需求 #26）----------------------------------------------
 
-ipcMain.handle('chat:send', (_event, input = {}) => {
+ipcMain.handle('chat:send', async (_event, input = {}) => {
+  assertLegacyChatAdapterEnabled();
   const projectId = requiredProjectId(input);
   const message = String(input.message || '').trim();
   if (!message) return { accepted: false, error: '消息不能为空' };
+
+  if (isGoRuntimeMode()) {
+    const conversationId = requiredRecordId(input, 'conversationId');
+    const result = await goDataClient.sendChat(projectId, conversationId, message);
+    return { accepted: true, conversationId, operation: result.operation, snapshot: result.snapshot || loop.snapshot(projectId) };
+  }
 
   let conversationId = Number(input.conversationId || 0);
   if (!conversationId) {
@@ -865,10 +1525,15 @@ ipcMain.handle('chat:send', (_event, input = {}) => {
   return { accepted: true, conversationId, enqueuedId: enqueued.id };
 });
 
-ipcMain.handle('chat:stop', (_event, input = {}) => {
+ipcMain.handle('chat:stop', async (_event, input = {}) => {
+  assertLegacyChatAdapterEnabled();
   const projectId = requiredProjectId(input);
   const conversationId = Number(input.conversationId || 0);
   if (!conversationId) return { stopped: false, error: 'conversationId 不能为空' };
+  if (isGoRuntimeMode()) {
+    const result = await goDataClient.stopChat(projectId, conversationId);
+    return { stopped: true, operation: result.operation, snapshot: result.snapshot || loop.snapshot(projectId) };
+  }
   if (!conversationInProject(conversationId, projectId)) {
     return { stopped: false, error: '对话不存在或不属于当前项目' };
   }
@@ -877,10 +1542,15 @@ ipcMain.handle('chat:stop', (_event, input = {}) => {
   return { stopped: true };
 });
 
-ipcMain.handle('chat:clear', (_event, input = {}) => {
+ipcMain.handle('chat:clear', async (_event, input = {}) => {
+  assertLegacyChatAdapterEnabled();
   const projectId = requiredProjectId(input);
   const conversationId = Number(input.conversationId || 0);
   if (!conversationId) return { cleared: false, error: 'conversationId 不能为空' };
+  if (isGoRuntimeMode()) {
+    const result = await goDataClient.clearChat(projectId, conversationId);
+    return { cleared: true, operation: result.operation, snapshot: result.snapshot || loop.snapshot(projectId) };
+  }
   if (!conversationInProject(conversationId, projectId)) {
     return { cleared: false, error: '对话不存在或不属于当前项目' };
   }
@@ -892,9 +1562,14 @@ ipcMain.handle('chat:clear', (_event, input = {}) => {
 });
 
 ipcMain.handle('chat:history', (_event, input = {}) => {
+  assertLegacyChatAdapterEnabled();
   const projectId = requiredProjectId(input);
   const conversationId = Number(input.conversationId || 0);
   if (!conversationId) return [];
+  if (isGoRuntimeMode()) {
+    const messages = loop.snapshot(projectId).chat_messages || loop.snapshot(projectId).messages || [];
+    return messages.filter((message) => Number(message?.conversation_id || message?.conversationId) === conversationId);
+  }
   if (!conversationInProject(conversationId, projectId)) return [];
   const controller = chatControllers?.get(conversationId);
   if (controller) return controller.getHistory();
@@ -908,6 +1583,8 @@ ipcMain.handle('chat:history', (_event, input = {}) => {
 
 // 队列管理 IPC（需求 #37）：会话/控制器不存在时返回空/{ok:false}，不抛错
 function getQueueController(input = {}) {
+  assertLegacyChatAdapterEnabled();
+  if (isGoRuntimeMode()) return null;
   const cid = Number(input.conversationId || 0);
   if (!cid || !conversationInProject(cid, requiredProjectId(input))) return null;
   return chatControllers?.get(cid) || null;
@@ -1055,16 +1732,19 @@ ipcMain.handle('claude-cli-config:set-default', (_event, input = {}) => {
 // ------------------------------------------------------- conversation:* IPC（需求 #28）-----------------------------------------
 
 ipcMain.handle('conversation:list', (_event, input = {}) => {
+  assertLegacyChatAdapterEnabled();
   const projectId = requiredProjectId(input);
   return listConversations(db, projectId);
 });
 
 ipcMain.handle('conversation:create', (_event, input = {}) => {
+  assertLegacyChatAdapterEnabled();
   const projectId = requiredProjectId(input);
   return createConversation(db, conversationCreateInput(input, projectId));
 });
 
 ipcMain.handle('conversation:update', (_event, input = {}) => {
+  assertLegacyChatAdapterEnabled();
   const projectId = requiredProjectId(input);
   const id = requiredRecordId(input, 'conversationId');
   requireConversationInProject(id, projectId);
@@ -1072,6 +1752,7 @@ ipcMain.handle('conversation:update', (_event, input = {}) => {
 });
 
 ipcMain.handle('conversation:delete', (_event, input = {}) => {
+  assertLegacyChatAdapterEnabled();
   const projectId = requiredProjectId(input);
   const id = requiredRecordId(input, 'conversationId');
   requireConversationInProject(id, projectId);
@@ -1115,7 +1796,7 @@ function getOrCreateChatController(conversationId, projectId) {
   const send = (channel, data) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, data); };
   const controller = createChatController({
     db, llmClient: createLlmClient, chatTools: tools, conversationId, projectId, workspacePath,
-    codexBackendConfig,
+    codexBackendConfig, legacyAdapterDisabled: isGoChatHTTPEnabled(),
     onEvent: ({ type, data }) => send('chat:chunk', { type, data }),
     onQueue: (items) => send('chat:queue', { conversationId, items, count: Array.isArray(items) ? items.length : 0 }),
     onDone: ({ status, error, conversationId: doneCid, title } = {}) => {
@@ -1260,13 +1941,24 @@ async function readExecutorTasksJsonInput(input = {}) {
   return fs.promises.readFile(filePath, 'utf8');
 }
 
-function scheduleMcpServerStart() { setTimeout(() => startMcpServer().catch((error) => recordMcpStartupError(error)), 0); }
+function scheduleMcpServerStart() {
+  if (isGoMcpTransportEnabled()) return;
+  setTimeout(() => startMcpServer().catch((error) => recordMcpStartupError(error)), 0);
+}
 
-function scheduleMcpServerRestart() { setTimeout(() => restartMcpServer().catch((error) => recordMcpStartupError(error)), 0); }
+function scheduleMcpServerRestart() {
+  if (isGoMcpTransportEnabled()) return;
+  setTimeout(() => restartMcpServer().catch((error) => recordMcpStartupError(error)), 0);
+}
 
 async function restartMcpServer() { if (mcpServer) await mcpServer.stop().catch((error) => console.error('[mcp] stop before restart failed', error)); return startMcpServer(); }
 
 async function startMcpServer() {
+  if (isGoRuntimeMode()) {
+    const result = await goDataClient.startMcp();
+    return { enabled: true, running: true, owner: 'go', operation: result.operation, gate: isGoMcpTransportEnabled() ? 'go_mcp_api' : 'compatibility' };
+  }
+  assertLegacyMcpAdapterEnabled();
   // 幂等守卫：已运行则直接返回当前状态，避免重建第二个实例导致 EADDRINUSE。
   if (mcpServer?.status?.()?.running) return mcpServer.status();
   mcpServer = createMcpServer({ db, loop, intakeService: intakeService(), config: mcpServerConfig(db), logger: console });
@@ -1277,6 +1969,11 @@ async function startMcpServer() {
 }
 
 async function stopMcpServer() {
+  if (isGoRuntimeMode()) {
+    const result = await goDataClient.stopMcp();
+    return { enabled: true, running: false, owner: 'go', operation: result.operation, gate: isGoMcpTransportEnabled() ? 'go_mcp_api' : 'compatibility' };
+  }
+  assertLegacyMcpAdapterEnabled();
   if (!mcpServer) return null;
   const state = await mcpServer.stop().catch((error) => console.error('[mcp] stop failed', error));
   const projectId = loop?.defaultProjectId?.();
@@ -1294,6 +1991,7 @@ function recordMcpStartupError(error) {
 function mcpStatusMessage(state = {}) { return state.transport === 'stdio' ? 'MCP 服务已启动：stdio' : `MCP 服务已启动：${state.url || 'http://127.0.0.1:43847/mcp'}`; }
 
 function readSavedMcpAuthToken() {
+  if (isGoRuntimeMode()) return { hasAuthToken: false, authToken: '' };
   const authToken = String(db?.getSetting?.('mcp.authToken', '') || '');
   return {
     hasAuthToken: authToken.length > 0,
@@ -1337,7 +2035,7 @@ function loadRenderer(window) {
 
 function requiredProjectId(input = {}) {
   const projectId = Number(input.projectId || input.id || 0);
-  if (!projectId || !loop.project(projectId)) throw new Error('项目不存在');
+  if (!projectId || (!isGoRuntimeMode() && !loop.project(projectId))) throw new Error('项目不存在');
   return projectId;
 }
 

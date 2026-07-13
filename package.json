@@ -1,6 +1,6 @@
 {
   "name": "autoplan",
-  "version": "0.2.3-beta.9",
+  "version": "0.2.3-beta.11",
   "description": "Electron app for issue-driven autonomous planning and development loops.",
   "author": "lyming99 <lyming99@users.noreply.github.com>",
   "main": "src/main.js",
@@ -9,14 +9,44 @@
     "start": "npm run dev",
     "dev": "node scripts/dev.js",
     "build": "tsc --noEmit && vite build",
-    "package:win": "npm run build && electron-builder --win nsis --x64",
-    "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
-    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
-    "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+    "build:go:win": "node scripts/build-go-sidecar.js --platform win32 --arch x64",
+    "build:go:mac": "node scripts/build-go-sidecar.js --platform darwin --arch x64 && node scripts/build-go-sidecar.js --platform darwin --arch arm64",
+    "build:go:linux": "node scripts/build-go-sidecar.js --platform linux --arch x64",
+    "prepare:go:win": "npm run build:go:win && node scripts/prepare-go-resources.js --platform win32 --arch x64",
+    "prepare:go:mac": "npm run build:go:mac && node scripts/prepare-go-resources.js --platform darwin --arch x64 --platform darwin --arch arm64",
+    "prepare:go:linux": "npm run build:go:linux && node scripts/prepare-go-resources.js --platform linux --arch x64",
+    "prepare:go:all": "npm run prepare:go:win && npm run prepare:go:mac && npm run prepare:go:linux",
+    "package:win": "npm run prepare:go:win && npm run build && electron-builder --win nsis --x64 --publish never",
+    "package:mac": "npm run prepare:go:mac && npm run build && electron-builder --mac dmg zip --x64 --arm64 --publish never",
+    "package:linux": "npm run prepare:go:linux && npm run build && electron-builder --linux AppImage deb --x64 --publish never",
+    "package:all": "npm run prepare:go:all && npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64 --publish never",
     "verify:release-artifacts": "node scripts/verify-release-artifacts.js",
     "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/mcpServer.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js && npm run check:lengths",
     "check:lengths": "node scripts/check-file-lengths.js",
     "test": "node --test \"src/**/*.test.js\"",
+    "migration:p00:verify": "node scripts/migration-baseline/run-baseline.js verify",
+    "migration:p01:boundary": "node scripts/migration-p01/check-renderer-boundary.js",
+    "migration:p01:verify": "node scripts/migration-p01/verify.js verify",
+    "migration:p02:contracts": "node --test scripts/migration-p02/contract-fixtures.test.js",
+    "migration:p02:verify": "node scripts/migration-p02/verify.js verify",
+    "migration:p03:readonly": "node --test scripts/migration-p03/check-readonly.test.js",
+    "migration:p03:verify": "node scripts/migration-p03/verify.js verify",
+    "migration:p04:verify": "node scripts/migration-p04/verify.js verify",
+    "migration:p05:verify": "node scripts/migration-p05/verify.js verify",
+    "migration:p06:verify": "node scripts/migration-p06/verify.js verify",
+    "migration:p07:verify": "node scripts/migration-p07/verify.js verify",
+    "migration:p08:verify": "node scripts/migration-p08/verify.js verify",
+    "migration:p09:verify": "node scripts/migration-p09/verify.js verify",
+    "migration:p10:verify": "node scripts/migration-p10/verify.js verify",
+    "migration:p11:verify": "node scripts/migration-p11/verify.js verify",
+    "migration:p12:verify": "node scripts/migration-p12/verify.js verify --fixture-root fixtures/migration/p12/process-fixtures",
+    "migration:p13a:verify": "node scripts/migration-p13/verify-p13a.js verify --fixture-root fixtures/migration/p13/chat",
+    "migration:p13b:verify": "node scripts/migration-p13/verify-p13b.js verify --fixture-root fixtures/migration/p13/mcp",
+    "migration:p14:verify": "node scripts/migration-p14/verify.js verify --fixture-root fixtures/migration/p14/terminal",
+    "migration:p15:unique-writer": "node scripts/migration-p15/check-unique-writer.js",
+    "migration:p15:e2e": "node scripts/migration-p15/run-electron-go-e2e.js --fixture-root fixtures/migration/p15/electron-go",
+    "migration:p15:install-upgrade": "node scripts/migration-p15/run-install-upgrade.js --fixture-root fixtures/migration/p15/electron-go",
+    "migration:p15:verify": "node scripts/migration-p15/verify.js verify --fixture-root fixtures/migration/p15/electron-go",
     "mcp:http": "node src/mcpServer.js --http",
     "mcp:stdio": "node src/mcpServer.js --stdio",
     "smoke": "node scripts/smoke-test.js"
@@ -36,7 +66,6 @@
     ],
     "asarUnpack": [
       "node_modules/node-pty/**/*",
-      "node_modules/sql.js/dist/*.wasm",
       "src/loop/scanWorker.js",
       "src/loop/workspaceFiles.js"
     ],
@@ -45,6 +74,16 @@
     },
     "win": {
       "icon": "assets/icon.ico",
+      "extraResources": [
+        {
+          "from": "resources/sidecar/win32/${arch}",
+          "to": "sidecar/win32/${arch}",
+          "filter": [
+            "autoplan-server.exe",
+            "autoplan-server.manifest.json"
+          ]
+        }
+      ],
       "target": [
         {
           "target": "nsis",
@@ -61,6 +100,19 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "binaries": [
+        "resources/sidecar/darwin/${arch}/autoplan-server"
+      ],
+      "extraResources": [
+        {
+          "from": "resources/sidecar/darwin/${arch}",
+          "to": "sidecar/darwin/${arch}",
+          "filter": [
+            "autoplan-server",
+            "autoplan-server.manifest.json"
+          ]
+        }
+      ],
       "target": [
         {
           "target": "dmg",
@@ -81,6 +133,16 @@
     },
     "linux": {
       "icon": "assets/icon.png",
+      "extraResources": [
+        {
+          "from": "resources/sidecar/linux/${arch}",
+          "to": "sidecar/linux/${arch}",
+          "filter": [
+            "autoplan-server",
+            "autoplan-server.manifest.json"
+          ]
+        }
+      ],
       "target": [
         {
           "target": "AppImage",

@@ -6,6 +6,8 @@ import (
 	"strings"
 )
 
+// Windows path validation is intentionally portable so non-Windows hosts can
+// validate persisted Windows paths and compile the shared policy package.
 var (
 	errInvalidWindowsPath = errors.New("invalid Windows path")
 	windowsDrivePattern   = regexp.MustCompile(`^[A-Za-z]:\\`)
